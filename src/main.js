@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { TribeNetDatabase } = require('./database');
 const { parseOrdersWorkbook } = require('./planner');
+const { applyWagonAnimalRules } = require('./logistics-rules');
 
 let mainWindow;
 let database;
@@ -65,7 +66,7 @@ ipcMain.handle('planner:import', async () => {
   if (result.canceled || !result.filePaths.length) return { canceled: true };
   const filePath = result.filePaths[0];
   try {
-    const plan = parseOrdersWorkbook(filePath);
+    const plan = applyWagonAnimalRules(parseOrdersWorkbook(filePath));
     const saved = database.saveTurnPlan(plan);
     return { canceled: false, imported: saved };
   } catch (error) {

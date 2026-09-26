@@ -115,8 +115,11 @@ function showUnitLogistics(unit) {
 
   const transport = [];
   if (stats.wagonCount) transport.push(`${logisticsNumber(stats.wagonCount)} wagon${stats.wagonCount === 1 ? '' : 's'}`);
+  if (stats.elephantsCarryingWagons) {
+    transport.push(`${logisticsNumber(stats.elephantsCarryingWagons)} elephant${stats.elephantsCarryingWagons === 1 ? '' : 's'} carrying wagon${stats.elephantsCarryingWagons === 1 ? '' : 's'}`);
+  }
   if (stats.cattlePulling || stats.horsePulling) {
-    transport.push(`${logisticsNumber(stats.cattlePulling)} cattle + ${logisticsNumber(stats.horsePulling)} horses pulling`);
+    transport.push(`${logisticsNumber(stats.cattlePulling)} cattle + ${logisticsNumber(stats.horsePulling)} horses pulling (${logisticsNumber(stats.draftAnimalsNeeded)} required)`);
   }
   const packHorses = Math.max(0, Number(stats.horseCount || 0) - Number(stats.horsePulling || 0) - (stats.fullyMounted ? Number(stats.totalPeople || 0) : 0));
   if (stats.fullyMounted) transport.push(`fully mounted (${logisticsNumber(stats.totalPeople)} ridden horses)`);

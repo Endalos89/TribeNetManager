@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const XLSX = require('xlsx');
 const { parseOrdersWorkbook } = require('../src/planner');
+const { applyWagonAnimalRules } = require('../src/logistics-rules');
 
 function addSheet(wb, name, rows) {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
@@ -58,7 +59,7 @@ const file = path.join(tempDir, '0485_906_3_Orders.xlsx');
 XLSX.writeFile(wb, file);
 
 try {
-  const plan = parseOrdersWorkbook(file);
+  const plan = applyWagonAnimalRules(parseOrdersWorkbook(file));
   assert.strictEqual(plan.formatVersion, 2);
   const main = plan.unitStats.find(row => row.unit === '0485');
   const forestry = plan.unitStats.find(row => row.unit === '0485e1');
@@ -69,18 +70,40 @@ try {
   assert.strictEqual(main.provs, 39760);
   assert(Math.abs(main.provisionTurns - (39760 / 31172)) < 1e-10);
   assert.strictEqual(main.wagonCount, 284);
-  assert.strictEqual(main.cattlePulling, 142);
-  assert.strictEqual(main.horsePulling, 0);
+  assert.strictEqual(main.draftAnimalsNeeded, 568);
+  assert.strictEqual(main.cattlePulling, 500);
+  assert.strictEqual(main.horsePulling, 68);
+  assert.strictEqual(main.draftShortage, 0);
   assert.strictEqual(main.carriedWeight, 681740);
-  assert.strictEqual(main.carryingCapacity, 1897560);
+  assert.strictEqual(main.carryingCapacity, 1877160);
 
   assert.strictEqual(forestry.eaters, 40);
   assert.strictEqual(forestry.provs, 240);
   assert.strictEqual(forestry.provisionTurns, 6);
   assert.strictEqual(forestry.wagonCount, 16);
-  assert.strictEqual(forestry.horsePulling, 8);
+  assert.strictEqual(forestry.draftAnimalsNeeded, 32);
+  assert.strictEqual(forestry.cattlePulling, 0);
+  assert.strictEqual(forestry.horsePulling, 32);
+  assert.strictEqual(forestry.draftShortage, 0);
   assert.strictEqual(forestry.carriedWeight, 18410);
-  assert.strictEqual(forestry.carryingCapacity, 56400);
+  assert.strictEqual(forestry.carryingCapacity, 49200);
+
+  const elephantPlan = {
+    clan: [{ unit: '0001', cattle: 2, horse: 2, elephant: 1 }],
+    transfers: [],
+    unitStats: [{
+      unit: '0001', wagonCount: 2, totalPeople: 10, warrior: 5, active: 5,
+      carriedWeight: 2000, backpacks: 0, saddlebags: 0, camelCount: 0, warnings: []
+    }]
+  };
+  applyWagonAnimalRules(elephantPlan);
+  const elephantUnit = elephantPlan.unitStats[0];
+  assert.strictEqual(elephantUnit.elephantsCarryingWagons, 1);
+  assert.strictEqual(elephantUnit.wagonsNeedingDraftAnimals, 1);
+  assert.strictEqual(elephantUnit.draftAnimalsNeeded, 2);
+  assert.strictEqual(elephantUnit.cattlePulling, 2);
+  assert.strictEqual(elephantUnit.horsePulling, 0);
+  assert.strictEqual(elephantUnit.draftShortage, 0);
 
   console.log('Planner logistics regression test passed.');
 } finally {
