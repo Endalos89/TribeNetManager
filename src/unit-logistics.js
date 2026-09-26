@@ -60,6 +60,97 @@ function plannerUnitLabelAt(x, y) {
   return null;
 }
 
+function ensureCapacityDialog() {
+  let dialog = document.getElementById('capacityBreakdownDialog');
+  if (dialog) return dialog;
+
+  dialog = document.createElement('dialog');
+  dialog.id = 'capacityBreakdownDialog';
+  Object.assign(dialog.style, {
+    width: 'min(560px, calc(100vw - 40px))',
+    maxHeight: '80vh',
+    overflow: 'auto',
+    padding: '0',
+    border: '1px solid #38505f',
+    borderRadius: '12px',
+    background: '#101a21',
+    color: '#e8eef3',
+    boxShadow: '0 24px 70px rgba(0,0,0,.55)'
+  });
+  dialog.addEventListener('click', event => {
+    if (event.target === dialog) dialog.close();
+  });
+  document.body.appendChild(dialog);
+  return dialog;
+}
+
+function showCapacityBreakdown(stats) {
+  const dialog = ensureCapacityDialog();
+  const rows = Array.isArray(stats.capacityBreakdown) ? stats.capacityBreakdown : [];
+  const transportNotes = [];
+  if (stats.wagonCount) transportNotes.push(`${logisticsNumber(stats.wagonCount)} wagons`);
+  if (stats.elephantsCarryingWagons) transportNotes.push(`${logisticsNumber(stats.elephantsCarryingWagons)} carried by Elephants`);
+  if (stats.cattlePulling || stats.horsePulling) transportNotes.push(`${logisticsNumber(stats.cattlePulling)} Cattle + ${logisticsNumber(stats.horsePulling)} Horses pulling`);
+  if (stats.draftAnimalsNeeded) transportNotes.push(`${logisticsNumber(stats.draftAnimalsNeeded)} draft animals required`);
+
+  const rowHtml = rows.map(row => {
+    const note = row.note ? `<div style="margin-top:3px;color:#7f939f;font-size:10px;line-height:1.35">${escapeHtml(row.note)}</div>` : '';
+    return `<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:9px 0;border-bottom:1px solid #263a47">
+      <div><strong style="font-size:12px">${escapeHtml(row.label)}</strong><div style="margin-top:2px;color:#91a4b2;font-size:10px">${escapeHtml(logisticsNumber(row.quantity))} × ${escapeHtml(logisticsNumber(row.perUnit))} lb</div>${note}</div>
+      <strong style="font-variant-numeric:tabular-nums;font-size:12px">${escapeHtml(logisticsNumber(row.total))} lb</strong>
+    </div>`;
+  }).join('');
+
+  dialog.innerHTML = `<div style="padding:18px 20px 20px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
+      <div><div style="color:#9cdb84;font-size:10px;font-weight:800;letter-spacing:.12em">CARRYING CAPACITY</div><h2 style="margin:4px 0 3px;font-size:22px">${escapeHtml(stats.unit || '')}</h2><div style="color:#91a4b2;font-size:11px">How the ${escapeHtml(logisticsNumber(stats.carryingCapacity))} lb total is calculated</div></div>
+      <button id="capacityDialogClose" class="button" style="padding:6px 9px">Close</button>
+    </div>
+    ${rowHtml || '<div style="color:#91a4b2;font-size:11px;padding:10px 0">No detailed capacity breakdown is available for this stored plan.</div>'}
+    <div style="display:flex;justify-content:space-between;gap:12px;padding:11px 0 2px;font-size:13px"><strong>Total gross carrying capacity</strong><strong>${escapeHtml(logisticsNumber(stats.carryingCapacity))} lb</strong></div>
+    <div style="margin-top:12px;padding:10px;border-radius:8px;background:#0b151b;border:1px solid #263a47;color:#aebdc5;font-size:10px;line-height:1.5">
+      ${transportNotes.length ? `<div><strong>Transport allocation:</strong> ${escapeHtml(transportNotes.join(' · '))}</div>` : ''}
+      <div style="margin-top:${transportNotes.length ? '5px' : '0'}"><strong>Why wagon capacity shows 3,000 lb each:</strong> the wagon itself weighs 1,000 lb and is already included in the carried-weight figure. Its net cargo benefit is 2,000 lb, so gross capacity is 3,000 lb.</div>
+      <div style="margin-top:5px">Horses used to pull wagons contribute no additional pack capacity and cannot use saddlebags.</div>
+    </div>
+  </div>`;
+
+  dialog.querySelector('#capacityDialogClose').addEventListener('click', () => dialog.close());
+  if (typeof dialog.showModal === 'function') dialog.showModal();
+  else dialog.setAttribute('open', '');
+}
+
+function renderLoadText(stats) {
+  const host = $('unitLoadText');
+  host.textContent = '';
+  const carried = document.createElement('span');
+  carried.textContent = `${logisticsNumber(stats.carriedWeight)} lb / `;
+  host.appendChild(carried);
+
+  const capacityButton = document.createElement('button');
+  capacityButton.type = 'button';
+  capacityButton.textContent = `${logisticsNumber(stats.carryingCapacity)} lb`;
+  capacityButton.title = 'Click to show how carrying capacity is calculated';
+  Object.assign(capacityButton.style, {
+    appearance: 'none',
+    border: '0',
+    borderBottom: '1px dotted #9cdb84',
+    padding: '0 1px 1px',
+    margin: '0',
+    background: 'transparent',
+    color: '#dce7eb',
+    cursor: 'pointer',
+    font: 'inherit',
+    fontWeight: '700'
+  });
+  capacityButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    showCapacityBreakdown(stats);
+  });
+  host.appendChild(capacityButton);
+}
+
 function showUnitLogistics(unit) {
   const stats = logisticsStatsForUnit(unit);
   const unitRecord = (state.planImport?.plan?.units || []).find(row => String(row.unit) === String(unit));
@@ -108,7 +199,7 @@ function showUnitLogistics(unit) {
   const pct = Number(stats.loadPercent);
   const finitePct = Number.isFinite(pct) ? pct : 0;
   $('unitLoadPercent').textContent = Number.isFinite(pct) ? `${pct.toFixed(1)}%` : '—';
-  $('unitLoadText').textContent = `${logisticsNumber(stats.carriedWeight)} lb / ${logisticsNumber(stats.carryingCapacity)} lb`;
+  renderLoadText(stats);
   const fill = $('unitCapacityFill');
   fill.style.width = `${Math.max(0, Math.min(100, finitePct))}%`;
   fill.className = `capacity-fill${finitePct > 100 ? ' over' : finitePct >= 85 ? ' warning' : ''}`;
@@ -121,8 +212,10 @@ function showUnitLogistics(unit) {
   if (stats.cattlePulling || stats.horsePulling) {
     transport.push(`${logisticsNumber(stats.cattlePulling)} cattle + ${logisticsNumber(stats.horsePulling)} horses pulling (${logisticsNumber(stats.draftAnimalsNeeded)} required)`);
   }
-  const packHorses = Math.max(0, Number(stats.horseCount || 0) - Number(stats.horsePulling || 0) - (stats.fullyMounted ? Number(stats.totalPeople || 0) : 0));
-  if (stats.fullyMounted) transport.push(`fully mounted (${logisticsNumber(stats.totalPeople)} ridden horses)`);
+  const packHorses = Number.isFinite(Number(stats.packHorseCount))
+    ? Math.max(0, Number(stats.packHorseCount))
+    : Math.max(0, Number(stats.horseCount || 0) - Number(stats.horsePulling || 0) - (stats.fullyMounted ? Number(stats.totalPeople || 0) : 0));
+  if (stats.fullyMounted) transport.push(`fully mounted (${logisticsNumber(stats.riddenHorseCount ?? stats.totalPeople)} ridden horses)`);
   if (packHorses) transport.push(`${logisticsNumber(packHorses)} pack horse${packHorses === 1 ? '' : 's'}`);
   if (stats.backpacksUsed) transport.push(`${logisticsNumber(stats.backpacksUsed)} backpack${stats.backpacksUsed === 1 ? '' : 's'} in use`);
   if (stats.saddlebagsUsed) transport.push(`${logisticsNumber(stats.saddlebagsUsed)} saddlebag${stats.saddlebagsUsed === 1 ? '' : 's'} in use`);
