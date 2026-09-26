@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TribeNet Manager · Turn Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="turn-manager.css" />
+</head>
+<body>
+  <div class="tm-shell">
+    <header class="app-header">
+      <div>
+        <div class="brand">Turn Manager</div>
+        <div class="version" id="tmVersion">TribeNet Manager</div>
+      </div>
+      <div class="header-actions">
+        <span id="tmStatus" class="update-message"></span>
+        <button id="tmBackup" class="button">Backup Turn Data</button>
+        <button id="tmBack" class="button">← Launcher</button>
+      </div>
+    </header>
+
+    <main class="tm-main">
+      <aside class="tm-sidebar">
+        <section class="tm-panel">
+          <p class="eyebrow">TURN</p>
+          <select id="turnPicker" class="tm-full"><option value="">No turn imported</option></select>
+          <div class="tm-import-buttons">
+            <button id="importStart" class="button accent">Import Beginning Workbook</button>
+            <button id="importFinal" class="button">Import Finalized Workbook</button>
+          </div>
+          <div class="tm-workbook-state">
+            <div class="tm-workbook-card"><span>Beginning state</span><strong id="startFile">Not imported</strong><small id="startTime"></small></div>
+            <div class="tm-workbook-card"><span>Finalized orders</span><strong id="finalFile">Not imported</strong><small id="finalTime"></small></div>
+          </div>
+          <p class="tm-help">Re-importing the same role for the same turn replaces that copy. The beginning and finalized workbooks are stored separately.</p>
+        </section>
+
+        <section class="tm-panel tm-grow">
+          <div class="tm-section-title"><div><p class="eyebrow">UNITS</p><h3>Tribes, Fleets &amp; Elements</h3></div><span id="unitCount">0</span></div>
+          <input id="unitSearch" class="tm-full" placeholder="Search units…" />
+          <div id="unitList" class="tm-unit-list"><div class="history-empty">Import a turn workbook to begin.</div></div>
+        </section>
+      </aside>
+
+      <section class="tm-content">
+        <div id="tmEmpty" class="tm-empty">
+          <div class="empty-icon">☷</div>
+          <h2>Import a beginning-of-turn workbook</h2>
+          <p>The Turn Manager will keep the beginning state and finalized orders separately, then let you plan activities against the available units and shared skill limits.</p>
+        </div>
+
+        <div id="tmWorkspace" class="hidden">
+          <div class="tm-top-grid">
+            <section class="tm-panel">
+              <div class="tm-unit-heading"><div><p class="eyebrow">SELECTED UNIT</p><h2 id="unitCode">—</h2><div id="unitName" class="unit-name"></div></div><span id="unitType" class="unit-type-pill">Unit</span></div>
+              <div class="tm-stat-grid">
+                <div><span>Parent Tribe</span><strong id="parentTribe">—</strong></div>
+                <div><span>Location</span><strong id="unitLocation">—</strong></div>
+                <div><span>Warriors</span><strong id="unitWarriors">0</strong></div>
+                <div><span>Actives</span><strong id="unitActives">0</strong></div>
+                <div><span>Slaves</span><strong id="unitSlaves">0</strong></div>
+                <div><span>Planned people</span><strong id="unitAssigned">0</strong></div>
+              </div>
+            </section>
+
+            <section class="tm-panel">
+              <div class="tm-section-title"><div><p class="eyebrow">SHARED LIMITS</p><h3 id="sharedLimitTitle">Parent Tribe</h3></div></div>
+              <div id="sharedLimits" class="tm-limit-list"></div>
+            </section>
+          </div>
+
+          <section class="tm-panel">
+            <div class="tm-section-title"><div><p class="eyebrow">SKILLS</p><h3>Available to this unit</h3></div><span class="tm-muted">Elements/Fleets inherit their parent Tribe's skills</span></div>
+            <div id="skillList" class="tm-skill-list"></div>
+          </section>
+
+          <div class="tm-plan-grid">
+            <section class="tm-panel">
+              <div class="tm-section-title"><div><p class="eyebrow">PLAN</p><h3>Add activity</h3></div></div>
+              <label class="field-label">Activity</label>
+              <select id="activitySelect" class="tm-full"></select>
+              <div id="activityRule" class="tm-rule"></div>
+              <div class="tm-form-row">
+                <label><span>People</span><input id="activityPeople" type="number" min="0" step="1" value="0" /></label>
+                <label><span>Target / item</span><input id="activityTarget" placeholder="e.g. Logs, Wagon, Meeting House" /></label>
+              </div>
+              <label class="field-label">Notes</label>
+              <textarea id="activityNotes" rows="4" placeholder="Special items, terrain assumptions, GM notes…"></textarea>
+              <div id="activityValidation" class="tm-validation"></div>
+              <button id="addActivity" class="button accent">Add Planned Activity</button>
+            </section>
+
+            <section class="tm-panel">
+              <div class="tm-section-title"><div><p class="eyebrow">THIS UNIT</p><h3>Planned activities</h3></div><span id="unitPlanCount">0</span></div>
+              <div id="plannedActivityList" class="tm-activity-list"></div>
+            </section>
+          </div>
+
+          <div class="tm-plan-grid">
+            <section class="tm-panel">
+              <div class="tm-section-title"><div><p class="eyebrow">FINAL WORKBOOK</p><h3>Submitted activities</h3></div><span class="tm-muted">Reference only</span></div>
+              <div id="finalActivities" class="tm-activity-list"></div>
+            </section>
+            <section class="tm-panel">
+              <div class="tm-section-title"><div><p class="eyebrow">TURN CONTEXT</p><h3>Additional notes</h3></div><span class="tm-muted">Stored locally</span></div>
+              <textarea id="turnContext" rows="7" placeholder="Optional context not represented in the workbook…"></textarea>
+              <button id="saveContext" class="button">Save Context</button>
+            </section>
+          </div>
+
+          <section class="tm-panel tm-export-note">
+            <strong>Workbook export is intentionally not enabled yet.</strong>
+            <span>When added, it will work from a copy of the supplied workbook and will only write validated values into existing input cells. It will not restructure sheets, formulas, macros or dropdown definitions.</span>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="turn-manager.js"></script>
+</body>
+</html>
