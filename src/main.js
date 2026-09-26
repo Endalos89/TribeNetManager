@@ -14,6 +14,7 @@ function sendUpdateStatus(payload) {
 function configureUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoRunAppAfterInstall = true;
   autoUpdater.on('checking-for-update', () => sendUpdateStatus({ state: 'checking', message: 'Checking for updates…' }));
   autoUpdater.on('update-not-available', info => sendUpdateStatus({ state: 'current', message: `You are up to date (${info.version}).` }));
   autoUpdater.on('update-available', async info => {
@@ -25,7 +26,7 @@ function configureUpdater() {
     state: 'downloading', message: `Downloading update… ${Math.round(progress.percent)}%`, percent: progress.percent
   }));
   autoUpdater.on('update-downloaded', info => sendUpdateStatus({
-    state: 'ready', message: `Version ${info.version} is ready. Restart to install.`, version: info.version
+    state: 'ready', message: `Version ${info.version} is ready. Restart to apply it.`, version: info.version
   }));
   autoUpdater.on('error', error => sendUpdateStatus({ state: 'error', message: `Update error: ${error.message}` }));
 }
@@ -87,7 +88,8 @@ ipcMain.handle('update:check', async () => {
     sendUpdateStatus(payload); return payload;
   }
 });
-ipcMain.handle('update:install', () => { if (app.isPackaged) autoUpdater.quitAndInstall(false, true); return true; });
+// Install silently so future updates close, patch, and relaunch without showing the NSIS installer UI.
+ipcMain.handle('update:install', () => { if (app.isPackaged) autoUpdater.quitAndInstall(true, true); return true; });
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:userDataPath', () => app.getPath('userData'));
 ipcMain.handle('app:showBackup', async (_event, backupPath) => { if (backupPath) shell.showItemInFolder(backupPath); return true; });
