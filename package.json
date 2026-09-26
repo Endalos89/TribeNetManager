@@ -10,7 +10,8 @@
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
-    "electron-updater": "6.6.2"
+    "electron-updater": "6.6.2",
+    "xlsx": "0.18.5"
   },
   "devDependencies": {
     "electron": "38.0.0",
