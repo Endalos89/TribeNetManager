@@ -1,10 +1,10 @@
 const path = require('path');
 const XLSX = require('xlsx');
 
-function sheetRecords(workbook, name) {
+function sheetRecords(workbook, name, headerRow = 0) {
   const sheet = workbook.Sheets[name];
   if (!sheet) return [];
-  return XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true });
+  return XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true, range: headerRow });
 }
 
 function clean(value) {
@@ -97,7 +97,8 @@ function parseOrdersWorkbook(filePath) {
     .filter(r => cleanUnit(r.Unit) && clean(r['What does the GM need to do?']))
     .map(r => ({ unit: cleanUnit(r.Unit), text: String(r['What does the GM need to do?']).trim() }));
 
-  const autoGm = sheetRecords(workbook, 'Auto-GM')
+  // Auto-GM has a descriptive first row; its actual headings are on row 2.
+  const autoGm = sheetRecords(workbook, 'Auto-GM', 1)
     .filter(r => clean(r.From_Unit) || clean(r.Action) || clean(r.To_Unit))
     .map(r => ({
       fromUnit: cleanUnit(r.From_Unit), action: clean(r.Action), timing: clean(r.Timing),
