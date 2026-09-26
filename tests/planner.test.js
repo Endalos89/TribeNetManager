@@ -59,7 +59,13 @@ const file = path.join(tempDir, '0485_906_3_Orders.xlsx');
 XLSX.writeFile(wb, file);
 
 try {
-  const plan = applyWagonAnimalRules(parseOrdersWorkbook(file));
+  // The base parser still contains its original figures; applying the current rules must repair them.
+  const stalePlan = parseOrdersWorkbook(file);
+  const staleForestry = stalePlan.unitStats.find(row => row.unit === '0485e1');
+  assert.strictEqual(staleForestry.horsePulling, 8);
+  applyWagonAnimalRules(stalePlan);
+
+  const plan = stalePlan;
   assert.strictEqual(plan.formatVersion, 2);
   const main = plan.unitStats.find(row => row.unit === '0485');
   const forestry = plan.unitStats.find(row => row.unit === '0485e1');
@@ -84,9 +90,18 @@ try {
   assert.strictEqual(forestry.draftAnimalsNeeded, 32);
   assert.strictEqual(forestry.cattlePulling, 0);
   assert.strictEqual(forestry.horsePulling, 32);
+  assert.strictEqual(forestry.packHorseCount, 0);
   assert.strictEqual(forestry.draftShortage, 0);
   assert.strictEqual(forestry.carriedWeight, 18410);
   assert.strictEqual(forestry.carryingCapacity, 49200);
+  assert.deepStrictEqual(
+    forestry.capacityBreakdown.map(row => [row.label, row.quantity, row.perUnit, row.total]),
+    [
+      ['People on foot', 40, 30, 1200],
+      ['Pack horses', 0, 300, 0],
+      ['Wagons', 16, 3000, 48000]
+    ]
+  );
 
   const elephantPlan = {
     clan: [{ unit: '0001', cattle: 2, horse: 2, elephant: 1 }],
