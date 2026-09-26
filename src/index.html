@@ -15,7 +15,7 @@
       </div>
       <div class="header-actions">
         <span id="updateMessage" class="update-message"></span>
-        <button id="installUpdateButton" class="button accent hidden">Restart &amp; Update</button>
+        <button id="installUpdateButton" class="button accent hidden">Restart &amp; Apply</button>
         <button id="updateButton" class="button">Check for Updates</button>
       </div>
     </header>
@@ -24,12 +24,12 @@
       <section class="hero-panel">
         <p class="eyebrow">TRIBENET TOOLKIT</p>
         <h1>Clan management, one tool at a time.</h1>
-        <p class="hero-copy">The Mapper now also stores turn plans imported from your orders workbook. Your world data and turn history stay local and survive application updates.</p>
+        <p class="hero-copy">The Mapper stores turn plans imported from your orders workbook. Your world data and turn history stay local and survive application updates.</p>
       </section>
       <section class="module-grid">
         <button id="openMapperButton" class="module-card enabled">
           <div class="module-icon">⬢</div>
-          <div><h2>Mapper</h2><p>Map terrain, inspect hex history, import turn orders and visualise planned movement and scouting.</p></div>
+          <div><h2>Mapper</h2><p>Map terrain, inspect hex history, import turn orders and visualise planned movement, scouting and unit logistics.</p></div>
           <span class="module-status">Open</span>
         </button>
         <div class="module-card disabled"><div class="module-icon">☷</div><div><h2>Turn Manager</h2><p>Reserved for deeper turn planning and validation.</p></div><span class="module-status">Later</span></div>
@@ -73,7 +73,7 @@
       <section id="detailPanel" class="detail-panel hidden">
         <div id="canvasWrap" class="canvas-wrap">
           <canvas id="mapCanvas"></canvas>
-          <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex to edit</div>
+          <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex to edit · Click a unit label for logistics</div>
           <div id="plannerOverlayCard" class="planner-overlay-card hidden">
             <div class="planner-overlay-title"><strong id="plannerTurnTitle">Turn plan</strong><span id="plannerSourceLabel"></span></div>
             <div id="plannerWarnings" class="planner-warnings"></div>
@@ -82,9 +82,46 @@
         <aside class="hex-editor">
           <div id="noSelection" class="empty-selection">
             <div class="empty-icon">⬢</div>
-            <h3>Select a hex</h3>
-            <p>Click any visible hex to view its TribeNet coordinate and update its terrain.</p>
+            <h3>Select a hex or unit</h3>
+            <p>Click a hex to edit terrain, or click a Tribe/Element label to inspect provisions and carrying capacity.</p>
           </div>
+
+          <div id="unitEditor" class="hidden">
+            <p class="eyebrow">SELECTED UNIT</p>
+            <div class="unit-heading">
+              <h2 id="selectedUnitCode">—</h2>
+              <span id="selectedUnitType" class="unit-type-pill">Unit</span>
+            </div>
+            <div id="selectedUnitName" class="unit-name"></div>
+            <div id="unitTurnContext" class="unit-context"></div>
+
+            <div class="unit-metrics">
+              <div class="unit-metric"><span>Stored provisions</span><strong id="unitProvisions">—</strong></div>
+              <div class="unit-metric"><span>Provision turns</span><strong id="unitProvisionTurns">—</strong></div>
+              <div class="unit-metric"><span>Eaters</span><strong id="unitEaters">—</strong></div>
+              <div class="unit-metric"><span>People</span><strong id="unitPeople">—</strong></div>
+            </div>
+
+            <section class="logistics-section">
+              <div class="logistics-heading"><span>Carrying load</span><strong id="unitLoadPercent">—</strong></div>
+              <div class="capacity-bar"><div id="unitCapacityFill" class="capacity-fill"></div></div>
+              <div id="unitLoadText" class="capacity-caption">—</div>
+              <div id="unitTransportText" class="transport-caption"></div>
+            </section>
+
+            <section id="unitWarningsSection" class="unit-warnings-section hidden">
+              <h3>Warnings</h3>
+              <div id="unitWarnings" class="unit-warnings"></div>
+            </section>
+
+            <section class="inventory-section">
+              <div class="history-heading"><h3>Heaviest carried goods</h3><span>at movement</span></div>
+              <div id="unitInventoryList" class="inventory-list"></div>
+            </section>
+
+            <p id="unitCalculationBasis" class="calculation-basis"></p>
+          </div>
+
           <div id="selectionEditor" class="hidden">
             <p class="eyebrow">SELECTED HEX</p>
             <h2 id="selectedCoordinate">—</h2>
