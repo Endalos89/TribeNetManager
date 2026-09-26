@@ -1,0 +1,56 @@
+{
+  "name": "tribenet-manager",
+  "version": "0.1.0",
+  "description": "Local desktop tools for managing TribeNet, beginning with an interactive world mapper.",
+  "main": "src/main.js",
+  "author": "Endalos89",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "electron-updater": "6.6.2"
+  },
+  "devDependencies": {
+    "electron": "38.0.0",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "com.endalos.tribenetmanager",
+    "productName": "TribeNet Manager",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TribeNet Manager"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Endalos89",
+        "repo": "TribeNetManager",
+        "releaseType": "release"
+      }
+    ]
+  }
+}

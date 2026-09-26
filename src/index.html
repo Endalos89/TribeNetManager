@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TribeNet Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div>
+        <div class="brand">TribeNet Manager</div>
+        <div class="version" id="versionLabel">Local desktop tools</div>
+      </div>
+      <div class="header-actions">
+        <span id="updateMessage" class="update-message"></span>
+        <button id="installUpdateButton" class="button accent hidden">Restart &amp; Update</button>
+        <button id="updateButton" class="button">Check for Updates</button>
+      </div>
+    </header>
+
+    <main id="launcherView" class="view launcher-view">
+      <section class="hero-panel">
+        <p class="eyebrow">TRIBENET TOOLKIT</p>
+        <h1>Clan management, one tool at a time.</h1>
+        <p class="hero-copy">The first module is the Mapper. Your world data is stored locally and kept separately from application updates.</p>
+      </section>
+      <section class="module-grid">
+        <button id="openMapperButton" class="module-card enabled">
+          <div class="module-icon">⬢</div>
+          <div>
+            <h2>Mapper</h2>
+            <p>Explore the A–P × A–Z world, reveal terrain, and keep notes for individual hexes.</p>
+          </div>
+          <span class="module-status">Open</span>
+        </button>
+        <div class="module-card disabled"><div class="module-icon">☷</div><div><h2>Turn Manager</h2><p>Reserved for a future module.</p></div><span class="module-status">Later</span></div>
+        <div class="module-card disabled"><div class="module-icon">♟</div><div><h2>Units</h2><p>Reserved for tribes, elements, fleets and garrisons.</p></div><span class="module-status">Later</span></div>
+      </section>
+      <section class="data-panel">
+        <div><strong>Your data stays local.</strong><br><span id="dataPathLabel">Loading data location…</span></div>
+        <button id="backupButton" class="button">Create Backup</button>
+      </section>
+    </main>
+
+    <main id="mapperView" class="view mapper-view hidden">
+      <div class="mapper-toolbar">
+        <button id="backButton" class="button">← Launcher</button>
+        <button id="overviewButton" class="button active">World Overview</button>
+        <div id="detailControls" class="detail-controls hidden">
+          <button id="detailOverviewButton" class="button">Overview</button>
+          <label class="coordinate-jump">Go to <input id="coordinateInput" maxlength="7" placeholder="PK1614" /></label>
+          <button id="goCoordinateButton" class="button">Go</button>
+          <button id="zoomOutButton" class="button square">−</button>
+          <button id="zoomInButton" class="button square">+</button>
+          <span id="centerCoordinateLabel" class="toolbar-readout"></span>
+        </div>
+      </div>
+
+      <section id="overviewPanel" class="overview-panel">
+        <div class="overview-title">
+          <div><p class="eyebrow">WORLD OVERVIEW</p><h2>Select a submap</h2></div>
+          <p>Rows A–Z · Columns A–P · 30 × 21 hexes per submap</p>
+        </div>
+        <div id="worldGrid" class="world-grid"></div>
+      </section>
+
+      <section id="detailPanel" class="detail-panel hidden">
+        <div id="canvasWrap" class="canvas-wrap">
+          <canvas id="mapCanvas"></canvas>
+          <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex to edit</div>
+        </div>
+        <aside class="hex-editor">
+          <div id="noSelection" class="empty-selection">
+            <div class="empty-icon">⬢</div>
+            <h3>Select a hex</h3>
+            <p>Click any visible hex to view its TribeNet coordinate and update its terrain.</p>
+          </div>
+          <div id="selectionEditor" class="hidden">
+            <p class="eyebrow">SELECTED HEX</p>
+            <h2 id="selectedCoordinate">—</h2>
+            <div id="selectedState" class="state-pill">Fog of War</div>
+
+            <label class="field-label" for="terrainSelect">Terrain</label>
+            <select id="terrainSelect"></select>
+
+            <label class="field-label" for="notesInput">Notes</label>
+            <textarea id="notesInput" rows="9" placeholder="Anything useful about this hex…"></textarea>
+
+            <div class="editor-actions">
+              <button id="saveHexButton" class="button accent">Save Hex</button>
+              <button id="fogHexButton" class="button danger">Return to Fog</button>
+            </div>
+            <div id="saveStatus" class="save-status"></div>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>
