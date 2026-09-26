@@ -24,7 +24,7 @@
       <section class="hero-panel">
         <p class="eyebrow">TRIBENET TOOLKIT</p>
         <h1>Clan management, one tool at a time.</h1>
-        <p class="hero-copy">The Mapper stores turn plans imported from your orders workbook. Your world data and turn history stay local and survive application updates.</p>
+        <p class="hero-copy">Mapper and Turn Manager data stay local on your computer and survive application updates.</p>
       </section>
       <section class="module-grid">
         <button id="openMapperButton" class="module-card enabled">
@@ -32,7 +32,11 @@
           <div><h2>Mapper</h2><p>Map terrain, inspect hex history, import turn orders and visualise planned movement, scouting and unit logistics.</p></div>
           <span class="module-status">Open</span>
         </button>
-        <div class="module-card disabled"><div class="module-icon">☷</div><div><h2>Turn Manager</h2><p>Reserved for deeper turn planning and validation.</p></div><span class="module-status">Later</span></div>
+        <button id="openTurnManagerButton" class="module-card enabled" onclick="location.href='turn-manager.html'">
+          <div class="module-icon">☷</div>
+          <div><h2>Turn Manager</h2><p>Store beginning and finalized workbooks, view Tribes/Fleets/Elements, inspect inherited skills and plan activities against shared limits.</p></div>
+          <span class="module-status">Open</span>
+        </button>
         <div class="module-card disabled"><div class="module-icon">♟</div><div><h2>Units</h2><p>Reserved for permanent tribe, element, fleet and garrison records.</p></div><span class="module-status">Later</span></div>
       </section>
       <section class="data-panel">

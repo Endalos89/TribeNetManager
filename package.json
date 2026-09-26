@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "test": "node tests/planner.test.js",
+    "test": "node tests/planner.test.js && node tests/turn-manager.test.js",
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
