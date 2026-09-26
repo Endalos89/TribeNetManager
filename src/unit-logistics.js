@@ -168,6 +168,15 @@ window.addEventListener('mouseup', event => {
   event.stopImmediatePropagation();
 }, true);
 
+// When an ordinary hex is clicked, close the unit panel so only one sidebar context is shown.
+window.addEventListener('mouseup', event => {
+  if (state.mode !== 'detail') return;
+  const moved = state.dragStart ? Math.hypot(event.clientX - state.dragStart.x, event.clientY - state.dragStart.y) : Infinity;
+  if (moved >= 5) return;
+  state.selectedUnit = null;
+  $('unitEditor').classList.add('hidden');
+}, false);
+
 // If a different stored turn is loaded, refresh or dismiss the open unit panel.
 $('turnSelect').addEventListener('change', () => {
   setTimeout(() => {
