@@ -24,19 +24,16 @@
       <section class="hero-panel">
         <p class="eyebrow">TRIBENET TOOLKIT</p>
         <h1>Clan management, one tool at a time.</h1>
-        <p class="hero-copy">The first module is the Mapper. Your world data is stored locally and kept separately from application updates.</p>
+        <p class="hero-copy">The Mapper now also stores turn plans imported from your orders workbook. Your world data and turn history stay local and survive application updates.</p>
       </section>
       <section class="module-grid">
         <button id="openMapperButton" class="module-card enabled">
           <div class="module-icon">⬢</div>
-          <div>
-            <h2>Mapper</h2>
-            <p>Explore the A–P × A–Z world, reveal terrain, and keep notes for individual hexes.</p>
-          </div>
+          <div><h2>Mapper</h2><p>Map terrain, inspect hex history, import turn orders and visualise planned movement and scouting.</p></div>
           <span class="module-status">Open</span>
         </button>
-        <div class="module-card disabled"><div class="module-icon">☷</div><div><h2>Turn Manager</h2><p>Reserved for a future module.</p></div><span class="module-status">Later</span></div>
-        <div class="module-card disabled"><div class="module-icon">♟</div><div><h2>Units</h2><p>Reserved for tribes, elements, fleets and garrisons.</p></div><span class="module-status">Later</span></div>
+        <div class="module-card disabled"><div class="module-icon">☷</div><div><h2>Turn Manager</h2><p>Reserved for deeper turn planning and validation.</p></div><span class="module-status">Later</span></div>
+        <div class="module-card disabled"><div class="module-icon">♟</div><div><h2>Units</h2><p>Reserved for permanent tribe, element, fleet and garrison records.</p></div><span class="module-status">Later</span></div>
       </section>
       <section class="data-panel">
         <div><strong>Your data stays local.</strong><br><span id="dataPathLabel">Loading data location…</span></div>
@@ -48,6 +45,13 @@
       <div class="mapper-toolbar">
         <button id="backButton" class="button">← Launcher</button>
         <button id="overviewButton" class="button active">World Overview</button>
+        <div class="planner-controls">
+          <button id="importOrdersButton" class="button accent">Import Orders</button>
+          <label class="toggle-control"><input id="planningToggle" type="checkbox" checked /><span>Planning</span></label>
+          <label class="toggle-control"><input id="scoutingToggle" type="checkbox" checked /><span>Scouting</span></label>
+          <select id="turnSelect" class="turn-select" title="Stored turn plan history"><option value="">No turn imported</option></select>
+          <span id="planStatus" class="toolbar-readout"></span>
+        </div>
         <div id="detailControls" class="detail-controls hidden">
           <button id="detailOverviewButton" class="button">Overview</button>
           <label class="coordinate-jump">Go to <input id="coordinateInput" maxlength="7" placeholder="PK1614" /></label>
@@ -70,6 +74,10 @@
         <div id="canvasWrap" class="canvas-wrap">
           <canvas id="mapCanvas"></canvas>
           <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex to edit</div>
+          <div id="plannerOverlayCard" class="planner-overlay-card hidden">
+            <div class="planner-overlay-title"><strong id="plannerTurnTitle">Turn plan</strong><span id="plannerSourceLabel"></span></div>
+            <div id="plannerWarnings" class="planner-warnings"></div>
+          </div>
         </div>
         <aside class="hex-editor">
           <div id="noSelection" class="empty-selection">
@@ -86,13 +94,18 @@
             <select id="terrainSelect"></select>
 
             <label class="field-label" for="notesInput">Notes</label>
-            <textarea id="notesInput" rows="9" placeholder="Anything useful about this hex…"></textarea>
+            <textarea id="notesInput" rows="7" placeholder="Anything useful about this hex…"></textarea>
 
             <div class="editor-actions">
               <button id="saveHexButton" class="button accent">Save Hex</button>
               <button id="fogHexButton" class="button danger">Return to Fog</button>
             </div>
             <div id="saveStatus" class="save-status"></div>
+
+            <section class="history-section">
+              <div class="history-heading"><h3>Hex History</h3><span id="historyTurnContext"></span></div>
+              <div id="hexHistoryList" class="history-list"><div class="history-empty">No changes recorded yet.</div></div>
+            </section>
           </div>
         </aside>
       </section>
