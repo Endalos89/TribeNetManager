@@ -57,9 +57,10 @@ function applyWagonAnimalRules(plan) {
     const horses = Math.max(0, Number(animals.horse || 0));
     const elephants = Math.max(0, Number(animals.elephant || 0));
 
-    // A wagon needs either two Cattle/Horses to pull it, or one Elephant to carry it.
-    // Elephants are used to carry wagons first because this preserves ordinary draft/pack animals.
-    // For the remaining wagons, Cattle are allocated before Horses.
+    // Explicit Mandate Woodwork rule: each wagon needs either 2 Cattle/Horses to pull it,
+    // or 1 Elephant to carry it. For ordinary draft animals, Cattle are allocated before Horses.
+    // Elephants are used for wagons first because they are a distinct "carry" alternative and preserve
+    // ordinary draft/pack animals. We expose the allocation in the UI so the assumption is visible.
     const elephantsCarryingWagons = Math.min(elephants, wagons);
     const wagonsNeedingDraftAnimals = Math.max(0, wagons - elephantsCarryingWagons);
     const draftAnimalsNeeded = wagonsNeedingDraftAnimals * 2;
@@ -69,26 +70,41 @@ function applyWagonAnimalRules(plan) {
     const loadHorses = Math.max(0, horses - horsePulling);
 
     const totalPeople = Math.max(0, Number(stats.totalPeople || 0));
-    // Wagons carried by elephants do not prevent mounted movement. Wagons that need cattle/horses do.
+    // Wagons carried by Elephants do not prevent mounted movement. Wagons pulled by Cattle/Horses do.
     const fullyMounted = wagonsNeedingDraftAnimals === 0 && totalPeople > 0 && loadHorses >= totalPeople;
+    const riddenHorseCount = fullyMounted ? Math.min(totalPeople, loadHorses) : 0;
+    const packHorseCount = Math.max(0, loadHorses - riddenHorseCount);
 
-    let carryingCapacity = fullyMounted
-      ? (totalPeople * 100) + (Math.max(0, loadHorses - totalPeople) * 300)
-      : (totalPeople * 30) + (loadHorses * 300);
+    const peopleCapacity = fullyMounted ? 0 : totalPeople * 30;
+    const riddenHorseCapacity = riddenHorseCount * 100;
+    const packHorseCapacity = packHorseCount * 300;
+    const wagonGrossCapacity = wagons * 3000; // 1000 lb wagon weight + 2000 lb net cargo = 3000 lb gross CC.
 
-    // Workbook weight includes the 1000 lb wagon itself. 3000 gross CC therefore gives 2000 lb net cargo capacity.
-    carryingCapacity += wagons * 3000;
+    let carryingCapacity = peopleCapacity + riddenHorseCapacity + packHorseCapacity + wagonGrossCapacity;
 
     const backpacks = Math.max(0, Number(stats.backpacks || 0));
     const backpackEligible = fullyMounted ? 0 : Math.max(0, Number(stats.warrior || 0) + Number(stats.active || 0));
     const backpacksUsed = Math.min(backpacks, backpackEligible);
-    carryingCapacity += backpacksUsed * 32;
+    const backpackGrossCapacity = backpacksUsed * 32; // 2 lb item + 30 lb net capacity.
+    carryingCapacity += backpackGrossCapacity;
 
     const saddlebags = Math.max(0, Number(stats.saddlebags || 0));
     const camelCount = Math.max(0, Number(stats.camelCount || 0));
     const saddlebagEligible = Math.max(0, loadHorses + camelCount);
     const saddlebagsUsed = Math.min(saddlebags, saddlebagEligible);
-    carryingCapacity += saddlebagsUsed * 104;
+    const saddlebagGrossCapacity = saddlebagsUsed * 104; // 4 lb item + 100 lb net capacity.
+    carryingCapacity += saddlebagGrossCapacity;
+
+    const capacityBreakdown = [];
+    if (fullyMounted) {
+      capacityBreakdown.push({ label: 'Ridden horses', quantity: riddenHorseCount, perUnit: 100, total: riddenHorseCapacity, note: 'Rider capacity is not added separately when fully mounted.' });
+    } else {
+      capacityBreakdown.push({ label: 'People on foot', quantity: totalPeople, perUnit: 30, total: peopleCapacity });
+    }
+    capacityBreakdown.push({ label: 'Pack horses', quantity: packHorseCount, perUnit: 300, total: packHorseCapacity, note: horsePulling ? `${horsePulling} horse${horsePulling === 1 ? '' : 's'} are pulling wagons and add no pack capacity.` : null });
+    capacityBreakdown.push({ label: 'Wagons', quantity: wagons, perUnit: 3000, total: wagonGrossCapacity, note: 'Gross CC: each wagon weighs 1,000 lb and adds 2,000 lb net cargo capacity.' });
+    if (backpacksUsed || backpacks) capacityBreakdown.push({ label: 'Backpacks in use', quantity: backpacksUsed, perUnit: 32, total: backpackGrossCapacity, note: 'Each weighs 2 lb and adds 30 lb net capacity.' });
+    if (saddlebagsUsed || saddlebags) capacityBreakdown.push({ label: 'Saddlebags in use', quantity: saddlebagsUsed, perUnit: 104, total: saddlebagGrossCapacity, note: 'Each weighs 4 lb and adds 100 lb net capacity.' });
 
     const carriedWeight = Number(stats.carriedWeight || 0);
     const loadPercent = carryingCapacity > 0 ? (carriedWeight / carryingCapacity) * 100 : null;
@@ -118,9 +134,12 @@ function applyWagonAnimalRules(plan) {
       draftAnimalsNeeded,
       draftShortage,
       fullyMounted,
+      riddenHorseCount,
+      packHorseCount,
       backpacksUsed,
       saddlebagsUsed,
       carryingCapacity,
+      capacityBreakdown,
       loadPercent,
       warnings,
       calculationBasis: `${stats.calculationBasis || 'Starting workbook inventory plus BM transfers.'} Wagon rule: 1 wagon = 2 Cattle/Horses to pull, or 1 Elephant to carry; Cattle are allocated before Horses.`

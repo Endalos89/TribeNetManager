@@ -41,6 +41,12 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 }
 
+function withCurrentLogistics(record) {
+  if (!record) return null;
+  if (record.plan) record.plan = applyWagonAnimalRules(record.plan);
+  return record;
+}
+
 app.whenReady().then(() => {
   database = new TribeNetDatabase(app.getPath('userData'));
   configureUpdater();
@@ -68,15 +74,15 @@ ipcMain.handle('planner:import', async () => {
   try {
     const plan = applyWagonAnimalRules(parseOrdersWorkbook(filePath));
     const saved = database.saveTurnPlan(plan);
-    return { canceled: false, imported: saved };
+    return { canceled: false, imported: withCurrentLogistics(saved) };
   } catch (error) {
     console.error('Planner import failed', error);
     return { canceled: false, error: error.message };
   }
 });
 ipcMain.handle('planner:imports', () => database.getTurnImports());
-ipcMain.handle('planner:get', (_event, id) => database.getTurnPlan(id || null));
-ipcMain.handle('planner:activate', (_event, id) => database.setActiveTurnPlan(id));
+ipcMain.handle('planner:get', (_event, id) => withCurrentLogistics(database.getTurnPlan(id || null)));
+ipcMain.handle('planner:activate', (_event, id) => withCurrentLogistics(database.setActiveTurnPlan(id)));
 
 ipcMain.handle('update:check', async () => {
   if (!app.isPackaged) {
