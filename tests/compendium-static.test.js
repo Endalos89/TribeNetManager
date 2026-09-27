@@ -10,8 +10,12 @@ const launcher = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-l
 assert.match(html, /id="compSearch"/);
 assert.match(html, /id="compNav"/);
 assert.match(html, /id="compArticle"/);
+assert.match(html, /id="compBackButton"/);
 assert.match(js, /Group \$\{group\}/);
 assert.match(js, /showSkill/);
+assert.match(js, /showEntity/);
+assert.match(js, /goBack/);
+assert.match(js, /data-entity/);
 assert.match(js, /showTopic/);
 assert.match(js, /land-combat/);
 assert.match(js, /naval-combat/);
