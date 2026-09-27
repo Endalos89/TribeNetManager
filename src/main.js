@@ -21,6 +21,11 @@ const {
   parseCoordinate,
   stepCoordinate
 } = require('./turn-workflow');
+const {
+  resolvePlanMovementStarts,
+  buildCompletedTurnState,
+  completedStateToManagedUnits
+} = require('./completed-turn-state');
 
 let mainWindow;
 let database;
@@ -137,6 +142,45 @@ function clearDraftPlanning(turnKey) {
   }
 }
 
+function hydratedPlanRecord(record) {
+  if (!record?.plan || !record.turnKey) return record;
+  const resultTurn = resultsDatabase.getTurn(record.turnKey);
+  if (!resultTurn) return record;
+  return { ...record, plan: resolvePlanMovementStarts(record.plan, resultTurn) };
+}
+
+function effectiveResultTurn(turnKey) {
+  const resultTurn = resultsDatabase.getTurn(turnKey);
+  if (!resultTurn) return null;
+  const completed = hydratedPlanRecord(database.getTurnPlanForTurn(turnKey));
+  return completed?.plan ? buildCompletedTurnState(resultTurn, completed) : resultTurn;
+}
+
+function effectiveManagedTurn(turnKey) {
+  const managed = turnManagerDatabase.getTurn(turnKey);
+  if (!managed?.final) return managed;
+  const resultTurn = resultsDatabase.getTurn(turnKey);
+  const completed = hydratedPlanRecord(database.getTurnPlanForTurn(turnKey));
+  if (!resultTurn || !completed?.plan) return managed;
+  const completedState = buildCompletedTurnState(resultTurn, completed);
+  const finalData = managed.final.data || {};
+  const finalSkills = finalData.skillsByTribe || {};
+  return {
+    ...managed,
+    final: {
+      ...managed.final,
+      data: {
+        ...finalData,
+        units: completedStateToManagedUnits(completedState, finalSkills),
+        skillsByTribe: finalSkills,
+        movements: completed.plan.movements || finalData.movements || [],
+        transfers: completed.plan.transfers || finalData.transfers || [],
+        rawPlan: completed.plan
+      }
+    }
+  };
+}
+
 function saveCompletedOrders(filePath) {
   const parsed = parseTurnWorkbook(filePath, 'final');
   const plan = applyWagonAnimalRules(parsed.rawPlan);
@@ -144,8 +188,8 @@ function saveCompletedOrders(filePath) {
   turnManagerDatabase.saveWorkbook(parsed);
   clearDraftPlanning(parsed.turnKey);
   return {
-    imported: withCurrentLogistics(imported),
-    turn: turnManagerDatabase.getTurn(parsed.turnKey)
+    imported: withCurrentLogistics(hydratedPlanRecord(imported)),
+    turn: effectiveManagedTurn(parsed.turnKey)
   };
 }
 
@@ -182,8 +226,8 @@ function unitSupplyRequirements(turnKey, unitCode) {
   const resultTurn = resultsDatabase.getTurn(turnKey);
   const resultUnit = resultTurn?.units?.find(unit => String(unit.unitCode) === String(unitCode)) || null;
   const managedTurn = turnManagerDatabase.getTurn(turnKey);
-  const finalPlanRecord = managedTurn?.final ? database.getTurnPlanForTurn(turnKey) : null;
-  const finalPlan = finalPlanRecord?.plan || managedTurn?.final?.data?.rawPlan || null;
+  const finalPlanRecord = managedTurn?.final ? hydratedPlanRecord(database.getTurnPlanForTurn(turnKey)) : null;
+  const finalPlan = finalPlanRecord?.plan || (managedTurn?.final?.data?.rawPlan ? resolvePlanMovementStarts(managedTurn.final.data.rawPlan, resultTurn) : null);
 
   let source = 'current';
   let endHex = resultUnit?.currentHex || null;
@@ -280,9 +324,9 @@ ipcMain.handle('planner:import', async () => {
   }
 });
 ipcMain.handle('planner:imports', (_event, turnKey) => database.getTurnImports(turnKey || null));
-ipcMain.handle('planner:get', (_event, id) => withCurrentLogistics(database.getTurnPlan(id || null)));
-ipcMain.handle('planner:get-turn', (_event, turnKey) => withCurrentLogistics(database.getTurnPlanForTurn(turnKey)));
-ipcMain.handle('planner:activate', (_event, id) => withCurrentLogistics(database.setActiveTurnPlan(id)));
+ipcMain.handle('planner:get', (_event, id) => withCurrentLogistics(hydratedPlanRecord(database.getTurnPlan(id || null))));
+ipcMain.handle('planner:get-turn', (_event, turnKey) => withCurrentLogistics(hydratedPlanRecord(database.getTurnPlanForTurn(turnKey))));
+ipcMain.handle('planner:activate', (_event, id) => withCurrentLogistics(hydratedPlanRecord(database.setActiveTurnPlan(id))));
 
 ipcMain.handle('turn-manager:import', async (_event, role) => {
   if (role === 'start') {
@@ -303,7 +347,7 @@ ipcMain.handle('turn-manager:import', async (_event, role) => {
   }
 });
 ipcMain.handle('turn-manager:list-turns', () => turnManagerDatabase.listTurns());
-ipcMain.handle('turn-manager:get-turn', (_event, turnKey) => turnManagerDatabase.getTurn(turnKey));
+ipcMain.handle('turn-manager:get-turn', (_event, turnKey) => effectiveManagedTurn(turnKey));
 ipcMain.handle('turn-manager:add-activity', (_event, turnKey, activity) => turnManagerDatabase.addActivity(turnKey, activity));
 ipcMain.handle('turn-manager:update-activity', (_event, id, activity) => turnManagerDatabase.updateActivity(id, activity));
 ipcMain.handle('turn-manager:delete-activity', (_event, id) => turnManagerDatabase.deleteActivity(id));
@@ -349,7 +393,7 @@ ipcMain.handle('results:reprocess', async () => {
 });
 ipcMain.handle('results:reprocess-status', () => resultsDatabase.getReprocessStatus());
 ipcMain.handle('results:list-turns', () => resultsDatabase.listTurns());
-ipcMain.handle('results:get-turn', (_event, turnKey) => resultsDatabase.getTurn(turnKey));
+ipcMain.handle('results:get-turn', (_event, turnKey) => effectiveResultTurn(turnKey));
 ipcMain.handle('results:hexes-area', (_event, bounds, turnKey) => resultsDatabase.getHexesInArea(bounds, turnKey));
 ipcMain.handle('results:hex-history', (_event, coordinate) => resultsDatabase.getHexHistory(coordinate));
 ipcMain.handle('results:submaps', (_event, turnKey) => resultsDatabase.getSubmapSummaries(turnKey));
