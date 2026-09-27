@@ -3,6 +3,8 @@ name: Build Windows release
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -27,6 +29,7 @@ jobs:
         run: npm test
 
       - name: Assign release version
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $version = "0.1.${{ github.run_number }}"
@@ -34,6 +37,7 @@ jobs:
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Build and publish Windows installer
+        if: github.event_name != 'pull_request'
         run: npm run dist -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
