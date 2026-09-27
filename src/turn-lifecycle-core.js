@@ -11,6 +11,27 @@ const TurnLifecycleCore = (() => {
     return `${match[1]}${match[2]}${nextPart}`;
   }
 
+  function planningTimelineEntry(resultTurns) {
+    const actualTurns = (resultTurns || [])
+      .filter(row => row?.turnKey && !row.isPlanningTurn)
+      .sort((a, b) => Number(a.turnSort || 0) - Number(b.turnSort || 0));
+    const latest = actualTurns[actualTurns.length - 1];
+    if (!latest) return null;
+    const nextTurn = planningTurnKey(latest);
+    if (!nextTurn || actualTurns.some(row => String(row.turnKey) === String(nextTurn))) return null;
+    return {
+      turnKey: nextTurn,
+      turnSort: Number(latest.turnSort || 0) + 0.5,
+      sourceFile: `Planning baseline from Turn ${latest.turnKey}`,
+      importedAt: latest.importedAt || null,
+      metadata: { ...(latest.metadata || {}), baselineTurn: latest.turnKey, planningTurn: nextTurn },
+      isPlanningTurn: true,
+      baselineTurnKey: latest.turnKey,
+      baselineTurnSort: Number(latest.turnSort || 0),
+      baselineSourceFile: latest.sourceFile || null
+    };
+  }
+
   function actualDirections(rawText) {
     const text = String(rawText || '').split(/Not enough M\.P'?s/i)[0];
     const directions = [];
@@ -52,7 +73,7 @@ const TurnLifecycleCore = (() => {
     return { formatVersion: 2, turnKey: resultTurn.turnKey, sourceFile: resultTurn.sourceFile || `Turn ${resultTurn.turnKey} Results`, importedAt: resultTurn.importedAt || null, units, movements, scouts, unitCreations: [], transfers: [], activities: [], actualResult: true, hasActualRoutes };
   }
 
-  return { planningTurnKey, actualDirections, actualPlanFromResult };
+  return { planningTurnKey, planningTimelineEntry, actualDirections, actualPlanFromResult };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = TurnLifecycleCore;
