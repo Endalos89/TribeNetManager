@@ -28,6 +28,17 @@
         <h1>One turn state, shared by every tool.</h1>
         <p class="hero-copy">Import Results once, plan from that shared baseline, then import Completed Orders once to replace the draft plan everywhere.</p>
       </section>
+      <section class="data-panel">
+        <div>
+          <strong>Turn imports</strong><br>
+          <span>Results creates the next planning turn. Completed Orders replaces that turn's local draft plan with the workbook you actually submitted.</span>
+          <div id="launcherImportStatus" class="save-status"></div>
+        </div>
+        <div class="header-actions">
+          <button id="launcherImportResultsButton" class="button accent">Import Results</button>
+          <button id="launcherImportCompletedButton" class="button accent">Import Completed Orders</button>
+        </div>
+      </section>
       <section class="module-grid">
         <button id="openMapperButton" class="module-card enabled">
           <div class="module-icon">⬢</div>
@@ -41,7 +52,7 @@
         </button>
         <button id="openTribeManagerButton" class="module-card enabled" onclick="location.href='tribe-manager.html'">
           <div class="module-icon">♟</div>
-          <div><h2>Tribe / Unit Management</h2><p>Import Results once, review historical state and changes, and see end-of-turn Water/Fodder needs using planned or completed movement.</p></div>
+          <div><h2>Tribe / Unit Management</h2><p>Review historical Results state and changes, plus end-of-turn Water/Fodder needs using planned or completed movement.</p></div>
           <span class="module-status">Open</span>
         </button>
       </section>
@@ -56,7 +67,6 @@
         <button id="backButton" class="button">← Launcher</button>
         <button id="overviewButton" class="button active">World Overview</button>
         <div class="planner-controls">
-          <button id="importOrdersButton" class="button accent">Import Completed Orders</button>
           <label class="toggle-control"><input id="planningToggle" type="checkbox" checked /><span>Orders overlay</span></label>
           <label class="toggle-control"><input id="scoutingToggle" type="checkbox" checked /><span>Scouting</span></label>
           <select id="turnSelect" class="turn-select" title="Completed orders history"><option value="">No completed orders imported</option></select>
@@ -78,9 +88,8 @@
         <div class="results-timeline-label">
           <span>RESULTS HISTORY · SHARED PLANNING BASELINE</span>
           <strong id="mapResultTurnLabel">No results imported</strong>
-          <span id="mapResultStatus">Import Results once to populate history and planning state across the tools.</span>
+          <span id="mapResultStatus">Use the Launcher to import Results and Completed Orders.</span>
         </div>
-        <button id="mapImportResultsButton" class="button accent">Import Results</button>
         <button id="mapResultPrev" class="button square" disabled title="Previous results turn">◀</button>
         <button id="mapResultPlay" class="button" disabled>Play</button>
         <input id="mapResultSlider" class="results-turn-slider" type="range" min="0" max="0" value="0" disabled aria-label="Results turn" />
