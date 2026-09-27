@@ -8,10 +8,10 @@ window.addEventListener('DOMContentLoaded', () => {
     link.rel = 'stylesheet';
     link.href = 'turn-file-library.css';
     document.head.appendChild(link);
-    scripts.push('planned-unit-splits-map.js');
+    scripts.push('planned-unit-splits-map.js', 'compendium-launcher.js');
   }
   if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js', 'turn-manager-mandate.js');
-  scripts.push('session-snapshot.js');
+  if (page !== 'compendium.html') scripts.push('session-snapshot.js');
   if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-key-ui-fix.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js', 'turn-file-library-ui.js');
   for (const src of scripts) {
     const script = document.createElement('script');
