@@ -3,10 +3,16 @@ const { contextBridge, ipcRenderer } = require('electron');
 window.addEventListener('DOMContentLoaded', () => {
   const page = String(window.location.pathname || '').split('/').pop() || 'index.html';
   const scripts = [];
-  if (page === 'index.html') scripts.push('planned-unit-splits-map.js');
+  if (page === 'index.html') {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'turn-file-library.css';
+    document.head.appendChild(link);
+    scripts.push('planned-unit-splits-map.js');
+  }
   if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js');
   scripts.push('session-snapshot.js');
-  if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js');
+  if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js', 'turn-file-library-ui.js');
   for (const src of scripts) {
     const script = document.createElement('script');
     script.src = src;
@@ -54,6 +60,9 @@ contextBridge.exposeInMainWorld('tribenet', {
   listPlannedRoutes: turnKey => ipcRenderer.invoke('planned-routes:list', turnKey),
   savePlannedRoute: route => ipcRenderer.invoke('planned-routes:save', route),
   removePlannedRoute: id => ipcRenderer.invoke('planned-routes:remove', id),
+  scanTurnFiles: () => ipcRenderer.invoke('turn-files:scan'),
+  getTurnFilesInfo: () => ipcRenderer.invoke('turn-files:info'),
+  openTurnFilesFolder: () => ipcRenderer.invoke('turn-files:open'),
   reportCurrentView: view => ipcRenderer.invoke('app:report-view', view),
   consumeStartupView: () => ipcRenderer.invoke('app:consume-startup-view'),
   getVersion: () => ipcRenderer.invoke('app:version'),
