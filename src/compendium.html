@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TribeNet Manager · Compendium</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="compendium.css" />
+</head>
+<body>
+  <div class="comp-shell">
+    <header class="app-header">
+      <div>
+        <div class="brand">TribeNet Compendium</div>
+        <div class="version" id="compVersion">Mandate reference</div>
+      </div>
+      <div class="header-actions">
+        <span class="comp-source" id="compSource"></span>
+        <button class="button" onclick="location.href='index.html'">← Launcher</button>
+      </div>
+    </header>
+
+    <main class="comp-layout">
+      <aside class="comp-sidebar">
+        <div class="comp-search-wrap">
+          <input id="compSearch" class="comp-search" type="search" placeholder="Search skills, crafts, rules…" autocomplete="off" />
+        </div>
+        <nav id="compNav" class="comp-nav"></nav>
+      </aside>
+
+      <section class="comp-main">
+        <div class="comp-breadcrumbs" id="compBreadcrumbs">Compendium</div>
+        <article id="compArticle" class="comp-article">
+          <div class="comp-loading">Loading Mandate compendium…</div>
+        </article>
+      </section>
+    </main>
+  </div>
+  <script src="compendium.js"></script>
+</body>
+</html>
