@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "test": "node --check src/main.js && node --check src/preload.js && node --check src/result-report-parser.js && node --check src/results-database.js && node --check src/results-reprocessor.js && node --check src/results-map.js && node --check src/tribe-manager.js && node tests/planner.test.js && node tests/turn-manager.test.js && node tests/results-history.test.js && node tests/results-reprocess.test.js",
+    "test": "node --check src/main.js && node --check src/preload.js && node --check src/database.js && node --check src/result-report-parser.js && node --check src/results-database.js && node --check src/results-reprocessor.js && node --check src/results-map.js && node --check src/tribe-manager.js && node tests/planner.test.js && node tests/turn-scoped-planner.test.js && node tests/turn-manager.test.js && node tests/results-history.test.js && node tests/results-reprocess.test.js",
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
