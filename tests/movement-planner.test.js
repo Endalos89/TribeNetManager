@@ -1,7 +1,9 @@
 const assert = require('assert');
 const {
+  MOVEMENT_ALLOWANCES,
   buildKnownHexMap,
   findFastestRoute,
+  movementAllowanceSummary,
   parseCoordinate,
   adjacentHexes
 } = require('../src/movement-planner-core');
@@ -9,6 +11,23 @@ const {
 function makeHex(coordinate, terrain) {
   return { coordinate, terrain };
 }
+
+(function exposesMandateMovementAllowances() {
+  assert.deepEqual(
+    MOVEMENT_ALLOWANCES.map(row => [row.key, row.mp]),
+    [['foot', 18], ['mounted', 27], ['scoutFoot', 8], ['scoutMounted', 15]]
+  );
+  const summary = movementAllowanceSummary(12);
+  assert.deepEqual(
+    summary.map(row => [row.key, row.canComplete, row.remaining, row.overBy]),
+    [
+      ['foot', true, 6, 0],
+      ['mounted', true, 15, 0],
+      ['scoutFoot', false, 0, 4],
+      ['scoutMounted', true, 3, 0]
+    ]
+  );
+})();
 
 (function choosesLowerMovementCostOverFewerHexes() {
   const origin = parseCoordinate('AA0505');

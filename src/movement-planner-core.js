@@ -7,6 +7,14 @@
   const TOTAL_ROWS = 26 * 21;
   const DIRECTIONS = ['N', 'NE', 'SE', 'S', 'SW', 'NW'];
 
+  // TribeNet Mandate TN3 Rev N01, sections 10.2 and 10.4.
+  const MOVEMENT_ALLOWANCES = Object.freeze([
+    Object.freeze({ key: 'foot', label: 'Foot movement', mp: 18 }),
+    Object.freeze({ key: 'mounted', label: 'Mounted movement', mp: 27 }),
+    Object.freeze({ key: 'scoutFoot', label: 'Scout foot movement', mp: 8 }),
+    Object.freeze({ key: 'scoutMounted', label: 'Scout mounted movement', mp: 15 })
+  ]);
+
   // TribeNet Mandate TN3 Rev N01, section 10.5. Costs are paid when entering a hex.
   // Plateau aliases currently use the cost of their stated base terrain.
   const TERRAIN_MOVEMENT_COST = Object.freeze({
@@ -97,6 +105,17 @@
     if (!hex) return false;
     const terrain = String(hex.terrain || 'UNKNOWN').toUpperCase();
     return terrainMovementCost(terrain, 0) != null;
+  }
+
+  function movementAllowanceSummary(totalMp) {
+    const used = Math.max(0, Number(totalMp || 0));
+    return MOVEMENT_ALLOWANCES.map(mode => ({
+      ...mode,
+      used,
+      remaining: Math.max(0, mode.mp - used),
+      overBy: Math.max(0, used - mode.mp),
+      canComplete: used <= mode.mp
+    }));
   }
 
   function buildKnownHexMap(rows) {
@@ -312,6 +331,7 @@
 
   return {
     DIRECTIONS,
+    MOVEMENT_ALLOWANCES,
     TERRAIN_MOVEMENT_COST,
     IMPASSABLE_TERRAIN,
     coordinateFor,
@@ -320,6 +340,7 @@
     adjacentHexes,
     terrainMovementCost,
     isRevealedLand,
+    movementAllowanceSummary,
     buildKnownHexMap,
     findFastestRoute
   };
