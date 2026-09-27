@@ -53,4 +53,23 @@ savedMovementPopulateUnits = function savedMovementPopulateUnitsWithSplitHints()
   }
 };
 
+function plannedSplitDrawStartingUnits() {
+  if (state.mode !== 'detail' || !state.planningVisible) return;
+  const slots = new Map();
+  for (const split of savedMovementPlansState.unitSplits || []) {
+    const point = parseCoordinate(split.startHex);
+    if (!point) continue;
+    const key = point.coordinate;
+    const slot = slots.get(key) || 0;
+    drawUnitLabel(point, split.unitCode, split.unitType, slot, 'new');
+    slots.set(key, slot + 1);
+  }
+}
+
+const plannedSplitOriginalDraw = draw;
+draw = function drawWithPlannedUnitSplits() {
+  plannedSplitOriginalDraw();
+  plannedSplitDrawStartingUnits();
+};
+
 savedMovementRefresh().catch(error => console.error('Could not refresh planned split units', error));
