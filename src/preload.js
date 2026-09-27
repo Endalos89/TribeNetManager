@@ -42,6 +42,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
   } catch (_) {}
 
+  const currentPage = String(window.location.pathname || '').split('/').pop() || 'index.html';
+  if (currentPage === 'index.html') {
+    const savedPlansScript = document.createElement('script');
+    savedPlansScript.src = 'saved-movement-plans.js';
+    document.body.appendChild(savedPlansScript);
+  }
+
   reportViewFromDom();
   const observed = ['launcherView', 'mapperView', 'overviewPanel', 'detailPanel']
     .map(id => document.getElementById(id))
