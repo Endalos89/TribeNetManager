@@ -94,8 +94,9 @@ ipcMain.handle('planner:import', async () => {
     return { canceled: false, error: error.message };
   }
 });
-ipcMain.handle('planner:imports', () => database.getTurnImports());
+ipcMain.handle('planner:imports', (_event, turnKey) => database.getTurnImports(turnKey || null));
 ipcMain.handle('planner:get', (_event, id) => withCurrentLogistics(database.getTurnPlan(id || null)));
+ipcMain.handle('planner:get-turn', (_event, turnKey) => withCurrentLogistics(database.getTurnPlanForTurn(turnKey)));
 ipcMain.handle('planner:activate', (_event, id) => withCurrentLogistics(database.setActiveTurnPlan(id)));
 
 ipcMain.handle('turn-manager:import', async (_event, role) => {
