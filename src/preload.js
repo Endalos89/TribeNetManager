@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('tribenet', {
   getResultHexHistory: coordinate => ipcRenderer.invoke('results:hex-history', coordinate),
   getResultSubmapSummaries: turnKey => ipcRenderer.invoke('results:submaps', turnKey),
   backupResults: () => ipcRenderer.invoke('results:backup'),
+  reportCurrentView: view => ipcRenderer.invoke('app:report-view', view),
+  consumeStartupView: () => ipcRenderer.invoke('app:consume-startup-view'),
   getVersion: () => ipcRenderer.invoke('app:version'),
   getUserDataPath: () => ipcRenderer.invoke('app:userDataPath'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
