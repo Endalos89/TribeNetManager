@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const state = { turns: [], turn: null, catalog: [], selectedUnit: null };
 
-function esc(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c])); }
+function esc(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function num(value) { return Number(value || 0).toLocaleString(); }
 function rootTribe(unit) { const m = String(unit || '').match(/^(\d{4})/); return m ? m[1] : String(unit || ''); }
 function currentData() { return state.turn?.final?.data || state.turn?.start?.data || null; }
@@ -44,7 +44,7 @@ function setStatus(message, error = false) {
 async function refreshTurns(preferred = null) {
   state.turns = await window.tribenet.listManagedTurns();
   const picker = $('turnPicker');
-  const keep = preferred || picker.value || state.turn?.turnKey || state.turns[state.turns.length - 1]?.turnKey || '';
+  const keep = preferred || picker.value || state.turn?.turnKey || state.turns[0]?.turnKey || '';
   picker.innerHTML = '<option value="">No results imported</option>' + state.turns.map(t => `<option value="${esc(t.turnKey)}">${esc(t.turnKey)}</option>`).join('');
   if (keep && state.turns.some(t => t.turnKey === keep)) picker.value = keep;
   if (picker.value) await loadTurn(picker.value); else renderEmpty();
