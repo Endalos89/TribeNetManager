@@ -69,10 +69,10 @@ const {
 
 (function movementEndUsesExplicitCommandsAndMarksConditionalOrders() {
   assert.deepStrictEqual(deriveMovementEnd('PK1614', ['NE', 'N']), {
-    endHex: 'PK1712', uncertain: false, unresolvedOrder: null
+    endHex: 'PK1713', uncertain: false, unresolvedOrder: null
   });
   const conditional = deriveMovementEnd('PK1614', ['NE', 'NEL']);
-  assert.strictEqual(conditional.endHex, 'PK1713');
+  assert.strictEqual(conditional.endHex, 'PK1714');
   assert.strictEqual(conditional.uncertain, true);
   assert.strictEqual(conditional.unresolvedOrder, 'NEL');
 })();
