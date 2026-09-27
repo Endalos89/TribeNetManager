@@ -20,7 +20,19 @@ function reportViewFromDom() {
   try { ipcRenderer.invoke('app:report-view', currentViewFromDom()); } catch (_) {}
 }
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const startupView = await ipcRenderer.invoke('app:consume-startup-view');
+    const page = String(window.location.pathname || '').split('/').pop() || 'index.html';
+    if (startupView?.page === page && page === 'index.html' && startupView.screen === 'mapper') {
+      const script = document.createElement('script');
+      script.src = 'restore-bootstrap.js';
+      script.dataset.screen = startupView.screen;
+      script.dataset.mode = startupView.mode || 'overview';
+      document.body.appendChild(script);
+    }
+  } catch (_) {}
+
   reportViewFromDom();
   const observed = ['launcherView', 'mapperView', 'overviewPanel', 'detailPanel']
     .map(id => document.getElementById(id))
