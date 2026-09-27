@@ -43,6 +43,7 @@ async function initializeTribeManager() {
   } catch (_) {}
   bindEvents();
   await refreshTurns();
+  await refreshReprocessStatus();
 }
 
 async function refreshTurns(preferredTurnKey = null) {
@@ -227,6 +228,21 @@ function renderEvents(unit) {
   `).join('');
 }
 
+async function refreshReprocessStatus() {
+  try {
+    const status = await window.tribenet.getResultsReprocessStatus();
+    const button = $('reprocessResultsButton');
+    if (!button) return;
+    if (status.archivedSources > 0) {
+      button.title = `Re-run the parser over ${status.archivedSources} saved source report${status.archivedSources === 1 ? '' : 's'}.`;
+    } else if (status.totalTurns > 0) {
+      button.title = 'Existing turns were imported before source archiving was available; re-import them once to enable automatic reprocessing.';
+    } else {
+      button.title = 'Import results reports first; future imports are saved for automatic reprocessing.';
+    }
+  } catch (_) {}
+}
+
 async function importResults() {
   $('importResultsButton').disabled = true;
   $('importStatus').textContent = 'Importing Word results report…';
@@ -236,8 +252,40 @@ async function importResults() {
     if (result?.error) { $('importStatus').textContent = `Import failed: ${result.error}`; return; }
     localStorage.setItem(SELECTED_TURN_KEY, result.turn.turnKey);
     await refreshTurns(result.turn.turnKey);
-    $('importStatus').textContent = `Turn ${result.turn.turnKey} imported. Re-importing this turn will replace its stored snapshot.`;
+    await refreshReprocessStatus();
+    $('importStatus').textContent = `Turn ${result.turn.turnKey} imported and its source report was saved for future reprocessing.`;
   } finally {
+    $('importResultsButton').disabled = false;
+  }
+}
+
+async function reprocessResults() {
+  const button = $('reprocessResultsButton');
+  const preferredTurn = tmState.turn?.turnKey || null;
+  button.disabled = true;
+  $('importResultsButton').disabled = true;
+  $('importStatus').textContent = 'Reprocessing all saved source reports…';
+  try {
+    const result = await window.tribenet.reprocessResultsReports();
+    if (result?.error) {
+      $('importStatus').textContent = `Reprocess failed: ${result.error}`;
+      return;
+    }
+
+    await refreshTurns(preferredTurn);
+    await refreshReprocessStatus();
+
+    const parts = [];
+    if (result.processed?.length) parts.push(`${result.processed.length} report${result.processed.length === 1 ? '' : 's'} reprocessed successfully.`);
+    else parts.push('No saved source reports were available to reprocess.');
+    if (result.failed?.length) parts.push(`${result.failed.length} failed.`);
+    if (result.missingSourceTurns?.length) {
+      parts.push(`One-time re-import still needed for: ${result.missingSourceTurns.join(', ')}.`);
+    }
+    if (result.backupPath) parts.push('A results database backup was created first.');
+    $('importStatus').textContent = parts.join(' ');
+  } finally {
+    button.disabled = false;
     $('importResultsButton').disabled = false;
   }
 }
@@ -274,6 +322,7 @@ function togglePlayback() {
 
 function bindEvents() {
   $('importResultsButton').addEventListener('click', importResults);
+  $('reprocessResultsButton').addEventListener('click', reprocessResults);
   $('backupResultsButton').addEventListener('click', async () => {
     const backupPath = await window.tribenet.backupResults();
     $('importStatus').textContent = `Backup created: ${backupPath}`;
