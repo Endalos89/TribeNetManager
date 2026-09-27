@@ -2,7 +2,10 @@ const { rootTribe, countsFromResultUnit, deriveMovementEnd, stepCoordinate } = r
 
 function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
 function canonical(value) { return String(value || '').trim().toUpperCase(); }
-function skillKey(value) { return canonical(value).replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+function skillKey(value) {
+  const key = canonical(value).replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return ({ WOODWORKING: 'WOODWORK' })[key] || key;
+}
 function itemName(value) { return String(value || '').trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
 
 const COUNT_FIELDS = {
