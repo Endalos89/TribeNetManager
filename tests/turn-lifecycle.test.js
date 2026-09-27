@@ -1,9 +1,30 @@
 const assert = require('assert');
-const { planningTurnKey, actualDirections, actualPlanFromResult } = require('../src/turn-lifecycle-core');
+const { planningTurnKey, planningTimelineEntry, actualDirections, actualPlanFromResult } = require('../src/turn-lifecycle-core');
 
 (function nextTurnComesFromResultsMetadata() {
   assert.strictEqual(planningTurnKey({ turnKey:'906-03', metadata:{ nextTurn:'906-04' } }), '906-04');
   assert.strictEqual(planningTurnKey({ turnKey:'906-03', metadata:{} }), '906-04');
+})();
+
+(function latestResultCreatesVisiblePlanningTimelineEntry() {
+  const entry = planningTimelineEntry([
+    { turnKey:'906-02', turnSort:906002, sourceFile:'906-02 Results.docx', metadata:{ nextTurn:'906-03' } },
+    { turnKey:'906-03', turnSort:906003, sourceFile:'906-03 Results.docx', metadata:{ nextTurn:'906-04' } }
+  ]);
+  assert(entry, 'The Mapper should expose a planning entry after the latest Results turn.');
+  assert.strictEqual(entry.turnKey, '906-04');
+  assert.strictEqual(entry.baselineTurnKey, '906-03');
+  assert.strictEqual(entry.isPlanningTurn, true);
+})();
+
+(function noDuplicatePlanningEntryWhenNextResultsAlreadyExist() {
+  const entry = planningTimelineEntry([
+    { turnKey:'906-03', turnSort:906003, metadata:{ nextTurn:'906-04' } },
+    { turnKey:'906-04', turnSort:906004, metadata:{ nextTurn:'906-05' } }
+  ]);
+  assert(entry);
+  assert.strictEqual(entry.turnKey, '906-05');
+  assert.strictEqual(entry.baselineTurnKey, '906-04');
 })();
 
 (function actualDirectionsIgnoreFailedEntry() {
