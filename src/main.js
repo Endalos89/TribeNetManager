@@ -12,6 +12,7 @@ const { reprocessArchivedReports } = require('./results-reprocessor');
 const { applyWagonAnimalRules } = require('./logistics-rules');
 const { ACTIVITY_CATALOG } = require('./activity-catalog');
 const { normalizeView } = require('./update-view-state');
+const { removeRoutesForUnit } = require('./planned-routes-ipc');
 
 let mainWindow;
 let database;
@@ -164,6 +165,13 @@ ipcMain.handle('turn-manager:get-turn', (_event, turnKey) => turnManagerDatabase
 ipcMain.handle('turn-manager:add-activity', (_event, turnKey, activity) => turnManagerDatabase.addActivity(turnKey, activity));
 ipcMain.handle('turn-manager:update-activity', (_event, id, activity) => turnManagerDatabase.updateActivity(id, activity));
 ipcMain.handle('turn-manager:delete-activity', (_event, id) => turnManagerDatabase.deleteActivity(id));
+ipcMain.handle('turn-manager:add-unit-split', (_event, turnKey, split) => turnManagerDatabase.addUnitSplit(turnKey, split));
+ipcMain.handle('turn-manager:list-unit-splits', (_event, turnKey) => turnManagerDatabase.listUnitSplits(turnKey));
+ipcMain.handle('turn-manager:delete-unit-split', (_event, id) => {
+  const removed = turnManagerDatabase.deleteUnitSplit(id);
+  if (removed) removeRoutesForUnit(removed.turnKey, removed.unitCode);
+  return removed;
+});
 ipcMain.handle('turn-manager:save-context', (_event, turnKey, notes) => turnManagerDatabase.saveContext(turnKey, notes));
 ipcMain.handle('turn-manager:catalog', () => ACTIVITY_CATALOG);
 ipcMain.handle('turn-manager:backup', () => turnManagerDatabase.createBackup());
