@@ -1,8 +1,9 @@
-// Results are the authoritative end-of-turn record. The selected Results turn is also
-// the baseline for planning its Next Turn, so history and planning deliberately use
-// different turn keys here.
+// Results are the authoritative end-of-turn record. The Mapper also exposes a
+// synthetic next-turn planning state whose map knowledge and unit positions come
+// from the latest Results report.
 
 function lifecyclePlanningTurnKey() {
+  if (resultsTimeline?.turn?.isPlanningTurn) return resultsTimeline.turn.turnKey;
   return TurnLifecycleCore.planningTurnKey(resultsTimeline?.turn || null)
     || state?.planImport?.turnKey
     || state?.planImport?.plan?.turnKey
@@ -43,6 +44,17 @@ function lifecycleDecorateActualUI(resultTurn) {
   if (source) source.textContent = resultTurn.sourceFile || 'Results report';
 }
 
+function lifecycleDecoratePlanningUI(resultTurn) {
+  if (!resultTurn?.isPlanningTurn) return;
+  const baselineTurn = resultTurn.baselineTurnKey || resultTurn.metadata?.baselineTurn || 'previous turn';
+  const status = document.getElementById('planStatus');
+  const timelineLabel = document.getElementById('mapResultTurnLabel');
+  const timelineStatus = document.getElementById('mapResultStatus');
+  if (timelineLabel) timelineLabel.textContent = `Turn ${resultTurn.turnKey} · PLANNING`;
+  if (timelineStatus) timelineStatus.textContent = `Planning from actual Turn ${baselineTurn} Results · movement/scouting you save belongs to Turn ${resultTurn.turnKey}`;
+  if (status && !state.planImport) status.textContent = `Planning Turn ${resultTurn.turnKey} · baseline from actual Turn ${baselineTurn}.`;
+}
+
 const lifecycleOriginalSyncPlannerOverlay = syncPlannerOverlayToResultTurn;
 syncPlannerOverlayToResultTurn = async function syncPlannerOverlayWithActualResults(turnKey, preferredId = null, options = {}) {
   const { redraw = true } = options;
@@ -52,6 +64,47 @@ syncPlannerOverlayToResultTurn = async function syncPlannerOverlayWithActualResu
     ? resultsTimeline.turn
     : await window.tribenet.getResultTurn(turnKey);
   if (!resultTurn) return lifecycleOriginalSyncPlannerOverlay(turnKey, preferredId, options);
+
+  // Synthetic next-turn planning state: show the draft state plus any completed
+  // orders already imported for that turn. Do not show the previous turn's actual
+  // movement as if it belonged to the new turn.
+  if (resultTurn.isPlanningTurn) {
+    const imports = await window.tribenet.getPlannerImports(turnKey);
+    state.planHistory = imports;
+    const select = document.getElementById('turnSelect');
+    if (select) {
+      select.innerHTML = '';
+      const draftOption = document.createElement('option');
+      draftOption.value = 'draft';
+      draftOption.textContent = `Turn ${turnKey} · Draft planning`;
+      select.appendChild(draftOption);
+      for (const row of imports) {
+        const option = document.createElement('option');
+        option.value = String(row.id);
+        const date = row.importedAt ? new Date(row.importedAt).toLocaleDateString() : '';
+        option.textContent = `Turn ${row.turnKey} · ${row.sourceFile}${date ? ` · ${date}` : ''}`;
+        select.appendChild(option);
+      }
+      select.title = `Planning Turn ${turnKey} from the Turn ${resultTurn.baselineTurnKey || 'previous'} Results baseline`;
+    }
+
+    const requestedId = Number(preferredId);
+    if (preferredId !== 'draft' && Number.isFinite(requestedId) && imports.some(row => Number(row.id) === requestedId)) {
+      const preferred = await window.tribenet.getPlannerPlan(requestedId);
+      if (preferred) {
+        lifecycleSetPlanRecord(preferred, requestedId, false);
+        const status = document.getElementById('planStatus');
+        if (status) status.textContent = `Turn ${preferred.turnKey} · completed orders loaded over the planning baseline.`;
+        if (redraw) draw();
+        return preferred;
+      }
+    }
+
+    lifecycleSetPlanRecord(null, 'draft', false);
+    lifecycleDecoratePlanningUI(resultTurn);
+    if (redraw) draw();
+    return null;
+  }
 
   const planningTurn = TurnLifecycleCore.planningTurnKey(resultTurn);
   const imports = planningTurn ? await window.tribenet.getPlannerImports(planningTurn) : [];
@@ -101,21 +154,140 @@ syncPlannerOverlayToResultTurn = async function syncPlannerOverlayWithActualResu
   return actual;
 };
 
+function lifecyclePlanningEntry() {
+  return (resultsTimeline?.turns || []).find(row => row.isPlanningTurn) || null;
+}
+
+function lifecycleKnowledgeTurnKey() {
+  return resultsTimeline?.turn?.baselineTurnKey || resultsTimeline?.turn?.turnKey || null;
+}
+
+// Planning Turn 906-04 uses the map knowledge as-of actual Turn 906-03.
+const lifecycleOriginalRequestVisibleData = requestVisibleData;
+requestVisibleData = function requestVisibleDataForPlanningTurn() {
+  if (!resultsTimeline?.turn?.isPlanningTurn) return lifecycleOriginalRequestVisibleData();
+  if (state.mode !== 'detail') return;
+  clearTimeout(areaRequestTimer);
+  areaRequestTimer = setTimeout(async () => {
+    if (resultsTimeline.loadingArea) return;
+    resultsTimeline.loadingArea = true;
+    try {
+      const b = visibleBounds();
+      const rows = await window.tribenet.getResultHexesInArea(b, lifecycleKnowledgeTurnKey());
+      state.hexCache.clear();
+      for (const row of rows) state.hexCache.set(row.coordinate, row);
+      state.loadedArea = b;
+      draw();
+    } finally {
+      resultsTimeline.loadingArea = false;
+    }
+  }, 55);
+};
+
+const lifecycleOriginalRefreshSummaries = refreshSummaries;
+refreshSummaries = async function refreshSummariesForPlanningTurn() {
+  if (!resultsTimeline?.turn?.isPlanningTurn) return lifecycleOriginalRefreshSummaries();
+  const rows = await window.tribenet.getResultSubmapSummaries(lifecycleKnowledgeTurnKey());
+  state.summaries.clear();
+  for (const row of rows) state.summaries.set(`${row.mapRow}:${row.mapCol}`, Number(row.mapped));
+};
+
+const lifecycleOriginalHistoricalHexAt = historicalHexAt;
+historicalHexAt = async function historicalHexAtPlanningBaseline(globalCol, globalRow) {
+  if (!resultsTimeline?.turn?.isPlanningTurn) return lifecycleOriginalHistoricalHexAt(globalCol, globalRow);
+  const coordinate = coordinateFor(globalCol, globalRow);
+  const cached = state.hexCache.get(coordinate);
+  if (cached) return cached;
+  const rows = await window.tribenet.getResultHexesInArea(
+    { minCol: globalCol, maxCol: globalCol, minRow: globalRow, maxRow: globalRow },
+    lifecycleKnowledgeTurnKey()
+  );
+  const found = rows.find(row => row.coordinate === coordinate) || null;
+  if (found) state.hexCache.set(coordinate, found);
+  return found;
+};
+
 // A saved Unit/Scout Move belongs to the turn being planned, not the Results turn
 // which supplied the starting state. Example: Results 906-03 -> planning 906-04.
 savedMovementCurrentTurnKey = function savedMovementNextTurnKey() {
   return lifecyclePlanningTurnKey();
 };
 
+const lifecycleOriginalApplyResultTurn = applyResultTurn;
+applyResultTurn = async function applyActualOrPlanningTurn(turnKey, options = {}) {
+  const planningEntry = (resultsTimeline?.turns || []).find(row => row.isPlanningTurn && String(row.turnKey) === String(turnKey));
+  if (!planningEntry) return lifecycleOriginalApplyResultTurn(turnKey, options);
+
+  const { persist = true, preservePlayback = false } = options;
+  if (!preservePlayback) stopMapResultPlayback();
+  const baseline = await window.tribenet.getResultTurn(planningEntry.baselineTurnKey);
+  if (!baseline) return null;
+
+  resultsTimeline.turn = {
+    ...baseline,
+    turnKey: planningEntry.turnKey,
+    turnSort: Number(planningEntry.baselineTurnSort ?? baseline.turnSort),
+    sourceFile: `Planning baseline from ${baseline.sourceFile || `Turn ${baseline.turnKey} Results`}`,
+    metadata: { ...(baseline.metadata || {}), baselineTurn: baseline.turnKey, planningTurn: planningEntry.turnKey, nextTurn: planningEntry.turnKey },
+    isPlanningTurn: true,
+    baselineTurnKey: baseline.turnKey,
+    baselineTurnSort: Number(baseline.turnSort || 0),
+    baselineSourceFile: baseline.sourceFile || null
+  };
+  if (persist) localStorage.setItem(RESULT_TURN_STORAGE_KEY, planningEntry.turnKey);
+  state.hexCache.clear();
+  state.loadedArea = null;
+  await syncPlannerOverlayToResultTurn(planningEntry.turnKey, 'draft', { redraw: false });
+  updateMapTimelineUI();
+  lifecycleDecoratePlanningUI(resultsTimeline.turn);
+  await refreshSummaries();
+  if (state.mode === 'overview') buildWorldGrid();
+  if (state.mode === 'detail') {
+    await new Promise(resolve => {
+      requestVisibleData();
+      setTimeout(resolve, 90);
+    });
+  }
+  movementPlannerState.knownHexes = null;
+  movementPlannerState.knowledgeKey = null;
+  if (movementPlannerState.active) movementPlannerReset();
+  await savedMovementRefresh();
+  if (state.selected) await selectHex(state.selected.globalCol, state.selected.globalRow);
+  lifecycleDecoratePlanningUI(resultsTimeline.turn);
+  draw();
+  return resultsTimeline.turn;
+};
+
+const lifecycleOriginalRefreshResultTurns = refreshResultTurns;
+refreshResultTurns = async function refreshResultsAndPlanningTurn(preferredTurnKey = null) {
+  const storedBefore = preferredTurnKey || localStorage.getItem(RESULT_TURN_STORAGE_KEY);
+  await lifecycleOriginalRefreshResultTurns(preferredTurnKey);
+  const planningEntry = TurnLifecycleCore.planningTimelineEntry(resultsTimeline.turns);
+  if (!planningEntry) return;
+
+  resultsTimeline.turns = [...resultsTimeline.turns, planningEntry];
+  updateMapTimelineUI();
+
+  // Existing installs will normally have the latest actual turn persisted. On
+  // startup move them into its next planning turn. An explicit preferred turn
+  // (for example immediately after importing Results) remains on the actual turn.
+  const shouldOpenPlanning = String(storedBefore || '') === String(planningEntry.turnKey)
+    || (!preferredTurnKey && (!storedBefore || String(storedBefore) === String(planningEntry.baselineTurnKey)));
+  if (shouldOpenPlanning) {
+    await applyResultTurn(planningEntry.turnKey, { persist: true, preservePlayback: true });
+  }
+};
+
 const lifecycleTurnSelect = document.getElementById('turnSelect');
 if (lifecycleTurnSelect) {
   lifecycleTurnSelect.addEventListener('change', async event => {
-    if (event.target.value !== 'actual') return;
+    if (!['actual', 'draft'].includes(event.target.value)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     if (resultsTimeline?.turn?.turnKey) {
-      await syncPlannerOverlayToResultTurn(resultsTimeline.turn.turnKey, 'actual');
+      await syncPlannerOverlayToResultTurn(resultsTimeline.turn.turnKey, event.target.value);
       await savedMovementRefresh();
+      if (resultsTimeline.turn.isPlanningTurn) lifecycleDecoratePlanningUI(resultsTimeline.turn);
     }
   }, true);
 }
@@ -135,12 +307,10 @@ savedMovementRefresh = async function savedMovementRefreshForNextTurn() {
   return result;
 };
 
-// The initial Results load may already be in flight when this compatibility layer is
-// appended by preload. Re-apply once the page has settled so existing installs move
-// immediately to the corrected turn lifecycle without needing another import.
+// The initial Results load is already in flight when this compatibility layer is
+// appended by preload. Re-run the timeline once the page has settled so the
+// synthetic next planning turn appears without needing another Results import.
 setTimeout(async () => {
-  if (!resultsTimeline?.turn?.turnKey) return;
-  await syncPlannerOverlayToResultTurn(resultsTimeline.turn.turnKey, 'actual', { redraw: false });
-  await savedMovementRefresh();
-  draw();
+  await refreshResultTurns();
+  if (resultsTimeline?.turn?.isPlanningTurn) lifecycleDecoratePlanningUI(resultsTimeline.turn);
 }, 450);
