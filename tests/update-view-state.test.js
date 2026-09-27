@@ -74,6 +74,17 @@ const { SNAPSHOT_VERSION, normalizeView } = require('../src/update-view-state');
   assert.equal(tribe.unitCode, '0485');
 })();
 
+(function preservesCompendiumArticle() {
+  const compendium = normalizeView({
+    page: 'compendium.html',
+    screen: 'compendium',
+    compendium: { type: 'skill', key: 'Forestry' }
+  });
+  assert.equal(compendium.page, 'compendium.html');
+  assert.equal(compendium.screen, 'compendium');
+  assert.deepEqual(compendium.compendium, { type: 'skill', key: 'Forestry' });
+})();
+
 (function capsOversizedSnapshots() {
   const oversized = { page: 'index.html', screen: 'mapper', huge: 'x'.repeat(600 * 1024) };
   assert.deepEqual(normalizeView(oversized), { snapshotVersion: SNAPSHOT_VERSION, page: 'index.html', screen: 'launcher' });
