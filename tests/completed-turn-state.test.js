@@ -84,6 +84,33 @@ const { buildCompletedTurnState, resolvePlanMovementStarts, completedStateToMana
   assert(managed.some(unit => unit.unit === '1485' && unit.warrior === 2000 && unit.startHex === 'PK1917'));
 })();
 
+(function gotoHexIsDestinationAndPreviousResultsAreOrigin() {
+  const resultTurn = {
+    turnKey:'906-03', metadata:{ nextTurn:'906-04' },
+    units:[
+      { unitType:'Tribe', unitCode:'0485', currentHex:'PK1614', people:{}, resources:{}, skills:{} },
+      { unitType:'Element', unitCode:'0485e1', currentHex:'PK1514', people:{}, resources:{}, skills:{} }
+    ]
+  };
+  const plan = {
+    turnKey:'906-04',
+    units:[{ unit:'0485', type:'Tribe' }, { unit:'0485e1', type:'Element' }],
+    unitCreations:[],
+    // Simulates an older imported record where workbook Hex was incorrectly stored as startHex.
+    movements:[{ unit:'0485', type:'Tribe', startHex:'PK2010', orders:['GOTO'] }],
+    scouts:[{ id:1, unit:'0485e1', noOfScouts:5, noOfHorses:0, mission:'PATROL', orders:['N'] }]
+  };
+  const hydrated = resolvePlanMovementStarts(plan, resultTurn);
+  const tribeMove = hydrated.movements.find(row => row.unit === '0485');
+  assert.strictEqual(tribeMove.startHex, 'PK1614', 'Movement must start from previous Results, never the workbook Hex column.');
+  assert.strictEqual(tribeMove.gotoHex, 'PK2010');
+  assert.deepStrictEqual(tribeMove.orders, ['GOTO PK2010']);
+  const scoutAnchor = hydrated.movements.find(row => row.unit === '0485e1');
+  assert(scoutAnchor, 'A scout-only unit needs a movement anchor so its completed scout route can be drawn.');
+  assert.strictEqual(scoutAnchor.startHex, 'PK1514');
+  assert.deepStrictEqual(scoutAnchor.orders, []);
+})();
+
 (function actualResultsBeatSameTurnProjection() {
   const actual = {
     turnKey: '906-04', metadata: { nextTurn: '906-05' }, sourceFile: '0485_906_04_Results.docx',
@@ -128,10 +155,13 @@ const { buildCompletedTurnState, resolvePlanMovementStarts, completedStateToMana
   ]);
   add('Tribe_Movement', [
     ['UnitName','TRIBE','FOLLOW_TRIBE','MovementType','Hex','MOVEMENT_1','MOVEMENT_2'],
-    ['Main Tribe','0485',null,null,null,'N','N'],
+    ['Main Tribe','0485',null,null,'PK2010','GOTO',null],
     ['Shipbuilding Tribe','1485',null,null,null,'SE','S']
   ]);
-  add('Scout_Movement', [['UnitName','TRIBE','No_of_Scouts','No_of_Horses','Mission','Movement1']]);
+  add('Scout_Movement', [
+    ['UnitName','TRIBE','No_of_Scouts','No_of_Horses','Mission','Movement1'],
+    ['Shipbuilding Tribe','1485',5,0,'PATROL','N']
+  ]);
   add('Tribes_Activities', [['UnitName','TRIBE','ACTIVITY','ITEM','DISTINCTION','PEOPLE','MINING_DIRECTION']]);
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tribenet-completed-split-'));
@@ -143,6 +173,11 @@ const { buildCompletedTurnState, resolvePlanMovementStarts, completedStateToMana
     assert(movement, 'Blank-Hex movement row should not be discarded.');
     assert.strictEqual(movement.startHex, null);
     assert.deepStrictEqual(movement.orders, ['SE','S']);
+    const goto = parsed.movements.find(row => row.unit === '0485');
+    assert.strictEqual(goto.startHex, null, 'Workbook Hex must not be treated as the movement origin.');
+    assert.strictEqual(goto.gotoHex, 'PK2010');
+    assert.deepStrictEqual(goto.orders, ['GOTO PK2010']);
+    assert.strictEqual(parsed.scouts.length, 1, 'Completed scouting rows must be retained from the workbook.');
     assert(parsed.units.some(unit => unit.unit === '1485'), 'Created Tribe should be present in final units.');
     assert(!parsed.skillsByTribe['0485'].some(skill => skill.skill === 'WOODWORK'), 'WOODWORK should leave the source Tribe.');
     const moved = parsed.skillsByTribe['1485'].find(skill => skill.skill === 'WOODWORK');
