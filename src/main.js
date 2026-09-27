@@ -7,6 +7,7 @@ const { ResultsDatabase } = require('./results-database');
 const { parseOrdersWorkbook } = require('./planner');
 const { parseTurnWorkbook } = require('./turn-manager-parser');
 const { parseResultDocument } = require('./result-report-parser');
+const { reprocessArchivedReports } = require('./results-reprocessor');
 const { applyWagonAnimalRules } = require('./logistics-rules');
 const { ACTIVITY_CATALOG } = require('./activity-catalog');
 
@@ -132,13 +133,23 @@ ipcMain.handle('results:import', async () => {
   const filePath = result.filePaths[0];
   try {
     const parsed = await parseResultDocument(filePath);
+    resultsDatabase.archiveSource(parsed.turnKey, filePath, parsed.sourceFile);
     const saved = resultsDatabase.saveReport(parsed);
-    return { canceled: false, turn: saved };
+    return { canceled: false, turn: saved, archived: true };
   } catch (error) {
     console.error('Results report import failed', error);
     return { canceled: false, error: error.message };
   }
 });
+ipcMain.handle('results:reprocess', async () => {
+  try {
+    return await reprocessArchivedReports(resultsDatabase, parseResultDocument);
+  } catch (error) {
+    console.error('Results report reprocess failed', error);
+    return { error: error.message, processed: [], failed: [], missingSourceTurns: [] };
+  }
+});
+ipcMain.handle('results:reprocess-status', () => resultsDatabase.getReprocessStatus());
 ipcMain.handle('results:list-turns', () => resultsDatabase.listTurns());
 ipcMain.handle('results:get-turn', (_event, turnKey) => resultsDatabase.getTurn(turnKey));
 ipcMain.handle('results:hexes-area', (_event, bounds, turnKey) => resultsDatabase.getHexesInArea(bounds, turnKey));

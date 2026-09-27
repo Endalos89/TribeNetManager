@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('tribenet', {
   getActivityCatalog: () => ipcRenderer.invoke('turn-manager:catalog'),
   backupTurnManager: () => ipcRenderer.invoke('turn-manager:backup'),
   importResultsReport: () => ipcRenderer.invoke('results:import'),
+  reprocessResultsReports: () => ipcRenderer.invoke('results:reprocess'),
+  getResultsReprocessStatus: () => ipcRenderer.invoke('results:reprocess-status'),
   listResultTurns: () => ipcRenderer.invoke('results:list-turns'),
   getResultTurn: turnKey => ipcRenderer.invoke('results:get-turn', turnKey),
   getResultHexesInArea: (bounds, turnKey) => ipcRenderer.invoke('results:hexes-area', bounds, turnKey),
