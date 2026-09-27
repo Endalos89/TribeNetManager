@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
@@ -10,11 +11,46 @@ const { parseResultDocument } = require('./result-report-parser');
 const { reprocessArchivedReports } = require('./results-reprocessor');
 const { applyWagonAnimalRules } = require('./logistics-rules');
 const { ACTIVITY_CATALOG } = require('./activity-catalog');
+const { normalizeView } = require('./update-view-state');
 
 let mainWindow;
 let database;
 let turnManagerDatabase;
 let resultsDatabase;
+let currentView = normalizeView({ page: 'index.html', screen: 'launcher' });
+let pendingStartupView = null;
+let startupViewConsumed = false;
+let updateReadyForInstall = false;
+
+const RESTORE_FILENAME = 'update-restore-view.json';
+
+function restoreStatePath() {
+  return path.join(app.getPath('userData'), RESTORE_FILENAME);
+}
+
+function persistUpdateRestoreView() {
+  try {
+    fs.writeFileSync(restoreStatePath(), JSON.stringify(normalizeView(currentView)), 'utf8');
+    return true;
+  } catch (error) {
+    console.error('Could not persist update restore view', error);
+    return false;
+  }
+}
+
+function consumeUpdateRestoreView() {
+  const filePath = restoreStatePath();
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const parsed = normalizeView(JSON.parse(fs.readFileSync(filePath, 'utf8')));
+    fs.unlinkSync(filePath);
+    return parsed;
+  } catch (error) {
+    console.error('Could not restore previous view after update', error);
+    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (_) {}
+    return null;
+  }
+}
 
 function sendUpdateStatus(payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:status', payload);
@@ -25,7 +61,10 @@ function configureUpdater() {
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.autoRunAppAfterInstall = true;
   autoUpdater.on('checking-for-update', () => sendUpdateStatus({ state: 'checking', message: 'Checking for updates…' }));
-  autoUpdater.on('update-not-available', info => sendUpdateStatus({ state: 'current', message: `You are up to date (${info.version}).` }));
+  autoUpdater.on('update-not-available', info => {
+    updateReadyForInstall = false;
+    sendUpdateStatus({ state: 'current', message: `You are up to date (${info.version}).` });
+  });
   autoUpdater.on('update-available', async info => {
     sendUpdateStatus({ state: 'downloading', message: `Downloading version ${info.version}…`, version: info.version });
     try { await autoUpdater.downloadUpdate(); }
@@ -34,9 +73,10 @@ function configureUpdater() {
   autoUpdater.on('download-progress', progress => sendUpdateStatus({
     state: 'downloading', message: `Downloading update… ${Math.round(progress.percent)}%`, percent: progress.percent
   }));
-  autoUpdater.on('update-downloaded', info => sendUpdateStatus({
-    state: 'ready', message: `Version ${info.version} is ready. Restart to apply it.`, version: info.version
-  }));
+  autoUpdater.on('update-downloaded', info => {
+    updateReadyForInstall = true;
+    sendUpdateStatus({ state: 'ready', message: `Version ${info.version} is ready. Restart to apply it.`, version: info.version });
+  });
   autoUpdater.on('error', error => sendUpdateStatus({ state: 'error', message: `Update error: ${error.message}` }));
 }
 
@@ -46,7 +86,9 @@ function createWindow() {
     backgroundColor: '#0b1117', title: 'TribeNet Manager',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
   });
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  const startupPage = pendingStartupView?.page || 'index.html';
+  currentView = pendingStartupView || normalizeView({ page: startupPage });
+  mainWindow.loadFile(path.join(__dirname, startupPage));
 }
 
 function withCurrentLogistics(record) {
@@ -59,12 +101,14 @@ app.whenReady().then(() => {
   database = new TribeNetDatabase(app.getPath('userData'));
   turnManagerDatabase = new TurnManagerDatabase(app.getPath('userData'));
   resultsDatabase = new ResultsDatabase(app.getPath('userData'));
+  pendingStartupView = consumeUpdateRestoreView();
   configureUpdater();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('before-quit', () => {
+  if (updateReadyForInstall) persistUpdateRestoreView();
   if (database) database.close();
   if (turnManagerDatabase) turnManagerDatabase.close();
   if (resultsDatabase) resultsDatabase.close();
@@ -169,7 +213,22 @@ ipcMain.handle('update:check', async () => {
     sendUpdateStatus(payload); return payload;
   }
 });
-ipcMain.handle('update:install', () => { if (app.isPackaged) autoUpdater.quitAndInstall(true, true); return true; });
+ipcMain.handle('update:install', () => {
+  if (app.isPackaged) {
+    persistUpdateRestoreView();
+    autoUpdater.quitAndInstall(true, true);
+  }
+  return true;
+});
+ipcMain.handle('app:report-view', (_event, view) => {
+  currentView = normalizeView(view);
+  return currentView;
+});
+ipcMain.handle('app:consume-startup-view', () => {
+  if (startupViewConsumed || !pendingStartupView) return null;
+  startupViewConsumed = true;
+  return pendingStartupView;
+});
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:userDataPath', () => app.getPath('userData'));
 ipcMain.handle('app:showBackup', async (_event, backupPath) => { if (backupPath) shell.showItemInFolder(backupPath); return true; });

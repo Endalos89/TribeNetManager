@@ -1,5 +1,49 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+function currentViewFromDom() {
+  const page = String(window.location.pathname || '').split('/').pop() || 'index.html';
+  if (page === 'index.html') {
+    const mapperVisible = !document.getElementById('mapperView')?.classList.contains('hidden');
+    const detailVisible = mapperVisible && !document.getElementById('detailPanel')?.classList.contains('hidden');
+    return {
+      page,
+      screen: mapperVisible ? 'mapper' : 'launcher',
+      ...(mapperVisible ? { mode: detailVisible ? 'detail' : 'overview' } : {})
+    };
+  }
+  if (page === 'turn-manager.html') return { page, screen: 'turn-manager' };
+  if (page === 'tribe-manager.html') return { page, screen: 'tribe-manager' };
+  return { page: 'index.html', screen: 'launcher' };
+}
+
+function reportViewFromDom() {
+  try { ipcRenderer.invoke('app:report-view', currentViewFromDom()); } catch (_) {}
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const startupView = await ipcRenderer.invoke('app:consume-startup-view');
+    const page = String(window.location.pathname || '').split('/').pop() || 'index.html';
+    if (startupView?.page === page && page === 'index.html' && startupView.screen === 'mapper') {
+      const script = document.createElement('script');
+      script.src = 'restore-bootstrap.js';
+      script.dataset.screen = startupView.screen;
+      script.dataset.mode = startupView.mode || 'overview';
+      document.body.appendChild(script);
+    }
+  } catch (_) {}
+
+  reportViewFromDom();
+  const observed = ['launcherView', 'mapperView', 'overviewPanel', 'detailPanel']
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+  if (observed.length) {
+    const observer = new MutationObserver(reportViewFromDom);
+    for (const element of observed) observer.observe(element, { attributes: true, attributeFilter: ['class'] });
+  }
+  window.addEventListener('beforeunload', reportViewFromDom);
+});
+
 contextBridge.exposeInMainWorld('tribenet', {
   getHexesInArea: bounds => ipcRenderer.invoke('hexes:area', bounds),
   getHex: coordinate => ipcRenderer.invoke('hex:get', coordinate),
@@ -32,6 +76,8 @@ contextBridge.exposeInMainWorld('tribenet', {
   getResultHexHistory: coordinate => ipcRenderer.invoke('results:hex-history', coordinate),
   getResultSubmapSummaries: turnKey => ipcRenderer.invoke('results:submaps', turnKey),
   backupResults: () => ipcRenderer.invoke('results:backup'),
+  reportCurrentView: view => ipcRenderer.invoke('app:report-view', view),
+  consumeStartupView: () => ipcRenderer.invoke('app:consume-startup-view'),
   getVersion: () => ipcRenderer.invoke('app:version'),
   getUserDataPath: () => ipcRenderer.invoke('app:userDataPath'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
