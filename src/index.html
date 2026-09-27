@@ -6,6 +6,7 @@
   <title>TribeNet Manager</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="results-map.css" />
+  <link rel="stylesheet" href="movement-planner.css" />
 </head>
 <body>
   <div id="app">
@@ -63,6 +64,8 @@
         </div>
         <div id="detailControls" class="detail-controls hidden">
           <button id="detailOverviewButton" class="button">Overview</button>
+          <button id="movementPlannerButton" class="button" disabled>Plan Movement</button>
+          <span id="movementPlannerReadout" class="toolbar-readout"></span>
           <label class="coordinate-jump">Go to <input id="coordinateInput" maxlength="7" placeholder="PK1614" /></label>
           <button id="goCoordinateButton" class="button">Go</button>
           <button id="zoomOutButton" class="button square">−</button>
@@ -97,6 +100,12 @@
         <div id="canvasWrap" class="canvas-wrap">
           <canvas id="mapCanvas"></canvas>
           <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex for report knowledge/history · Click a unit label for logistics</div>
+          <div id="movementPlannerCard" class="movement-planner-card hidden">
+            <div class="movement-planner-title"><strong id="movementPlannerTitle">Movement planner</strong><span>lowest MP route</span></div>
+            <div id="movementPlannerSummary"></div>
+            <div id="movementPlannerDirections"></div>
+            <div id="movementPlannerNote"></div>
+          </div>
           <div id="plannerOverlayCard" class="planner-overlay-card hidden">
             <div class="planner-overlay-title"><strong id="plannerTurnTitle">Turn plan</strong><span id="plannerSourceLabel"></span></div>
             <div id="plannerWarnings" class="planner-warnings"></div>
@@ -171,8 +180,10 @@
       </section>
     </main>
   </div>
+  <script src="movement-planner-core.js"></script>
   <script src="renderer.js"></script>
   <script src="unit-logistics.js"></script>
   <script src="results-map.js"></script>
+  <script src="movement-planner.js"></script>
 </body>
 </html>
