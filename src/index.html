@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TribeNet Manager</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="results-map.css" />
 </head>
 <body>
   <div id="app">
@@ -24,12 +25,12 @@
       <section class="hero-panel">
         <p class="eyebrow">TRIBENET TOOLKIT</p>
         <h1>Clan management, one tool at a time.</h1>
-        <p class="hero-copy">Mapper and Turn Manager data stay local on your computer and survive application updates.</p>
+        <p class="hero-copy">Mapper, Turn Manager and results history stay local on your computer and survive application updates.</p>
       </section>
       <section class="module-grid">
         <button id="openMapperButton" class="module-card enabled">
           <div class="module-icon">⬢</div>
-          <div><h2>Mapper</h2><p>Map terrain, inspect hex history, import turn orders and visualise planned movement, scouting and unit logistics.</p></div>
+          <div><h2>Mapper</h2><p>Map terrain, replay explored knowledge by turn, inspect hex history and visualise planned movement and scouting.</p></div>
           <span class="module-status">Open</span>
         </button>
         <button id="openTurnManagerButton" class="module-card enabled" onclick="location.href='turn-manager.html'">
@@ -37,7 +38,11 @@
           <div><h2>Turn Manager</h2><p>Store beginning and finalized workbooks, view Tribes/Fleets/Elements, inspect inherited skills and plan activities against shared limits.</p></div>
           <span class="module-status">Open</span>
         </button>
-        <div class="module-card disabled"><div class="module-icon">♟</div><div><h2>Units</h2><p>Reserved for permanent tribe, element, fleet and garrison records.</p></div><span class="module-status">Later</span></div>
+        <button id="openTribeManagerButton" class="module-card enabled" onclick="location.href='tribe-manager.html'">
+          <div class="module-icon">♟</div>
+          <div><h2>Tribe Manager</h2><p>Import Word results reports, review Tribe and Unit resources, compare turn changes and replay movement and scouting history.</p></div>
+          <span class="module-status">Open</span>
+        </button>
       </section>
       <section class="data-panel">
         <div><strong>Your data stays local.</strong><br><span id="dataPathLabel">Loading data location…</span></div>
@@ -66,6 +71,20 @@
         </div>
       </div>
 
+      <div class="results-timeline-bar">
+        <div class="results-timeline-label">
+          <span>RESULTS HISTORY</span>
+          <strong id="mapResultTurnLabel">No results imported</strong>
+          <span id="mapResultStatus">Import a Word results report to populate history.</span>
+        </div>
+        <button id="mapImportResultsButton" class="button accent">Import Results</button>
+        <button id="mapResultPrev" class="button square" disabled title="Previous results turn">◀</button>
+        <button id="mapResultPlay" class="button" disabled>Play</button>
+        <input id="mapResultSlider" class="results-turn-slider" type="range" min="0" max="0" value="0" disabled aria-label="Results turn" />
+        <button id="mapResultNext" class="button square" disabled title="Next results turn">▶</button>
+        <button class="button results-timeline-link" onclick="location.href='tribe-manager.html'">Tribe Manager</button>
+      </div>
+
       <section id="overviewPanel" class="overview-panel">
         <div class="overview-title">
           <div><p class="eyebrow">WORLD OVERVIEW</p><h2>Select a submap</h2></div>
@@ -77,7 +96,7 @@
       <section id="detailPanel" class="detail-panel hidden">
         <div id="canvasWrap" class="canvas-wrap">
           <canvas id="mapCanvas"></canvas>
-          <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex to edit · Click a unit label for logistics</div>
+          <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex for report knowledge/history · Click a unit label for logistics</div>
           <div id="plannerOverlayCard" class="planner-overlay-card hidden">
             <div class="planner-overlay-title"><strong id="plannerTurnTitle">Turn plan</strong><span id="plannerSourceLabel"></span></div>
             <div id="plannerWarnings" class="planner-warnings"></div>
@@ -87,7 +106,7 @@
           <div id="noSelection" class="empty-selection">
             <div class="empty-icon">⬢</div>
             <h3>Select a hex or unit</h3>
-            <p>Click a hex to edit terrain, or click a Tribe/Element label to inspect provisions and carrying capacity.</p>
+            <p>Click a hex to inspect its knowledge history, or click a Tribe/Element label to inspect provisions and carrying capacity.</p>
           </div>
 
           <div id="unitEditor" class="hidden">
@@ -134,7 +153,7 @@
             <label class="field-label" for="terrainSelect">Terrain</label>
             <select id="terrainSelect"></select>
 
-            <label class="field-label" for="notesInput">Notes</label>
+            <label class="field-label" for="notesInput">Report knowledge / notes</label>
             <textarea id="notesInput" rows="7" placeholder="Anything useful about this hex…"></textarea>
 
             <div class="editor-actions">
@@ -144,7 +163,7 @@
             <div id="saveStatus" class="save-status"></div>
 
             <section class="history-section">
-              <div class="history-heading"><h3>Hex History</h3><span id="historyTurnContext"></span></div>
+              <div class="history-heading"><h3>Knowledge History</h3><span id="historyTurnContext"></span></div>
               <div id="hexHistoryList" class="history-list"><div class="history-empty">No changes recorded yet.</div></div>
             </section>
           </div>
@@ -154,5 +173,6 @@
   </div>
   <script src="renderer.js"></script>
   <script src="unit-logistics.js"></script>
+  <script src="results-map.js"></script>
 </body>
 </html>
