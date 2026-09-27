@@ -53,10 +53,7 @@
 
   function captureIndex() {
     const mapperVisible = !document.getElementById('mapperView')?.classList.contains('hidden');
-    const snapshot = {
-      ...baseSnapshot(),
-      screen: mapperVisible ? 'mapper' : 'launcher'
-    };
+    const snapshot = { ...baseSnapshot(), screen: mapperVisible ? 'mapper' : 'launcher' };
     if (!mapperVisible) return snapshot;
 
     snapshot.mode = typeof state !== 'undefined' && state.mode === 'detail' ? 'detail' : 'overview';
@@ -134,6 +131,15 @@
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     return false;
+  }
+
+  async function settleManagers() {
+    if (page === 'turn-manager.html') {
+      await waitFor(() => typeof state !== 'undefined' && Array.isArray(state.catalog) && state.catalog.length > 0);
+    } else if (page === 'tribe-manager.html') {
+      await waitFor(() => document.getElementById('tribeManagerVersion')?.textContent.startsWith('Version '));
+    }
+    await new Promise(resolve => setTimeout(resolve, 450));
   }
 
   function restoreDraftFields(snapshot) {
@@ -269,7 +275,7 @@
   }
 
   async function restoreTurnManager(snapshot) {
-    await waitFor(() => window.__tribenetPageReady === true);
+    await settleManagers();
     if (snapshot.unitCode) state.selectedUnit = snapshot.unitCode;
     if (snapshot.turnKey && state.turns.some(row => row.turnKey === snapshot.turnKey)) {
       const picker = document.getElementById('turnPicker');
@@ -281,7 +287,9 @@
 
     const activityCode = snapshot.turnManager?.activityCode;
     const activitySelect = document.getElementById('activitySelect');
-    if (activityCode && activitySelect?.querySelector(`option[value="${CSS.escape(activityCode)}"]`)) activitySelect.value = activityCode;
+    if (activityCode && activitySelect && Array.from(activitySelect.options).some(option => option.value === activityCode)) {
+      activitySelect.value = activityCode;
+    }
     restoreDraftFields(snapshot);
     if (typeof renderActivityRule === 'function') renderActivityRule();
     restoreScrolls(snapshot);
@@ -289,7 +297,7 @@
   }
 
   async function restoreTribeManager(snapshot) {
-    await waitFor(() => window.__tribenetPageReady === true);
+    await settleManagers();
     if (snapshot.turnKey && tmState.turns.some(row => row.turnKey === snapshot.turnKey)) {
       await selectTurn(snapshot.turnKey, false);
     }
@@ -327,6 +335,22 @@
 
   window.captureTribeNetSessionSnapshot = capture;
   window.reportTribeNetSessionSnapshot = reportNow;
+
+  const installButton = document.getElementById('installUpdateButton');
+  if (installButton) {
+    installButton.addEventListener('click', async event => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      installButton.disabled = true;
+      try {
+        await window.tribenet.reportCurrentView(capture());
+        await window.tribenet.installUpdate();
+      } catch (error) {
+        installButton.disabled = false;
+        console.error('Could not snapshot session before update', error);
+      }
+    }, true);
+  }
 
   for (const eventName of ['input', 'change', 'click', 'mouseup', 'keyup', 'wheel']) {
     window.addEventListener(eventName, scheduleReport, true);
