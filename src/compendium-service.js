@@ -1,4 +1,5 @@
 const { buildCompendiumCatalog, detailForSkill, SOURCE_DOCUMENT } = require('./compendium-catalog');
+const { enrichCompendiumCatalog } = require('./compendium-knowledge');
 
 function completeMandateSkills(catalog) {
   const result = buildCompendiumCatalog(catalog);
@@ -15,7 +16,7 @@ function completeMandateSkills(catalog) {
     result.skills.push({ ...base, ...detailForSkill(base), recipes: [], relatedRequirements: [] });
   }
   result.skills.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  return result;
+  return enrichCompendiumCatalog(result);
 }
 
 module.exports = { completeMandateSkills };
