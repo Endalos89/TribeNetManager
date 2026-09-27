@@ -1,5 +1,6 @@
 const assert = require('assert');
 const {
+  planningTurnKeyFromResult,
   resultTurnToStartWorkbook,
   countsFromResultUnit,
   countsByUnitFromPlan,
@@ -7,9 +8,10 @@ const {
   calculateSupplyRequirements
 } = require('../src/turn-workflow');
 
-(function resultsBecomePlanningBaseline() {
+(function resultsBecomeNextTurnPlanningBaseline() {
   const resultTurn = {
     turnKey: '906-03',
+    metadata: { nextTurn: '906-04' },
     sourceFile: '0485_906_03_Results.docx',
     importedAt: '2026-09-27T10:00:00.000Z',
     units: [
@@ -29,11 +31,13 @@ const {
   const baseline = resultTurnToStartWorkbook(resultTurn);
   assert.strictEqual(baseline.role, 'start');
   assert.strictEqual(baseline.sourceKind, 'results');
-  assert.strictEqual(baseline.turnKey, '906-03');
+  assert.strictEqual(baseline.resultTurnKey, '906-03');
+  assert.strictEqual(baseline.turnKey, '906-04');
   assert.strictEqual(baseline.units[0].startHex, 'PK1714');
   assert.strictEqual(baseline.units[0].workers, 60);
   assert.strictEqual(baseline.units[1].parentTribe, '0485');
   assert.strictEqual(baseline.skillsByTribe['0485'].find(row => row.shortname === 'For').level, 2);
+  assert.strictEqual(planningTurnKeyFromResult({ turnKey: '906-03' }), '906-04', 'fallback should increment the sub-turn when Next Turn metadata is absent');
 })();
 
 (function resultCountsUseReportedPeopleAndAnimals() {

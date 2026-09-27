@@ -1,4 +1,4 @@
-const { rootTribe, countsFromResultUnit, deriveMovementEnd, stepCoordinate } = require('./turn-workflow');
+const { rootTribe, planningTurnKeyFromResult, countsFromResultUnit, deriveMovementEnd, stepCoordinate } = require('./turn-workflow');
 
 function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
 function canonical(value) { return String(value || '').trim().toUpperCase(); }
@@ -141,6 +141,13 @@ function buildCompletedTurnState(resultTurn, completed) {
   if (!resultTurn || !completed) return resultTurn;
   const plan = resolvePlanMovementStarts(completed.plan || completed.rawPlan || completed, resultTurn);
   if (!plan) return resultTurn;
+
+  const resultKey = String(resultTurn.turnKey || '');
+  const planKey = String(plan.turnKey || '');
+  const nextKey = String(planningTurnKeyFromResult(resultTurn) || '');
+  if (planKey && planKey === resultKey) return clone(resultTurn);
+  if (planKey && nextKey && planKey !== nextKey) return clone(resultTurn);
+
   const baseline = new Map((resultTurn.units || []).map(u => [String(u.unitCode), u]));
   const counts = completedCounts(resultTurn, plan), resources = completedResources(resultTurn, plan), skills = completedSkills(resultTurn, plan);
   const info = new Map();
@@ -169,7 +176,8 @@ function buildCompletedTurnState(resultTurn, completed) {
     });
   }
   const sourceFile = completed.sourceFile || plan.sourceFile || 'Completed Orders';
-  return { ...clone(resultTurn), sourceFile:`${resultTurn.sourceFile || `Turn ${resultTurn.turnKey} results`} + ${sourceFile}`,
+  return { ...clone(resultTurn), turnKey: plan.turnKey || nextKey || resultTurn.turnKey,
+    sourceFile:`${resultTurn.sourceFile || `Turn ${resultTurn.turnKey} results`} + ${sourceFile}`,
     importedAt:completed.importedAt || plan.importedAt || resultTurn.importedAt, baselineSourceFile:resultTurn.sourceFile || null,
     completedOrdersSourceFile:sourceFile, workflowState:'completed', units:units.sort((a,b)=>String(a.unitCode).localeCompare(String(b.unitCode),undefined,{numeric:true})), completedPlan:plan };
 }
