@@ -6,7 +6,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (page === 'index.html') scripts.push('planned-unit-splits-map.js');
   if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js');
   scripts.push('session-snapshot.js');
-  if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-lifecycle.js');
+  if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js');
   for (const src of scripts) {
     const script = document.createElement('script');
     script.src = src;
