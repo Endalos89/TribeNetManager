@@ -13,6 +13,7 @@ const { ACTIVITY_CATALOG } = require('./activity-catalog');
 const { normalizeView } = require('./update-view-state');
 const { routesDb, removeRoutesForUnit } = require('./planned-routes-ipc');
 const {
+  planningTurnKeyFromResult,
   resultTurnToStartWorkbook,
   countsFromResultUnit,
   countsByUnitFromPlan,
@@ -142,9 +143,22 @@ function clearDraftPlanning(turnKey) {
   }
 }
 
+function planningBaselineResult(turnKey) {
+  if (!turnKey || !resultsDatabase) return null;
+  for (const summary of resultsDatabase.listTurns()) {
+    const resultTurn = resultsDatabase.getTurn(summary.turnKey);
+    if (resultTurn && String(planningTurnKeyFromResult(resultTurn)) === String(turnKey)) return resultTurn;
+  }
+  return null;
+}
+
+function resultForPlanTurn(turnKey) {
+  return planningBaselineResult(turnKey) || resultsDatabase.getTurn(turnKey) || null;
+}
+
 function hydratedPlanRecord(record) {
   if (!record?.plan || !record.turnKey) return record;
-  const resultTurn = resultsDatabase.getTurn(record.turnKey);
+  const resultTurn = resultForPlanTurn(record.turnKey);
   if (!resultTurn) return record;
   return { ...record, plan: resolvePlanMovementStarts(record.plan, resultTurn) };
 }
@@ -159,7 +173,7 @@ function effectiveResultTurn(turnKey) {
 function effectiveManagedTurn(turnKey) {
   const managed = turnManagerDatabase.getTurn(turnKey);
   if (!managed?.final) return managed;
-  const resultTurn = resultsDatabase.getTurn(turnKey);
+  const resultTurn = resultForPlanTurn(turnKey);
   const completed = hydratedPlanRecord(database.getTurnPlanForTurn(turnKey));
   if (!resultTurn || !completed?.plan) return managed;
   const completedState = buildCompletedTurnState(resultTurn, completed);
@@ -174,6 +188,7 @@ function effectiveManagedTurn(turnKey) {
         units: completedStateToManagedUnits(completedState, finalSkills),
         skillsByTribe: finalSkills,
         movements: completed.plan.movements || finalData.movements || [],
+        scouts: completed.plan.scouts || finalData.scouts || [],
         transfers: completed.plan.transfers || finalData.transfers || [],
         rawPlan: completed.plan
       }
@@ -202,12 +217,13 @@ function terrainContextForHex(turnKey, coordinate, fallbackTerrain = null) {
     if (next) coordinates.push(next);
   }
 
+  const knowledgeTurnKey = resultForPlanTurn(turnKey)?.turnKey || turnKey;
   const resultRows = resultsDatabase.getHexesInArea({
     minCol: Math.max(0, center.globalCol - 2),
     maxCol: center.globalCol + 2,
     minRow: Math.max(0, center.globalRow - 2),
     maxRow: center.globalRow + 2
-  }, turnKey);
+  }, knowledgeTurnKey);
   const resultByCoordinate = new Map(resultRows.map(row => [String(row.coordinate).toUpperCase(), row.terrain]));
 
   const terrainAt = value => {
@@ -223,7 +239,7 @@ function terrainContextForHex(turnKey, coordinate, fallbackTerrain = null) {
 }
 
 function unitSupplyRequirements(turnKey, unitCode) {
-  const resultTurn = resultsDatabase.getTurn(turnKey);
+  const resultTurn = resultForPlanTurn(turnKey);
   const resultUnit = resultTurn?.units?.find(unit => String(unit.unitCode) === String(unitCode)) || null;
   const managedTurn = turnManagerDatabase.getTurn(turnKey);
   const finalPlanRecord = managedTurn?.final ? hydratedPlanRecord(database.getTurnPlanForTurn(turnKey)) : null;

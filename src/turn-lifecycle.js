@@ -23,6 +23,65 @@ function lifecycleActualRecord(resultTurn) {
   };
 }
 
+function lifecycleStepCoordinate(hex, direction) {
+  const start = parseCoordinate(hex);
+  if (!start) return null;
+  const next = stepHex(start, direction);
+  return next?.coordinate || null;
+}
+
+function lifecycleHydrateCompletedRecord(record, resultTurn) {
+  if (!record?.plan || !resultTurn) return record;
+  const plan = JSON.parse(JSON.stringify(record.plan));
+  const starts = new Map((resultTurn.units || []).filter(unit => unit.currentHex).map(unit => [String(unit.unitCode), unit.currentHex]));
+  const pending = [...(plan.unitCreations || [])];
+  let changed = true;
+  while (pending.length && changed) {
+    changed = false;
+    for (let i = pending.length - 1; i >= 0; i--) {
+      const creation = pending[i];
+      const parentStart = starts.get(String(creation.parentUnit));
+      if (!parentStart) continue;
+      const direction = String(creation.direction || '').toUpperCase();
+      const childStart = ['N','NE','SE','S','SW','NW'].includes(direction)
+        ? (lifecycleStepCoordinate(parentStart, direction) || parentStart)
+        : parentStart;
+      starts.set(String(creation.unit), childStart);
+      pending.splice(i, 1);
+      changed = true;
+    }
+  }
+
+  plan.movements = (plan.movements || []).map(row => {
+    const orders = [...(row.orders || [])];
+    const gotoHex = row.gotoHex || (orders.some(order => String(order).trim().toUpperCase() === 'GOTO') ? row.startHex : null);
+    return {
+      ...row,
+      gotoHex: gotoHex || null,
+      startHex: starts.get(String(row.unit)) || null,
+      orders: orders.map(order => String(order).trim().toUpperCase() === 'GOTO' && gotoHex ? `GOTO ${gotoHex}` : order)
+    };
+  });
+
+  const movementUnits = new Set(plan.movements.map(row => String(row.unit)));
+  const units = new Map((plan.units || []).map(unit => [String(unit.unit), unit]));
+  for (const scout of plan.scouts || []) {
+    const unit = String(scout.unit || '');
+    if (!unit || movementUnits.has(unit)) continue;
+    const meta = units.get(unit) || {};
+    plan.movements.push({
+      unit,
+      unitName: scout.unitName || meta.unitName || null,
+      type: meta.type || 'Unit',
+      startHex: starts.get(unit) || null,
+      orders: [],
+      scoutAnchor: true
+    });
+    movementUnits.add(unit);
+  }
+  return { ...record, plan };
+}
+
 function lifecycleSetPlanRecord(record, selectValue = null, redraw = true) {
   state.planImport = record || null;
   state.routeCache = record?.plan ? buildPlanRoutes(record.plan) : null;
@@ -51,7 +110,7 @@ function lifecycleDecoratePlanningUI(resultTurn) {
   const timelineLabel = document.getElementById('mapResultTurnLabel');
   const timelineStatus = document.getElementById('mapResultStatus');
   if (timelineLabel) timelineLabel.textContent = `Turn ${resultTurn.turnKey} · PLANNING`;
-  if (timelineStatus) timelineStatus.textContent = `Planning from actual Turn ${baselineTurn} Results · movement/scouting you save belongs to Turn ${resultTurn.turnKey}`;
+  if (timelineStatus) timelineStatus.textContent = `Planning from actual Turn ${baselineTurn} Results · movement/scouting belongs to Turn ${resultTurn.turnKey}`;
   if (status && !state.planImport) status.textContent = `Planning Turn ${resultTurn.turnKey} · baseline from actual Turn ${baselineTurn}.`;
 }
 
@@ -65,38 +124,51 @@ syncPlannerOverlayToResultTurn = async function syncPlannerOverlayWithActualResu
     : await window.tribenet.getResultTurn(turnKey);
   if (!resultTurn) return lifecycleOriginalSyncPlannerOverlay(turnKey, preferredId, options);
 
-  // Synthetic next-turn planning state: show the draft state plus any completed
-  // orders already imported for that turn. Do not show the previous turn's actual
-  // movement as if it belonged to the new turn.
+  // Synthetic next-turn planning state. Before Completed Orders exists this is a
+  // draft planning turn. Once Completed Orders is imported it becomes authoritative:
+  // local draft routes/activities are cleared by the backend and the workbook is
+  // selected by default for verification.
   if (resultTurn.isPlanningTurn) {
     const imports = await window.tribenet.getPlannerImports(turnKey);
     state.planHistory = imports;
     const select = document.getElementById('turnSelect');
     if (select) {
       select.innerHTML = '';
-      const draftOption = document.createElement('option');
-      draftOption.value = 'draft';
-      draftOption.textContent = `Turn ${turnKey} · Draft planning`;
-      select.appendChild(draftOption);
-      for (const row of imports) {
-        const option = document.createElement('option');
-        option.value = String(row.id);
-        const date = row.importedAt ? new Date(row.importedAt).toLocaleDateString() : '';
-        option.textContent = `Turn ${row.turnKey} · ${row.sourceFile}${date ? ` · ${date}` : ''}`;
-        select.appendChild(option);
+      if (!imports.length) {
+        const draftOption = document.createElement('option');
+        draftOption.value = 'draft';
+        draftOption.textContent = `Turn ${turnKey} · Draft planning`;
+        select.appendChild(draftOption);
+      } else {
+        for (const row of imports) {
+          const option = document.createElement('option');
+          option.value = String(row.id);
+          const date = row.importedAt ? new Date(row.importedAt).toLocaleDateString() : '';
+          option.textContent = `Turn ${row.turnKey} · Completed Orders · ${row.sourceFile}${date ? ` · ${date}` : ''}`;
+          select.appendChild(option);
+        }
       }
-      select.title = `Planning Turn ${turnKey} from the Turn ${resultTurn.baselineTurnKey || 'previous'} Results baseline`;
+      select.title = imports.length
+        ? `Completed Orders are authoritative for Turn ${turnKey}`
+        : `Planning Turn ${turnKey} from the Turn ${resultTurn.baselineTurnKey || 'previous'} Results baseline`;
     }
 
-    const requestedId = Number(preferredId);
-    if (preferredId !== 'draft' && Number.isFinite(requestedId) && imports.some(row => Number(row.id) === requestedId)) {
-      const preferred = await window.tribenet.getPlannerPlan(requestedId);
+    if (imports.length) {
+      const requestedId = Number(preferredId);
+      const preferred = preferredId !== 'draft' && Number.isFinite(requestedId) && imports.some(row => Number(row.id) === requestedId)
+        ? await window.tribenet.getPlannerPlan(requestedId)
+        : await window.tribenet.getPlannerPlanForTurn(turnKey);
       if (preferred) {
-        lifecycleSetPlanRecord(preferred, requestedId, false);
+        const hydrated = lifecycleHydrateCompletedRecord(preferred, resultTurn);
+        lifecycleSetPlanRecord(hydrated, hydrated.id, false);
         const status = document.getElementById('planStatus');
-        if (status) status.textContent = `Turn ${preferred.turnKey} · completed orders loaded over the planning baseline.`;
+        const title = document.getElementById('plannerTurnTitle');
+        const source = document.getElementById('plannerSourceLabel');
+        if (status) status.textContent = `Turn ${hydrated.turnKey} · Completed Orders are authoritative; displaying submitted movement and scouting.`;
+        if (title) title.textContent = `Turn ${hydrated.turnKey} · Completed Orders`;
+        if (source) source.textContent = hydrated.sourceFile || 'Completed Orders';
         if (redraw) draw();
-        return preferred;
+        return hydrated;
       }
     }
 
@@ -237,7 +309,7 @@ applyResultTurn = async function applyActualOrPlanningTurn(turnKey, options = {}
   if (persist) localStorage.setItem(RESULT_TURN_STORAGE_KEY, planningEntry.turnKey);
   state.hexCache.clear();
   state.loadedArea = null;
-  await syncPlannerOverlayToResultTurn(planningEntry.turnKey, 'draft', { redraw: false });
+  await syncPlannerOverlayToResultTurn(planningEntry.turnKey, null, { redraw: false });
   updateMapTimelineUI();
   lifecycleDecoratePlanningUI(resultsTimeline.turn);
   await refreshSummaries();
@@ -269,8 +341,8 @@ refreshResultTurns = async function refreshResultsAndPlanningTurn(preferredTurnK
   updateMapTimelineUI();
 
   // Existing installs will normally have the latest actual turn persisted. On
-  // startup move them into its next planning turn. An explicit preferred turn
-  // (for example immediately after importing Results) remains on the actual turn.
+  // startup move them into its next planning turn. An explicit preferred planning
+  // turn also selects that synthetic planning state.
   const shouldOpenPlanning = String(storedBefore || '') === String(planningEntry.turnKey)
     || (!preferredTurnKey && (!storedBefore || String(storedBefore) === String(planningEntry.baselineTurnKey)));
   if (shouldOpenPlanning) {

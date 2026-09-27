@@ -26,20 +26,17 @@
         <section class="tm-panel">
           <p class="eyebrow">TURN WORKFLOW</p>
           <select id="turnPicker" class="tm-full"><option value="">No results imported</option></select>
-          <div class="tm-import-buttons">
-            <button id="importFinal" class="button accent">Import Completed Orders</button>
-          </div>
           <div class="tm-workbook-state">
             <div class="tm-workbook-card"><span>Results baseline</span><strong id="startFile">No Results baseline</strong><small id="startTime"></small></div>
             <div class="tm-workbook-card"><span>Completed orders</span><strong id="finalFile">Planning in progress</strong><small id="finalTime"></small></div>
           </div>
-          <p class="tm-help">Import the Results report once in Tribe / Unit Management. It automatically becomes this turn's baseline here and in the Mapper. Plan against that state; when the completed orders workbook is imported it becomes authoritative and replaces the draft plan.</p>
+          <p class="tm-help">Use the Launcher for both imports. Results automatically creates the next turn baseline here and in the Mapper. Plan against that state; when Completed Orders is imported from the Launcher it becomes authoritative and replaces the draft plan.</p>
         </section>
 
         <section class="tm-panel tm-grow">
           <div class="tm-section-title"><div><p class="eyebrow">UNITS</p><h3>Tribes, Fleets &amp; Elements</h3></div><span id="unitCount">0</span></div>
           <input id="unitSearch" class="tm-full" placeholder="Search units…" />
-          <div id="unitList" class="tm-unit-list"><div class="history-empty">Import a Results report to begin.</div></div>
+          <div id="unitList" class="tm-unit-list"><div class="history-empty">Import a Results report from the Launcher to begin.</div></div>
         </section>
       </aside>
 
@@ -47,7 +44,7 @@
         <div id="tmEmpty" class="tm-empty">
           <div class="empty-icon">☷</div>
           <h2>Import a Results report</h2>
-          <p>Use Tribe / Unit Management to import the report once. The Turn Manager will automatically use the resulting Tribe and Unit state as the planning baseline.</p>
+          <p>Return to the Launcher and import the report once. The Turn Manager will automatically use the resulting Tribe and Unit state as the planning baseline.</p>
         </div>
 
         <div id="tmWorkspace" class="hidden">
@@ -111,7 +108,7 @@
 
           <section class="tm-panel tm-export-note">
             <strong>Results are the baseline; completed orders are the final state.</strong>
-            <span>Draft planning remains local until the completed orders workbook is imported. Importing that workbook once updates both the Turn Manager and Mapper and clears obsolete draft planning for that turn.</span>
+            <span>Draft planning remains local until Completed Orders is imported from the Launcher. That import updates both the Turn Manager and Mapper and clears obsolete draft planning for the turn.</span>
           </section>
         </div>
       </section>

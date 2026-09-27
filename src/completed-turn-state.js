@@ -53,7 +53,40 @@ function resolvePlanMovementStarts(plan, resultTurn) {
       pending.splice(i, 1); changed = true;
     }
   }
-  resolved.movements = (resolved.movements || []).map(row => ({ ...row, startHex: row.startHex || starts.get(String(row.unit)) || null }));
+
+  resolved.movements = (resolved.movements || []).map(row => {
+    const orders = [...(row.orders || [])];
+    // Older imports treated Tribe_Movement.Hex as startHex. In Mandate it is only
+    // the destination used by GOTO, so preserve it as the GOTO target before
+    // replacing the origin from the previous Results/split position.
+    const legacyGotoHex = row.gotoHex || (orders.some(order => canonical(order) === 'GOTO') ? row.startHex : null);
+    const normalizedOrders = orders.map(order => canonical(order) === 'GOTO' && legacyGotoHex ? `GOTO ${legacyGotoHex}` : order);
+    return {
+      ...row,
+      gotoHex: legacyGotoHex || row.gotoHex || null,
+      startHex: starts.get(String(row.unit)) || null,
+      orders: normalizedOrders
+    };
+  });
+
+  // A scout can exist without a Tribe_Movement row. Add an empty movement anchor
+  // so the map can still derive its origin (and any split-off origin) correctly.
+  const movementUnits = new Set(resolved.movements.map(row => String(row.unit)));
+  const knownUnits = new Map((resolved.units || []).map(row => [String(row.unit), row]));
+  for (const scout of resolved.scouts || []) {
+    const unit = String(scout.unit || '');
+    if (!unit || movementUnits.has(unit)) continue;
+    const meta = knownUnits.get(unit) || {};
+    resolved.movements.push({
+      unit,
+      unitName: scout.unitName || meta.unitName || null,
+      type: meta.type || 'Unit',
+      startHex: starts.get(unit) || null,
+      orders: [],
+      scoutAnchor: true
+    });
+    movementUnits.add(unit);
+  }
   return resolved;
 }
 

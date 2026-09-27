@@ -62,25 +62,28 @@ function extractCompletedMovements(workbook) {
   return rows.map(row => {
     const unit = clean(row.TRIBE);
     if (!unit) return null;
+    const gotoHex = normalizeHex(row.Hex);
     const orders = [];
     for (let i = 1; i <= 40; i++) {
       const raw = clean(row[`MOVEMENT_${i}`] ?? row[`MOVEMENT${i}`]);
       if (!raw) continue;
       const value = String(raw).trim().toUpperCase();
       if (value === 'EMPTY') continue;
-      orders.push(value);
+      orders.push(value === 'GOTO' && gotoHex ? `GOTO ${gotoHex}` : value);
     }
-    const startHex = normalizeHex(row.Hex);
     const followTribe = clean(row.FOLLOW_TRIBE);
     const movementType = clean(row.MovementType);
-    if (!startHex && !orders.length && !followTribe && !movementType) return null;
+    if (!gotoHex && !orders.length && !followTribe && !movementType) return null;
     return {
       unitName: clean(row.UnitName),
       unit: String(unit).trim(),
       type: unitType(unit),
       followTribe: followTribe ? String(followTribe).trim() : null,
       movementType,
-      startHex,
+      // Hex is the destination used by a GOTO instruction. It is never the unit's origin.
+      // Movement origins are inherited from the previous Results state (or split-off location).
+      gotoHex,
+      startHex: null,
       orders,
       processed: clean(row.Processed)
     };
@@ -94,7 +97,9 @@ function mergeCompletedMovements(plan, workbook) {
     byUnit.set(String(row.unit), {
       ...existing,
       ...row,
-      startHex: row.startHex || existing.startHex || null,
+      // Never retain the generic parser's old interpretation of Hex as startHex.
+      startHex: null,
+      gotoHex: row.gotoHex || existing.gotoHex || null,
       orders: row.orders?.length ? row.orders : (existing.orders || [])
     });
   }
