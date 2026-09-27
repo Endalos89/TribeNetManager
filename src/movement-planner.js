@@ -141,7 +141,9 @@ function movementPlannerRenderCard(result) {
     : result.actualTarget;
   summary.textContent = `${destination} · ${result.totalMp} MP route · ${result.steps} hex${result.steps === 1 ? '' : 'es'}`;
   movementPlannerRenderAllowances(result.totalMp);
-  routeText.textContent = result.directions.length ? result.directions.join(' → ') : 'Already at the best revealed adjacent hex.';
+  routeText.textContent = result.directions.length
+    ? `Movement commands: ${result.directions.map((direction, index) => `${index + 1}. ${direction}`).join(' → ')}`
+    : 'Movement commands: none — already at the best revealed adjacent hex.';
   note.textContent = result.targetIsUnknown
     ? `Fastest route to any revealed adjacent land hex (${result.candidateGoalCount} candidate${result.candidateGoalCount === 1 ? '' : 's'}). Scouts use the same terrain costs but have 8 MP on foot or 15 MP mounted; they return automatically without spending return MP. Base terrain MP only; weather and river/ford/pass modifiers are not yet applied.`
     : 'Scouts use the same terrain costs but have 8 MP on foot or 15 MP mounted; they return automatically without spending return MP. Base terrain MP only; weather and river/ford/pass modifiers are not yet applied.';
