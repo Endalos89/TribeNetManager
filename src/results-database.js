@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
-const CURRENT_SCHEMA = 1;
+const CURRENT_SCHEMA = 2;
 
 function deepDelta(current, previous) {
   const delta = {};
@@ -52,13 +52,20 @@ function parseStoredCoordinate(coordinate) {
   };
 }
 
+function safeSourceFileName(turnKey) {
+  const safeTurn = String(turnKey || 'unknown-turn').replace(/[^A-Za-z0-9._-]+/g, '_');
+  return `${safeTurn}.docx`;
+}
+
 class ResultsDatabase {
   constructor(userDataPath) {
     this.dataDir = path.join(userDataPath, 'data');
     this.backupDir = path.join(userDataPath, 'backups');
+    this.sourceDir = path.join(this.dataDir, 'result-reports');
     this.dbPath = path.join(this.dataDir, 'results.sqlite');
     fs.mkdirSync(this.dataDir, { recursive: true });
     fs.mkdirSync(this.backupDir, { recursive: true });
+    fs.mkdirSync(this.sourceDir, { recursive: true });
     this.db = new DatabaseSync(this.dbPath);
     this.db.exec('PRAGMA journal_mode = WAL;');
     this.db.exec('PRAGMA foreign_keys = ON;');
@@ -137,6 +144,68 @@ class ResultsDatabase {
         INSERT INTO schema_migrations(version, applied_at) VALUES (1, datetime('now'));
       `);
     }
+    if (current < 2) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS result_sources (
+          turn_key TEXT PRIMARY KEY,
+          original_file_name TEXT NOT NULL,
+          stored_file_name TEXT NOT NULL,
+          archived_at TEXT NOT NULL
+        );
+        INSERT INTO schema_migrations(version, applied_at) VALUES (2, datetime('now'));
+      `);
+    }
+  }
+
+  archiveSource(turnKey, filePath, originalFileName = null) {
+    if (!turnKey || !filePath) throw new Error('A turn key and source report path are required.');
+    if (!fs.existsSync(filePath)) throw new Error(`Source report was not found: ${filePath}`);
+    const storedFileName = safeSourceFileName(turnKey);
+    const storedPath = path.join(this.sourceDir, storedFileName);
+    const originalName = originalFileName || path.basename(filePath);
+    fs.copyFileSync(filePath, storedPath);
+    this.db.prepare(`
+      INSERT INTO result_sources(turn_key, original_file_name, stored_file_name, archived_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(turn_key) DO UPDATE SET
+        original_file_name = excluded.original_file_name,
+        stored_file_name = excluded.stored_file_name,
+        archived_at = excluded.archived_at
+    `).run(turnKey, originalName, storedFileName, new Date().toISOString());
+    return { turnKey, originalFileName: originalName, storedFileName, storedPath, exists: true };
+  }
+
+  listSources() {
+    return this.db.prepare(`
+      SELECT rs.turn_key AS turnKey, rs.original_file_name AS originalFileName,
+             rs.stored_file_name AS storedFileName, rs.archived_at AS archivedAt,
+             COALESCE(rt.turn_sort, 999999999) AS turnSort
+      FROM result_sources rs
+      LEFT JOIN result_turns rt ON rt.turn_key = rs.turn_key
+      ORDER BY turnSort ASC, rs.turn_key ASC
+    `).all().map(row => {
+      const storedPath = path.join(this.sourceDir, row.storedFileName);
+      return {
+        turnKey: row.turnKey,
+        originalFileName: row.originalFileName,
+        storedFileName: row.storedFileName,
+        storedPath,
+        archivedAt: row.archivedAt,
+        turnSort: Number(row.turnSort),
+        exists: fs.existsSync(storedPath)
+      };
+    });
+  }
+
+  getReprocessStatus() {
+    const turns = this.listTurns();
+    const sources = this.listSources();
+    const sourceTurns = new Set(sources.filter(source => source.exists).map(source => source.turnKey));
+    return {
+      totalTurns: turns.length,
+      archivedSources: sources.filter(source => source.exists).length,
+      missingSourceTurns: turns.filter(turn => !sourceTurns.has(turn.turnKey)).map(turn => turn.turnKey)
+    };
   }
 
   saveReport(report) {
@@ -347,4 +416,4 @@ class ResultsDatabase {
   }
 }
 
-module.exports = { ResultsDatabase, snapshotDeltas, deepDelta };
+module.exports = { ResultsDatabase, snapshotDeltas, deepDelta, safeSourceFileName };
