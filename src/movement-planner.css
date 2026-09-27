@@ -2,7 +2,7 @@
   position: absolute;
   left: 14px;
   top: 14px;
-  width: min(520px, calc(100% - 40px));
+  width: min(560px, calc(100% - 40px));
   background: rgba(8, 19, 15, .94);
   border: 1px solid #4b7758;
   border-radius: 10px;
@@ -120,6 +120,97 @@
   max-width: 290px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.movement-planner-unit-select {
+  min-width: 190px;
+  max-width: 255px;
+}
+
+.movement-planner-type-select {
+  min-width: 105px;
+}
+
+.movement-planner-save-panel {
+  pointer-events: auto;
+  border-top: 1px solid #2e4938;
+  margin-top: 9px;
+  padding-top: 9px;
+}
+
+.movement-planner-save-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+#movementPlannerSaveStatus {
+  color: #9cc7a8;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.movement-planner-scout-limit {
+  margin-top: 7px;
+  color: #91ad9b;
+  font-size: 9px;
+}
+
+.movement-planner-saved-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.movement-planner-saved-route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 6px 7px;
+  border: 1px solid #2c4938;
+  border-radius: 7px;
+  background: rgba(11, 27, 20, .72);
+}
+
+.movement-planner-saved-route > div {
+  min-width: 0;
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+}
+
+.movement-planner-saved-route strong {
+  color: #e7f3ea;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.movement-planner-saved-route span,
+.movement-planner-saved-route small {
+  color: #88a794;
+  font-size: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.movement-planner-saved-route small {
+  grid-column: 1;
+}
+
+.movement-planner-remove-route {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  padding: 4px 7px;
+  font-size: 8px;
+}
+
+.movement-planner-saved-empty {
+  color: #718a7b;
+  font-size: 9px;
 }
 
 @media (max-width: 850px) {

@@ -1,4 +1,13 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { PlannedRoutesDatabase } = require('./planned-routes-database');
+
+let plannedRoutesDatabasePromise = null;
+async function getPlannedRoutesDatabase() {
+  if (!plannedRoutesDatabasePromise) {
+    plannedRoutesDatabasePromise = ipcRenderer.invoke('app:userDataPath').then(userDataPath => new PlannedRoutesDatabase(userDataPath));
+  }
+  return plannedRoutesDatabasePromise;
+}
 
 function currentViewFromDom() {
   const page = String(window.location.pathname || '').split('/').pop() || 'index.html';
@@ -32,6 +41,13 @@ window.addEventListener('DOMContentLoaded', async () => {
       document.body.appendChild(script);
     }
   } catch (_) {}
+
+  const currentPage = String(window.location.pathname || '').split('/').pop() || 'index.html';
+  if (currentPage === 'index.html') {
+    const savedPlansScript = document.createElement('script');
+    savedPlansScript.src = 'saved-movement-plans.js';
+    document.body.appendChild(savedPlansScript);
+  }
 
   reportViewFromDom();
   const observed = ['launcherView', 'mapperView', 'overviewPanel', 'detailPanel']
@@ -76,6 +92,9 @@ contextBridge.exposeInMainWorld('tribenet', {
   getResultHexHistory: coordinate => ipcRenderer.invoke('results:hex-history', coordinate),
   getResultSubmapSummaries: turnKey => ipcRenderer.invoke('results:submaps', turnKey),
   backupResults: () => ipcRenderer.invoke('results:backup'),
+  listPlannedRoutes: async turnKey => (await getPlannedRoutesDatabase()).list(turnKey),
+  savePlannedRoute: async route => (await getPlannedRoutesDatabase()).save(route),
+  removePlannedRoute: async id => (await getPlannedRoutesDatabase()).remove(id),
   reportCurrentView: view => ipcRenderer.invoke('app:report-view', view),
   consumeStartupView: () => ipcRenderer.invoke('app:consume-startup-view'),
   getVersion: () => ipcRenderer.invoke('app:version'),
