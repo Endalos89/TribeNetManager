@@ -1,15 +1,16 @@
 const $ = id => document.getElementById(id);
 const state = { turns: [], turn: null, catalog: [], selectedUnit: null };
 
-function esc(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function esc(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c])); }
 function num(value) { return Number(value || 0).toLocaleString(); }
 function rootTribe(unit) { const m = String(unit || '').match(/^(\d{4})/); return m ? m[1] : String(unit || ''); }
-function currentData() { return state.turn?.start?.data || state.turn?.final?.data || null; }
+function currentData() { return state.turn?.final?.data || state.turn?.start?.data || null; }
 function allUnits() { return currentData()?.units || []; }
 function selected() { return allUnits().find(u => String(u.unit) === String(state.selectedUnit)) || null; }
 function skillsForTribe(tribe) { return currentData()?.skillsByTribe?.[tribe] || []; }
 function canonical(value) { return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
 function activityFor(code) { return state.catalog.find(a => a.code === code) || null; }
+function finalized() { return Boolean(state.turn?.final); }
 
 function skillLevel(activity, tribe) {
   if (!activity?.skill) return null;
@@ -43,8 +44,8 @@ function setStatus(message, error = false) {
 async function refreshTurns(preferred = null) {
   state.turns = await window.tribenet.listManagedTurns();
   const picker = $('turnPicker');
-  const keep = preferred || picker.value || state.turn?.turnKey || state.turns[0]?.turnKey || '';
-  picker.innerHTML = '<option value="">No turn imported</option>' + state.turns.map(t => `<option value="${esc(t.turnKey)}">${esc(t.turnKey)}</option>`).join('');
+  const keep = preferred || picker.value || state.turn?.turnKey || state.turns[state.turns.length - 1]?.turnKey || '';
+  picker.innerHTML = '<option value="">No results imported</option>' + state.turns.map(t => `<option value="${esc(t.turnKey)}">${esc(t.turnKey)}</option>`).join('');
   if (keep && state.turns.some(t => t.turnKey === keep)) picker.value = keep;
   if (picker.value) await loadTurn(picker.value); else renderEmpty();
 }
@@ -60,15 +61,15 @@ async function loadTurn(turnKey) {
 function renderEmpty() {
   state.turn = null; state.selectedUnit = null;
   $('tmEmpty').classList.remove('hidden'); $('tmWorkspace').classList.add('hidden');
-  $('unitList').innerHTML = '<div class="history-empty">Import a turn workbook to begin.</div>';
+  $('unitList').innerHTML = '<div class="history-empty">Import a Results report in Tribe / Unit Management to create the turn baseline.</div>';
   $('unitCount').textContent = '0';
 }
 
 function renderWorkbookState() {
   const fmt = iso => iso ? new Date(iso).toLocaleString() : '';
-  $('startFile').textContent = state.turn?.start?.sourceFile || 'Not imported';
+  $('startFile').textContent = state.turn?.start?.sourceFile || 'No Results baseline';
   $('startTime').textContent = fmt(state.turn?.start?.importedAt);
-  $('finalFile').textContent = state.turn?.final?.sourceFile || 'Not imported';
+  $('finalFile').textContent = state.turn?.final?.sourceFile || 'Planning in progress';
   $('finalTime').textContent = fmt(state.turn?.final?.importedAt);
 }
 
@@ -79,7 +80,8 @@ function renderUnits() {
   if (!units.length) { $('unitList').innerHTML = '<div class="history-empty">No matching units.</div>'; return; }
   $('unitList').innerHTML = units.map(u => {
     const inherited = u.type !== 'Tribe' ? ` · skills from ${esc(u.parentTribe)}` : '';
-    return `<button class="tm-unit-card ${String(u.unit)===String(state.selectedUnit)?'active':''}" data-unit="${esc(u.unit)}"><div class="top"><strong>${esc(u.unit)}</strong><span>${esc(u.type)}</span></div><small>${esc(u.unitName || '')}${inherited}</small><small>${esc(u.startHex || 'Location unknown')} · ${num(plannedPeopleForUnit(u.unit))} people planned</small></button>`;
+    const stateText = finalized() ? 'completed orders' : `${num(plannedPeopleForUnit(u.unit))} people planned`;
+    return `<button class="tm-unit-card ${String(u.unit)===String(state.selectedUnit)?'active':''}" data-unit="${esc(u.unit)}"><div class="top"><strong>${esc(u.unit)}</strong><span>${esc(u.type)}</span></div><small>${esc(u.unitName || '')}${inherited}</small><small>${esc(u.startHex || 'Location unknown')} · ${stateText}</small></button>`;
   }).join('');
   document.querySelectorAll('.tm-unit-card').forEach(btn => btn.addEventListener('click', () => { state.selectedUnit = btn.dataset.unit; renderAll(); }));
 }
@@ -90,13 +92,13 @@ function renderSelectedUnit() {
   $('unitCode').textContent = u.unit; $('unitName').textContent = u.unitName || ''; $('unitType').textContent = u.type;
   $('parentTribe').textContent = u.parentTribe || rootTribe(u.unit); $('unitLocation').textContent = u.startHex || 'Unknown';
   $('unitWarriors').textContent = num(u.warrior); $('unitActives').textContent = num(u.active); $('unitSlaves').textContent = num(u.slave);
-  $('unitAssigned').textContent = `${num(plannedPeopleForUnit(u.unit))} / ${num(workforce(u))}`;
+  $('unitAssigned').textContent = finalized() ? 'Submitted' : `${num(plannedPeopleForUnit(u.unit))} / ${num(workforce(u))}`;
   renderSkills(u); renderSharedLimits(u); renderPlannedActivities(u); renderFinalActivities(u); renderActivityRule();
 }
 
 function renderSkills(u) {
   const skills = u.skills || skillsForTribe(u.parentTribe);
-  $('skillList').innerHTML = skills.length ? skills.map(s => `<span class="tm-skill ${u.type==='Tribe'?'':'inherited'}"><b>${esc(s.shortname || s.skill)}</b> ${num(s.level)}</span>`).join('') : '<div class="history-empty">No skill levels were detected in this workbook. Activity validation will warn rather than block on unknown skills.</div>';
+  $('skillList').innerHTML = skills.length ? skills.map(s => `<span class="tm-skill ${u.type==='Tribe'?'':'inherited'}"><b>${esc(s.shortname || s.skill)}</b> ${num(s.level)}</span>`).join('') : '<div class="history-empty">No skill levels were detected in the Results baseline. Activity validation will warn rather than block on unknown skills.</div>';
 }
 
 function renderSharedLimits(u) {
@@ -104,13 +106,13 @@ function renderSharedLimits(u) {
   const skills = skillsForTribe(parent); const hasSkills = skills.length > 0;
   const entries = [];
   for (const activity of state.catalog.filter(a => a.limitType === 'sharedPerSkill10')) {
-    const level = skillLevel(activity, parent); const used = plannedUsage(parent, activity.code); const limit = sharedLimit(activity, level);
+    const level = skillLevel(activity, parent); const used = finalized() ? 0 : plannedUsage(parent, activity.code); const limit = sharedLimit(activity, level);
     if (!used && (!level || level <= 0)) continue;
     entries.push({ name: activity.name, used, limit, detail: hasSkills ? `${activity.skill} ${level}` : 'skill level unknown' });
   }
-  const scoutSource = state.turn?.final?.data || state.turn?.start?.data;
+  const scoutSource = state.turn?.final?.data;
   const scoutCount = (scoutSource?.scouts || []).filter(s => rootTribe(s.unit) === parent).length;
-  entries.push({ name: 'Scout groups', used: scoutCount, limit: 8, detail: state.turn?.final ? 'from finalized workbook' : 'from available workbook' });
+  entries.push({ name: 'Scout groups', used: scoutCount, limit: 8, detail: finalized() ? 'from completed orders' : 'draft routes are managed in the Mapper' });
   $('sharedLimits').innerHTML = entries.map(e => {
     const finite = Number.isFinite(e.limit); const pct = finite && e.limit > 0 ? e.used / e.limit * 100 : 0;
     const cls = finite && e.used > e.limit ? 'over' : finite && pct >= 85 ? 'warn' : '';
@@ -133,13 +135,18 @@ function activityDescription(activity, u) {
 
 function renderActivityRule() {
   const u = selected(); const activity = activityFor($('activitySelect').value);
-  $('activityRule').textContent = activityDescription(activity, u);
+  $('activityRule').textContent = finalized() ? 'Completed orders are authoritative for this turn.' : activityDescription(activity, u);
   validateActivity();
 }
 
 function validateActivity() {
   const u = selected(); const activity = activityFor($('activitySelect').value); const people = Math.max(0, Number($('activityPeople').value || 0));
   const host = $('activityValidation'); host.className = 'tm-validation';
+  if (finalized()) {
+    host.textContent = 'Planning is closed because completed orders have been imported. Re-importing completed orders replaces the submitted copy.';
+    host.classList.add('warn');
+    return { ok: false, errors: ['Turn is finalized.'], warnings: [] };
+  }
   if (!u || !activity) { host.textContent = ''; return { ok:false }; }
   const errors = [], warnings = []; const parent = u.parentTribe || rootTribe(u.unit); const skills = skillsForTribe(parent); const level = skillLevel(activity, parent);
   if (activity.tribeOnly && u.type !== 'Tribe') errors.push('This activity is Tribe-only.');
@@ -160,6 +167,10 @@ function validateActivity() {
 
 function renderPlannedActivities(u) {
   const rows = plannedForUnit(u.unit); $('unitPlanCount').textContent = String(rows.length);
+  if (finalized()) {
+    $('plannedActivityList').innerHTML = '<div class="history-empty">Draft planning was replaced by the completed orders workbook.</div>';
+    return;
+  }
   $('plannedActivityList').innerHTML = rows.length ? rows.map(row => {
     const a = activityFor(row.activityCode);
     return `<div class="tm-activity"><div class="tm-activity-head"><strong>${esc(a?.name || row.activityCode)}</strong><span>${num(row.people)} people</span></div><div class="tm-activity-meta">${row.target ? `Target: ${esc(row.target)}<br>` : ''}${row.notes ? esc(row.notes) : ''}</div><div class="tm-activity-actions"><button class="button danger tm-mini" data-delete="${row.id}">Remove</button></div></div>`;
@@ -169,26 +180,36 @@ function renderPlannedActivities(u) {
 
 function renderFinalActivities(u) {
   const rows = (state.turn?.final?.data?.activities || []).filter(a => String(a.unit) === String(u.unit));
-  $('finalActivities').innerHTML = rows.length ? rows.map(row => `<div class="tm-activity tm-final"><div class="tm-activity-head"><strong>${esc(row.activity || 'Activity')}</strong><span>${num(row.people)} people</span></div><div class="tm-activity-meta">${esc(row.item || row.distinction || '')}</div></div>`).join('') : '<div class="history-empty">No finalized activity rows for this unit, or no finalized workbook has been imported.</div>';
+  $('finalActivities').innerHTML = rows.length ? rows.map(row => `<div class="tm-activity tm-final"><div class="tm-activity-head"><strong>${esc(row.activity || 'Activity')}</strong><span>${num(row.people)} people</span></div><div class="tm-activity-meta">${esc(row.item || row.distinction || '')}</div></div>`).join('') : '<div class="history-empty">No completed activity rows for this unit yet.</div>';
+}
+
+function updatePlanningControls() {
+  const disabled = finalized();
+  for (const id of ['activitySelect', 'activityPeople', 'activityTarget', 'activityNotes', 'addActivity']) {
+    const node = $(id); if (node) node.disabled = disabled;
+  }
+  const button = $('importFinal');
+  if (button) button.textContent = disabled ? 'Replace Completed Orders' : 'Import Completed Orders';
 }
 
 function renderAll() {
   $('tmEmpty').classList.add('hidden'); $('tmWorkspace').classList.remove('hidden');
-  renderWorkbookState(); renderUnits(); renderSelectedUnit();
+  renderWorkbookState(); renderUnits(); renderSelectedUnit(); updatePlanningControls();
   $('turnContext').value = state.turn?.context?.notes || '';
 }
 
-async function doImport(role) {
-  setStatus(role === 'start' ? 'Importing beginning workbook…' : 'Importing finalized workbook…');
-  const result = await window.tribenet.importTurnWorkbook(role);
+async function doImport() {
+  setStatus('Importing completed orders…');
+  const result = await window.tribenet.importTurnWorkbook('final');
   if (result.canceled) return setStatus('');
   if (result.error) return setStatus(result.error, true);
-  const key = result.turn?.turnKey; setStatus(`${role === 'start' ? 'Beginning' : 'Finalized'} workbook stored for ${key}.`);
+  const key = result.turn?.turnKey;
+  setStatus(`Completed orders stored for ${key}. They now replace this turn's draft planning across the tools.`);
   await refreshTurns(key);
 }
 
 async function addActivity() {
-  const u = selected(); if (!u || !state.turn) return;
+  const u = selected(); if (!u || !state.turn || finalized()) return;
   const validation = validateActivity(); if (!validation.ok) return;
   await window.tribenet.addPlannedActivity(state.turn.turnKey, {
     unit: u.unit, activityCode: $('activitySelect').value, people: Number($('activityPeople').value || 0), target: $('activityTarget').value.trim(), notes: $('activityNotes').value.trim()
@@ -202,8 +223,7 @@ async function init() {
   state.catalog = await window.tribenet.getActivityCatalog();
   $('activitySelect').innerHTML = state.catalog.map(a => `<option value="${esc(a.code)}">${esc(a.name)}</option>`).join('');
   $('tmBack').addEventListener('click', () => location.href = 'index.html');
-  $('importStart').addEventListener('click', () => doImport('start'));
-  $('importFinal').addEventListener('click', () => doImport('final'));
+  $('importFinal').addEventListener('click', doImport);
   $('turnPicker').addEventListener('change', () => $('turnPicker').value ? loadTurn($('turnPicker').value) : renderEmpty());
   $('unitSearch').addEventListener('input', renderUnits);
   $('activitySelect').addEventListener('change', renderActivityRule); $('activityPeople').addEventListener('input', validateActivity);
