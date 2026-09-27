@@ -10,7 +10,7 @@ window.addEventListener('DOMContentLoaded', () => {
     document.head.appendChild(link);
     scripts.push('planned-unit-splits-map.js');
   }
-  if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js');
+  if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js', 'turn-manager-mandate.js');
   scripts.push('session-snapshot.js');
   if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-key-ui-fix.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js', 'turn-file-library-ui.js');
   for (const src of scripts) {
@@ -47,6 +47,10 @@ contextBridge.exposeInMainWorld('tribenet', {
   saveTurnContext: (turnKey, notes) => ipcRenderer.invoke('turn-manager:save-context', turnKey, notes),
   getActivityCatalog: () => ipcRenderer.invoke('turn-manager:catalog'),
   backupTurnManager: () => ipcRenderer.invoke('turn-manager:backup'),
+  getMandateCatalog: () => ipcRenderer.invoke('mandate:catalog'),
+  getMandateSkills: () => ipcRenderer.invoke('mandate:skills'),
+  getMandateRecipesForSkill: skill => ipcRenderer.invoke('mandate:recipes-for-skill', skill),
+  resolveMandateSkill: skill => ipcRenderer.invoke('mandate:resolve-skill', skill),
   importResultsReport: () => ipcRenderer.invoke('results:import'),
   reprocessResultsReports: () => ipcRenderer.invoke('results:reprocess'),
   getResultsReprocessStatus: () => ipcRenderer.invoke('results:reprocess-status'),
