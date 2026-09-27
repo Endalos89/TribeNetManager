@@ -37,6 +37,40 @@ function movementPlannerHideCard() {
   if (card) card.classList.add('hidden');
 }
 
+function movementPlannerEnsureAllowancesHost() {
+  let host = document.getElementById('movementPlannerAllowances');
+  if (host) return host;
+  const summary = document.getElementById('movementPlannerSummary');
+  if (!summary) return null;
+  host = document.createElement('div');
+  host.id = 'movementPlannerAllowances';
+  host.className = 'movement-planner-allowances';
+  summary.insertAdjacentElement('afterend', host);
+  return host;
+}
+
+function movementPlannerRenderAllowances(totalMp = null) {
+  const host = movementPlannerEnsureAllowancesHost();
+  if (!host) return;
+  const hasRoute = totalMp != null && Number.isFinite(Number(totalMp));
+  const rows = MovementPlannerCore.movementAllowanceSummary(hasRoute ? Number(totalMp) : 0);
+  host.innerHTML = rows.map(row => {
+    const detail = !hasRoute
+      ? `${row.mp} MP available`
+      : row.canComplete
+        ? `${row.remaining} MP left`
+        : `${row.overBy} MP over`;
+    const value = hasRoute ? `${row.used}/${row.mp} MP` : `${row.mp} MP`;
+    return `
+      <div class="movement-mode${hasRoute ? (row.canComplete ? ' within' : ' over') : ''}">
+        <span>${escapeHtml(row.label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+        <small>${escapeHtml(detail)}</small>
+      </div>
+    `;
+  }).join('');
+}
+
 function movementPlannerReset(options = {}) {
   const keepActive = Boolean(options.keepActive);
   movementPlannerState.route = null;
@@ -96,6 +130,7 @@ function movementPlannerRenderCard(result) {
 
   if (result.status !== 'ok') {
     summary.textContent = movementPlannerResultMessage(result);
+    movementPlannerRenderAllowances(null);
     routeText.textContent = '';
     note.textContent = 'Planner only routes through revealed, land-passable terrain.';
     return;
@@ -104,11 +139,12 @@ function movementPlannerRenderCard(result) {
   const destination = result.targetIsUnknown
     ? `${result.requestedTarget} unknown · stop at ${result.actualTarget}`
     : result.actualTarget;
-  summary.textContent = `${destination} · ${result.totalMp} MP · ${result.steps} hex${result.steps === 1 ? '' : 'es'}`;
+  summary.textContent = `${destination} · ${result.totalMp} MP route · ${result.steps} hex${result.steps === 1 ? '' : 'es'}`;
+  movementPlannerRenderAllowances(result.totalMp);
   routeText.textContent = result.directions.length ? result.directions.join(' → ') : 'Already at the best revealed adjacent hex.';
   note.textContent = result.targetIsUnknown
-    ? `Fastest route to any revealed adjacent land hex (${result.candidateGoalCount} candidate${result.candidateGoalCount === 1 ? '' : 's'}). Base terrain MP only; weather and river/ford/pass modifiers are not yet applied.`
-    : 'Base terrain MP only; weather and river/ford/pass modifiers are not yet applied.';
+    ? `Fastest route to any revealed adjacent land hex (${result.candidateGoalCount} candidate${result.candidateGoalCount === 1 ? '' : 's'}). Scouts use the same terrain costs but have 8 MP on foot or 15 MP mounted; they return automatically without spending return MP. Base terrain MP only; weather and river/ford/pass modifiers are not yet applied.`
+    : 'Scouts use the same terrain costs but have 8 MP on foot or 15 MP mounted; they return automatically without spending return MP. Base terrain MP only; weather and river/ford/pass modifiers are not yet applied.';
 }
 
 async function movementPlannerPlanTo(targetCoordinate) {
@@ -176,6 +212,7 @@ async function movementPlannerToggle() {
   if (card) card.classList.remove('hidden');
   if (title) title.textContent = `Movement from ${movementPlannerState.origin.coordinate}`;
   if (summary) summary.textContent = 'Click another hex to find the lowest-MP route.';
+  movementPlannerRenderAllowances(null);
   if (routeText) routeText.textContent = '';
   if (note) note.textContent = 'Unknown destinations route to the cheapest revealed adjacent land hex.';
   draw();
@@ -277,6 +314,7 @@ function movementPlannerInvalidateForTurn() {
     const summary = document.getElementById('movementPlannerSummary');
     const routeText = document.getElementById('movementPlannerDirections');
     if (summary) summary.textContent = 'Turn changed. Click a destination to recalculate using knowledge available on this turn.';
+    movementPlannerRenderAllowances(null);
     if (routeText) routeText.textContent = '';
     draw();
   }
