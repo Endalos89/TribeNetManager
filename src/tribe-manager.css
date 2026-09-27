@@ -42,6 +42,24 @@ body { overflow: auto; }
 .tm-delta-new { color: #e7c96f; background: rgba(212,169,61,.12); }
 .tm-section { padding: 15px; margin-bottom: 16px; }
 .tm-section-heading { display: flex; justify-content: space-between; gap: 18px; align-items: end; margin-bottom: 12px; }
+.tm-supply-banner { display: flex; justify-content: space-between; align-items: center; gap: 14px; border: 1px solid #29414d; border-radius: 10px; padding: 10px 12px; background: #0b141a; }
+.tm-supply-banner > div { display: grid; gap: 3px; }
+.tm-supply-banner strong { font-size: 13px; }
+.tm-supply-banner span { color: #9db0ba; font-size: 11px; }
+.tm-supply-banner.required { border-color: #755844; background: #19140f; }
+.tm-supply-banner.required strong { color: #efc08d; }
+.tm-supply-banner.clear { border-color: #355c48; background: #0d1713; }
+.tm-supply-banner.clear strong { color: #9bd8ae; }
+.tm-supply-banner.unknown { border-color: #52616a; background: #11191e; }
+.tm-supply-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.tm-supply-card { border: 1px solid #243944; border-radius: 10px; background: #0b141a; padding: 12px; display: grid; gap: 4px; }
+.tm-supply-card > span { color: #91a5af; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.tm-supply-card strong { font-size: 24px; }
+.tm-supply-card small { color: #82959e; line-height: 1.4; }
+.tm-supply-card.required { border-color: #755844; }
+.tm-supply-card.required strong { color: #efc08d; }
+.tm-supply-note { margin: 9px 2px 0; color: #82959e; font-size: 11px; line-height: 1.5; }
+.tm-supply-warning { white-space: nowrap; background: #392e1b !important; color: #efcb7c !important; }
 .tm-resource-sections { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 10px; }
 .tm-resource-card { border: 1px solid #20333d; border-radius: 10px; background: #0b141a; overflow: hidden; }
 .tm-resource-card h3 { margin: 0; padding: 9px 11px; font-size: 13px; color: #c8d5da; border-bottom: 1px solid #20333d; background: #111d24; }
@@ -70,5 +88,5 @@ body { overflow: auto; }
   .tm-layout { grid-template-columns: 1fr; }
   .tm-unit-sidebar { position: static; min-height: auto; }
   .tm-unit-list { grid-template-columns: repeat(2, minmax(0,1fr)); }
-  .tm-resource-sections { grid-template-columns: 1fr; }
+  .tm-resource-sections, .tm-supply-grid { grid-template-columns: 1fr; }
 }

@@ -5,14 +5,22 @@ const { autoUpdater } = require('electron-updater');
 const { TribeNetDatabase } = require('./database');
 const { TurnManagerDatabase } = require('./turn-manager-database');
 const { ResultsDatabase } = require('./results-database');
-const { parseOrdersWorkbook } = require('./planner');
 const { parseTurnWorkbook } = require('./turn-manager-parser');
 const { parseResultDocument } = require('./result-report-parser');
 const { reprocessArchivedReports } = require('./results-reprocessor');
 const { applyWagonAnimalRules } = require('./logistics-rules');
 const { ACTIVITY_CATALOG } = require('./activity-catalog');
 const { normalizeView } = require('./update-view-state');
-const { removeRoutesForUnit } = require('./planned-routes-ipc');
+const { routesDb, removeRoutesForUnit } = require('./planned-routes-ipc');
+const {
+  resultTurnToStartWorkbook,
+  countsFromResultUnit,
+  countsByUnitFromPlan,
+  deriveMovementEnd,
+  calculateSupplyRequirements,
+  parseCoordinate,
+  stepCoordinate
+} = require('./turn-workflow');
 
 let mainWindow;
 let database;
@@ -98,10 +106,144 @@ function withCurrentLogistics(record) {
   return record;
 }
 
+function syncResultBaseline(resultTurn) {
+  if (!resultTurn?.turnKey) return null;
+  const baseline = resultTurnToStartWorkbook(resultTurn);
+  return turnManagerDatabase.saveWorkbook(baseline);
+}
+
+function syncAllResultBaselines() {
+  if (!resultsDatabase || !turnManagerDatabase) return 0;
+  let synced = 0;
+  for (const turn of resultsDatabase.listTurns()) {
+    const detail = resultsDatabase.getTurn(turn.turnKey);
+    if (!detail) continue;
+    syncResultBaseline(detail);
+    synced += 1;
+  }
+  return synced;
+}
+
+function clearDraftPlanning(turnKey) {
+  if (!turnKey) return;
+  for (const activity of turnManagerDatabase.listActivities(turnKey)) {
+    turnManagerDatabase.deleteActivity(activity.id);
+  }
+  for (const split of turnManagerDatabase.listUnitSplits(turnKey)) {
+    turnManagerDatabase.deleteUnitSplit(split.id);
+  }
+  for (const route of routesDb().list(turnKey)) {
+    routesDb().remove(route.id);
+  }
+}
+
+function saveCompletedOrders(filePath) {
+  const parsed = parseTurnWorkbook(filePath, 'final');
+  const plan = applyWagonAnimalRules(parsed.rawPlan);
+  const imported = database.saveTurnPlan(plan);
+  turnManagerDatabase.saveWorkbook(parsed);
+  clearDraftPlanning(parsed.turnKey);
+  return {
+    imported: withCurrentLogistics(imported),
+    turn: turnManagerDatabase.getTurn(parsed.turnKey)
+  };
+}
+
+function terrainContextForHex(turnKey, coordinate, fallbackTerrain = null) {
+  const center = parseCoordinate(coordinate);
+  if (!center) return { terrain: fallbackTerrain || 'UNKNOWN', adjacentTerrains: [] };
+  const coordinates = [String(coordinate).toUpperCase()];
+  for (const direction of ['N', 'NE', 'SE', 'S', 'SW', 'NW']) {
+    const next = stepCoordinate(coordinate, direction);
+    if (next) coordinates.push(next);
+  }
+
+  const resultRows = resultsDatabase.getHexesInArea({
+    minCol: Math.max(0, center.globalCol - 2),
+    maxCol: center.globalCol + 2,
+    minRow: Math.max(0, center.globalRow - 2),
+    maxRow: center.globalRow + 2
+  }, turnKey);
+  const resultByCoordinate = new Map(resultRows.map(row => [String(row.coordinate).toUpperCase(), row.terrain]));
+
+  const terrainAt = value => {
+    const key = String(value || '').toUpperCase();
+    if (resultByCoordinate.has(key)) return resultByCoordinate.get(key);
+    const manual = database.getHex(key);
+    return manual?.terrain || null;
+  };
+
+  const terrain = terrainAt(coordinates[0]) || fallbackTerrain || 'UNKNOWN';
+  const adjacentTerrains = coordinates.slice(1).map(terrainAt).filter(Boolean);
+  return { terrain, adjacentTerrains };
+}
+
+function unitSupplyRequirements(turnKey, unitCode) {
+  const resultTurn = resultsDatabase.getTurn(turnKey);
+  const resultUnit = resultTurn?.units?.find(unit => String(unit.unitCode) === String(unitCode)) || null;
+  const managedTurn = turnManagerDatabase.getTurn(turnKey);
+  const finalPlanRecord = managedTurn?.final ? database.getTurnPlanForTurn(turnKey) : null;
+  const finalPlan = finalPlanRecord?.plan || managedTurn?.final?.data?.rawPlan || null;
+
+  let source = 'current';
+  let endHex = resultUnit?.currentHex || null;
+  let uncertain = false;
+  let counts = countsFromResultUnit(resultUnit || {});
+
+  if (managedTurn?.final && finalPlan) {
+    source = 'completed';
+    const plannedCounts = countsByUnitFromPlan(finalPlan).get(String(unitCode));
+    if (plannedCounts) counts = plannedCounts;
+    const movement = (finalPlan.movements || []).find(row => String(row.unit) === String(unitCode));
+    if (movement) {
+      const end = deriveMovementEnd(movement.startHex || endHex, movement.orders);
+      endHex = end.endHex || endHex;
+      uncertain = end.uncertain;
+    }
+  } else {
+    const unitMove = routesDb().list(turnKey).find(route => route.routeType === 'unit' && String(route.unitCode) === String(unitCode));
+    if (unitMove) {
+      source = 'planned';
+      endHex = unitMove.destinationHex || endHex;
+      uncertain = Number(unitMove.unknownEntryCount || 0) > 0;
+    }
+  }
+
+  if (!endHex) {
+    return {
+      known: false,
+      endHex: null,
+      terrain: 'UNKNOWN',
+      source,
+      uncertain: true,
+      waterRequired: 0,
+      fodderRequired: 0,
+      reason: 'No ending hex is known for this unit.'
+    };
+  }
+
+  const fallbackTerrain = endHex === resultUnit?.currentHex ? resultUnit?.statusTerrain : null;
+  const terrainContext = terrainContextForHex(turnKey, endHex, fallbackTerrain);
+  const requirements = calculateSupplyRequirements({
+    counts,
+    terrain: terrainContext.terrain,
+    adjacentTerrains: terrainContext.adjacentTerrains,
+    endHex,
+    source,
+    uncertain
+  });
+  if (uncertain) {
+    requirements.reason += ' The route contains an unresolved/unknown segment, so this is based on the last planned destination and should be rechecked when the terrain is known.';
+  }
+  return requirements;
+}
+
 app.whenReady().then(() => {
   database = new TribeNetDatabase(app.getPath('userData'));
   turnManagerDatabase = new TurnManagerDatabase(app.getPath('userData'));
   resultsDatabase = new ResultsDatabase(app.getPath('userData'));
+  try { syncAllResultBaselines(); }
+  catch (error) { console.error('Could not sync result baselines into Turn Manager', error); }
   pendingStartupView = consumeUpdateRestoreView();
   configureUpdater();
   createWindow();
@@ -125,17 +267,15 @@ ipcMain.handle('database:backup', () => database.createManualBackup());
 
 ipcMain.handle('planner:import', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Import TribeNet Orders Workbook', properties: ['openFile'],
+    title: 'Import Completed TribeNet Orders Workbook', properties: ['openFile'],
     filters: [{ name: 'Excel workbooks', extensions: ['xlsx', 'xlsm', 'xls'] }]
   });
   if (result.canceled || !result.filePaths.length) return { canceled: true };
-  const filePath = result.filePaths[0];
   try {
-    const plan = applyWagonAnimalRules(parseOrdersWorkbook(filePath));
-    const saved = database.saveTurnPlan(plan);
-    return { canceled: false, imported: withCurrentLogistics(saved) };
+    const saved = saveCompletedOrders(result.filePaths[0]);
+    return { canceled: false, imported: saved.imported, turn: saved.turn };
   } catch (error) {
-    console.error('Planner import failed', error);
+    console.error('Completed orders import failed', error);
     return { canceled: false, error: error.message };
   }
 });
@@ -145,18 +285,20 @@ ipcMain.handle('planner:get-turn', (_event, turnKey) => withCurrentLogistics(dat
 ipcMain.handle('planner:activate', (_event, id) => withCurrentLogistics(database.setActiveTurnPlan(id)));
 
 ipcMain.handle('turn-manager:import', async (_event, role) => {
-  const normalizedRole = role === 'final' ? 'final' : 'start';
+  if (role === 'start') {
+    return { canceled: false, error: 'Beginning workbooks are no longer required. Import the Results report once; it is used automatically as the beginning-of-turn state.' };
+  }
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: normalizedRole === 'start' ? 'Import Beginning-of-Turn Workbook' : 'Import Finalized Turn Workbook',
+    title: 'Import Completed TribeNet Orders Workbook',
     properties: ['openFile'],
     filters: [{ name: 'Excel workbooks', extensions: ['xlsx', 'xlsm', 'xls'] }]
   });
   if (result.canceled || !result.filePaths.length) return { canceled: true };
   try {
-    const parsed = parseTurnWorkbook(result.filePaths[0], normalizedRole);
-    return { canceled: false, turn: turnManagerDatabase.saveWorkbook(parsed) };
+    const saved = saveCompletedOrders(result.filePaths[0]);
+    return { canceled: false, turn: saved.turn, imported: saved.imported };
   } catch (error) {
-    console.error('Turn Manager import failed', error);
+    console.error('Turn Manager completed orders import failed', error);
     return { canceled: false, error: error.message };
   }
 });
@@ -188,6 +330,7 @@ ipcMain.handle('results:import', async () => {
     const parsed = await parseResultDocument(filePath);
     resultsDatabase.archiveSource(parsed.turnKey, filePath, parsed.sourceFile);
     const saved = resultsDatabase.saveReport(parsed);
+    syncResultBaseline(saved);
     return { canceled: false, turn: saved, archived: true };
   } catch (error) {
     console.error('Results report import failed', error);
@@ -196,7 +339,9 @@ ipcMain.handle('results:import', async () => {
 });
 ipcMain.handle('results:reprocess', async () => {
   try {
-    return await reprocessArchivedReports(resultsDatabase, parseResultDocument);
+    const result = await reprocessArchivedReports(resultsDatabase, parseResultDocument);
+    syncAllResultBaselines();
+    return result;
   } catch (error) {
     console.error('Results report reprocess failed', error);
     return { error: error.message, processed: [], failed: [], missingSourceTurns: [] };
@@ -209,6 +354,7 @@ ipcMain.handle('results:hexes-area', (_event, bounds, turnKey) => resultsDatabas
 ipcMain.handle('results:hex-history', (_event, coordinate) => resultsDatabase.getHexHistory(coordinate));
 ipcMain.handle('results:submaps', (_event, turnKey) => resultsDatabase.getSubmapSummaries(turnKey));
 ipcMain.handle('results:backup', () => resultsDatabase.createBackup());
+ipcMain.handle('workflow:unit-supplies', (_event, turnKey, unitCode) => unitSupplyRequirements(turnKey, unitCode));
 
 ipcMain.handle('update:check', async () => {
   if (!app.isPackaged) {

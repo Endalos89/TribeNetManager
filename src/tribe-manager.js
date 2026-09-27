@@ -4,7 +4,8 @@ const tmState = {
   turns: [],
   turn: null,
   selectedUnitCode: null,
-  playTimer: null
+  playTimer: null,
+  supplyRequest: 0
 };
 
 const $ = id => document.getElementById(id);
@@ -39,7 +40,7 @@ function timelineIndex() {
 async function initializeTribeManager() {
   try {
     const version = await window.tribenet.getVersion();
-    $('tribeManagerVersion').textContent = `Version ${version} · Historical Tribe / Unit snapshots`;
+    $('tribeManagerVersion').textContent = `Version ${version} · Tribe / Unit state and turn logistics`;
   } catch (_) {}
   bindEvents();
   await refreshTurns();
@@ -59,7 +60,7 @@ async function refreshTurns(preferredTurnKey = null) {
   if (!tmState.turns.length) {
     tmState.turn = null;
     $('timelineTurnTitle').textContent = 'No results imported';
-    $('timelineSource').textContent = 'Import a Word results report to begin.';
+    $('timelineSource').textContent = 'Import a Word results report to begin. The same import becomes the planning baseline in the other tools.';
     $('timelineFirstTurn').textContent = '—';
     $('timelineCurrentTurn').textContent = '—';
     $('timelineLastTurn').textContent = '—';
@@ -82,7 +83,7 @@ async function selectTurn(turnKey, persist = true) {
   const idx = tmState.turns.findIndex(t => t.turnKey === turnKey);
   $('timelineSlider').value = String(Math.max(0, idx));
   $('timelineTurnTitle').textContent = `Turn ${detail.turnKey}`;
-  $('timelineSource').textContent = `${detail.sourceFile} · imported ${new Date(detail.importedAt).toLocaleString()}`;
+  $('timelineSource').textContent = `${detail.sourceFile} · imported ${new Date(detail.importedAt).toLocaleString()} · shared planning baseline`;
   $('timelineFirstTurn').textContent = tmState.turns[0]?.turnKey || '—';
   $('timelineCurrentTurn').textContent = detail.turnKey;
   $('timelineLastTurn').textContent = tmState.turns[tmState.turns.length - 1]?.turnKey || '—';
@@ -138,6 +139,7 @@ function renderSelectedUnit() {
   $('unitTerrain').textContent = unit.statusTerrain || 'UNKNOWN';
   $('unitPreviousTurn').textContent = unit.previousTurnKey ? `Compared with ${unit.previousTurnKey}` : 'First recorded turn';
   renderSummary(unit);
+  renderSupplies(unit);
   renderResources(unit);
   renderSkills(unit);
   renderMovement(unit);
@@ -163,6 +165,60 @@ function renderSummary(unit) {
       ${formatDelta(delta, hasPrevious)}
     </div>
   `).join('');
+}
+
+function supplySourceLabel(source) {
+  if (source === 'completed') return 'Completed orders';
+  if (source === 'planned') return 'Saved Unit Move';
+  return 'Current reported location';
+}
+
+async function renderSupplies(unit) {
+  const host = $('supplyRequirements');
+  const request = ++tmState.supplyRequest;
+  host.innerHTML = '<div class="tm-empty">Calculating from the effective end position…</div>';
+  try {
+    const requirement = await window.tribenet.getUnitSupplyRequirements(tmState.turn.turnKey, unit.unitCode);
+    if (request !== tmState.supplyRequest || tmState.selectedUnitCode !== unit.unitCode) return;
+    const sourceLabel = supplySourceLabel(requirement.source);
+    const location = requirement.endHex || 'Unknown';
+    const terrain = requirement.terrain || 'UNKNOWN';
+    const warning = requirement.uncertain ? '<span class="state-pill tm-supply-warning">Route uncertain</span>' : '';
+
+    if (!requirement.known) {
+      host.innerHTML = `
+        <div class="tm-supply-banner unknown">
+          <div><strong>${escapeHtml(sourceLabel)} · ${escapeHtml(location)}</strong><span>Terrain is still unknown, so Water/Fodder cannot yet be confirmed.</span></div>
+          ${warning}
+        </div>
+        <div class="tm-supply-grid">
+          <div class="tm-supply-card"><span>Water required / turn</span><strong>?</strong><small>Confirm when the ending terrain is revealed.</small></div>
+          <div class="tm-supply-card"><span>Fodder required / turn</span><strong>?</strong><small>Confirm when the ending terrain is revealed.</small></div>
+        </div>
+        <p class="tm-supply-note">${escapeHtml(requirement.reason || '')}</p>`;
+      return;
+    }
+
+    const counts = requirement.counts || {};
+    const animalSummary = [
+      ['Horse', counts.horses], ['Cattle', counts.cattle], ['Goat', counts.goats],
+      ['Elephant', counts.elephants], ['Dog', counts.dogs], ['Camel', counts.camels]
+    ].filter(([, count]) => Number(count || 0) > 0).map(([name, count]) => `${name} ${nf.format(count)}`).join(' · ');
+
+    host.innerHTML = `
+      <div class="tm-supply-banner ${requirement.waterRequired || requirement.fodderRequired ? 'required' : 'clear'}">
+        <div><strong>${escapeHtml(sourceLabel)} · ${escapeHtml(location)} · ${escapeHtml(terrain)}</strong><span>${requirement.waterRequired || requirement.fodderRequired ? 'Stored supplies required at the end of the turn.' : 'No special stored Water/Fodder requirement.'}</span></div>
+        ${warning}
+      </div>
+      <div class="tm-supply-grid">
+        <div class="tm-supply-card ${requirement.waterRequired ? 'required' : ''}"><span>Water required / turn</span><strong>${formatNumber(requirement.waterRequired)}</strong><small>${requirement.waterRequired ? '1 Water = 1 lb. Includes people and animals covered by the Mandate table.' : 'No special stored Water required for this end terrain.'}</small></div>
+        <div class="tm-supply-card ${requirement.fodderRequired ? 'required' : ''}"><span>Fodder required / turn</span><strong>${formatNumber(requirement.fodderRequired)}</strong><small>${requirement.fodderRequired ? 'Grain may substitute 1:1 for Fodder.' : 'No special stored Fodder required for this end terrain.'}</small></div>
+      </div>
+      <p class="tm-supply-note">${escapeHtml(requirement.reason || '')}${animalSummary ? `<br>Animals used: ${escapeHtml(animalSummary)}.` : ''}</p>`;
+  } catch (error) {
+    if (request !== tmState.supplyRequest) return;
+    host.innerHTML = `<div class="tm-empty">Could not calculate Water/Fodder: ${escapeHtml(error.message || String(error))}</div>`;
+  }
 }
 
 function renderResources(unit) {
@@ -234,7 +290,7 @@ async function refreshReprocessStatus() {
     const button = $('reprocessResultsButton');
     if (!button) return;
     if (status.archivedSources > 0) {
-      button.title = `Re-run the parser over ${status.archivedSources} saved source report${status.archivedSources === 1 ? '' : 's'}.`;
+      button.title = `Re-run the parser over ${status.archivedSources} saved source report${status.archivedSources === 1 ? '' : 's'} and refresh the shared planning baselines.`;
     } else if (status.totalTurns > 0) {
       button.title = 'Existing turns were imported before source archiving was available; re-import them once to enable automatic reprocessing.';
     } else {
@@ -253,7 +309,7 @@ async function importResults() {
     localStorage.setItem(SELECTED_TURN_KEY, result.turn.turnKey);
     await refreshTurns(result.turn.turnKey);
     await refreshReprocessStatus();
-    $('importStatus').textContent = `Turn ${result.turn.turnKey} imported and its source report was saved for future reprocessing.`;
+    $('importStatus').textContent = `Turn ${result.turn.turnKey} imported once: history updated and the same state is now available to Turn Manager and Mapper planning.`;
   } finally {
     $('importResultsButton').disabled = false;
   }
@@ -264,7 +320,7 @@ async function reprocessResults() {
   const preferredTurn = tmState.turn?.turnKey || null;
   button.disabled = true;
   $('importResultsButton').disabled = true;
-  $('importStatus').textContent = 'Reprocessing all saved source reports…';
+  $('importStatus').textContent = 'Reprocessing all saved source reports and refreshing shared turn baselines…';
   try {
     const result = await window.tribenet.reprocessResultsReports();
     if (result?.error) {
@@ -283,6 +339,7 @@ async function reprocessResults() {
       parts.push(`One-time re-import still needed for: ${result.missingSourceTurns.join(', ')}.`);
     }
     if (result.backupPath) parts.push('A results database backup was created first.');
+    parts.push('Turn Manager baselines were refreshed from the processed results.');
     $('importStatus').textContent = parts.join(' ');
   } finally {
     button.disabled = false;
@@ -311,7 +368,7 @@ function togglePlayback() {
       localStorage.setItem(SELECTED_TURN_KEY, nextTurn);
       $('timelineSlider').value = String(idx + 1);
       $('timelineTurnTitle').textContent = `Turn ${detail.turnKey}`;
-      $('timelineSource').textContent = `${detail.sourceFile} · imported ${new Date(detail.importedAt).toLocaleString()}`;
+      $('timelineSource').textContent = `${detail.sourceFile} · imported ${new Date(detail.importedAt).toLocaleString()} · shared planning baseline`;
       $('timelineCurrentTurn').textContent = detail.turnKey;
       if (!detail.units.some(u => u.unitCode === tmState.selectedUnitCode)) tmState.selectedUnitCode = detail.units[0]?.unitCode || null;
       renderUnits();

@@ -12,7 +12,7 @@
     <header class="app-header">
       <div>
         <div class="brand">TribeNet Manager</div>
-        <div class="version" id="tribeManagerVersion">Historical Tribe / Unit snapshots</div>
+        <div class="version" id="tribeManagerVersion">Tribe / Unit state and turn logistics</div>
       </div>
       <div class="header-actions">
         <button class="button" onclick="location.href='index.html'">← Launcher</button>
@@ -25,9 +25,9 @@
     <section class="tm-timeline-panel">
       <div class="tm-timeline-heading">
         <div>
-          <p class="eyebrow">GLOBAL RESULTS TIMELINE</p>
+          <p class="eyebrow">GLOBAL RESULTS TIMELINE · SHARED TURN BASELINE</p>
           <h1 id="timelineTurnTitle">No results imported</h1>
-          <p id="timelineSource" class="tm-muted">Import a Word results report to begin.</p>
+          <p id="timelineSource" class="tm-muted">Import a Word results report to begin. The same import is shared with the planning tools.</p>
         </div>
         <div class="tm-timeline-actions">
           <button id="timelinePrev" class="button square" title="Previous turn">◀</button>
@@ -58,7 +58,7 @@
         <div id="unitEmpty" class="tm-empty-card">
           <div class="empty-icon">☷</div>
           <h2>Select a Tribe or Unit</h2>
-          <p>Choose a unit on the left to see its resources, changes from the previous report, skills, movement and activity history.</p>
+          <p>Choose a unit on the left to see its resources, changes, skills, movement and the Water/Fodder it will need at its effective end position.</p>
         </div>
 
         <div id="unitDetail" class="hidden">
@@ -75,6 +75,14 @@
           </div>
 
           <section class="tm-summary-grid" id="summaryGrid"></section>
+
+          <section class="tm-section">
+            <div class="tm-section-heading">
+              <div><p class="eyebrow">END-OF-TURN LOGISTICS</p><h2>Water &amp; Fodder required per turn</h2></div>
+              <span class="tm-muted">Uses saved movement while planning; completed orders after import.</span>
+            </div>
+            <div id="supplyRequirements"><div class="tm-empty">Select a unit to calculate its requirement.</div></div>
+          </section>
 
           <section class="tm-section">
             <div class="tm-section-heading"><div><p class="eyebrow">RESOURCES</p><h2>Current totals &amp; turn changes</h2></div><span class="tm-muted">Delta compares with this unit's previous available report.</span></div>

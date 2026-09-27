@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('tribenet', {
   getResultHexHistory: coordinate => ipcRenderer.invoke('results:hex-history', coordinate),
   getResultSubmapSummaries: turnKey => ipcRenderer.invoke('results:submaps', turnKey),
   backupResults: () => ipcRenderer.invoke('results:backup'),
+  getUnitSupplyRequirements: (turnKey, unitCode) => ipcRenderer.invoke('workflow:unit-supplies', turnKey, unitCode),
   listPlannedRoutes: turnKey => ipcRenderer.invoke('planned-routes:list', turnKey),
   savePlannedRoute: route => ipcRenderer.invoke('planned-routes:save', route),
   removePlannedRoute: id => ipcRenderer.invoke('planned-routes:remove', id),
