@@ -7,6 +7,16 @@ function rootTribe(unitCode) {
   return match ? match[1] : String(unitCode || '').trim();
 }
 
+function planningTurnKeyFromResult(resultTurn) {
+  const explicit = String(resultTurn?.metadata?.nextTurn || '').trim();
+  if (explicit) return explicit;
+  const current = String(resultTurn?.turnKey || '').trim();
+  const match = current.match(/^(\d+)([-_])(\d+)$/);
+  if (!match) return current || null;
+  const nextPart = String(Number(match[3]) + 1).padStart(match[3].length, '0');
+  return `${match[1]}${match[2]}${nextPart}`;
+}
+
 function resultSkills(resultTurn) {
   const byTribe = {};
   for (const unit of resultTurn?.units || []) {
@@ -23,6 +33,7 @@ function resultSkills(resultTurn) {
 
 function resultTurnToStartWorkbook(resultTurn) {
   if (!resultTurn?.turnKey) throw new Error('A result turn is required to build the turn baseline.');
+  const planningTurnKey = planningTurnKeyFromResult(resultTurn);
   const skillsByTribe = resultSkills(resultTurn);
   const units = (resultTurn.units || []).map(unit => {
     const parentTribe = rootTribe(unit.unitCode);
@@ -54,7 +65,8 @@ function resultTurnToStartWorkbook(resultTurn) {
     role: 'start',
     sourceKind: 'results',
     derivedFromResults: true,
-    turnKey: resultTurn.turnKey,
+    resultTurnKey: resultTurn.turnKey,
+    turnKey: planningTurnKey,
     sourceFile: resultTurn.sourceFile || `Turn ${resultTurn.turnKey} results`,
     importedAt: resultTurn.importedAt || new Date().toISOString(),
     units,
@@ -284,6 +296,7 @@ function calculateSupplyRequirements({ counts, terrain, adjacentTerrains = [], e
 
 module.exports = {
   rootTribe,
+  planningTurnKeyFromResult,
   resultTurnToStartWorkbook,
   countsFromResultUnit,
   countsByUnitFromPlan,
