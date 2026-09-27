@@ -12,6 +12,11 @@ function canonical(value) {
   return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function canonicalSkill(value) {
+  const key = canonical(value);
+  return ({ WOODWORKING: 'WOODWORK' })[key] || key;
+}
+
 function rootTribe(unit) {
   const m = String(unit || '').match(/^(\d{4})/);
   return m ? m[1] : String(unit || '');
@@ -116,13 +121,13 @@ function applySkillTransfers(skillsByTribe, skillMeta, transfers) {
   for (const transfer of transfers || []) {
     if (!result[transfer.fromTribe]) result[transfer.fromTribe] = [];
     if (!result[transfer.toTribe]) result[transfer.toTribe] = [];
-    const wanted = canonical(transfer.skill);
-    const sourceIndex = result[transfer.fromTribe].findIndex(row => [row.skill, row.shortname].map(canonical).includes(wanted));
+    const wanted = canonicalSkill(transfer.skill);
+    const sourceIndex = result[transfer.fromTribe].findIndex(row => [row.skill, row.shortname].map(canonicalSkill).includes(wanted));
     const source = sourceIndex >= 0 ? result[transfer.fromTribe].splice(sourceIndex, 1)[0] : null;
-    const metadata = source || meta.find(row => [row.skill, row.shortname].map(canonical).includes(wanted)) || {};
+    const metadata = source || meta.find(row => [row.skill, row.shortname].map(canonicalSkill).includes(wanted)) || {};
     const level = Number(transfer.level || source?.level || 0);
     if (!Number.isFinite(level) || level <= 0) continue;
-    const targetIndex = result[transfer.toTribe].findIndex(row => [row.skill, row.shortname].map(canonical).includes(wanted));
+    const targetIndex = result[transfer.toTribe].findIndex(row => [row.skill, row.shortname].map(canonicalSkill).includes(wanted));
     const entry = {
       skill: source?.skill || metadata.skill || transfer.skill,
       group: source?.group || metadata.group || null,
@@ -167,7 +172,6 @@ function extractSkillMatrix(workbook) {
       const unitCol = header.findIndex(v => v === 'UNIT' || v === 'TRIBE');
       const levelCol = header.findIndex(v => v === 'LEVEL' || v === 'SKILL LEVEL');
 
-      // Long form: Unit | Skill | Level
       if (unitCol >= 0 && levelCol >= 0) {
         for (let r = headerIndex + 1; r < rows.length; r++) {
           const row = rows[r] || [];
@@ -176,7 +180,6 @@ function extractSkillMatrix(workbook) {
         continue;
       }
 
-      // Matrix form used by the Orders workbook: Skill | Group | Shortname | 0485 | 0486 ...
       const tribeColumns = [];
       for (let c = 0; c < header.length; c++) {
         const raw = clean((rows[headerIndex] || [])[c]);
