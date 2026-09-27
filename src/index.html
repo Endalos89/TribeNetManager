@@ -25,23 +25,23 @@
     <main id="launcherView" class="view launcher-view">
       <section class="hero-panel">
         <p class="eyebrow">TRIBENET TOOLKIT</p>
-        <h1>Clan management, one tool at a time.</h1>
-        <p class="hero-copy">Mapper, Turn Manager and results history stay local on your computer and survive application updates.</p>
+        <h1>One turn state, shared by every tool.</h1>
+        <p class="hero-copy">Import Results once, plan from that shared baseline, then import Completed Orders once to replace the draft plan everywhere.</p>
       </section>
       <section class="module-grid">
         <button id="openMapperButton" class="module-card enabled">
           <div class="module-icon">⬢</div>
-          <div><h2>Mapper</h2><p>Map terrain, replay explored knowledge by turn, inspect hex history and visualise planned movement and scouting.</p></div>
+          <div><h2>Mapper</h2><p>Use Results knowledge automatically, plan movement/scouting by turn, and overlay the completed orders after submission.</p></div>
           <span class="module-status">Open</span>
         </button>
         <button id="openTurnManagerButton" class="module-card enabled" onclick="location.href='turn-manager.html'">
           <div class="module-icon">☷</div>
-          <div><h2>Turn Manager</h2><p>Store beginning and finalized workbooks, view Tribes/Fleets/Elements, inspect inherited skills and plan activities against shared limits.</p></div>
+          <div><h2>Turn Manager</h2><p>Plan activities directly from the Results baseline. Completed Orders become authoritative when imported and replace the draft plan.</p></div>
           <span class="module-status">Open</span>
         </button>
         <button id="openTribeManagerButton" class="module-card enabled" onclick="location.href='tribe-manager.html'">
           <div class="module-icon">♟</div>
-          <div><h2>Tribe Manager</h2><p>Import Word results reports, review Tribe and Unit resources, compare turn changes and replay movement and scouting history.</p></div>
+          <div><h2>Tribe / Unit Management</h2><p>Import Results once, review historical state and changes, and see end-of-turn Water/Fodder needs using planned or completed movement.</p></div>
           <span class="module-status">Open</span>
         </button>
       </section>
@@ -56,10 +56,10 @@
         <button id="backButton" class="button">← Launcher</button>
         <button id="overviewButton" class="button active">World Overview</button>
         <div class="planner-controls">
-          <button id="importOrdersButton" class="button accent">Import Orders</button>
-          <label class="toggle-control"><input id="planningToggle" type="checkbox" checked /><span>Planning</span></label>
+          <button id="importOrdersButton" class="button accent">Import Completed Orders</button>
+          <label class="toggle-control"><input id="planningToggle" type="checkbox" checked /><span>Orders overlay</span></label>
           <label class="toggle-control"><input id="scoutingToggle" type="checkbox" checked /><span>Scouting</span></label>
-          <select id="turnSelect" class="turn-select" title="Stored turn plan history"><option value="">No turn imported</option></select>
+          <select id="turnSelect" class="turn-select" title="Completed orders history"><option value="">No completed orders imported</option></select>
           <span id="planStatus" class="toolbar-readout"></span>
         </div>
         <div id="detailControls" class="detail-controls hidden">
@@ -76,9 +76,9 @@
 
       <div class="results-timeline-bar">
         <div class="results-timeline-label">
-          <span>RESULTS HISTORY</span>
+          <span>RESULTS HISTORY · SHARED PLANNING BASELINE</span>
           <strong id="mapResultTurnLabel">No results imported</strong>
-          <span id="mapResultStatus">Import a Word results report to populate history.</span>
+          <span id="mapResultStatus">Import Results once to populate history and planning state across the tools.</span>
         </div>
         <button id="mapImportResultsButton" class="button accent">Import Results</button>
         <button id="mapResultPrev" class="button square" disabled title="Previous results turn">◀</button>
@@ -107,7 +107,7 @@
             <div id="movementPlannerNote"></div>
           </div>
           <div id="plannerOverlayCard" class="planner-overlay-card hidden">
-            <div class="planner-overlay-title"><strong id="plannerTurnTitle">Turn plan</strong><span id="plannerSourceLabel"></span></div>
+            <div class="planner-overlay-title"><strong id="plannerTurnTitle">Completed orders</strong><span id="plannerSourceLabel"></span></div>
             <div id="plannerWarnings" class="planner-warnings"></div>
           </div>
         </div>
