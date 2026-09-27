@@ -236,10 +236,10 @@ function calculateSupplyRequirements({ counts, terrain, adjacentTerrains = [], e
   const adjacentFreshWater = neighbors.includes('L');
   const coastalOcean = normalizedTerrain === 'O' && neighbors.some(value => value !== 'O' && value !== 'UNKNOWN');
 
-  const waterRestricted = normalizedTerrain === 'DE'
-    || (normalizedTerrain === 'AR' && !adjacentFreshWater)
+  const dryLand = normalizedTerrain === 'AR' || normalizedTerrain === 'DE';
+  const waterRestricted = (dryLand && !adjacentFreshWater)
     || (normalizedTerrain === 'O' && !coastalOcean);
-  const fodderRestricted = normalizedTerrain === 'AR' || normalizedTerrain === 'DE' || (normalizedTerrain === 'O' && !coastalOcean);
+  const fodderRestricted = dryLand || (normalizedTerrain === 'O' && !coastalOcean);
 
   const ordinary = ordinaryPeople(counts || emptyCounts());
   const slaves = Number(counts?.slaves || 0);
@@ -252,11 +252,11 @@ function calculateSupplyRequirements({ counts, terrain, adjacentTerrains = [], e
 
   const rawWater = ordinary * 10 + (slaves + goats + dogs) * 5 + (cattle + horses) * 20 + elephants * 30;
   const rawFodder = horses * 8 + cattle * 5 + goats + elephants * 12;
-  const hasAnimals = goats + dogs + cattle + horses + elephants + camels > 0;
+  const hasFodderAnimals = goats + cattle + horses + elephants > 0;
 
   let reason;
   if (!known) reason = 'Ending terrain is unknown, so stored Water/Fodder need cannot yet be confirmed.';
-  else if (normalizedTerrain === 'AR' && adjacentFreshWater) reason = 'Arid ending hex has a known adjacent fresh-water source; stored water is not required, but herd animals still need fodder.';
+  else if (dryLand && adjacentFreshWater) reason = `${normalizedTerrain === 'AR' ? 'Arid' : 'Desert'} ending hex has a known adjacent fresh-water source; stored water is not required, but herd animals still need fodder.`;
   else if (normalizedTerrain === 'O' && coastalOcean) reason = 'Ending Ocean hex is known to be coastal; the non-coastal-ocean Water/Fodder rule does not apply.';
   else if (waterRestricted || fodderRestricted) reason = 'This ending terrain requires stored supplies at the end of the turn.';
   else reason = 'This ending terrain has normal local access; no special stored Water/Fodder is required.';
@@ -274,7 +274,7 @@ function calculateSupplyRequirements({ counts, terrain, adjacentTerrains = [], e
     adjacentFreshWater,
     coastalOcean,
     waterRequired: known && waterRestricted ? rawWater : 0,
-    fodderRequired: known && fodderRestricted && hasAnimals ? rawFodder : 0,
+    fodderRequired: known && fodderRestricted && hasFodderAnimals ? rawFodder : 0,
     waterRestricted: known ? waterRestricted : null,
     fodderRestricted: known ? fodderRestricted : null,
     counts: { ordinaryPeople: ordinary, slaves, goats, dogs, cattle, horses, elephants, camels },
