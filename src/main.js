@@ -3,14 +3,17 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { TribeNetDatabase } = require('./database');
 const { TurnManagerDatabase } = require('./turn-manager-database');
+const { ResultsDatabase } = require('./results-database');
 const { parseOrdersWorkbook } = require('./planner');
 const { parseTurnWorkbook } = require('./turn-manager-parser');
+const { parseResultDocument } = require('./result-report-parser');
 const { applyWagonAnimalRules } = require('./logistics-rules');
 const { ACTIVITY_CATALOG } = require('./activity-catalog');
 
 let mainWindow;
 let database;
 let turnManagerDatabase;
+let resultsDatabase;
 
 function sendUpdateStatus(payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:status', payload);
@@ -54,6 +57,7 @@ function withCurrentLogistics(record) {
 app.whenReady().then(() => {
   database = new TribeNetDatabase(app.getPath('userData'));
   turnManagerDatabase = new TurnManagerDatabase(app.getPath('userData'));
+  resultsDatabase = new ResultsDatabase(app.getPath('userData'));
   configureUpdater();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -62,6 +66,7 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 app.on('before-quit', () => {
   if (database) database.close();
   if (turnManagerDatabase) turnManagerDatabase.close();
+  if (resultsDatabase) resultsDatabase.close();
 });
 
 ipcMain.handle('hexes:area', (_event, bounds) => database.getHexesInArea(bounds));
@@ -116,6 +121,30 @@ ipcMain.handle('turn-manager:delete-activity', (_event, id) => turnManagerDataba
 ipcMain.handle('turn-manager:save-context', (_event, turnKey, notes) => turnManagerDatabase.saveContext(turnKey, notes));
 ipcMain.handle('turn-manager:catalog', () => ACTIVITY_CATALOG);
 ipcMain.handle('turn-manager:backup', () => turnManagerDatabase.createBackup());
+
+ipcMain.handle('results:import', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import TribeNet Results Report',
+    properties: ['openFile'],
+    filters: [{ name: 'Word results reports', extensions: ['docx'] }]
+  });
+  if (result.canceled || !result.filePaths.length) return { canceled: true };
+  const filePath = result.filePaths[0];
+  try {
+    const parsed = await parseResultDocument(filePath);
+    const saved = resultsDatabase.saveReport(parsed);
+    return { canceled: false, turn: saved };
+  } catch (error) {
+    console.error('Results report import failed', error);
+    return { canceled: false, error: error.message };
+  }
+});
+ipcMain.handle('results:list-turns', () => resultsDatabase.listTurns());
+ipcMain.handle('results:get-turn', (_event, turnKey) => resultsDatabase.getTurn(turnKey));
+ipcMain.handle('results:hexes-area', (_event, bounds, turnKey) => resultsDatabase.getHexesInArea(bounds, turnKey));
+ipcMain.handle('results:hex-history', (_event, coordinate) => resultsDatabase.getHexHistory(coordinate));
+ipcMain.handle('results:submaps', (_event, turnKey) => resultsDatabase.getSubmapSummaries(turnKey));
+ipcMain.handle('results:backup', () => resultsDatabase.createBackup());
 
 ipcMain.handle('update:check', async () => {
   if (!app.isPackaged) {
