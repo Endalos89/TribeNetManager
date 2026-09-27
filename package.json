@@ -7,11 +7,12 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "test": "node tests/planner.test.js && node tests/turn-manager.test.js",
+    "test": "node tests/planner.test.js && node tests/turn-manager.test.js && node tests/results-history.test.js",
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
     "electron-updater": "6.6.2",
+    "mammoth": "1.12.2",
     "xlsx": "0.18.5"
   },
   "devDependencies": {
