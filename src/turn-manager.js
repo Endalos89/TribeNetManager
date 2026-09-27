@@ -61,7 +61,7 @@ async function loadTurn(turnKey) {
 function renderEmpty() {
   state.turn = null; state.selectedUnit = null;
   $('tmEmpty').classList.remove('hidden'); $('tmWorkspace').classList.add('hidden');
-  $('unitList').innerHTML = '<div class="history-empty">Import a Results report in Tribe / Unit Management to create the turn baseline.</div>';
+  $('unitList').innerHTML = '<div class="history-empty">Import Results from the Launcher to create the next-turn baseline.</div>';
   $('unitCount').textContent = '0';
 }
 
@@ -188,24 +188,12 @@ function updatePlanningControls() {
   for (const id of ['activitySelect', 'activityPeople', 'activityTarget', 'activityNotes', 'addActivity']) {
     const node = $(id); if (node) node.disabled = disabled;
   }
-  const button = $('importFinal');
-  if (button) button.textContent = disabled ? 'Replace Completed Orders' : 'Import Completed Orders';
 }
 
 function renderAll() {
   $('tmEmpty').classList.add('hidden'); $('tmWorkspace').classList.remove('hidden');
   renderWorkbookState(); renderUnits(); renderSelectedUnit(); updatePlanningControls();
   $('turnContext').value = state.turn?.context?.notes || '';
-}
-
-async function doImport() {
-  setStatus('Importing completed orders…');
-  const result = await window.tribenet.importTurnWorkbook('final');
-  if (result.canceled) return setStatus('');
-  if (result.error) return setStatus(result.error, true);
-  const key = result.turn?.turnKey;
-  setStatus(`Completed orders stored for ${key}. They now replace this turn's draft planning across the tools.`);
-  await refreshTurns(key);
 }
 
 async function addActivity() {
@@ -223,7 +211,6 @@ async function init() {
   state.catalog = await window.tribenet.getActivityCatalog();
   $('activitySelect').innerHTML = state.catalog.map(a => `<option value="${esc(a.code)}">${esc(a.name)}</option>`).join('');
   $('tmBack').addEventListener('click', () => location.href = 'index.html');
-  $('importFinal').addEventListener('click', doImport);
   $('turnPicker').addEventListener('change', () => $('turnPicker').value ? loadTurn($('turnPicker').value) : renderEmpty());
   $('unitSearch').addEventListener('input', renderUnits);
   $('activitySelect').addEventListener('change', renderActivityRule); $('activityPeople').addEventListener('input', validateActivity);
