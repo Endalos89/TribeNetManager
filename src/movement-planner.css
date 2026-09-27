@@ -2,7 +2,7 @@
   position: absolute;
   left: 14px;
   top: 14px;
-  width: min(430px, calc(100% - 40px));
+  width: min(520px, calc(100% - 40px));
   background: rgba(8, 19, 15, .94);
   border: 1px solid #4b7758;
   border-radius: 10px;
@@ -37,8 +37,64 @@
   line-height: 1.4;
 }
 
+.movement-planner-allowances {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.movement-mode {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #355443;
+  border-radius: 7px;
+  background: rgba(12, 30, 22, .78);
+  display: grid;
+  gap: 2px;
+}
+
+.movement-mode > span {
+  color: #91ad9b;
+  font-size: 8px;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.movement-mode > strong {
+  color: #edf8f0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.movement-mode > small {
+  color: #789586;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.movement-mode.within {
+  border-color: #4f7a5d;
+}
+
+.movement-mode.within > small {
+  color: #93cda2;
+}
+
+.movement-mode.over {
+  border-color: #865d50;
+  background: rgba(44, 24, 20, .82);
+}
+
+.movement-mode.over > strong,
+.movement-mode.over > small {
+  color: #edb1a5;
+}
+
 #movementPlannerDirections {
-  margin-top: 6px;
+  margin-top: 8px;
   color: #f0f7f2;
   font-size: 11px;
   font-weight: 750;
@@ -64,4 +120,10 @@
   max-width: 290px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+@media (max-width: 850px) {
+  .movement-planner-allowances {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
