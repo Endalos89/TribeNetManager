@@ -1,5 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+window.addEventListener('DOMContentLoaded', () => {
+  const script = document.createElement('script');
+  script.src = 'session-snapshot.js';
+  document.body.appendChild(script);
+});
+
 contextBridge.exposeInMainWorld('tribenet', {
   getHexesInArea: bounds => ipcRenderer.invoke('hexes:area', bounds),
   getHex: coordinate => ipcRenderer.invoke('hex:get', coordinate),
