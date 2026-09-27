@@ -18,19 +18,19 @@ Scout 5:Scout SW-GH, Lcm SW,\\SW-LCM, Lcm NW
 Scout 6:Scout SE-GH, \\SE-GH, \\SE-PR, O NE
 0485 Status: PRAIRIE, 0485
 Humans
-People 31212
-Warriors 10404Actives 10404Inactives 10404
+People\t31212
+Warriors \t10404\tActives \t10404\tInactives \t10404
 Animals
-Cattle 500Goat 3700Horse 400
+Cattle \t500\tGoat \t3700\tHorse \t400
 Minerals
-Brass 500Bronze 400Coal 3000Iron 400Silver 10000
+Brass \t500\tBronze \t400\tCoal \t3000\tIron \t400\tSilver \t10000
 War Equipment
-Club 500Jerkin 200Shield 30Sword 30
+Club \t500\tJerkin \t200\tShield \t30\tSword \t30
 Finished Goods
-Provs 40000Sling 300Trap 500Wagon 300
+Provs \t40000\tSling \t300\tTrap \t500\tWagon \t300
 Raw Materials
-Bark 1000Bone 500Gut 500Leather 100Log 100Skin 100
-Wax 20
+Bark \t1000\tBone \t500\tGut \t500\tLeather \t100\tLog \t100\tSkin \t100
+Wax \t20
 Ships
 None
 Skills:
@@ -60,19 +60,19 @@ Scout 7:Scout NW-GH, \\NW-PR, \\N-PR, Lcm NE, NW,\\N-PR, Lcm NE, SE, SW, N,\\,No
 Scout 8:Scout SW-PR, \\SW-GH, Lcm SW,\\,Not enough M.P's to move to SW into LOW CONIFER MOUNTAINS,
 0485 Status: GRASSY HILLS, O NE, 0485
 Humans
-People 31172
-Warriors 10384Actives 10384Inactives 10404
+People\t31172
+Warriors \t10384\tActives \t10384\tInactives \t10404
 Animals
-Cattle 532Goat 3924Horse 387
+Cattle \t532\tGoat \t3924\tHorse \t387
 Minerals
-Brass 500Bronze 400Coal 3000Iron 400Silver 10000
+Brass \t500\tBronze \t400\tCoal \t3000\tIron \t400\tSilver \t10000
 War Equipment
-B/Axe 50Club 450Jerkin 200Shield 30Sword 30
+B/Axe \t50\tClub \t450\tJerkin \t200\tShield \t30\tSword \t30
 Finished Goods
-Provs 92668Sling 380Trap 500Wagon 284
+Provs \t92668\tSling \t380\tTrap \t500\tWagon \t284
 Raw Materials
-Bark 900Bone 570Gut 570Leather 40Log 100Skin 100
-Wax 20
+Bark \t900\tBone \t570\tGut \t570\tLeather \t40\tLog \t100\tSkin \t100
+Wax \t20
 Ships
 None
 Skills:
@@ -88,16 +88,16 @@ Movement Weight: 0 Walking Capacity: 0 Mounted Capacity: 0
 Tribe Movement: Move N-GH, \\N-CH, Lcm N, \\
 0485e1 Status: CONIFER HILLS, Lcm N, 0485e1
 Humans
-People 40
-Warriors 20Actives 20Inactives 0
+People\t40
+Warriors \t20\tActives \t20\tInactives \t0
 Animals
-Horse 34
+Horse \t34
 Minerals
 None
 War Equipment
 None
 Finished Goods
-Provs 240Sling 20Wagon 16
+Provs \t240\tSling \t20\tWagon \t16
 Raw Materials
 None
 Ships
@@ -115,20 +115,33 @@ function unit(report, code) {
 
 (function parserRegression() {
   const turn2 = parseResultText(REPORT_906_02, '0485_906_02_Results.docx');
+  const main2 = unit(turn2, '0485');
   assert.strictEqual(turn2.turnKey, '906-02');
   assert.deepStrictEqual(turn2.units.map(row => row.unitCode), ['0485']);
-  assert.strictEqual(unit(turn2, '0485').resources['Finished Goods'].Provs, 40000);
-  assert.strictEqual(unit(turn2, '0485').resources.Animals.Goat, 3700);
+  assert.deepStrictEqual(main2.people, { People: 31212, Warriors: 10404, Actives: 10404, Inactives: 10404 });
+  assert.deepStrictEqual(main2.resources.Animals, { Cattle: 500, Goat: 3700, Horse: 400 });
+  assert.deepStrictEqual(main2.resources.Minerals, { Brass: 500, Bronze: 400, Coal: 3000, Iron: 400, Silver: 10000 });
+  assert.deepStrictEqual(main2.resources['War Equipment'], { Club: 500, Jerkin: 200, Shield: 30, Sword: 30 });
+  assert.deepStrictEqual(main2.resources['Finished Goods'], { Provs: 40000, Sling: 300, Trap: 500, Wagon: 300 });
+  assert.deepStrictEqual(main2.resources['Raw Materials'], { Bark: 1000, Bone: 500, Gut: 500, Leather: 100, Log: 100, Skin: 100, Wax: 20 });
   assert(turn2.hexKnowledge.some(row => row.coordinate === 'PK1614' && row.knowledgeLevel === 'visited'));
   assert(turn2.hexKnowledge.some(row => row.terrain === 'GH' && row.knowledgeLevel === 'scouted'));
 
   const turn3 = parseResultText(REPORT_906_03, '0485_906_03_Results.docx');
+  const main3 = unit(turn3, '0485');
+  const element3 = unit(turn3, '0485e1');
   assert.strictEqual(turn3.turnKey, '906-03');
   assert.deepStrictEqual(turn3.units.map(row => row.unitCode), ['0485', '0485e1']);
-  assert.strictEqual(unit(turn3, '0485').resources['Finished Goods'].Provs, 92668);
-  assert.strictEqual(unit(turn3, '0485').resources.Animals.Goat, 3924);
-  assert.strictEqual(unit(turn3, '0485e1').currentHex, 'PK1612');
-  assert.strictEqual(unit(turn3, '0485e1').resources['Finished Goods'].Provs, 240);
+  assert.deepStrictEqual(main3.people, { People: 31172, Warriors: 10384, Actives: 10384, Inactives: 10404 });
+  assert.deepStrictEqual(main3.resources.Animals, { Cattle: 532, Goat: 3924, Horse: 387 });
+  assert.deepStrictEqual(main3.resources.Minerals, { Brass: 500, Bronze: 400, Coal: 3000, Iron: 400, Silver: 10000 });
+  assert.deepStrictEqual(main3.resources['War Equipment'], { 'B/Axe': 50, Club: 450, Jerkin: 200, Shield: 30, Sword: 30 });
+  assert.deepStrictEqual(main3.resources['Finished Goods'], { Provs: 92668, Sling: 380, Trap: 500, Wagon: 284 });
+  assert.deepStrictEqual(main3.resources['Raw Materials'], { Bark: 900, Bone: 570, Gut: 570, Leather: 40, Log: 100, Skin: 100, Wax: 20 });
+  assert.strictEqual(element3.currentHex, 'PK1612');
+  assert.deepStrictEqual(element3.people, { People: 40, Warriors: 20, Actives: 20, Inactives: 0 });
+  assert.deepStrictEqual(element3.resources.Animals, { Horse: 34 });
+  assert.deepStrictEqual(element3.resources['Finished Goods'], { Provs: 240, Sling: 20, Wagon: 16 });
   assert(turn3.events.some(row => row.eventType === 'activities' && /52668 provs/.test(row.message)));
   assert(turn3.hexKnowledge.some(row =>
     row.terrain === 'LCM' && row.evidence.some(evidence => /Not enough M\.P/i.test(evidence))
@@ -150,10 +163,13 @@ function unit(report, code) {
     const main = stored3.units.find(row => row.unitCode === '0485');
     assert.strictEqual(main.previousTurnKey, '906-02');
     assert.strictEqual(main.deltas.people.People, -40);
+    assert.strictEqual(main.deltas.people.Warriors, -20);
+    assert.strictEqual(main.deltas.people.Actives, -20);
     assert.strictEqual(main.deltas.resources['Finished Goods'].Provs, 52668);
     assert.strictEqual(main.deltas.resources.Animals.Goat, 224);
+    assert.strictEqual(main.deltas.resources.Animals.Cattle, 32);
 
-    const corrected = parseResultText(REPORT_906_03.replace('Provs 92668', 'Provs 92670'), '0485_906_03_CORRECTED.docx');
+    const corrected = parseResultText(REPORT_906_03.replace('Provs \t92668', 'Provs \t92670'), '0485_906_03_CORRECTED.docx');
     db.saveReport(corrected);
     assert.strictEqual(db.listTurns().length, 2, 're-import must replace the same turn, not duplicate it');
     assert.strictEqual(db.getTurn('906-03').units.find(row => row.unitCode === '0485').resources['Finished Goods'].Provs, 92670);
