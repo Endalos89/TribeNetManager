@@ -8,7 +8,8 @@ const { buildCompletedTurnState, resolvePlanMovementStarts, completedStateToMana
 
 (function completedSplitProjectsAcrossViews() {
   const resultTurn = {
-    turnKey: '906-4', sourceFile: '0485_906_4_Results.docx', importedAt: '2026-09-27T10:00:00.000Z',
+    turnKey: '906-03', sourceFile: '0485_906_03_Results.docx', importedAt: '2026-09-27T10:00:00.000Z',
+    metadata: { nextTurn: '906-04' },
     units: [{
       unitType: 'Tribe', unitCode: '0485', unitName: 'Main Tribe', currentHex: 'PK1614', statusTerrain: 'PR',
       people: { People: 31172, Warriors: 10384, Actives: 10384, Inactives: 10404 },
@@ -21,6 +22,7 @@ const { buildCompletedTurnState, resolvePlanMovementStarts, completedStateToMana
     }]
   };
   const plan = {
+    turnKey: '906-04',
     clan: [{ unit:'0485', warrior:10384, active:10384, inactive:10404, horse:387, cattle:532, goat:3924 }],
     units: [{ unit:'0485', type:'Tribe' }, { unit:'1485', type:'Tribe', parentUnit:'0485' }],
     unitCreations: [{ type:'Tribe', unit:'1485', parentUnit:'0485', direction:null }],
@@ -48,6 +50,7 @@ const { buildCompletedTurnState, resolvePlanMovementStarts, completedStateToMana
   assert.strictEqual(hydrated.movements.find(row => row.unit === '1485').startHex, 'PK1614');
 
   const completed = buildCompletedTurnState(resultTurn, { sourceFile:'0485_906_4_Orders Complete.xlsx', plan });
+  assert.strictEqual(completed.turnKey, '906-04');
   const source = completed.units.find(unit => unit.unitCode === '0485');
   const child = completed.units.find(unit => unit.unitCode === '1485');
   assert(source && child, 'Both the source and newly created Tribe must appear in the completed state.');
@@ -79,6 +82,18 @@ const { buildCompletedTurnState, resolvePlanMovementStarts, completedStateToMana
 
   const managed = completedStateToManagedUnits(completed);
   assert(managed.some(unit => unit.unit === '1485' && unit.warrior === 2000 && unit.startHex === 'PK1917'));
+})();
+
+(function actualResultsBeatSameTurnProjection() {
+  const actual = {
+    turnKey: '906-04', metadata: { nextTurn: '906-05' }, sourceFile: '0485_906_04_Results.docx',
+    units: [{ unitType:'Tribe', unitCode:'0485', currentHex:'PK1708', people:{ Warriors:9, Actives:8, Inactives:7 }, resources:{}, skills:{} }]
+  };
+  const submitted = { plan: { turnKey:'906-04', transfers:[{ from:'0485', to:'1485', item:'WARRIORS', quantity:2, timing:'BM' }], unitCreations:[{ type:'Tribe', unit:'1485', parentUnit:'0485' }], movements:[] } };
+  const state = buildCompletedTurnState(actual, submitted);
+  assert.strictEqual(state.turnKey, '906-04');
+  assert.strictEqual(state.units.length, 1, 'A real Results report must replace the same-turn completed-orders projection.');
+  assert.strictEqual(state.units[0].people.Warriors, 9);
 })();
 
 (function parserKeepsBlankHexMovementsAndMovesSkill() {
