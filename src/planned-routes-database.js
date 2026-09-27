@@ -137,6 +137,11 @@ class PlannedRoutesDatabase {
     return this.db.prepare('DELETE FROM planned_routes WHERE id = ?').run(Number(id)).changes > 0;
   }
 
+  removeForUnit(turnKey, unitCode) {
+    if (!turnKey || !unitCode) return 0;
+    return Number(this.db.prepare('DELETE FROM planned_routes WHERE turn_key = ? AND unit_code = ?').run(turnKey, unitCode).changes || 0);
+  }
+
   close() {
     if (this.db) this.db.close();
   }
