@@ -1,0 +1,76 @@
+.results-timeline-bar {
+  margin: 0 16px 12px;
+  padding: 9px 12px;
+  display: grid;
+  grid-template-columns: minmax(185px, auto) auto auto auto minmax(180px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #263a45;
+  border-radius: 11px;
+  background: #101a21;
+}
+
+.results-timeline-label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1px 8px;
+  align-items: baseline;
+}
+
+.results-timeline-label > span:first-child {
+  grid-column: 1 / -1;
+  font-size: 9px;
+  letter-spacing: .12em;
+  font-weight: 800;
+  color: #78909b;
+}
+
+.results-timeline-label strong {
+  font-size: 13px;
+  color: #edf3f6;
+  white-space: nowrap;
+}
+
+#mapResultStatus {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8fa3ad;
+  font-size: 10px;
+}
+
+.results-turn-slider {
+  width: 100%;
+  min-width: 140px;
+  accent-color: #e4bd62;
+}
+
+.results-timeline-bar .button.square {
+  min-width: 34px;
+}
+
+.results-timeline-bar .button:disabled,
+.results-turn-slider:disabled {
+  opacity: .42;
+}
+
+.hex-editor select:disabled,
+.hex-editor textarea:disabled {
+  opacity: .82;
+  cursor: default;
+}
+
+@media (max-width: 1200px) {
+  .results-timeline-bar {
+    grid-template-columns: minmax(180px, 1fr) auto auto auto auto;
+  }
+  .results-turn-slider {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .results-timeline-link {
+    grid-column: 5;
+    grid-row: 1;
+  }
+}
