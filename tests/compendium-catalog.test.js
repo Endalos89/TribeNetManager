@@ -1,6 +1,7 @@
 const assert = require('assert');
 const { SKILLS, RECIPES, SOURCE_DOCUMENT } = require('../src/mandate-catalog');
-const { buildCompendiumCatalog, TOPICS } = require('../src/compendium-catalog');
+const { TOPICS } = require('../src/compendium-catalog');
+const { completeMandateSkills } = require('../src/compendium-service');
 
 const base = {
   version: 1,
@@ -8,11 +9,16 @@ const base = {
   skills: SKILLS.map((skill, index) => ({ id:index+1, name:skill.name, shortname:skill.shortname, skillGroup:skill.group, section:skill.section, sourceDocument:SOURCE_DOCUMENT })),
   recipes: RECIPES.map((recipe, index) => ({ id:index+1, ...recipe, sourceDocument:SOURCE_DOCUMENT }))
 };
-const compendium = buildCompendiumCatalog(base);
+const compendium = completeMandateSkills(base);
 
 assert.strictEqual(compendium.sourceDocument, SOURCE_DOCUMENT);
-assert(compendium.skills.length >= 80, 'Compendium should expose the Mandate skill list');
+assert(compendium.skills.length >= 83, 'Compendium should expose the complete Mandate skill list');
 assert.deepStrictEqual([...new Set(compendium.skills.map(s => s.skillGroup))].sort(), ['A','B','C']);
+
+const leadership = compendium.skills.find(s => s.name === 'Leadership');
+assert(leadership, 'Leadership must be present because it is listed in Mandate skill Group B');
+assert.strictEqual(leadership.shortname, 'Ldr');
+assert(leadership.topics.includes('land-combat'));
 
 const forestry = compendium.skills.find(s => s.name === 'Forestry');
 assert(forestry, 'Forestry should be in the Compendium');
