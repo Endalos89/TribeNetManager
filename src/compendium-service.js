@@ -1,6 +1,10 @@
 const { buildCompendiumCatalog, detailForSkill, SOURCE_DOCUMENT } = require('./compendium-catalog');
 const { enrichCompendiumCatalog } = require('./compendium-knowledge');
 
+function titleCase(value) {
+  return String(value || '').toLowerCase().replace(/\b\w/g, char => char.toUpperCase());
+}
+
 function completeMandateSkills(catalog) {
   const result = buildCompendiumCatalog(catalog);
   if (!result.skills.some(skill => String(skill.name).toUpperCase() === 'LEADERSHIP')) {
@@ -16,7 +20,11 @@ function completeMandateSkills(catalog) {
     result.skills.push({ ...base, ...detailForSkill(base), recipes: [], relatedRequirements: [] });
   }
   result.skills.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  return enrichCompendiumCatalog(result);
+  const enriched = enrichCompendiumCatalog(result);
+  for (const entity of enriched.entities || []) {
+    if (entity.name && entity.name === entity.name.toUpperCase()) entity.name = titleCase(entity.name);
+  }
+  return enriched;
 }
 
 module.exports = { completeMandateSkills };
