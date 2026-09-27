@@ -121,7 +121,21 @@ function parsePackedInventory(line) {
   const result = {};
   const text = String(line || '').trim();
   if (!text || /^None$/i.test(text)) return result;
-  const re = /([A-Za-z][A-Za-z0-9\/.'’() -]*?)\s*(-?\d[\d,]*(?:\.\d+)?)(?=[A-Z]|$)/g;
+
+  // Results DOCX reports use tab stops to place several label/value pairs on one line,
+  // e.g. "Cattle\t532\tGoat\t3924\tHorse\t387". Parse that structure first.
+  const tabParts = text.split(/\t+/).map(part => part.trim()).filter(Boolean);
+  if (tabParts.length >= 2) {
+    for (let i = 0; i + 1 < tabParts.length; i += 2) {
+      const key = tabParts[i].replace(/\s+/g, ' ').trim();
+      const value = parseNumber(tabParts[i + 1]);
+      if (key && value != null) result[key] = value;
+    }
+    if (Object.keys(result).length) return result;
+  }
+
+  // Fallback for reports/text fixtures where the tab layout has been flattened.
+  const re = /([A-Za-z][A-Za-z0-9\/.'’() -]*?)\s*(-?\d[\d,]*(?:\.\d+)?)(?=\s*[A-Z]|$)/g;
   let match;
   while ((match = re.exec(text))) {
     const key = match[1].trim().replace(/\s+/g, ' ');
