@@ -2,7 +2,7 @@
   margin: 0 16px 12px;
   padding: 9px 12px;
   display: grid;
-  grid-template-columns: minmax(185px, auto) auto auto auto minmax(180px, 1fr) auto auto;
+  grid-template-columns: minmax(185px, auto) auto auto minmax(180px, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   border: 1px solid #263a45;
@@ -48,6 +48,8 @@
 
 .results-timeline-bar .button.square {
   min-width: 34px;
+  width: auto;
+  justify-self: start;
 }
 
 .results-timeline-bar .button:disabled,
