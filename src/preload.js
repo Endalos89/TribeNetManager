@@ -1,9 +1,17 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 window.addEventListener('DOMContentLoaded', () => {
-  const script = document.createElement('script');
-  script.src = 'session-snapshot.js';
-  document.body.appendChild(script);
+  const page = String(window.location.pathname || '').split('/').pop() || 'index.html';
+  const scripts = [];
+  if (page === 'index.html') scripts.push('planned-unit-splits-map.js');
+  if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js');
+  scripts.push('session-snapshot.js');
+  for (const src of scripts) {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    document.body.appendChild(script);
+  }
 });
 
 contextBridge.exposeInMainWorld('tribenet', {
