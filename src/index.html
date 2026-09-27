@@ -188,6 +188,10 @@
         </aside>
       </section>
     </main>
+
+    <!-- Legacy hooks retained only so older renderer modules can initialize; imports are launcher-only. -->
+    <button id="importOrdersButton" class="hidden" aria-hidden="true" tabindex="-1"></button>
+    <button id="mapImportResultsButton" class="hidden" aria-hidden="true" tabindex="-1"></button>
   </div>
   <script src="movement-planner-core.js"></script>
   <script src="renderer.js"></script>
@@ -195,5 +199,6 @@
   <script src="results-map.js"></script>
   <script src="movement-planner.js"></script>
   <script src="saved-movement-plans.js"></script>
+  <script src="launcher-imports.js"></script>
 </body>
 </html>
