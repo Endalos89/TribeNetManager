@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('tribenet', {
   getMandateSkills: () => ipcRenderer.invoke('mandate:skills'),
   getMandateRecipesForSkill: skill => ipcRenderer.invoke('mandate:recipes-for-skill', skill),
   resolveMandateSkill: skill => ipcRenderer.invoke('mandate:resolve-skill', skill),
+  getCompendiumCatalog: () => ipcRenderer.invoke('mandate:compendium'),
   importResultsReport: () => ipcRenderer.invoke('results:import'),
   reprocessResultsReports: () => ipcRenderer.invoke('results:reprocess'),
   getResultsReprocessStatus: () => ipcRenderer.invoke('results:reprocess-status'),
