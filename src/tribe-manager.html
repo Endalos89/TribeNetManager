@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tribe Manager · TribeNet Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="tribe-manager.css" />
+</head>
+<body>
+  <div class="tribe-manager-shell">
+    <header class="app-header">
+      <div>
+        <div class="brand">TribeNet Manager</div>
+        <div class="version" id="tribeManagerVersion">Historical Tribe / Unit snapshots</div>
+      </div>
+      <div class="header-actions">
+        <button class="button" onclick="location.href='index.html'">← Launcher</button>
+        <button id="backupResultsButton" class="button">Backup Results</button>
+        <button id="importResultsButton" class="button accent">Import Results Report</button>
+      </div>
+    </header>
+
+    <section class="tm-timeline-panel">
+      <div class="tm-timeline-heading">
+        <div>
+          <p class="eyebrow">GLOBAL RESULTS TIMELINE</p>
+          <h1 id="timelineTurnTitle">No results imported</h1>
+          <p id="timelineSource" class="tm-muted">Import a Word results report to begin.</p>
+        </div>
+        <div class="tm-timeline-actions">
+          <button id="timelinePrev" class="button square" title="Previous turn">◀</button>
+          <button id="timelinePlay" class="button" title="Play turns">Play</button>
+          <button id="timelineNext" class="button square" title="Next turn">▶</button>
+        </div>
+      </div>
+      <input id="timelineSlider" class="tm-turn-slider" type="range" min="0" max="0" value="0" disabled />
+      <div class="tm-timeline-scale"><span id="timelineFirstTurn">—</span><span id="timelineCurrentTurn">—</span><span id="timelineLastTurn">—</span></div>
+      <div id="importStatus" class="save-status"></div>
+    </section>
+
+    <main class="tm-layout">
+      <aside class="tm-unit-sidebar">
+        <div class="tm-sidebar-heading">
+          <div>
+            <p class="eyebrow">TRIBES / UNITS</p>
+            <h2>Units this turn</h2>
+          </div>
+          <span id="unitCount" class="tm-count">0</span>
+        </div>
+        <div id="unitList" class="tm-unit-list">
+          <div class="tm-empty">No unit snapshots yet.</div>
+        </div>
+      </aside>
+
+      <section class="tm-detail">
+        <div id="unitEmpty" class="tm-empty-card">
+          <div class="empty-icon">☷</div>
+          <h2>Select a Tribe or Unit</h2>
+          <p>Choose a unit on the left to see its resources, changes from the previous report, skills, movement and activity history.</p>
+        </div>
+
+        <div id="unitDetail" class="hidden">
+          <div class="tm-unit-header">
+            <div>
+              <p class="eyebrow" id="unitTypeEyebrow">UNIT</p>
+              <h1 id="unitTitle">—</h1>
+              <div id="unitLocation" class="tm-muted">—</div>
+            </div>
+            <div class="tm-unit-badges">
+              <span id="unitTerrain" class="state-pill">—</span>
+              <span id="unitPreviousTurn" class="state-pill tm-secondary-pill">—</span>
+            </div>
+          </div>
+
+          <section class="tm-summary-grid" id="summaryGrid"></section>
+
+          <section class="tm-section">
+            <div class="tm-section-heading"><div><p class="eyebrow">RESOURCES</p><h2>Current totals &amp; turn changes</h2></div><span class="tm-muted">Delta compares with this unit's previous available report.</span></div>
+            <div id="resourceSections" class="tm-resource-sections"></div>
+          </section>
+
+          <section class="tm-two-column">
+            <div class="tm-section">
+              <div class="tm-section-heading"><div><p class="eyebrow">SKILLS</p><h2>Skills</h2></div></div>
+              <div id="skillsGrid" class="tm-skill-grid"></div>
+            </div>
+            <div class="tm-section">
+              <div class="tm-section-heading"><div><p class="eyebrow">MOVEMENT</p><h2>Movement &amp; scouting</h2></div></div>
+              <div id="movementDetails" class="tm-event-list"></div>
+            </div>
+          </section>
+
+          <section class="tm-section">
+            <div class="tm-section-heading"><div><p class="eyebrow">TURN ACTIVITY</p><h2>What happened this turn</h2></div></div>
+            <div id="eventList" class="tm-event-list"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="tribe-manager.js"></script>
+</body>
+</html>
