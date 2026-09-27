@@ -1,4 +1,4 @@
-const RESTORABLE_PAGES = new Set(['index.html', 'turn-manager.html', 'tribe-manager.html']);
+const RESTORABLE_PAGES = new Set(['index.html', 'turn-manager.html', 'tribe-manager.html', 'compendium.html']);
 const SNAPSHOT_VERSION = 2;
 const MAX_SNAPSHOT_BYTES = 512 * 1024;
 
@@ -43,6 +43,13 @@ function normalizeView(view) {
     else delete normalized.turnKey;
     if (cloned.unitCode) normalized.unitCode = String(cloned.unitCode);
     else delete normalized.unitCode;
+  } else if (page === 'compendium.html') {
+    normalized.screen = 'compendium';
+    const view = cloned.compendium && typeof cloned.compendium === 'object' ? cloned.compendium : { type: 'home', key: null };
+    normalized.compendium = {
+      type: ['home','group','skill','topic','search'].includes(view.type) ? view.type : 'home',
+      key: view.key == null ? null : String(view.key)
+    };
   }
 
   return normalized;
