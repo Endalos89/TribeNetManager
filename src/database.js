@@ -197,11 +197,17 @@ class TribeNetDatabase {
     }
   }
 
-  getTurnImports() {
-    return this.db.prepare(`
-      SELECT id, turn_key AS turnKey, source_file AS sourceFile, imported_at AS importedAt, is_active AS isActive
-      FROM turn_imports ORDER BY id DESC
-    `).all().map(r => ({ ...r, isActive: Boolean(r.isActive) }));
+  getTurnImports(turnKey = null) {
+    const rows = turnKey
+      ? this.db.prepare(`
+          SELECT id, turn_key AS turnKey, source_file AS sourceFile, imported_at AS importedAt, is_active AS isActive
+          FROM turn_imports WHERE turn_key = ? ORDER BY id DESC
+        `).all(turnKey)
+      : this.db.prepare(`
+          SELECT id, turn_key AS turnKey, source_file AS sourceFile, imported_at AS importedAt, is_active AS isActive
+          FROM turn_imports ORDER BY id DESC
+        `).all();
+    return rows.map(r => ({ ...r, isActive: Boolean(r.isActive) }));
   }
 
   getTurnPlan(id = null) {
@@ -213,6 +219,12 @@ class TribeNetDatabase {
       id: Number(row.id), turnKey: row.turn_key, sourceFile: row.source_file,
       importedAt: row.imported_at, isActive: Boolean(row.is_active), plan: JSON.parse(row.plan_json)
     };
+  }
+
+  getTurnPlanForTurn(turnKey) {
+    if (!turnKey) return null;
+    const row = this.db.prepare('SELECT id FROM turn_imports WHERE turn_key = ? ORDER BY id DESC LIMIT 1').get(turnKey);
+    return row ? this.getTurnPlan(Number(row.id)) : null;
   }
 
   setActiveTurnPlan(id) {

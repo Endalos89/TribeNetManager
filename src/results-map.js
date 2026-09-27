@@ -4,7 +4,8 @@ const resultsTimeline = {
   turns: [],
   turn: null,
   playTimer: null,
-  loadingArea: false
+  loadingArea: false,
+  ready: false
 };
 
 const originalRequestVisibleData = requestVisibleData;
@@ -12,6 +13,73 @@ const originalRefreshSummaries = refreshSummaries;
 const originalDraw = draw;
 const originalSelectHex = selectHex;
 const originalLoadHexHistory = loadHexHistory;
+const originalRefreshPlannerHistoryForResults = refreshPlannerHistory;
+
+async function syncPlannerOverlayToResultTurn(turnKey, preferredId = null, options = {}) {
+  const { redraw = true } = options;
+  if (!turnKey) {
+    return originalRefreshPlannerHistoryForResults(preferredId);
+  }
+
+  const imports = await window.tribenet.getPlannerImports(turnKey);
+  state.planHistory = imports;
+  const select = $('turnSelect');
+  select.innerHTML = '';
+
+  if (!imports.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = `Turn ${turnKey} · no planning/scouting`;
+    option.selected = true;
+    select.appendChild(option);
+    state.planImport = null;
+    state.routeCache = null;
+    updatePlanUI();
+    $('planStatus').textContent = `Turn ${turnKey} · no planning or scouting imported.`;
+    if (redraw) draw();
+    return null;
+  }
+
+  for (const row of imports) {
+    const option = document.createElement('option');
+    option.value = String(row.id);
+    const date = new Date(row.importedAt).toLocaleDateString();
+    option.textContent = `${row.turnKey} · ${row.sourceFile} · ${date}`;
+    select.appendChild(option);
+  }
+
+  const preferred = preferredId && imports.some(row => Number(row.id) === Number(preferredId))
+    ? await window.tribenet.getPlannerPlan(Number(preferredId))
+    : await window.tribenet.getPlannerPlanForTurn(turnKey);
+
+  if (!preferred || preferred.turnKey !== turnKey) {
+    state.planImport = null;
+    state.routeCache = null;
+    updatePlanUI();
+    $('planStatus').textContent = `Turn ${turnKey} · no planning or scouting imported.`;
+    if (redraw) draw();
+    return null;
+  }
+
+  state.planImport = preferred;
+  state.routeCache = buildPlanRoutes(preferred.plan);
+  select.value = String(preferred.id);
+  updatePlanUI();
+  $('planStatus').textContent = `Turn ${turnKey} · planning/scouting loaded.`;
+  if (redraw) {
+    if (state.selected) await loadHexHistory(state.selected.coordinate);
+    draw();
+  }
+  return preferred;
+}
+
+refreshPlannerHistory = async function refreshPlannerHistoryForSelectedResultTurn(selectId = null) {
+  if (!resultsTimeline.ready) return null;
+  if (resultsTimeline.turn?.turnKey) {
+    return syncPlannerOverlayToResultTurn(resultsTimeline.turn.turnKey, selectId);
+  }
+  return originalRefreshPlannerHistoryForResults(selectId);
+};
 
 function resultHasBlockedEvidence(data) {
   return Boolean(data?.evidence?.some(item => /Not enough M\.P/i.test(String(item))));
@@ -230,6 +298,7 @@ async function applyResultTurn(turnKey, options = {}) {
   if (persist) localStorage.setItem(RESULT_TURN_STORAGE_KEY, turnKey);
   state.hexCache.clear();
   state.loadedArea = null;
+  await syncPlannerOverlayToResultTurn(turnKey, null, { redraw: false });
   updateMapTimelineUI();
   await refreshSummaries();
   if (state.mode === 'overview') buildWorldGrid();
@@ -245,11 +314,13 @@ async function applyResultTurn(turnKey, options = {}) {
 
 async function refreshResultTurns(preferredTurnKey = null) {
   resultsTimeline.turns = await window.tribenet.listResultTurns();
+  resultsTimeline.ready = true;
   if (!resultsTimeline.turns.length) {
     resultsTimeline.turn = null;
     state.hexCache.clear();
     setHistoricalEditingState(false);
     updateMapTimelineUI();
+    await originalRefreshPlannerHistoryForResults();
     return;
   }
   const stored = preferredTurnKey || localStorage.getItem(RESULT_TURN_STORAGE_KEY);
