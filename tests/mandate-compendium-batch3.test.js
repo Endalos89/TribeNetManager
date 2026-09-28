@@ -11,66 +11,73 @@ async function main() {
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(root, 'mandate-reference-schema.js'), 'utf8'), context, { filename: 'mandate-reference-schema.js' });
 
-  for (let i = 1; i <= 4; i++) {
-    const name = `mandate-reference-batch-1-${String(i).padStart(2, '0')}.js`;
-    vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context, { filename: name });
-  }
-  for (let i = 1; i <= 3; i++) {
-    const name = `mandate-reference-batch-2-${String(i).padStart(2, '0')}.js`;
-    vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context, { filename: name });
-  }
-  for (let i = 1; i <= 4; i++) {
-    const name = `mandate-reference-batch-3-${String(i).padStart(2, '0')}.js`;
-    vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context, { filename: name });
-  }
-  for (let i = 1; i <= 8; i++) {
-    const name = `mandate-reference-batch-4-${String(i).padStart(2, '0')}.js`;
-    vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context, { filename: name });
+  const chunksByBatch = {1:4, 2:3, 3:4, 4:8, 5:3};
+  for (const [batchId, count] of Object.entries(chunksByBatch)) {
+    for (let i = 1; i <= count; i++) {
+      const name = `mandate-reference-batch-${batchId}-${String(i).padStart(2, '0')}.js`;
+      vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context, { filename: name });
+    }
   }
 
   const mandate = context.window.TRIBENET_MANDATE;
   await mandate.whenReady();
 
   if (mandate.revision !== 'N02.2') throw new Error(`Unexpected revision ${mandate.revision}`);
-  if (mandate.sections.length !== 353) throw new Error(`Expected 353 sections after Batch 4, got ${mandate.sections.length}`);
-  if (mandate.batches.length !== 4) throw new Error(`Expected four logical batches, got ${mandate.batches.length}`);
+  if (mandate.sections.length !== 408) throw new Error(`Expected the full 408-section Mandate index, got ${mandate.sections.length}`);
+  if (mandate.batches.length !== 5) throw new Error(`Expected five logical batches, got ${mandate.batches.length}`);
 
-  const batch3 = mandate.batches.find(batch => batch.id === '3');
-  if (!batch3 || batch3.sectionCount !== 78) throw new Error('Batch 3 regression metadata missing');
-  if (batch3.topSections.join(',') !== '15,16,17,18,19') throw new Error(`Batch 3 top-level range is wrong: ${batch3.topSections.join(',')}`);
-
-  const batch4 = mandate.batches.find(batch => batch.id === '4');
-  if (!batch4) throw new Error('Batch 4 metadata missing');
-  if (batch4.sectionCount !== 69) throw new Error(`Expected 69 Batch 4 sections, got ${batch4.sectionCount}`);
-  if (batch4.topSections.join(',') !== '20,21,22,23,24,25,26,27') throw new Error(`Batch 4 top-level range is wrong: ${batch4.topSections.join(',')}`);
-
-  for (const key of ['20','20.4','20.5.1','21','21.2','21.3.7','22','22.2','23','23.1','23.4.1','24','24.1','25','26','27','27.8','27.10.7','27.15']) {
-    if (!mandate.getSection(key)) throw new Error(`Missing Batch 4 section ${key}`);
+  const expectedCounts = {'1':119,'2':87,'3':78,'4':69,'5':55};
+  for (const [id, expected] of Object.entries(expectedCounts)) {
+    const batch = mandate.batches.find(item => item.id === id);
+    if (!batch) throw new Error(`Batch ${id} metadata missing`);
+    if (batch.sectionCount !== expected) throw new Error(`Expected ${expected} sections in Batch ${id}, got ${batch.sectionCount}`);
   }
-  if (mandate.getSection('28')) throw new Error('Batch 5 content leaked into Batch 4');
 
-  if (mandate.getSection('20.5.1').title !== 'Catapults and Naval Cannon') throw new Error('Body heading title for §20.5.1 was not preserved');
-  if (!mandate.plainText(mandate.getSection('20.4')).includes('Ships may only be built in the hex with the building facilities present')) throw new Error('Shipbuilding location rule missing');
-  if (!mandate.plainText(mandate.getSection('21.3.7')).includes('follow Ocean')) throw new Error('Fleet movement coastline rule missing');
-  if (!mandate.plainText(mandate.getSection('23.1')).includes('Only one Book may be attempted per turn per Clan')) throw new Error('Book writing limit missing');
-  if (!mandate.plainText(mandate.getSection('26')).includes('Only one archaeology tribe per Clan is allowed')) throw new Error('Archaeology tribe limit missing');
-  if (!mandate.plainText(mandate.getSection('27.15')).includes('Religion is dynamic and not totally in their control')) throw new Error('Religion final-note wording missing');
+  const batch5 = mandate.batches.find(batch => batch.id === '5');
+  const expectedTop = '28,29,30,31,32,33,34,35,Appendix A';
+  if (batch5.topSections.join(',') !== expectedTop) throw new Error(`Batch 5 top-level range is wrong: ${batch5.topSections.join(',')}`);
 
-  if (mandate.getSection('20').page !== 134) throw new Error(`Section 20 page mismatch: ${mandate.getSection('20').page}`);
-  if (mandate.getSection('27.15').page !== 165) throw new Error(`Section 27.15 page mismatch: ${mandate.getSection('27.15').page}`);
-
-  const integration = fs.readFileSync(path.join(root, 'compendium-mandate-batch4.js'), 'utf8');
-  for (const marker of [
-    '4 of 5 batches complete · 80%',
-    'Naval & advanced systems',
-    'data-b4-ref',
-    "data-mandate-batch=\"4\"",
-    '§§20–27 · pages 134–165'
+  for (const key of [
+    '28','29','29.1','29.14','29.25','29.39',
+    '30','30.1','30.2','31','31.1','32',
+    '33','33.1','33.2','33.3','34','34.1','35','Appendix A'
   ]) {
-    if (!integration.includes(marker)) throw new Error(`Batch 4 Compendium integration missing marker: ${marker}`);
+    if (!mandate.getSection(key)) throw new Error(`Missing Batch 5 section ${key}`);
   }
 
-  console.log('Mandate Batch 4 checks passed:', batch4.sectionCount, 'new sections;', mandate.sections.length, 'total; migration progress 4/5');
+  const expectedTopLevel = Array.from({length:35}, (_, i) => String(i + 1)).concat('Appendix A');
+  for (const key of expectedTopLevel) {
+    if (!mandate.getSection(key)) throw new Error(`Final Mandate audit missing top-level section ${key}`);
+  }
+
+  if (!mandate.plainText(mandate.getSection('28')).includes('organic growth of the TribeNet world')) throw new Error('International NPC wording missing');
+  if (!mandate.plainText(mandate.getSection('29.14')).includes('Group C Fair skill')) throw new Error('Dance skill cross-reference wording missing');
+  if (!mandate.plainText(mandate.getSection('29.25')).includes('See section 20 Ship Construction')) throw new Error('Maintain Boats cross-reference wording missing');
+  if (!mandate.plainText(mandate.getSection('31.1')).includes('General Usage')) throw new Error('Transfer Codes wording missing');
+  if (!mandate.plainText(mandate.getSection('34.1')).includes('distinguish rhetoric, truth and lies')) throw new Error('Rumours ethics wording missing');
+  if (!mandate.plainText(mandate.getSection('35')).includes('rules as written cannot cover every game contingency')) throw new Error('Final Word wording missing');
+
+  const appendix = mandate.getSection('Appendix A');
+  if (appendix.title !== 'Change History') throw new Error('Appendix A title mismatch');
+  if (!mandate.plainText(appendix).includes('13/07/2026')) throw new Error('N02.2 change-history row missing');
+  if (!mandate.plainText(appendix).includes('Update revision of Mandate to N02.2')) throw new Error('N02.2 change-history detail missing');
+
+  if (mandate.getSection('28').page !== 165) throw new Error(`Section 28 page mismatch: ${mandate.getSection('28').page}`);
+  if (mandate.getSection('35').page !== 177) throw new Error(`Section 35 page mismatch: ${mandate.getSection('35').page}`);
+  if (appendix.page !== 178) throw new Error(`Appendix A page mismatch: ${appendix.page}`);
+
+  const integration = fs.readFileSync(path.join(root, 'compendium-mandate-batch5.js'), 'utf8');
+  for (const marker of [
+    '5 of 5 batches complete · 100%',
+    'Remaining references & final audit',
+    'data-b5-ref',
+    'Migration complete: all',
+    '§§28–35 + Appendix A · pages 165–191'
+  ]) {
+    if (!integration.includes(marker)) throw new Error(`Batch 5 Compendium integration missing marker: ${marker}`);
+  }
+
+  console.log('Mandate Batch 5 checks passed:', batch5.sectionCount, 'new sections;', mandate.sections.length, 'total; migration complete 5/5');
 }
 
 main().catch(error => { console.error(error); process.exit(1); });
