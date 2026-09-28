@@ -14,10 +14,12 @@
     return `<a class="skill-source-chip mandate" href="#${e(M.anchorId(target.section))}" data-mandate-open="${e(target.section)}">${e(text)}</a>`;
   }
 
-  function researchEffectForSkill(topic, skillName) {
+  function researchEffectForSkill(topic, profile) {
+    const override = profile?.researchEffectOverrides?.[topic.name];
+    if (override) return override;
     const effects = topic.effects || [];
     if (!effects.length) return topic.description || topic.sourceGaps?.[0] || 'Open research entry';
-    const needle = String(skillName || '').trim();
+    const needle = String(profile?.name || '').trim();
     if (needle) {
       const rx = new RegExp(`(^|[^a-z])${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`, 'i');
       const tagged = effects.find(effect => rx.test(String(effect)));
@@ -26,8 +28,8 @@
     return effects[0];
   }
 
-  function researchButton(topic, skillName, compact = false) {
-    const effect = researchEffectForSkill(topic, skillName);
+  function researchButton(topic, profile, compact = false) {
+    const effect = researchEffectForSkill(topic, profile);
     return `<button class="skill-research-card ${compact ? 'compact' : ''}" data-research-v2="${e(topic.key)}">
       <span class="skill-research-head"><strong>${e(topic.name)}</strong><small>DL ${e(topic.dl)} · p. ${e(topic.page)}</small></span>
       <span class="skill-research-effect">${e(effect)}</span>
@@ -49,6 +51,22 @@
     const match = (D?.topics || []).find(topic => canon(`${topic.skill} / ${topic.name}`) === canon(item.research));
     if (match) return `<button class="skill-source-chip research" data-research-v2="${e(match.key)}">Research p. ${e(match.page)}</button>`;
     return '<span class="skill-source-chip research">Research List</span>';
+  }
+
+  function craftingSource(item) {
+    const rows = (item.craft || []).map(row => {
+      const note = row.note ? ` <small>${e(row.note)}</small>` : '';
+      return `<span class="skill-craft-path">${skillButton(row.skill)} <strong>${e(row.level)}</strong>${note}</span>`;
+    });
+    if (!rows.length) rows.push('<span class="skill-craft-path muted">—</span>');
+    if (item.requiresResearch) rows.push('<span class="skill-research-required">Research required</span>');
+    return `<div class="skill-craft-list">${rows.join('')}</div>`;
+  }
+
+  function equipmentTable(items) {
+    return `<div class="skill-implement-table-wrap"><table class="skill-implement-table"><thead><tr><th>Implement</th><th>Made / converted with</th><th>Bonus / item</th><th>Base max / Hunter</th><th>Base max benefit</th><th>Source</th></tr></thead><tbody>
+      ${items.map(item => `<tr><td>${entityButton(item.name)}</td><td>${craftingSource(item)}</td><td><strong>${e(item.value)}</strong></td><td>${e(item.baseMax)}</td><td>${e(item.baseMaxBenefit)}</td><td>${sourceForImplement(item)}</td></tr>`).join('')}
+    </tbody></table></div>`;
   }
 
   function removeGenericMandatePanels(article) {
@@ -116,23 +134,18 @@
 
       <section class="skill-dossier-section">
         <div class="skill-section-heading"><div><span>Equipment</span><h2>Implements & direct Hunting benefit</h2></div><span class="skill-section-note">AM = Activity Modifier.</span></div>
-        <div class="skill-callout"><strong>How implement choice works:</strong> ${e(profile.implementRule)}</div>
-        <div class="skill-implement-table-wrap"><table class="skill-implement-table"><thead><tr><th>Implement</th><th>Category</th><th>Bonus / item</th><th>Base max / Hunter</th><th>Base max benefit</th><th>Source</th></tr></thead><tbody>
-          ${profile.implements.map(item => `<tr><td>${entityButton(item.name)}</td><td>${e(item.category)}</td><td><strong>${e(item.value)}</strong></td><td>${e(item.baseMax)}</td><td>${e(item.baseMaxBenefit)}</td><td>${sourceForImplement(item)}</td></tr>`).join('')}
-        </tbody></table></div>
-        <p class="skill-table-note">Different Hunters in the same group may use different implement types. For example, some Hunters can use Slings while other Hunters use Traps; an individual Hunter does not combine those two implement types. Trappers research raises the Trap/Snare and Improved Trap allowance to 10 and the Advanced Trap allowance to 2.</p>
+        <div class="skill-callout"><strong>Primary implement:</strong> ${e(profile.implementRule)}</div>
+        <h3 class="skill-equipment-subhead">Primary implement — choose one type</h3>
+        ${equipmentTable(profile.implements || [])}
+        ${(profile.supportImplements || []).length ? `<h3 class="skill-equipment-subhead support">Additional support — may be used alongside a primary implement</h3>${equipmentTable(profile.supportImplements)}` : ''}
+        <p class="skill-table-note">Trappers research raises the Trap/Snare and Improved Trap allowance to 10 and the Advanced Trap allowance to 2.</p>
       </section>
-
-      ${(profile.orderRules || []).length ? `<section class="skill-dossier-section">
-        <div class="skill-section-heading"><div><span>Orders</span><h2>Operational restrictions</h2></div>${mandateLink(profile.primarySection)}</div>
-        <div class="skill-rule-grid">${profile.orderRules.map(rule => `<div class="skill-rule-card"><span>${e(rule.label)}</span><strong>${e(rule.value)}</strong><small>${e(rule.detail)}</small></div>`).join('')}</div>
-      </section>` : ''}
 
       <section class="skill-dossier-section">
         <div class="skill-section-heading"><div><span>Research List</span><h2>Hunting research</h2></div><span class="skill-section-note">Each card shows the effect relevant to Hunting where the topic affects more than one skill.</span></div>
-        <div class="skill-research-grid">${ownResearch.map(topic => researchButton(topic, profile.name)).join('')}</div>
+        <div class="skill-research-grid">${ownResearch.map(topic => researchButton(topic, profile)).join('')}</div>
         ${shared.size ? `<div class="skill-cross-research"><h3>Shared / cross-skill research</h3><p>These Hunting topics are also indexed under other skills in the Research List.</p>${[...shared.values()].map(row => `<div class="skill-cross-row"><strong>${e(row.name)}</strong><span>${[...row.skills].map(skillButton).join('')}</span></div>`).join('')}</div>` : ''}
-        ${crossUnique.length ? `<div class="skill-cross-research"><h3>Other research affecting Hunting</h3><div class="skill-research-grid compact-grid">${crossUnique.map(topic => researchButton(topic, profile.name, true)).join('')}</div></div>` : ''}
+        ${crossUnique.length ? `<div class="skill-cross-research"><h3>Other research affecting Hunting</h3><div class="skill-research-grid compact-grid">${crossUnique.map(topic => researchButton(topic, profile, true)).join('')}</div></div>` : ''}
       </section>
 
       <section class="skill-dossier-section skill-related-section">
