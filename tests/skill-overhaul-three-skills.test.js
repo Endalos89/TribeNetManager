@@ -6,7 +6,9 @@ const root = path.join(__dirname, '..', 'src');
 const context = { window:{}, globalThis:null, Map, Set, Object, String, Number, Array, RegExp, console };
 context.globalThis = context.window;
 vm.createContext(context);
-vm.runInContext(fs.readFileSync(path.join(root, 'skill-overhaul-data.js'), 'utf8'), context, { filename:'skill-overhaul-data.js' });
+const run = name => vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context, { filename:name });
+run('skill-overhaul-data.js');
+run('skill-overhaul-woodwork-refinement.js');
 const S = context.window.TribeNetSkillOverhaul;
 if (!S) throw new Error('Skill overhaul data did not register');
 
@@ -19,11 +21,22 @@ if (ordered.at(-1)?.baseMaxBenefit !== '+0.05 AM') throw new Error('Lowest Base 
 const woodwork = S.profile('Woodwork');
 if (!woodwork || S.profile('Woodworking') !== woodwork) throw new Error('Woodwork profile/alias missing');
 if (woodwork.layout !== 'unlock' || woodwork.workerRule !== 'No worker limit') throw new Error('Woodwork dossier type/worker rule mismatch');
-for (const [level, text] of [[1,'Clubs ×4'],[3,'Courthouse'],[4,'Wood in stone buildings'],[5,'Barge construction'],[6,'Onager'],[8,'Lute']]) {
-  if (!woodwork.levelUses.some(row => row.level === level && row.use === text)) throw new Error(`Woodwork level ${level} use missing: ${text}`);
+if (!Array.isArray(woodwork.directCrafts) || !Array.isArray(woodwork.requiredUses)) throw new Error('Woodwork split tables are not defined');
+for (const [level, entity, label] of [[1,'Club','Clubs ×4'],[4,'Plank','Planks ×2'],[5,'Table','Table']]) {
+  if (!woodwork.directCrafts.some(row => row.level === level && row.entity === entity && row.label === label)) throw new Error(`Woodwork direct craft missing: ${label}`);
 }
-if (!woodwork.levelUses.some(row => row.level === 4 && row.use === 'Alternate Apiary construction')) throw new Error('Woodwork 4 alternate Apiary use missing');
-if (!woodwork.levelUses.some(row => row.level === 3 && row.use === 'Drum')) throw new Error('Woodwork/Music cross-use missing');
+if (woodwork.directCrafts.some(row => (row.requirements || []).length)) throw new Error('Direct Woodwork craft table should not contain second-skill requirements');
+
+const courthouse = woodwork.requiredUses.find(row => row.entity === 'Courthouse');
+if (!courthouse || courthouse.level !== 3) throw new Error('Courthouse Woodwork 3 use missing');
+if (!courthouse.requirements.some(row => row.skill === 'Engineering' && row.level === 7)) throw new Error('Courthouse Engineering 7 requirement missing');
+if (!courthouse.requirements.some(row => row.skill === 'Stonework' && row.level === 4)) throw new Error('Courthouse Stonework 4 requirement missing');
+if (!woodwork.requiredUses.some(row => row.entity === 'Apiary' && row.level === 4 && row.requirements.some(req => req.skill === 'Engineering' && req.level === 6))) throw new Error('Alternate Apiary Woodwork/Engineering requirements missing');
+if (!woodwork.requiredUses.some(row => row.entity === 'Onager' && row.level === 6 && row.requirements.some(req => req.skill === 'Siege Equipment' && req.level === 8))) throw new Error('Onager Woodwork/Siege Equipment requirements missing');
+if (!woodwork.requiredUses.some(row => row.entity === 'Barge' && row.level === 5 && row.requirements.some(req => req.skill === 'Shipbuilding' && req.level === 3) && row.requirements.some(req => req.skill === 'Metalwork' && req.level === 3))) throw new Error('Barge combined skill requirements missing');
+if (!woodwork.requiredUses.some(row => row.entity === 'Warship' && row.level === 8 && row.requirements.some(req => req.skill === 'Shipbuilding' && req.level === 9) && row.requirements.some(req => req.skill === 'Metalwork' && req.level === 7))) throw new Error('Shipbuilding Woodwork uses should include the full vessel table');
+if (woodwork.requiredUses.some(row => row.entity === 'Trumpet') || woodwork.levelUses.some(row => row.item === 'Trumpet')) throw new Error('Trumpet must not be listed as a Woodwork use; Mandate requires Metalwork 6 instead');
+if (!woodwork.additionalSections.includes('20.4')) throw new Error('Woodwork sources should include Shipbuilding §20.4');
 
 const economics = S.profile('Economics');
 if (!economics || S.profile('Economy') !== economics) throw new Error('Economics/Economy profile alias missing');
@@ -48,12 +61,21 @@ for (const [name, effect] of [['Adze','×2 log output'],['Saw','×4 log output']
 if (!S.itemBenefitsFor('Saw').some(row => row.skill === 'Forestry')) throw new Error('Saw entity should link back to Forestry');
 
 const ui = fs.readFileSync(path.join(root, 'compendium-skill-overhaul.js'), 'utf8');
+const woodUi = fs.readFileSync(path.join(root, 'compendium-skill-overhaul-woodwork.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'compendium-skill-overhaul.css'), 'utf8');
+const html = fs.readFileSync(path.join(root, 'compendium.html'), 'utf8');
 for (const marker of ['AM = Active Month.','data-equipment-sort','Base max benefit','renderUnlockSkill','What each level unlocks','Research recipes / prerequisites using','renderForestry','Forestry worker limit','Tools, facilities & direct output modifiers']) {
   if (!ui.includes(marker)) throw new Error(`Expanded skill dossier UI missing marker: ${marker}`);
 }
-for (const marker of ['.skill-am-note','.skill-sort-button','.skill-capacity-banner','.skill-level-use-table','.skill-research-use-table']) {
+for (const marker of ['Things you can make with Woodwork alone','Where Woodwork is required','Other skills required','skill-woodwork-direct-table','skill-woodwork-required-table','Courthouse','data-entity']) {
+  if (!woodUi.includes(marker)) throw new Error(`Woodwork split UI missing marker: ${marker}`);
+}
+if (!html.includes('skill-overhaul-woodwork-refinement.js') || !html.includes('compendium-skill-overhaul-woodwork.js')) throw new Error('Woodwork refinement scripts are not loaded by the Compendium');
+if (html.indexOf('skill-overhaul-woodwork-refinement.js') < html.indexOf('skill-overhaul-data.js')) throw new Error('Woodwork data refinement must load after the base skill data');
+if (html.indexOf('compendium-skill-overhaul-woodwork.js') < html.indexOf('compendium-skill-overhaul.js')) throw new Error('Woodwork UI refinement must load after the base dossier renderer');
+for (const marker of ['.skill-dossier-mode','.skill-glance-grid','.skill-implement-table','.skill-item-benefit','.skill-benefit-keyword','.skill-callout','.skill-equipment-subhead','.skill-craft-list','.skill-research-required','.skill-am-note','.skill-sort-button','.skill-capacity-banner','.skill-level-use-table','.skill-research-use-table']) {
   if (!css.includes(marker)) throw new Error(`Expanded skill dossier CSS missing marker: ${marker}`);
 }
 new Function(ui);
-console.log('Skill overhaul checks passed: AM definition, benefit sorting, Woodwork, Economics and Forestry dossiers are wired');
+new Function(woodUi);
+console.log('Skill overhaul checks passed: AM definition, benefit sorting, split Woodwork tables, Economics and Forestry dossiers are wired');
