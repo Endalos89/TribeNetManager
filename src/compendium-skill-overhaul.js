@@ -14,8 +14,20 @@
     return `<a class="skill-source-chip mandate" href="#${e(M.anchorId(target.section))}" data-mandate-open="${e(target.section)}">${e(text)}</a>`;
   }
 
-  function researchButton(topic, compact = false) {
-    const effect = topic.effects?.[0] || topic.description || topic.sourceGaps?.[0] || 'Open research entry';
+  function researchEffectForSkill(topic, skillName) {
+    const effects = topic.effects || [];
+    if (!effects.length) return topic.description || topic.sourceGaps?.[0] || 'Open research entry';
+    const needle = String(skillName || '').trim();
+    if (needle) {
+      const rx = new RegExp(`(^|[^a-z])${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`, 'i');
+      const tagged = effects.find(effect => rx.test(String(effect)));
+      if (tagged) return tagged;
+    }
+    return effects[0];
+  }
+
+  function researchButton(topic, skillName, compact = false) {
+    const effect = researchEffectForSkill(topic, skillName);
     return `<button class="skill-research-card ${compact ? 'compact' : ''}" data-research-v2="${e(topic.key)}">
       <span class="skill-research-head"><strong>${e(topic.name)}</strong><small>DL ${e(topic.dl)} · p. ${e(topic.page)}</small></span>
       <span class="skill-research-effect">${e(effect)}</span>
@@ -39,11 +51,18 @@
     return '<span class="skill-source-chip research">Research List</span>';
   }
 
-  function extraMandateRefs(profile) {
-    if (!M?.sections) return [];
-    const core = new Set([profile.primarySection, ...(profile.additionalSections || [])]);
-    const term = new RegExp(`(^|[^a-z])${profile.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`, 'i');
-    return M.sections.filter(section => !core.has(section.section) && term.test(M.plainText(section))).slice(0, 24);
+  function removeGenericMandatePanels(article) {
+    if (!article?.classList.contains('skill-dossier-mode')) return;
+    [...article.querySelectorAll('.comp-section')].forEach(section => {
+      const heading = section.querySelector('h2')?.textContent?.trim();
+      if (heading === 'Mandate coverage' || heading === 'Mandate-linked tools, goods & structures') section.remove();
+    });
+  }
+
+  function finishDossier(article) {
+    removeGenericMandatePanels(article);
+    const defer = window.requestAnimationFrame || (callback => setTimeout(callback, 0));
+    defer(() => removeGenericMandatePanels(article));
   }
 
   function renderHunting(profile, skill) {
@@ -62,7 +81,6 @@
     });
     const researchPages = ownResearch.map(topic => Number(topic.page || 0)).filter(Boolean);
     const researchRange = researchPages.length ? `${Math.min(...researchPages)}–${Math.max(...researchPages)}` : '—';
-    const extraRefs = extraMandateRefs(profile);
 
     article.classList.add('skill-dossier-mode');
     $('compBreadcrumbs').textContent = `Compendium › Skills › Group ${skill.skillGroup} › ${skill.name}`;
@@ -77,36 +95,44 @@
       </div>
 
       <section class="skill-glance-grid" aria-label="Hunting at a glance">
-        <div class="skill-glance"><span>Skill behaviour</span><strong>${e(profile.mechanicLabel)}</strong><small>Higher level improves output.</small></div>
-        <div class="skill-glance"><span>Workers</span><strong>${e(profile.workerRule)}</strong><small>No 10 × skill cap.</small></div>
-        <div class="skill-glance"><span>Main output</span><strong>${e(profile.output)}</strong><small>Food / provisions for the Tribe.</small></div>
-        <div class="skill-glance"><span>Research</span><strong>${ownResearch.length} topics</strong><small>${crossUnique.length || shared.size ? `${crossUnique.length} additional + ${shared.size} shared cross-skill links` : 'No cross-skill modifiers indexed'}</small></div>
-      </section>
-
-      <section class="skill-dossier-section skill-level-section">
-        <div class="skill-section-heading"><div><span>Level mechanics</span><h2>What your Hunting level changes</h2></div>${mandateLink('23.5','Mandate § 23.5')}</div>
-        <p class="skill-level-lead">${e(profile.levelRule)}</p>
-        <div class="skill-level-grid">${profile.levelEffects.map(row => `<div class="skill-level-row"><strong>${e(row.level)}</strong><span>${e(row.effect)}</span></div>`).join('')}</div>
+        <div class="skill-glance"><span>Skill behaviour</span><strong>${e(profile.mechanicLabel)}</strong><small>Higher level improves Hunting returns.</small></div>
+        <div class="skill-glance"><span>Workers</span><strong>${e(profile.workerRule)}</strong><small>Hunting is not limited to 10 workers per skill level.</small></div>
+        <div class="skill-glance"><span>Research</span><strong>${ownResearch.length} Hunting topics</strong><small>${crossUnique.length || shared.size ? `${crossUnique.length} additional + ${shared.size} shared cross-skill links` : 'No cross-skill modifiers indexed'}</small></div>
       </section>
 
       <section class="skill-dossier-section">
-        <div class="skill-section-heading"><div><span>Operational rules</span><h2>Key Hunting rules</h2></div>${mandateLink(profile.primarySection)}</div>
-        <div class="skill-rule-grid">${profile.keyRules.map(rule => `<div class="skill-rule-card"><span>${e(rule.label)}</span><strong>${e(rule.value)}</strong><small>${e(rule.detail)}</small></div>`).join('')}</div>
-      </section>
-
-      <section class="skill-dossier-section">
-        <div class="skill-section-heading"><div><span>Equipment</span><h2>Implements & direct Hunting benefit</h2></div><span class="skill-section-note">Benefit is shown here and again on the item page.</span></div>
-        <div class="skill-implement-table-wrap"><table class="skill-implement-table"><thead><tr><th>Implement</th><th>Benefit</th><th>Rules / limits</th><th>Source</th></tr></thead><tbody>
-          ${profile.implements.map(item => `<tr><td>${entityButton(item.name)}</td><td><strong>${e(item.value)}</strong></td><td>${e(item.detail)}</td><td>${sourceForImplement(item)}</td></tr>`).join('')}
+        <div class="skill-section-heading"><div><span>Outputs</span><h2>Hunting output</h2></div>${mandateLink(profile.primarySection)}</div>
+        <div class="skill-implement-table-wrap"><table class="skill-implement-table skill-output-table"><thead><tr><th>Output</th><th>Type</th><th>How it is produced</th><th>Source</th></tr></thead><tbody>
+          ${(profile.outputs || []).map(row => `<tr><td>${entityButton(row.item, row.label)}</td><td>${e(row.type)}</td><td>${e(row.detail)}</td><td>${mandateLink(row.source, `Mandate § ${row.source}`)}</td></tr>`).join('')}
         </tbody></table></div>
-        <div class="skill-no-benefit"><strong>No Hunting-return benefit:</strong>${profile.noBenefit.map(item => `<span title="${e(item.note)}">${e(item.name)}</span>`).join('')}</div>
       </section>
 
       <section class="skill-dossier-section">
-        <div class="skill-section-heading"><div><span>Research List</span><h2>Hunting research</h2></div><span class="skill-section-note">Open any card for the full research entry.</span></div>
-        <div class="skill-research-grid">${ownResearch.map(topic => researchButton(topic)).join('')}</div>
+        <div class="skill-section-heading"><div><span>Modifiers</span><h2>Other factors affecting Hunting</h2></div>${mandateLink(profile.primarySection)}</div>
+        <div class="skill-implement-table-wrap"><table class="skill-implement-table skill-factor-table"><thead><tr><th>Factor</th><th>Effect</th><th>Known detail</th></tr></thead><tbody>
+          ${(profile.factors || []).map(row => `<tr><td><strong>${e(row.factor)}</strong></td><td>${e(row.effect)}</td><td>${e(row.detail)}</td></tr>`).join('')}
+        </tbody></table></div>
+      </section>
+
+      <section class="skill-dossier-section">
+        <div class="skill-section-heading"><div><span>Equipment</span><h2>Implements & direct Hunting benefit</h2></div><span class="skill-section-note">AM = Activity Modifier.</span></div>
+        <div class="skill-callout"><strong>How implement choice works:</strong> ${e(profile.implementRule)}</div>
+        <div class="skill-implement-table-wrap"><table class="skill-implement-table"><thead><tr><th>Implement</th><th>Category</th><th>Bonus / item</th><th>Base max / Hunter</th><th>Base max benefit</th><th>Source</th></tr></thead><tbody>
+          ${profile.implements.map(item => `<tr><td>${entityButton(item.name)}</td><td>${e(item.category)}</td><td><strong>${e(item.value)}</strong></td><td>${e(item.baseMax)}</td><td>${e(item.baseMaxBenefit)}</td><td>${sourceForImplement(item)}</td></tr>`).join('')}
+        </tbody></table></div>
+        <p class="skill-table-note">Different Hunters in the same group may use different implement types. For example, some Hunters can use Slings while other Hunters use Traps; an individual Hunter does not combine those two implement types. Trappers research raises the Trap/Snare and Improved Trap allowance to 10 and the Advanced Trap allowance to 2.</p>
+      </section>
+
+      ${(profile.orderRules || []).length ? `<section class="skill-dossier-section">
+        <div class="skill-section-heading"><div><span>Orders</span><h2>Operational restrictions</h2></div>${mandateLink(profile.primarySection)}</div>
+        <div class="skill-rule-grid">${profile.orderRules.map(rule => `<div class="skill-rule-card"><span>${e(rule.label)}</span><strong>${e(rule.value)}</strong><small>${e(rule.detail)}</small></div>`).join('')}</div>
+      </section>` : ''}
+
+      <section class="skill-dossier-section">
+        <div class="skill-section-heading"><div><span>Research List</span><h2>Hunting research</h2></div><span class="skill-section-note">Each card shows the effect relevant to Hunting where the topic affects more than one skill.</span></div>
+        <div class="skill-research-grid">${ownResearch.map(topic => researchButton(topic, profile.name)).join('')}</div>
         ${shared.size ? `<div class="skill-cross-research"><h3>Shared / cross-skill research</h3><p>These Hunting topics are also indexed under other skills in the Research List.</p>${[...shared.values()].map(row => `<div class="skill-cross-row"><strong>${e(row.name)}</strong><span>${[...row.skills].map(skillButton).join('')}</span></div>`).join('')}</div>` : ''}
-        ${crossUnique.length ? `<div class="skill-cross-research"><h3>Other research affecting Hunting</h3><div class="skill-research-grid compact-grid">${crossUnique.map(topic => researchButton(topic,true)).join('')}</div></div>` : ''}
+        ${crossUnique.length ? `<div class="skill-cross-research"><h3>Other research affecting Hunting</h3><div class="skill-research-grid compact-grid">${crossUnique.map(topic => researchButton(topic, profile.name, true)).join('')}</div></div>` : ''}
       </section>
 
       <section class="skill-dossier-section skill-related-section">
@@ -115,11 +141,11 @@
       </section>
 
       <section class="skill-dossier-section skill-sources-section">
-        <div class="skill-section-heading"><div><span>References</span><h2>Sources & other Mandate mentions</h2></div></div>
-        <div class="skill-source-groups"><div><strong>Core rules</strong><div class="skill-source-row">${[profile.primarySection, ...(profile.additionalSections || [])].map(section => mandateLink(section)).join('')}</div></div>
-        ${extraRefs.length ? `<div><strong>Other Mandate mentions</strong><div class="skill-source-row">${extraRefs.map(section => mandateLink(section.section, `§ ${section.section}`)).join('')}</div></div>` : ''}</div>
+        <div class="skill-section-heading"><div><span>References</span><h2>Sources</h2></div></div>
+        <div class="skill-source-groups"><div><strong>Mandate</strong><div class="skill-source-row">${[profile.primarySection, ...(profile.additionalSections || [])].map(section => mandateLink(section)).join('')}</div></div><div><strong>Research List</strong><div class="skill-source-row"><span class="skill-source-chip research">Hunting pp. ${e(researchRange)}</span></div></div></div>
       </section>`;
     bindLinks(article);
+    finishDossier(article);
   }
 
   const previousShowSkill = showSkill;
@@ -136,17 +162,20 @@
     if (canon(profile.name) === 'HUNTING') renderHunting(profile, skill);
   };
 
-  function injectItemBenefit(article, item, benefit) {
-    if (!article || !benefit || article.querySelector('.skill-item-benefit')) return;
+  function injectItemBenefits(article, item, benefits) {
+    if (!article || !benefits?.length || article.querySelector('.skill-item-benefit')) return;
     const title = article.querySelector('.comp-title-row');
     if (!title) return;
-    const source = benefit.source === 'Mandate'
-      ? mandateLink(benefit.section, `Mandate § ${benefit.section}`)
-      : sourceForImplement(benefit);
-    title.insertAdjacentHTML('afterend', `<section class="skill-item-benefit">
-      <div><span>Skill benefit at a glance</span><strong>${e(benefit.skill)} · ${e(benefit.value)}</strong><small>${e(benefit.detail)}</small></div>
-      <div class="skill-item-benefit-actions"><button class="comp-link" data-skill="${e(benefit.skill)}">Open ${e(benefit.skill)}</button>${source}</div>
-    </section>`);
+    const rows = benefits.map(benefit => {
+      const source = benefit.source === 'Mandate'
+        ? mandateLink(benefit.section, `Mandate § ${benefit.section}`)
+        : sourceForImplement(benefit);
+      return `<div class="skill-item-benefit-row">
+        <div><span class="skill-benefit-keyword">${e(benefit.skill)}</span><strong>${e(benefit.value)}</strong><small>${e(benefit.detail)}</small></div>
+        <div class="skill-item-benefit-actions"><button class="comp-link" data-skill="${e(benefit.skill)}">Open ${e(benefit.skill)}</button>${source}</div>
+      </div>`;
+    }).join('');
+    title.insertAdjacentHTML('afterend', `<section class="skill-item-benefit"><div class="skill-item-benefit-title"><span>Skill benefits at a glance</span><strong>${e(item?.name || 'Item')}</strong></div><div class="skill-item-benefit-lines">${rows}</div></section>`);
     bindLinks(article);
   }
 
@@ -156,8 +185,8 @@
     const article = $('compArticle');
     article?.classList.remove('skill-dossier-mode');
     const core = typeof entityByName === 'function' ? entityByName(name) : null;
-    const benefit = S.itemBenefit(core?.name || name);
-    if (benefit) injectItemBenefit(article, core, benefit);
+    const benefits = S.itemBenefitsFor(core?.name || name);
+    if (benefits.length) injectItemBenefits(article, core, benefits);
     return result;
   };
 
