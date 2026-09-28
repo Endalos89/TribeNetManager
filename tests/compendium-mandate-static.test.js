@@ -77,3 +77,4 @@ for (const marker of [
 new Function(js);
 console.log('Compendium Mandate wiring checks passed for the continuous document reader');
 require('./mandate-document-reader.test.js');
+require('./skill-overhaul-hunting.test.js');
