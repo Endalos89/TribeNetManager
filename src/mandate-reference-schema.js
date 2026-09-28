@@ -18,6 +18,47 @@
     return appendix ? `Appendix ${appendix[1].toUpperCase()}` : raw;
   }
 
+  function numericSectionParts(value) {
+    const key = canonicalSection(value);
+    if (!/^\d+(?:\.\d+)*$/.test(key)) return null;
+    return key.split('.').map(Number);
+  }
+
+  function normalizeSectionHierarchy(section) {
+    const normalized = { ...section, section: canonicalSection(section?.section) };
+    const parts = numericSectionParts(normalized.section);
+    if (parts) {
+      const labels = normalized.section.split('.');
+      normalized.level = labels.length;
+      normalized.parent = labels.length > 1 ? labels.slice(0, -1).join('.') : null;
+      normalized.topSection = labels[0];
+      return normalized;
+    }
+    if (/^Appendix\s+[A-Z]$/i.test(normalized.section)) {
+      normalized.level = 1;
+      normalized.parent = null;
+      normalized.topSection = normalized.section;
+    }
+    return normalized;
+  }
+
+  function compareSections(a, b) {
+    const aParts = numericSectionParts(a?.section);
+    const bParts = numericSectionParts(b?.section);
+    if (aParts && bParts) {
+      const length = Math.max(aParts.length, bParts.length);
+      for (let i = 0; i < length; i++) {
+        if (i >= aParts.length) return -1;
+        if (i >= bParts.length) return 1;
+        if (aParts[i] !== bParts[i]) return aParts[i] - bParts[i];
+      }
+      return 0;
+    }
+    if (aParts) return -1;
+    if (bParts) return 1;
+    return canonicalSection(a?.section).localeCompare(canonicalSection(b?.section), undefined, { numeric: true });
+  }
+
   function plainText(section) {
     if (!section) return '';
     if (mandate._plainTextCache.has(section.section)) return mandate._plainTextCache.get(section.section);
@@ -35,9 +76,10 @@
 
   function registerBatch(batch) {
     if (!batch || !Array.isArray(batch.sections)) return;
-    const known = new Set(mandate.sections.map(section => section.section));
-    for (const section of batch.sections) {
-      if (known.has(section.section)) continue;
+    const known = new Set(mandate.sections.map(section => canonicalSection(section.section)));
+    for (const rawSection of batch.sections) {
+      const section = normalizeSectionHierarchy(rawSection);
+      if (!section.section || known.has(section.section)) continue;
       mandate.sections.push(section);
       mandate._bySection.set(section.section, section);
       known.add(section.section);
@@ -101,8 +143,8 @@
 
   mandate.whenReady = function whenReady() {
     return Promise.all(mandate._pending).then(() => {
-      mandate.sections.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
-      mandate.batches.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      mandate.sections.sort(compareSections);
+      mandate.batches.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
       return mandate;
     });
   };
