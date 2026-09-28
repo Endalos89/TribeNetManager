@@ -26,6 +26,7 @@ if (hunting.orderRules) throw new Error('Conditional stop amounts should not be 
 if (/Different Hunters/i.test(hunting.implementRule)) throw new Error('Group-level different-Hunter explanation should not remain in implement rule');
 if (!hunting.supportImplements?.some(row => row.name === 'Hunting Dog')) throw new Error('Hunting Dog must be in the separate stacking-support table');
 if (hunting.implements.some(row => row.name === 'Hunting Dog')) throw new Error('Hunting Dog must not be in the primary implement table');
+if (!/Active Month/i.test(S.amDefinition)) throw new Error('AM must be defined as Active Month');
 
 const expected = {
   Trap:'+0.10 AM',
@@ -55,6 +56,7 @@ if (S.itemBenefit('Bow').baseMax !== '1') throw new Error('Base Bow allowance sh
 if (S.itemBenefit('Improved Trap').baseMaxBenefit !== '+0.75 AM') throw new Error('Improved Trap maximum base AM is incorrect');
 if (S.itemBenefit('Advanced Trap').baseMax !== '1') throw new Error('Advanced Trap base allowance should be one per Hunter');
 if (S.itemBenefit('Hunting Dog').baseMaxBenefit !== '+2 AM') throw new Error('Hunting Dog should contribute +2 AM');
+if (S.sortByBaseMaxBenefit(hunting.implements)[0].name !== 'Advanced Trap') throw new Error('Primary Hunting table should default to highest Base Max Benefit first');
 
 const craftExpectation = {
   Trap:['Metalwork',2,false],
@@ -103,14 +105,14 @@ for (const asset of ['skill-overhaul-data.js','compendium-skill-overhaul.js','co
   if (!html.includes(asset)) throw new Error(`Compendium missing ${asset}`);
 }
 if (html.indexOf('compendium-skill-overhaul.js') < html.indexOf('compendium-mandate.js')) throw new Error('Skill overhaul UI must load after Mandate integration');
-for (const marker of ['skill-glance-grid','Hunting output','Other factors affecting Hunting','Primary implement — choose one type','Additional support — may be used alongside a primary implement','Made / converted with','Base max / Hunter','Hunting research','Shared / cross-skill research','skill-item-benefit','skill-benefit-keyword','researchEffectForSkill','researchEffectOverrides','removeGenericMandatePanels','data-mandate-open','data-research-v2']) {
+for (const marker of ['skill-glance-grid','Hunting output','Other factors affecting Hunting','Primary implement — choose one type','Additional support — may be used alongside a primary implement','Made / converted with','Base max / Hunter','AM = Active Month.','data-equipment-sort','Shared / cross-skill research','skill-item-benefit','skill-benefit-keyword','researchEffectForSkill','researchEffectOverrides','removeGenericMandatePanels','data-mandate-open','data-research-v2']) {
   if (!ui.includes(marker)) throw new Error(`Hunting UI missing marker: ${marker}`);
 }
-for (const obsolete of ['What your Hunting level changes','No Hunting-return benefit:','Sources & other Mandate mentions','Conditional stop amounts','Different Hunters in the same group','<th>Category</th>']) {
+for (const obsolete of ['What your Hunting level changes','No Hunting-return benefit:','Sources & other Mandate mentions','Conditional stop amounts','Different Hunters in the same group','<th>Category</th>','AM = Activity Modifier']) {
   if (ui.includes(obsolete)) throw new Error(`Obsolete Hunting UI remains: ${obsolete}`);
 }
-for (const marker of ['.skill-dossier-mode','.skill-glance-grid','.skill-implement-table','.skill-item-benefit','.skill-benefit-keyword','.skill-callout','.skill-equipment-subhead','.skill-craft-list','.skill-research-required']) {
+for (const marker of ['.skill-dossier-mode','.skill-glance-grid','.skill-implement-table','.skill-item-benefit','.skill-benefit-keyword','.skill-callout','.skill-equipment-subhead','.skill-craft-list','.skill-research-required','.skill-am-note','.skill-sort-button']) {
   if (!css.includes(marker)) throw new Error(`Hunting CSS missing marker: ${marker}`);
 }
 new Function(ui);
-console.log('Hunting skill overhaul checks passed: grouped equipment, crafting sources, concise research effects and separated environmental factors are wired');
+console.log('Hunting skill overhaul checks passed: Active Month terminology, benefit ordering, grouped equipment, crafting sources and concise research effects are wired');
