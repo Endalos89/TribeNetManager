@@ -62,7 +62,6 @@ for (const [name, effect] of [['Adze','×2 log output'],['Saw','×4 log output']
 }
 if (!S.itemBenefitsFor('Saw').some(row => row.skill === 'Forestry')) throw new Error('Saw entity should link back to Forestry');
 
-// First Group A rollout. These must resolve through the incremental profile registry.
 for (const name of ['Armour','Bonework','Boning','Curing','Dressing','Fletching']) {
   const profile = S.profile(name);
   if (!profile) throw new Error(`Category A dossier profile missing: ${name}`);
@@ -103,7 +102,7 @@ for (const marker of ['AM = Active Month.','data-equipment-sort','Base max benef
 for (const marker of ['Things you can make with Woodwork alone','Where Woodwork is required','Other skills required','skill-woodwork-direct-table','skill-woodwork-required-table','Courthouse','data-entity']) {
   if (!woodUi.includes(marker)) throw new Error(`Woodwork split UI missing marker: ${marker}`);
 }
-for (const marker of ['Things you can make with','What each worker does','Capacity vs output','Other research affecting','category-a-craft-table','category-a-process-table','Baseline:']) {
+for (const marker of ['Things you can make with','What each worker does','Capacity vs output','Other research affecting','category-a-craft-table','category-a-process-table','Direct recipes','Activity outputs']) {
   if (!categoryAUi.includes(marker)) throw new Error(`Category A baseline renderer missing marker: ${marker}`);
 }
 for (const script of ['skill-overhaul-profile-registry.js','skill-overhaul-category-a-1.js','compendium-skill-overhaul-category-a.js']) {
