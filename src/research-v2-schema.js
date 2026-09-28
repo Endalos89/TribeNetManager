@@ -2,7 +2,7 @@
   const root = typeof window !== 'undefined' ? window : globalThis;
   const canon = value => String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
   const slug = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const store = { batches: [], topics: [], entities: new Map() };
+  const store = { batches: [], topics: [], entities: new Map(), skillNotes: [] };
 
   const array = value => value == null ? [] : Array.isArray(value) ? value : [value];
   const clean = value => String(value == null ? '' : value).trim();
@@ -72,8 +72,17 @@
   function registerBatch(batch) {
     if (!batch || !batch.id || !batch.source?.title) throw new Error('Research batch requires id and source title');
     if (store.batches.some(b => b.id === batch.id)) return;
-    const normalizedBatch = { id: batch.id, title: clean(batch.title), pages: clean(batch.pages), source: { title: clean(batch.source.title), updated: clean(batch.source.updated) }, skills: array(batch.skills).map(clean).filter(Boolean) };
+    const skillNotes = array(batch.skillNotes).map(n => ({
+      skill: clean(n.skill),
+      page: Number(n.page || 0),
+      status: clean(n.status || 'note'),
+      note: clean(n.note),
+      source: { title: clean(batch.source.title), updated: clean(batch.source.updated), pages: clean(batch.pages) },
+      batchId: batch.id
+    })).filter(n => n.skill && n.note && n.page);
+    const normalizedBatch = { id: batch.id, title: clean(batch.title), pages: clean(batch.pages), source: { title: clean(batch.source.title), updated: clean(batch.source.updated) }, skills: array(batch.skills).map(clean).filter(Boolean), skillNotes };
     store.batches.push(normalizedBatch);
+    store.skillNotes.push(...skillNotes);
     for (const rawTopic of array(batch.topics)) {
       const topic = normalizeTopic(rawTopic, normalizedBatch);
       if (!topic.skill || !topic.name || !topic.dl || !topic.page) throw new Error(`Incomplete research topic: ${topic.skill}/${topic.name}`);
@@ -86,8 +95,9 @@
   const topicByKey = key => store.topics.find(t => t.key === key) || null;
   const topicsForSkill = skill => store.topics.filter(t => canon(t.skill) === canon(skill));
   const affectingSkill = skill => store.topics.filter(t => t.affectsSkills.some(s => canon(s) === canon(skill)) && canon(t.skill) !== canon(skill));
+  const notesForSkill = skill => store.skillNotes.filter(n => canon(n.skill) === canon(skill));
   const entity = name => store.entities.get(canon(name)) || null;
   const topicsForEntity = name => { const e = entity(name); return e ? e.topics.map(topicByKey).filter(Boolean) : []; };
 
-  root.TribeNetResearchV2 = { canon, slug, registerBatch, topicByKey, topicsForSkill, affectingSkill, entity, topicsForEntity, get batches(){ return [...store.batches]; }, get topics(){ return [...store.topics]; }, get entities(){ return [...store.entities.values()]; } };
+  root.TribeNetResearchV2 = { canon, slug, registerBatch, topicByKey, topicsForSkill, affectingSkill, notesForSkill, entity, topicsForEntity, get batches(){ return [...store.batches]; }, get topics(){ return [...store.topics]; }, get entities(){ return [...store.entities.values()]; }, get skillNotes(){ return [...store.skillNotes]; } };
 })();
