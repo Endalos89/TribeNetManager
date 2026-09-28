@@ -26,7 +26,7 @@
     if (!ref) return '';
     if (ref.type === 'skill' && ref.skill) return `<button class="comp-text-link" data-skill="${esc(ref.skill)}">${esc(ref.label)}</button>`;
     if (ref.type === 'research') {
-      const target = findDetailedByName(ref.topic || ref.label);
+      const target = findDetailedByName(ref.topic || ref.label, ref.skill);
       return target ? `<button class="comp-text-link" data-research-v2="${esc(target.key)}">${esc(ref.label)}</button>` : esc(ref.label);
     }
     if (ref.type === 'building' && ref.entity) return `<button class="comp-text-link" data-entity="${esc(ref.entity)}">${esc(ref.label)}</button>`;
@@ -62,7 +62,6 @@
     if (!t) return;
     setView({type:'research-v2',key:t.key},{push});
     q('compBreadcrumbs').textContent=`Compendium › Research › ${t.skill} › ${t.name}`;
-    const sourceWarning = t.sourceGaps.length || t.sourceIssues.length;
     q('compArticle').innerHTML=`
       <div class="comp-title-row"><div><div class="comp-kicker">Research · ${esc(t.skill)}</div><h1>${esc(t.name)}</h1><div class="comp-short">Difficulty Level ${esc(t.dl)} · Research List page ${fmtNum(t.page)}</div></div><span class="comp-badge">Research</span></div>
       ${t.status!=='available'?`<div class="comp-callout warn"><strong>Status in source:</strong> ${esc(t.status)}</div>`:''}
@@ -74,6 +73,7 @@
       ${bulletSection('Notes',t.notes)}
       ${refsSection('Leads to',t.leadsTo)}
       ${t.affectsSkills.length?`<section class="comp-section compact-section"><h2>Skills affected</h2><div class="comp-tags">${t.affectsSkills.map(s=>`<button class="comp-link" data-skill="${esc(s)}">${esc(s)}</button>`).join('')}</div></section>`:''}
+      ${t.relatedSkills.length?`<section class="comp-section compact-section"><h2>Related skills</h2><div class="comp-tags">${t.relatedSkills.map(s=>`<button class="comp-link" data-skill="${esc(s)}">${esc(s)}</button>`).join('')}</div></section>`:''}
       ${t.creates.length?`<section class="comp-section compact-section"><h2>Creates / unlocks</h2><div class="comp-tags">${t.creates.map(e=>e.kind==='skill'?`<button class="comp-link" data-skill="${esc(e.name)}">${esc(e.name)} · skill</button>`:`<button class="comp-link" data-entity="${esc(e.name)}">${esc(e.name)} · ${esc(e.kind)}</button>`).join('')}</div></section>`:''}
       ${bulletSection('Source gaps',t.sourceGaps,'source-gap')}
       ${bulletSection('Source wording / inconsistencies',t.sourceIssues,'source-issue')}
@@ -103,7 +103,7 @@
     const own = D.topicsForSkill(s.name);
     if (own.length) {
       const oldResearch=[...article.querySelectorAll('.comp-section')].find(sec=>sec.querySelector('h2')?.textContent.trim()==='Research topics');
-      const html=`<section class="comp-section compact-section detailed-research"><div class="comp-inline-heading"><h2>Research topics</h2><span class="comp-muted">${own.length} fully indexed in Batch 1</span></div><div class="comp-research-v2-grid">${own.map(t=>researchButton(t)).join('')}</div></section>`;
+      const html=`<section class="comp-section compact-section detailed-research"><div class="comp-inline-heading"><h2>Research topics</h2><span class="comp-muted">${own.length} fully indexed</span></div><div class="comp-research-v2-grid">${own.map(t=>researchButton(t)).join('')}</div></section>`;
       if (oldResearch) oldResearch.outerHTML=html; else article.insertAdjacentHTML('beforeend',html);
     }
     const inbound=D.affectingSkill(s.name);
@@ -119,7 +119,7 @@
     const topicRows=e.topics.map(D.topicByKey).filter(Boolean);
     const recipeRows=e.recipes||[];
     return `<section class="comp-standard-entity">
-      <div class="comp-standard-head"><strong>${e.kind==='facility'?'Building specification':'Item specification'}</strong><span>${e.researchOnly?'Research unlocked':'General construction/use'}</span></div>
+      <div class="comp-standard-head"><strong>${e.kind==='facility'?'Building specification':e.kind==='ship'?'Ship specification':'Item specification'}</strong><span>${e.researchOnly?'Research unlocked':'General construction/use'}</span></div>
       ${e.effects.length?`<div class="comp-standard-block"><h3>What it does</h3><ul class="comp-rule-list primary">${e.effects.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}
       ${recipeRows.length?`<div class="comp-standard-block"><h3>Recipe${recipeRows.length>1?'s':''}</h3>${recipeRows.map(renderRecipe).join('')}</div>`:''}
       ${e.requirements.length?`<div class="comp-standard-block"><h3>Requirements</h3><ul class="comp-rule-list">${e.requirements.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}
@@ -151,7 +151,7 @@
     const term=c(query), article=q('compArticle');
     if(!term||!article||compState.view.type!=='search')return;
     const host=article.querySelector('.comp-search-results'); if(!host)return;
-    const rows=D.topics.filter(t=>c(`${t.skill} ${t.name} ${t.effects.join(' ')} ${t.requirements.join(' ')} ${t.restrictions.join(' ')}`).includes(term));
+    const rows=D.topics.filter(t=>c(`${t.skill} ${t.name} ${t.effects.join(' ')} ${t.requirements.join(' ')} ${t.restrictions.join(' ')} ${t.relatedSkills.join(' ')}`).includes(term));
     if(rows.length)host.insertAdjacentHTML('beforeend',rows.map(t=>`<div class="comp-result" data-research-v2="${esc(t.key)}"><strong>${esc(t.name)}</strong><span>Detailed research · ${esc(t.skill)} · DL ${esc(t.dl)}</span></div>`).join(''));
     bindLinks(host);
   };
