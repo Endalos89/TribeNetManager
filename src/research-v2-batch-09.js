@@ -95,11 +95,13 @@
     })
   );
 
-  R.addBatch({
+  R.registerBatch({
     id:'research-v2-batch-09',
-    label:'Batch 9 — Weaving to Woodwork',
+    title:'Batch 9 · Weaving through Woodwork',
     pages:'205–209',
-    topics,
-    skillNotes:[]
+    source:{title:'TribeNet V3.7 Research List',updated:'06 May 2026'},
+    skills:['Weaving','Whaling','Woodwork'],
+    skillNotes:[],
+    topics
   });
 })();
