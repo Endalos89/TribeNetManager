@@ -133,7 +133,12 @@
   }, true);
 
   setTimeout(() => {
+    if (compState?.view?.type === 'mandate-home') {
+      previousRenderView({type:'mandate-home', key:null}, {push:false});
+      patchHome();
+    } else if (compState?.view?.type === 'mandate-batch' && String(compState.view.key) === '4') {
+      showBatch4(false);
+    }
     patchNav();
-    if (compState?.view?.type === 'mandate-home') patchHome();
   }, 0);
 })();
