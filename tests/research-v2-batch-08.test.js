@@ -17,7 +17,7 @@ assert.strictEqual(R.batches.length, 8);
 assert.strictEqual(R.batches[7].id, 'research-v2-batch-08');
 assert.strictEqual(R.batches[7].pages, '185–204');
 const batch = R.topics.filter(t => t.batchId === 'research-v2-batch-08');
-assert.strictEqual(batch.length, 25, 'Batch 8 should contain 25 structured research entries');
+assert.strictEqual(batch.length, 26, 'Batch 8 should contain 26 structured research entries');
 const find=(skill,name)=>R.topics.find(t=>R.canon(t.skill)===R.canon(skill)&&R.canon(t.name)===R.canon(name));
 
 const productivity=find('Shipwright','Improved Productivity I (ShipW 25)');
