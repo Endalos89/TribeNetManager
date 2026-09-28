@@ -23,44 +23,54 @@ async function main() {
     const name = `mandate-reference-batch-3-${String(i).padStart(2, '0')}.js`;
     vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context, { filename: name });
   }
+  for (let i = 1; i <= 8; i++) {
+    const name = `mandate-reference-batch-4-${String(i).padStart(2, '0')}.js`;
+    vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context, { filename: name });
+  }
 
   const mandate = context.window.TRIBENET_MANDATE;
   await mandate.whenReady();
 
   if (mandate.revision !== 'N02.2') throw new Error(`Unexpected revision ${mandate.revision}`);
-  if (mandate.sections.length !== 284) throw new Error(`Expected 284 sections after Batch 3, got ${mandate.sections.length}`);
-  if (mandate.batches.length !== 3) throw new Error(`Expected three logical batches, got ${mandate.batches.length}`);
+  if (mandate.sections.length !== 353) throw new Error(`Expected 353 sections after Batch 4, got ${mandate.sections.length}`);
+  if (mandate.batches.length !== 4) throw new Error(`Expected four logical batches, got ${mandate.batches.length}`);
 
   const batch3 = mandate.batches.find(batch => batch.id === '3');
-  if (!batch3) throw new Error('Batch 3 metadata missing');
-  if (batch3.sectionCount !== 78) throw new Error(`Expected 78 Batch 3 sections, got ${batch3.sectionCount}`);
+  if (!batch3 || batch3.sectionCount !== 78) throw new Error('Batch 3 regression metadata missing');
   if (batch3.topSections.join(',') !== '15,16,17,18,19') throw new Error(`Batch 3 top-level range is wrong: ${batch3.topSections.join(',')}`);
 
-  for (const key of ['15','15.1','15.1.3','16','16.3.2','16.4.2','17','17.15','18','18.4.2','18.5.8','19','19.3.1','19.5']) {
-    if (!mandate.getSection(key)) throw new Error(`Missing Batch 3 section ${key}`);
+  const batch4 = mandate.batches.find(batch => batch.id === '4');
+  if (!batch4) throw new Error('Batch 4 metadata missing');
+  if (batch4.sectionCount !== 69) throw new Error(`Expected 69 Batch 4 sections, got ${batch4.sectionCount}`);
+  if (batch4.topSections.join(',') !== '20,21,22,23,24,25,26,27') throw new Error(`Batch 4 top-level range is wrong: ${batch4.topSections.join(',')}`);
+
+  for (const key of ['20','20.4','20.5.1','21','21.2','21.3.7','22','22.2','23','23.1','23.4.1','24','24.1','25','26','27','27.8','27.10.7','27.15']) {
+    if (!mandate.getSection(key)) throw new Error(`Missing Batch 4 section ${key}`);
   }
-  if (mandate.getSection('20')) throw new Error('Batch 4 content leaked into Batch 3');
+  if (mandate.getSection('28')) throw new Error('Batch 5 content leaked into Batch 4');
 
-  if (!mandate.plainText(mandate.getSection('15.1')).includes('The Fair is held twice per Year')) throw new Error('Fair schedule wording missing');
-  if (!mandate.plainText(mandate.getSection('16.4.2')).includes('Slaves or Horses (only)')) throw new Error('Raiding scout target wording missing');
+  if (mandate.getSection('20.5.1').title !== 'Catapults and Naval Cannon') throw new Error('Body heading title for §20.5.1 was not preserved');
+  if (!mandate.plainText(mandate.getSection('20.4')).includes('Ships may only be built in the hex with the building facilities present')) throw new Error('Shipbuilding location rule missing');
+  if (!mandate.plainText(mandate.getSection('21.3.7')).includes('follow Ocean')) throw new Error('Fleet movement coastline rule missing');
+  if (!mandate.plainText(mandate.getSection('23.1')).includes('Only one Book may be attempted per turn per Clan')) throw new Error('Book writing limit missing');
+  if (!mandate.plainText(mandate.getSection('26')).includes('Only one archaeology tribe per Clan is allowed')) throw new Error('Archaeology tribe limit missing');
+  if (!mandate.plainText(mandate.getSection('27.15')).includes('Religion is dynamic and not totally in their control')) throw new Error('Religion final-note wording missing');
 
-  const navalCombat = mandate.plainText(mandate.getSection('17.15'));
-  if (!navalCombat.includes('Mariner skill replaces Combat')) throw new Error('Naval combat Mariner rule missing');
-  if (!navalCombat.includes('Captaincy replaces Leadership')) throw new Error('Naval combat Captaincy rule missing');
+  if (mandate.getSection('20').page !== 134) throw new Error(`Section 20 page mismatch: ${mandate.getSection('20').page}`);
+  if (mandate.getSection('27.15').page !== 165) throw new Error(`Section 27.15 page mismatch: ${mandate.getSection('27.15').page}`);
 
-  if (!mandate.plainText(mandate.getSection('18.4.2')).includes('Each Onager requires 1 Wooden or Stone Tower')) throw new Error('Siege equipment deployment wording missing');
-  if (!mandate.plainText(mandate.getSection('18.5.8')).includes('Wells supply Water during sieges')) throw new Error('Siege well wording missing');
-  if (!mandate.plainText(mandate.getSection('19.3.1')).includes('cannot block or destroy the jetty')) throw new Error('Jetty siege wording missing');
-
-  if (mandate.getSection('15').page !== 90) throw new Error(`Section 15 page mismatch: ${mandate.getSection('15').page}`);
-  if (mandate.getSection('19.5').page !== 133) throw new Error(`Section 19.5 page mismatch: ${mandate.getSection('19.5').page}`);
-
-  const extension = fs.readFileSync(path.join(root, 'compendium-mandate.js'), 'utf8');
-  if (!extension.includes("{id:'3',title:'Trade, scouting & combat',range:'§§15–19',pages:'90–133',complete:true}")) {
-    throw new Error('Batch 3 Compendium completion state missing');
+  const integration = fs.readFileSync(path.join(root, 'compendium-mandate-batch4.js'), 'utf8');
+  for (const marker of [
+    '4 of 5 batches complete · 80%',
+    'Naval & advanced systems',
+    'data-b4-ref',
+    "data-mandate-batch=\"4\"",
+    '§§20–27 · pages 134–165'
+  ]) {
+    if (!integration.includes(marker)) throw new Error(`Batch 4 Compendium integration missing marker: ${marker}`);
   }
 
-  console.log('Mandate Batch 3 checks passed:', batch3.sectionCount, 'new sections;', mandate.sections.length, 'total; migration progress 3/5');
+  console.log('Mandate Batch 4 checks passed:', batch4.sectionCount, 'new sections;', mandate.sections.length, 'total; migration progress 4/5');
 }
 
 main().catch(error => { console.error(error); process.exit(1); });
