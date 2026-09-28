@@ -5,7 +5,7 @@ The TribeNet Mandate is being migrated into the Compendium in five reviewable ba
 | Batch | Scope | Status |
 | --- | --- | --- |
 | 1 | §§1–12 — Core game & rules framework | Complete |
-| 2 | §§13–14 — Activities & villages | Pending |
+| 2 | §§13–14 — Activities & villages | Complete |
 | 3 | §§15–19 — Trade, scouting & combat | Pending |
 | 4 | §§20–27 — Naval & advanced systems | Pending |
 | 5 | §§28–35 + Appendix A — Remaining references & final audit | Pending |
@@ -14,4 +14,12 @@ The TribeNet Mandate is being migrated into the Compendium in five reviewable ba
 
 Source: TribeNet Mandate TN3 Revision N02.2 (16 July 2026).
 
-Batch 1 indexes 119 headings and subheadings from §§1–12. The Compendium displays migration progress as 1/5 and exposes only completed Mandate content; §13 and later are intentionally withheld until their corresponding batch is migrated and reviewed.
+Batch 1 indexes 119 headings and subheadings from §§1–12.
+
+## Batch 2
+
+Source: TribeNet Mandate TN3 Revision N02.2 (16 July 2026).
+
+Batch 2 indexes 87 headings and subheadings from §§13–14, covering general activities, skill-specific activity rules, uncoded tools and auxiliaries, and village systems through joint projects and research. Compendium skill pages now also surface tools, goods and structures mentioned in completed Mandate rules connected to that skill.
+
+The Compendium displays migration progress as 2/5 and exposes only completed Mandate content; §15 and later are intentionally withheld until their corresponding batch is migrated and reviewed.
