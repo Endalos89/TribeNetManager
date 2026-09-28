@@ -23,13 +23,13 @@ async function main() {
 
   if (mandate.sections.length !== 408) throw new Error(`Expected 408 Mandate sections, got ${mandate.sections.length}`);
   if (mandate.batches.length !== 5) throw new Error(`Expected five Mandate data batches, got ${mandate.batches.length}`);
-  for (const id of ['1', '12.2', '13.4', '20.5.1', '28', '35', 'Appendix A']) {
+  for (const id of ['1', '12.2', '13.1.9', '20.5.1', '28', '35', 'Appendix A']) {
     if (!mandate.getSection(id)) throw new Error(`Missing complete Mandate section ${id}`);
   }
 
-  const sample = 'See section 13.4 and section 20.5.1. Appendix A contains the change history. Page 20 is not a section reference.';
+  const sample = 'See section 13.1.9 and section 20.5.1. Appendix A contains the change history. Page 20 is not a section reference.';
   const refs = mandate.findInlineReferences(sample).map(ref => ref.section);
-  for (const id of ['13.4', '20.5.1', 'Appendix A']) {
+  for (const id of ['13.1.9', '20.5.1', 'Appendix A']) {
     if (!refs.includes(id)) throw new Error(`Inline Mandate reference resolver missed ${id}`);
   }
   if (refs.filter(id => id === '20').length) throw new Error('Page number was incorrectly converted into a Mandate section link');
