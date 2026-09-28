@@ -44,4 +44,7 @@ for (const marker of ['4 of 5 batches complete · 80%', 'Naval & advanced system
   if (!batch4Integration.includes(marker)) throw new Error(`Batch 4 UI integration missing marker: ${marker}`);
 }
 
+new Function(batch4Loader);
+new Function(batch4Integration);
+
 console.log('Compendium Mandate wiring checks passed through Batch 4');
