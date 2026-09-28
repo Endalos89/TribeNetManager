@@ -6,56 +6,71 @@
 .comp-title-row{margin-bottom:8px;gap:12px}
 .comp-title-row h1{font-size:26px;margin:2px 0 3px}
 .comp-lead{font-size:12px;line-height:1.45;margin:7px 0 10px}
-.comp-section{margin-top:14px}
-.comp-section h2{font-size:15px;margin:0 0 7px}
-.comp-section.compact-section{margin-top:10px}
-.comp-callout{padding:8px 10px;font-size:11px;line-height:1.4}
-.comp-info-list{gap:6px;margin:8px 0}
-.comp-info{padding:7px 9px}
-.comp-recipe-table{font-size:10px}
-.comp-recipe-table th,.comp-recipe-table td{padding:6px 7px;vertical-align:top}
-.comp-method-card{padding:8px;margin:5px 0}
-.comp-use{padding:7px 9px}
-.comp-nav-section{margin-bottom:10px}
-.comp-nav-title{margin:6px 6px 4px}
-.comp-nav-link{min-height:28px;padding:5px 7px}
-.comp-nav-link.compact{min-height:25px;padding:4px 7px}
-.comp-skill-grid.compact-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:5px}
-.comp-skill-button{padding:7px 9px;min-height:48px}
+.comp-section{margin-top:12px}
+.comp-section h2{font-size:14px;margin:0 0 6px}
+.comp-section.compact-section{margin-top:9px}
+.comp-callout{padding:7px 9px;font-size:10px;line-height:1.38}
+.comp-info-list{gap:5px;margin:7px 0}
+.comp-info{padding:6px 8px}
+.comp-recipe-table{font-size:9px}
+.comp-recipe-table th,.comp-recipe-table td{padding:5px 6px;vertical-align:top}
+.comp-method-card{padding:7px;margin:4px 0}
+.comp-use{padding:6px 8px}
+.comp-nav-section{margin-bottom:9px}
+.comp-nav-title{margin:5px 6px 3px}
+.comp-nav-link{min-height:27px;padding:4px 7px}
+.comp-nav-link.compact{min-height:24px;padding:3px 7px}
+.comp-skill-grid.compact-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:4px}
+.comp-skill-button{padding:6px 8px;min-height:45px}
 .comp-skill-button strong{font-size:11px}
 .comp-skill-button span{font-size:9px}
 
-.comp-category-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}
-.comp-category-card,.comp-entity-card,.comp-research-card{border:1px solid #29453a;background:#0c1a16;color:#d9eee3;border-radius:8px;text-align:left;cursor:pointer}
-.comp-category-card{padding:12px}
+.comp-category-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:8px 0}
+.comp-category-card,.comp-entity-card,.comp-research-card{border:1px solid #29453a;background:#0c1a16;color:#d9eee3;border-radius:7px;text-align:left;cursor:pointer}
+.comp-category-card{padding:10px}
 .comp-category-card:hover,.comp-entity-card:hover,.comp-research-card:hover{border-color:#568b73;background:#10241d}
-.comp-category-card strong{display:block;font-size:14px;margin-bottom:3px}
-.comp-category-card span{font-size:10px;color:#89a89a}
+.comp-category-card strong{display:block;font-size:13px;margin-bottom:2px}
+.comp-category-card span{font-size:9px;color:#89a89a}
 
-.comp-entity-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:5px}
-.comp-entity-card{padding:7px 9px;min-height:44px}
-.comp-entity-card strong{display:block;font-size:11px}
-.comp-entity-card span{display:block;margin-top:2px;font-size:9px;color:#82a091;line-height:1.3}
+.comp-entity-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:4px}
+.comp-entity-card{padding:6px 8px;min-height:40px}
+.comp-entity-card strong{display:block;font-size:10px}
+.comp-entity-card span{display:block;margin-top:2px;font-size:8px;color:#82a091;line-height:1.25}
 
-.comp-toggle{display:flex;align-items:center;gap:6px;border:1px solid #315446;border-radius:8px;padding:6px 9px;font-size:10px;color:#a9c5b7;background:#0c1a16;white-space:nowrap}
+.comp-toggle{display:flex;align-items:center;gap:6px;border:1px solid #315446;border-radius:7px;padding:5px 8px;font-size:9px;color:#a9c5b7;background:#0c1a16;white-space:nowrap}
 .comp-toggle input{margin:0}
-.comp-inline-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+.comp-inline-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}
 .comp-inline-heading h2{margin:0}
 
-.comp-research-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:5px}
-.comp-research-card{padding:7px 9px;display:grid;grid-template-columns:1fr auto;gap:2px 8px}
+.comp-research-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:4px}
+.comp-research-card{padding:6px 8px;display:grid;grid-template-columns:1fr auto;gap:2px 7px}
 .comp-research-name{font-weight:700;font-size:10px}
-.comp-research-dl{font-size:9px;color:#b9cfbf}
-.comp-research-card small{grid-column:1/-1;color:#7f9d8e;font-size:9px;line-height:1.3}
-.comp-research-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:8px 0}
-.comp-research-detail>div{border:1px solid #29453a;border-radius:7px;background:#0b1814;padding:7px 9px}
+.comp-research-dl{font-size:8px;color:#b9cfbf}
+.comp-research-card small{grid-column:1/-1;color:#8eaa9b;font-size:9px;line-height:1.35}
+.comp-research-card.rich small{max-height:4.1em;overflow:hidden}
+.comp-research-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin:7px 0}
+.comp-research-detail>div{border:1px solid #29453a;border-radius:6px;background:#0b1814;padding:6px 8px}
 .comp-research-detail span{display:block;color:#789586;text-transform:uppercase;font-size:8px;letter-spacing:.05em}
-.comp-research-detail strong{display:block;margin-top:2px;font-size:10px;line-height:1.35;font-weight:600}
+.comp-research-detail strong{display:block;margin-top:2px;font-size:9px;line-height:1.35;font-weight:600}
 .comp-callout.research-unlock{border-color:#66592f;background:#18170c}
 
-.comp-item-meta{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px}
-.comp-item-meta span{border:1px solid #29453a;background:#0b1814;border-radius:6px;padding:5px 7px;font-size:9px;color:#9db8aa}
+.comp-item-meta{display:flex;flex-wrap:wrap;gap:5px;margin:5px 0 7px}
+.comp-item-meta span{border:1px solid #29453a;background:#0b1814;border-radius:6px;padding:4px 6px;font-size:8px;color:#9db8aa}
 .comp-item-meta b{color:#6f8f80;font-weight:500;margin-right:3px;text-transform:uppercase;font-size:8px}
-.comp-use-chip{display:inline-flex;align-items:center;gap:3px;border:1px solid #29453a;background:#0b1814;border-radius:999px;padding:4px 7px;font-size:9px;color:#9db8aa}
+.comp-use-chip{display:inline-flex;align-items:center;gap:3px;border:1px solid #29453a;background:#0b1814;border-radius:999px;padding:3px 6px;font-size:8px;color:#9db8aa}
 
-@media(max-width:950px){.comp-layout{grid-template-columns:190px minmax(0,1fr)}.comp-category-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.comp-research-detail{grid-template-columns:1fr}}
+/* Standardised rules cards for research, items, buildings and ships */
+.comp-rule-card{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin:7px 0 9px;padding:7px;border:1px solid #315446;border-radius:8px;background:#091512}
+.comp-rule-row{min-width:0;border:1px solid #29453a;border-radius:6px;background:#0c1a16;padding:6px 8px}
+.comp-rule-row.wide{grid-column:1/-1}
+.comp-rule-row>span{display:block;margin-bottom:2px;color:#769586;font-size:8px;letter-spacing:.05em;text-transform:uppercase}
+.comp-rule-row>div{color:#d3e7dc;font-size:10px;line-height:1.38}
+.comp-compact-recipe{display:grid;grid-template-columns:minmax(120px,.7fr) minmax(0,2fr);gap:7px;padding:3px 0;border-bottom:1px solid #1f342c}
+.comp-compact-recipe:last-child{border-bottom:0}
+.comp-compact-recipe strong,.comp-compact-recipe span{font-size:9px;line-height:1.35}
+.comp-effect-list{display:grid;gap:4px}
+.comp-effect-link{display:grid;grid-template-columns:minmax(110px,.35fr) minmax(0,1.65fr);gap:7px;border:1px solid #29453a;background:#0b1814;border-radius:6px;padding:6px 8px}
+.comp-effect-link strong{font-size:9px}.comp-effect-link span{font-size:9px;line-height:1.35;color:#a9c5b7}
+.comp-external-research{border-top:1px solid #27433a;padding-top:8px}
+
+@media(max-width:950px){.comp-layout{grid-template-columns:190px minmax(0,1fr)}.comp-category-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.comp-research-detail,.comp-rule-card{grid-template-columns:1fr}.comp-rule-row.wide{grid-column:auto}.comp-effect-link,.comp-compact-recipe{grid-template-columns:1fr}}
