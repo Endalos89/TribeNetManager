@@ -1,0 +1,1 @@
+(() => { window.TribeNetOrdersReferenceRaw = {source:{"workbook":"0485_906_4_Orders Complete.xlsx","sheets":{"skills":"Valid_Skills","goods":"Valid Goods","implements":"Valid_Implements"},"note":"Workbook lists are used as an index/baseline. Mandate and Research List remain authoritative for rules, availability and research-only status."},skills:[],goods:[],implements:[]}; })();

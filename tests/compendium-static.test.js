@@ -6,11 +6,24 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium.html'
 const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium.js'), 'utf8');
 const preload = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload.js'), 'utf8');
 const launcher = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-launcher.js'), 'utf8');
+const dataExpansion = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-data-expansion.js'), 'utf8');
+const categories = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-categories.js'), 'utf8');
+const links = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-links.js'), 'utf8');
+new Function(dataExpansion);
+new Function(categories);
+new Function(links);
 
 assert.match(html, /id="compSearch"/);
 assert.match(html, /id="compNav"/);
 assert.match(html, /id="compArticle"/);
 assert.match(html, /id="compBackButton"/);
+assert.match(html, /research-data-6\.js/);
+assert.match(html, /research-data-final\.js/);
+assert.match(html, /orders-reference-final\.js/);
+assert.match(html, /compendium-data-expansion\.js/);
+assert.match(html, /compendium-categories\.js/);
+assert.match(html, /compendium-links\.js/);
+assert.match(html, /compendium-expansion\.css/);
 assert.match(js, /Group \$\{group\}/);
 assert.match(js, /showSkill/);
 assert.match(js, /showEntity/);
@@ -19,8 +32,39 @@ assert.match(js, /data-entity/);
 assert.match(js, /showTopic/);
 assert.match(js, /land-combat/);
 assert.match(js, /naval-combat/);
+assert.match(categories, /Hide research-only items/);
+assert.match(categories, /\['skills','Skills'\]/);
+assert.match(categories, /\['items','Items'\]/);
+assert.match(categories, /\['buildings','Buildings'\]/);
+assert.match(categories, /\['ships','Ships'\]/);
+assert.match(categories, /showResearch/);
+assert.match(links, /Research topics/);
+assert.match(links, /Used as an implement/);
+assert.match(links, /Used to make \/ operate/);
 assert.match(preload, /getCompendiumCatalog/);
 assert.match(preload, /compendium-launcher\.js/);
 assert.match(launcher, /compendium\.html/);
 
-console.log('Compendium static wiring tests passed.');
+// Research List baseline is loaded in chunks so it remains maintainable.
+global.window = {};
+require('../src/research-data.js');
+for (let i = 1; i <= 6; i++) require(`../src/research-data-${i}.js`);
+require('../src/research-data-final.js');
+assert(window.TribeNetResearchData.topics.length >= 250, 'Research List should expose the broad topic catalogue');
+assert(window.TribeNetResearchData.extraSkills.some(s => s.name === 'Admiralty'));
+assert(window.TribeNetResearchData.topics.some(t => t.name === 'Sling' || /Mining Ladder/i.test(t.name)), 'Research data should include concrete research outputs');
+
+require('../src/orders-reference-data.js');
+require('../src/orders-reference-skills.js');
+for (let i = 1; i <= 3; i++) require(`../src/orders-reference-goods-${i}.js`);
+for (let i = 1; i <= 2; i++) require(`../src/orders-reference-implements-${i}.js`);
+require('../src/orders-reference-final.js');
+const orders = window.TribeNetOrdersReference;
+assert(orders.skills.length >= 100, 'Valid_Skills baseline should include all current workbook skills');
+assert(orders.goods.length >= 450, 'Valid Goods baseline should include the current workbook goods list');
+assert(orders.implements.length >= 60, 'Valid_Implements baseline should include the current workbook implements');
+assert(orders.skills.some(s => s.name === 'Artillery'));
+assert(orders.goods.some(g => g.name === 'Longship' && g.table === 'SHIP'));
+assert(orders.implements.some(i => i.name === 'Sling' && i.uses.some(u => u.activity === 'HUNTING')));
+
+console.log('Compendium static wiring and baseline tests passed.');
