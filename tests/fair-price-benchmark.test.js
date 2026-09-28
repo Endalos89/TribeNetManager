@@ -1,4 +1,6 @@
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 
 global.window = {};
 require('../src/fair-price-data.js');
@@ -29,11 +31,24 @@ assert.strictEqual(wovenSlings.variants[0].outputValue, 18);
 assert.strictEqual(wovenSlings.variants[0].inputValue, 4);
 assert.strictEqual(wovenSlings.variants[0].uplift, 350);
 
+const incomplete = prices.evaluateRecipe({
+  outputItem:'Sling', outputQuantity:1,
+  alternatives:[{label:'Unknown ingredient',inputs:[{item:'Not Priced',quantity:1}]}]
+});
+assert.strictEqual(incomplete.variants[0].inputValue, null);
+assert.deepStrictEqual(incomplete.variants[0].missingInputs, ['Not Priced']);
+assert.strictEqual(incomplete.variants[0].uplift, null, 'Missing inputs must not be silently valued at zero');
+
 const missing = prices.evaluateRecipe({
   outputItem:'Longship', outputQuantity:1,
   alternatives:[{label:'Standard',inputs:[{item:'Logs',quantity:150},{item:'Brass',quantity:20}]}]
 });
 assert.strictEqual(missing.output, null, 'Do not invent a benchmark for items absent from the workbook');
 assert.strictEqual(missing.variants[0].outputValue, null);
+
+const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium.html'), 'utf8');
+assert.match(html, /fair-price-data\.js/);
+assert.match(html, /compendium-pricing\.js/);
+assert.match(html, /compendium-pricing\.css/);
 
 console.log('Fair price benchmark regression tests passed.');
