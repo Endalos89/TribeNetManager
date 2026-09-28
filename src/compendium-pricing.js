@@ -2,6 +2,20 @@
   const benchmark = window.TribeNetFairPriceBenchmark;
   if (!benchmark) return;
 
+  const coreEntities = entities;
+  entities = function() {
+    const base = coreEntities();
+    const keys = new Set(base.map(entity => canon(entity.key || entity.name)));
+    const pricedOnly = benchmark.rows
+      .filter(([name]) => !keys.has(canon(name)))
+      .map(([name,status]) => ({
+        key: canon(name), name, kind:'Fair item',
+        summary:`Trade Fair item (${status}) with a Year ${benchmark.source.year} base-price benchmark.`,
+        sections:[], notes:[], sourceSkills:[], uses:[], producers:[], consumers:[]
+      }));
+    return [...base, ...pricedOnly];
+  };
+
   function fmtSilver(value) {
     if (value == null || !Number.isFinite(Number(value))) return '—';
     const n = Number(value);
