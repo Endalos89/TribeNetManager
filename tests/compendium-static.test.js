@@ -6,8 +6,12 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium.html'
 const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium.js'), 'utf8');
 const preload = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload.js'), 'utf8');
 const launcher = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-launcher.js'), 'utf8');
+const dataExpansion = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-data-expansion.js'), 'utf8');
 const categories = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-categories.js'), 'utf8');
 const links = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-links.js'), 'utf8');
+new Function(dataExpansion);
+new Function(categories);
+new Function(links);
 
 assert.match(html, /id="compSearch"/);
 assert.match(html, /id="compNav"/);
