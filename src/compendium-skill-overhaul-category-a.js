@@ -53,14 +53,16 @@
   }
 
   function titleAndGlance(profile, skill) {
+    const mappedCount = profile.layout === 'category-a-craft' ? (profile.directCrafts || []).length : (profile.processRows || []).length;
+    const mappedLabel = profile.layout === 'category-a-craft' ? 'Direct recipes' : 'Activity outputs';
     return `<div class="skill-dossier-title">
       <div><div class="comp-kicker">Group ${e(skill.skillGroup)} skill · ${e(skill.shortname || '')}</div><h1>${e(skill.name)}</h1><p>${e(profile.summary)}</p></div>
-      <div class="skill-dossier-sources">${mandateLink(profile.primarySection)}<span class="skill-source-chip">Baseline: ${e(profile.baseline)}</span></div>
+      <div class="skill-dossier-sources">${mandateLink(profile.primarySection)}</div>
     </div>
     <section class="skill-glance-grid" aria-label="${e(profile.name)} at a glance">
       <div class="skill-glance"><span>Skill behaviour</span><strong>${e(profile.mechanicLabel)}</strong><small>${e(profile.levelDetail || '')}</small></div>
       <div class="skill-glance"><span>Workers</span><strong>${e(profile.workerRule)}</strong><small>${e(profile.workerDetail || '')}</small></div>
-      <div class="skill-glance"><span>Source model</span><strong>${e(profile.baseline)} baseline</strong><small>Uses the same dossier principles as the approved prototype skills, adapted to this skill's actual rules.</small></div>
+      <div class="skill-glance"><span>${e(mappedLabel)}</span><strong>${e(mappedCount)} mapped</strong><small>Research, linked items and related skills are shown below.</small></div>
     </section>`;
   }
 
