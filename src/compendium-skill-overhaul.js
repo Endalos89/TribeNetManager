@@ -51,6 +51,20 @@
     return '<span class="skill-source-chip research">Research List</span>';
   }
 
+  function removeGenericMandatePanels(article) {
+    if (!article?.classList.contains('skill-dossier-mode')) return;
+    [...article.querySelectorAll('.comp-section')].forEach(section => {
+      const heading = section.querySelector('h2')?.textContent?.trim();
+      if (heading === 'Mandate coverage' || heading === 'Mandate-linked tools, goods & structures') section.remove();
+    });
+  }
+
+  function finishDossier(article) {
+    removeGenericMandatePanels(article);
+    const defer = window.requestAnimationFrame || (callback => setTimeout(callback, 0));
+    defer(() => removeGenericMandatePanels(article));
+  }
+
   function renderHunting(profile, skill) {
     const article = $('compArticle');
     const ownResearch = (D?.topicsForSkill?.(profile.name) || []).slice().sort((a,b) => a.page - b.page || a.name.localeCompare(b.name));
@@ -131,6 +145,7 @@
         <div class="skill-source-groups"><div><strong>Mandate</strong><div class="skill-source-row">${[profile.primarySection, ...(profile.additionalSections || [])].map(section => mandateLink(section)).join('')}</div></div><div><strong>Research List</strong><div class="skill-source-row"><span class="skill-source-chip research">Hunting pp. ${e(researchRange)}</span></div></div></div>
       </section>`;
     bindLinks(article);
+    finishDossier(article);
   }
 
   const previousShowSkill = showSkill;
