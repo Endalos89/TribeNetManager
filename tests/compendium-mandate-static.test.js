@@ -4,11 +4,7 @@ const path = require('path');
 const root = path.join(__dirname, '..', 'src');
 const html = fs.readFileSync(path.join(root, 'compendium.html'), 'utf8');
 const js = fs.readFileSync(path.join(root, 'compendium-mandate.js'), 'utf8');
-const batch4Loader = fs.readFileSync(path.join(root, 'compendium-mandate-batch4-loader.js'), 'utf8');
-const batch4Integration = fs.readFileSync(path.join(root, 'compendium-mandate-batch4.js'), 'utf8');
-const batch5Loader = fs.readFileSync(path.join(root, 'compendium-mandate-batch5-loader.js'), 'utf8');
-const batch5Integration = fs.readFileSync(path.join(root, 'compendium-mandate-batch5.js'), 'utf8');
-const contrast = fs.readFileSync(path.join(root, 'compendium-mandate-contrast.css'), 'utf8');
+const css = fs.readFileSync(path.join(root, 'compendium-mandate.css'), 'utf8');
 
 const scripts = [
   'mandate-reference-schema.js',
@@ -23,50 +19,60 @@ const scripts = [
   'mandate-reference-batch-3-02.js',
   'mandate-reference-batch-3-03.js',
   'mandate-reference-batch-3-04.js',
-  'compendium-mandate.js',
-  'compendium-mandate-batch4-loader.js',
-  'compendium-mandate-batch5-loader.js'
+  'mandate-reference-batch-4-01.js',
+  'mandate-reference-batch-4-02.js',
+  'mandate-reference-batch-4-03.js',
+  'mandate-reference-batch-4-04.js',
+  'mandate-reference-batch-4-05.js',
+  'mandate-reference-batch-4-06.js',
+  'mandate-reference-batch-4-07.js',
+  'mandate-reference-batch-4-08.js',
+  'mandate-reference-batch-5-01.js',
+  'mandate-reference-batch-5-02.js',
+  'mandate-reference-batch-5-03.js',
+  'compendium-mandate.js'
 ];
 for (const name of scripts) {
   if (!html.includes(`<script src="${name}"></script>`)) throw new Error(`compendium.html missing ${name}`);
 }
-if (!html.includes('<link rel="stylesheet" href="compendium-mandate.css" />')) throw new Error('compendium.html missing Mandate stylesheet');
-if (!html.includes('<link rel="stylesheet" href="compendium-mandate-contrast.css" />')) throw new Error('compendium.html missing Mandate contrast stylesheet');
-if (html.indexOf('mandate-reference-schema.js') > html.indexOf('compendium.js')) throw new Error('Mandate data must load before base Compendium');
-if (html.indexOf('mandate-reference-batch-3-04.js') > html.indexOf('compendium.js')) throw new Error('Batch 3 Mandate data must load before base Compendium');
-if (html.indexOf('compendium-mandate.js') < html.indexOf('compendium-research-v2-skill-notes.js')) throw new Error('Mandate integration must load after Compendium extensions');
-if (html.indexOf('compendium-mandate-batch4-loader.js') < html.indexOf('compendium-mandate.js')) throw new Error('Batch 4 loader must run after the core Mandate integration');
-if (html.indexOf('compendium-mandate-batch5-loader.js') < html.indexOf('compendium-mandate-batch4-loader.js')) throw new Error('Batch 5 loader must run after the Batch 4 loader');
 
-if (!js.includes("{id:'5'")) throw new Error('Five-batch migration plan missing');
-if (!js.includes("{id:'3',title:'Trade, scouting & combat',range:'§§15–19',pages:'90–133',complete:true}")) throw new Error('Batch 3 completion state missing');
-
-for (let i = 1; i <= 8; i++) {
-  const name = `mandate-reference-batch-4-${String(i).padStart(2, '0')}.js`;
-  if (!batch4Loader.includes(name)) throw new Error(`Batch 4 loader missing ${name}`);
-}
-if (!batch4Loader.includes('compendium-mandate-batch4.js')) throw new Error('Batch 4 UI integration is not loaded');
-for (const marker of ['4 of 5 batches complete · 80%', 'Naval & advanced systems', 'showBatch4', 'patchHome', 'patchNav']) {
-  if (!batch4Integration.includes(marker)) throw new Error(`Batch 4 UI integration missing marker: ${marker}`);
+for (const obsolete of ['compendium-mandate-batch4-loader.js', 'compendium-mandate-batch5-loader.js', 'compendium-mandate-contrast.css']) {
+  if (html.includes(obsolete)) throw new Error(`Obsolete migration asset is still wired into compendium.html: ${obsolete}`);
 }
 
-for (let i = 1; i <= 3; i++) {
-  const name = `mandate-reference-batch-5-${String(i).padStart(2, '0')}.js`;
-  if (!batch5Loader.includes(name)) throw new Error(`Batch 5 loader missing ${name}`);
-}
-if (!batch5Loader.includes('waitForBatch4Ui')) throw new Error('Batch 5 loader does not guard Batch 4 UI ordering');
-if (!batch5Loader.includes('compendium-mandate-batch5.js')) throw new Error('Batch 5 UI integration is not loaded');
-for (const marker of ['5 of 5 batches complete · 100%', 'Remaining references & final audit', 'showBatch5', 'Migration complete: all', 'Appendix A']) {
-  if (!batch5Integration.includes(marker)) throw new Error(`Batch 5 UI integration missing marker: ${marker}`);
+if (!html.includes('<link rel="stylesheet" href="compendium-mandate.css" />')) throw new Error('compendium.html missing Mandate reader stylesheet');
+if (html.indexOf('mandate-reference-schema.js') > html.indexOf('compendium.js')) throw new Error('Mandate schema must load before base Compendium');
+if (html.indexOf('mandate-reference-batch-5-03.js') > html.indexOf('compendium.js')) throw new Error('All Mandate data must load before base Compendium');
+if (html.indexOf('compendium-mandate.js') < html.indexOf('compendium-research-v2-skill-notes.js')) throw new Error('Mandate reader must load after Compendium extensions');
+
+for (const marker of [
+  'showMandateReader',
+  'renderToc',
+  'renderDocumentSection',
+  'data-view="mandate-reader"',
+  'data-mandate-doc-link',
+  'navigateMandate',
+  'IntersectionObserver',
+  'scrollIntoView',
+  'Mandate coverage'
+]) {
+  if (!js.includes(marker)) throw new Error(`Mandate reader integration missing marker: ${marker}`);
 }
 
-for (const marker of ['#e8eef3', '.mandate-modal-body', '.mandate-exact-line', '.mandate-table td']) {
-  if (!contrast.includes(marker)) throw new Error(`Mandate contrast fix missing marker: ${marker}`);
+for (const obsolete of ['Migration progress', 'mandateReferenceModal', 'showMandateBatch', 'Exact reference']) {
+  if (js.includes(obsolete)) throw new Error(`Obsolete migration/reference UI remains in Compendium integration: ${obsolete}`);
 }
 
-new Function(batch4Loader);
-new Function(batch4Integration);
-new Function(batch5Loader);
-new Function(batch5Integration);
+for (const marker of [
+  '.mandate-reader-layout',
+  '.mandate-reader-toc',
+  '.mandate-toc-sticky',
+  '.mandate-document',
+  '.mandate-inline-reference',
+  '.mandate-doc-section'
+]) {
+  if (!css.includes(marker)) throw new Error(`Mandate reader stylesheet missing marker: ${marker}`);
+}
 
-console.log('Compendium Mandate wiring checks passed through Batch 5, including exact-reference contrast fix');
+new Function(js);
+console.log('Compendium Mandate wiring checks passed for the continuous document reader');
