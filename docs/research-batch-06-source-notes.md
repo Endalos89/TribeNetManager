@@ -1,0 +1,1 @@
+Batch 6 intentionally covers only Mobilisation through Research (Research List pages 129–157). Rowing and later skills begin the next batch. Source ambiguities, removed/under-review topics and incomplete recipes are preserved and flagged rather than silently reconciled.
