@@ -33,11 +33,12 @@
     }),
     t('Weaving','Exotic Weaving',4,206,{
       prerequisites:[{ label:'Art 6', skill:'Art', type:'skill' }],
-      effects:['Unlocks a Village-only Exotic Weaving activity for one Tribe per Clan.','Allows creation of a Clan-specific exotic Carpet, Rug or Tapestry using regional techniques/legends.','At Fair, exotic woven goods sell at the normal price and normal Fair limits; Fair Trade Multipliers do not apply.','At an Exotic Trading Post, exotic woven goods sell for twice the normal Silver price or may be sold for Diamonds equal to twice normal Silver price divided by 300, rounded down.','Using Silk instead of Cotton triples the Exotic Trading Post price.','Once three Tribes complete Exotic Weaving, they are considered members of the exclusive Exotic Weavers Guild.'],
+      effects:['Unlocks a Village-only Exotic Weaving activity for one Tribe per Clan.','Allows creation of a Clan-specific exotic Carpet, Rug or Tapestry using regional techniques/legends.','At Fair, exotic woven goods sell at the normal price and normal Fair limits; Fair Trade Multipliers do not apply.','At an Exotic Trading Post, exotic woven goods sell for twice the normal Silver price or may be sold for Diamonds equal to twice normal Silver price divided by 300, rounded down.','The source states that if Silk is used instead of Cotton, “these prices are tripled”.','Once three Tribes complete Exotic Weaving, they are considered members of the exclusive Exotic Weavers Guild.'],
       requirements:['Village Activity only.','Only one Tribe per Clan may perform Exotic Weaving.','A Clan selects one unique exotic item.','An Exotic Trading Post is required for the enhanced sale rules; these occur in NPC International cities and players must ask the GM for locations.'],
       restrictions:['At Fair, exotic goods have no special price premium and use normal Fair limits.','Fair Trade Multipliers do not apply.','A Clan may not belong to more than one exclusive Guild.'],
       notes:['The source lists example exotic items as Carpet, Rug and Tapestry and gives per-item skill/people/material/Silver values in a compact table.','When the Guild forms, a Guild leader must place a paper Element in Shanghai; without a leader the Guild collapses but may later be re-established.','After the initial three Tribes, further membership is determined by annual Gold auction.'],
       sourceGaps:['The compact recipe table is OCR-fragmented in this source extract. The Compendium preserves the stated item names and trading rules but does not invent ambiguous column mappings or output quantities.'],
+      sourceIssues:['The Silk wording says “these prices are tripled” immediately after the Exotic Trading Post double-price rule, but it does not explicitly state whether this means three times the normal price or triples the already doubled price. The Compendium preserves the wording rather than choosing an interpretation.'],
       relatedSkills:['Art']
     })
   );
@@ -49,11 +50,13 @@
       recipe:recipe('Shipbuilding',{item:'Whaler',quantity:1},160,[{item:'Logs',quantity:160},{item:'Brass',quantity:40},{item:'Coal',quantity:200},{item:'Sheathing',quantity:150},{item:'Silver',quantity:3000},{item:'Leather',quantity:40},{item:'Cloth',quantity:20},{item:'Rope',quantity:50},{item:'Cauldrons',quantity:2},{item:'Longboats',quantity:6}],[{name:'Shipbuilding',level:9},{name:'Woodwork',level:8},{name:'Metalwork',level:8}],'1 Whaler: People 160, ShB9, Wdw8, Mtl8, Logs 160, Brass 40, Coal 200, Sheath 150, Silver 3000, Leather 40, Cloth 20, Rope 50, Oars, Cauldrons 2, Longboats 6 minimum (11 maximum), Oars 6 per longboat, Spear/spetum 3 per longboat minimum'),
       requirements:['Minimum 6 Longboats; maximum 11 Longboats.','6 Oars are required per Longboat.','At least 3 Spears or Spetums are required per Longboat.','The vessel needs 2 Cauldrons for the described at-sea processing setup.'],
       notes:['Defense Points: 16.','Cargo: 40,000.','Weight: 20,000.','Source ship table lists Sail Movement 25 MP with Navigation 3, Seamanship 2, Sailing 4, Crew 10+7; Row Movement 15 MP with Navigation 0.5, Seamanship 0.5, Rowing 2, Crew 20+7; MEF 4; Sail 16; Hull 16; Max People 60.','The source narrative describes using Longboats as whaleboats with 6 Warriors with ropes and cauldrons/tryworks for rendering oil.'],
+      sourceGaps:['The main recipe says only “Sheath 150” and does not identify the sheathing material in this Whaling entry.'],
+      sourceIssues:['The main recipe states Metalwork 8, while the compact ship-stat/material table on the same page shows Mtl 5. Both source values are preserved; the structured recipe follows the explicit main recipe and flags the conflict.'],
       relatedSkills:['Shipbuilding','Woodwork','Metalwork','Peeling','Flensing','Blubbering'],
       creates:[ship('Whaler',['Specialized vessel that increases whale catch size and supports at-sea processing of up to two whales concurrently.'],{
         recipe:recipe('Shipbuilding',{item:'Whaler',quantity:1},160,[{item:'Logs',quantity:160},{item:'Brass',quantity:40},{item:'Coal',quantity:200},{item:'Sheathing',quantity:150},{item:'Silver',quantity:3000},{item:'Leather',quantity:40},{item:'Cloth',quantity:20},{item:'Rope',quantity:50},{item:'Cauldrons',quantity:2},{item:'Longboats',quantity:6}],[{name:'Shipbuilding',level:9},{name:'Woodwork',level:8},{name:'Metalwork',level:8}]),
         requirements:['6–11 Longboats; 6 Oars per Longboat; at least 3 Spears/Spetums per Longboat; 2 Cauldrons.'],
-        notes:['Defense Points 16; Cargo 40,000; Weight 20,000; Max People 60.']
+        notes:['Defense Points 16; Cargo 40,000; Weight 20,000; Max People 60.','Source also contains a Metalwork 8 versus Metalwork 5 discrepancy.']
       })]
     })
   );
@@ -73,7 +76,7 @@
       effects:['A Mining Ladder gives +100% Mining output to up to 10 Miners.','A Mining Ladder gives +100% Digging output to up to 10 Diggers for activities such as Clay, Sand or moat digging.','The Mining Ladder bonus is cumulative with other implements such as Picks, Shovels, Ore Carts and Seam Wedges, but the bonuses are additive rather than compounded.'],
       recipe:recipe('Woodwork / Metalwork',{item:'Mining Ladder',quantity:1},15,[{item:'Logs',quantity:4},{item:'Iron',quantity:25},{item:'Coal',quantity:150}],[{name:'Woodwork',level:3},{name:'Metalwork',level:3}],'People 15, Wd3, Mtl3, Log 4, Iron 25, Coal 150'),
       notes:['The source also lists this research under Engineering, Mining and Metalwork.','Weight: 50 lb.','The source gives an order-entry workaround: if the implement is not coded correctly, add Auxiliaries and assign the doubled effective workers manually.'],
-      affectsSkills:['Mining','Engineering'],
+      affectsSkills:['Mining'],
       relatedSkills:['Engineering','Mining','Metalwork'],
       creates:[item('Mining Ladder',['+100% Mining output for up to 10 Miners and +100% Digging output for up to 10 Diggers; stacks additively with other implements.'],{
         recipe:recipe('Woodwork / Metalwork',{item:'Mining Ladder',quantity:1},15,[{item:'Logs',quantity:4},{item:'Iron',quantity:25},{item:'Coal',quantity:150}],[{name:'Woodwork',level:3},{name:'Metalwork',level:3}]),
