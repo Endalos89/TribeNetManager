@@ -1,0 +1,31 @@
+/* Readability fix for Mandate exact-reference pop-ups on the dark TribeNet theme. */
+.mandate-modal-card {
+  background: #111b23;
+  color: #e8eef3;
+}
+.mandate-modal-header,
+.mandate-modal-footer {
+  background: #111b23;
+  color: #e8eef3;
+}
+.mandate-modal-body {
+  background: #0d171d;
+  color: #e8eef3;
+}
+.mandate-modal-body .mandate-exact-line,
+.mandate-modal-body .mandate-table,
+.mandate-modal-body .mandate-table td {
+  color: #e8eef3;
+}
+.mandate-modal-meta {
+  color: #b8c8d2;
+  opacity: 1;
+}
+.mandate-modal-close,
+.mandate-ref-button {
+  color: #eef5f8;
+}
+.mandate-modal-body .mandate-table td {
+  background: #111b23;
+  border-color: #334956;
+}
