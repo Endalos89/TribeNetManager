@@ -27,14 +27,17 @@ assert(epic.restrictions.some(x=>/more than one/i.test(x)));
 
 const exotic=find('Weaving','Exotic Weaving');
 assert(exotic.effects.some(x=>/twice the normal Silver price/i.test(x)));
-assert(exotic.effects.some(x=>/Silk.*triples/i.test(x)));
+assert(exotic.effects.some(x=>/these prices are tripled/i.test(x)));
 assert(exotic.restrictions.some(x=>/Fair Trade Multipliers do not apply/i.test(x)));
 assert(exotic.sourceGaps.some(x=>/OCR-fragmented/i.test(x)));
+assert(exotic.sourceIssues.some(x=>/does not explicitly state/i.test(x)));
 
 const whaler=find('Whaling','Whaler');
 assert(whaler.effects.some(x=>/does not change the chance/i.test(x)));
 assert(whaler.effects.some(x=>/two whales/i.test(x)));
 assert(whaler.requirements.some(x=>/6 Oars.*Longboat/i.test(x)));
+assert(whaler.sourceIssues.some(x=>/Metalwork 8.*Metalwork 5/i.test(x)));
+assert(whaler.sourceGaps.some(x=>/Sheath 150/i.test(x)));
 assert.strictEqual(R.entity('Whaler').kind,'ship');
 
 const bunk=find('Woodwork','Bunk');
@@ -46,7 +49,7 @@ const ladder=find('Woodwork','Mining Ladder');
 assert(ladder.effects.some(x=>/\+100% Mining output/i.test(x)));
 assert(ladder.effects.some(x=>/additive rather than compounded/i.test(x)));
 assert(R.affectingSkill('Mining').some(t=>t.skill==='Woodwork'&&t.name==='Mining Ladder'));
-assert(R.affectingSkill('Engineering').some(t=>t.skill==='Woodwork'&&t.name==='Mining Ladder'));
+assert(ladder.relatedSkills.includes('Engineering'));
 
 const wheel=find('Woodwork','Wheelbarrow');
 assert(wheel.effects.some(x=>/Mining output by 50%/i.test(x)));
