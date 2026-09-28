@@ -8,7 +8,9 @@ context.globalThis = context.window;
 vm.createContext(context);
 const run = name => vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context, { filename:name });
 run('skill-overhaul-data.js');
+run('skill-overhaul-profile-registry.js');
 run('skill-overhaul-woodwork-refinement.js');
+run('skill-overhaul-category-a-1.js');
 const S = context.window.TribeNetSkillOverhaul;
 if (!S) throw new Error('Skill overhaul data did not register');
 
@@ -60,8 +62,38 @@ for (const [name, effect] of [['Adze','×2 log output'],['Saw','×4 log output']
 }
 if (!S.itemBenefitsFor('Saw').some(row => row.skill === 'Forestry')) throw new Error('Saw entity should link back to Forestry');
 
+for (const name of ['Armour','Bonework','Boning','Curing','Dressing','Fletching']) {
+  const profile = S.profile(name);
+  if (!profile) throw new Error(`Category A dossier profile missing: ${name}`);
+  if (profile.category !== 'A') throw new Error(`Category A marker missing: ${name}`);
+  if (!['Woodwork','Forestry'].includes(profile.baseline)) throw new Error(`Approved baseline not recorded for ${name}`);
+}
+const armour = S.profile('Armour');
+if (armour.layout !== 'category-a-craft' || armour.directCrafts.length !== 7) throw new Error('Armour should use the Woodwork-style craft dossier with seven direct recipes');
+if (!armour.directCrafts.some(row => row.entity === 'Breastplate' && row.level === 8 && row.people === 4)) throw new Error('Armour Breastplate recipe missing');
+if (!armour.ruleGroups?.[0]?.rows.some(row => row.label === 'Shielding' && row.values.includes('Scutum'))) throw new Error('Armour category rules missing');
+
+const bonework = S.profile('Bonework');
+const boneSpear = bonework.directCrafts.find(row => row.entity === 'Bone Spear');
+if (!boneSpear || boneSpear.variants?.length !== 2) throw new Error('Bone Spear terrain/Shaft alternatives missing');
+if (!bonework.directCrafts.some(row => row.entity === 'Bone Axe' && row.inputs.some(input => input.entity === 'Club'))) throw new Error('Bone Axe Club input missing');
+
+const boning = S.profile('Boning');
+if (boning.layout !== 'category-a-process' || !/10 workers per skill level/i.test(boning.workerRule)) throw new Error('Boning should use the Forestry-style capacity/output dossier');
+if (!boning.processRows.some(row => row.outputs.some(output => output.entity === 'Bones' && /12 Bones/.test(output.label)))) throw new Error('Boning 12 Bones output missing');
+if (!boning.combinedWith.includes('Skinning') || !boning.combinedWith.includes('Gutting')) throw new Error('Boning combined activities missing');
+
+const curing = S.profile('Curing');
+if (!curing.processRows.some(row => row.inputs.some(input => input.entity === 'Gut' && /5 Gut/.test(input.label)) && row.outputs.some(output => output.entity === 'Leather' && /2 Leather/.test(output.label)))) throw new Error('Curing conversion missing');
+const dressing = S.profile('Dressing');
+if (!dressing.processRows.some(row => row.inputs.some(input => input.entity === 'Salt' && /1 Salt/.test(input.label)) && row.outputs.some(output => output.entity === 'Leather' && /4 Leather/.test(output.label)))) throw new Error('Dressing conversion missing');
+const fletching = S.profile('Fletching');
+if (fletching.processRows.length !== 3 || !fletching.processRows.some(row => row.activity === 'Steel Arrows' && row.outputs.some(output => output.entity === 'Arrow Steel'))) throw new Error('Fletching metal arrow recipes missing');
+if (!fletching.notes.some(note => /10 arrows/i.test(note))) throw new Error('Fletching combat ammunition rule missing');
+
 const ui = fs.readFileSync(path.join(root, 'compendium-skill-overhaul.js'), 'utf8');
 const woodUi = fs.readFileSync(path.join(root, 'compendium-skill-overhaul-woodwork.js'), 'utf8');
+const categoryAUi = fs.readFileSync(path.join(root, 'compendium-skill-overhaul-category-a.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'compendium-skill-overhaul.css'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'compendium.html'), 'utf8');
 for (const marker of ['AM = Active Month.','data-equipment-sort','Base max benefit','renderUnlockSkill','What each level unlocks','Research recipes / prerequisites using','renderForestry','Forestry worker limit','Tools, facilities & direct output modifiers']) {
@@ -70,6 +102,15 @@ for (const marker of ['AM = Active Month.','data-equipment-sort','Base max benef
 for (const marker of ['Things you can make with Woodwork alone','Where Woodwork is required','Other skills required','skill-woodwork-direct-table','skill-woodwork-required-table','Courthouse','data-entity']) {
   if (!woodUi.includes(marker)) throw new Error(`Woodwork split UI missing marker: ${marker}`);
 }
+for (const marker of ['Things you can make with','What each worker does','Capacity vs output','Other research affecting','category-a-craft-table','category-a-process-table','Direct recipes','Activity outputs']) {
+  if (!categoryAUi.includes(marker)) throw new Error(`Category A baseline renderer missing marker: ${marker}`);
+}
+for (const script of ['skill-overhaul-profile-registry.js','skill-overhaul-category-a-1.js','compendium-skill-overhaul-category-a.js']) {
+  if (!html.includes(script)) throw new Error(`Compendium is not loading ${script}`);
+}
+if (html.indexOf('skill-overhaul-profile-registry.js') < html.indexOf('skill-overhaul-data.js')) throw new Error('Profile registry must load after the base skill data');
+if (html.indexOf('skill-overhaul-category-a-1.js') < html.indexOf('skill-overhaul-profile-registry.js')) throw new Error('Category A data must load after the profile registry');
+if (html.indexOf('compendium-skill-overhaul-category-a.js') < html.indexOf('compendium-skill-overhaul.js')) throw new Error('Category A renderer must load after the base dossier renderer');
 if (!html.includes('skill-overhaul-woodwork-refinement.js') || !html.includes('compendium-skill-overhaul-woodwork.js')) throw new Error('Woodwork refinement scripts are not loaded by the Compendium');
 if (html.indexOf('skill-overhaul-woodwork-refinement.js') < html.indexOf('skill-overhaul-data.js')) throw new Error('Woodwork data refinement must load after the base skill data');
 if (html.indexOf('compendium-skill-overhaul-woodwork.js') < html.indexOf('compendium-skill-overhaul.js')) throw new Error('Woodwork UI refinement must load after the base dossier renderer');
@@ -78,4 +119,5 @@ for (const marker of ['.skill-dossier-mode','.skill-glance-grid','.skill-impleme
 }
 new Function(ui);
 new Function(woodUi);
-console.log('Skill overhaul checks passed: AM definition, benefit sorting, split Woodwork tables, Economics and Forestry dossiers are wired');
+new Function(categoryAUi);
+console.log('Skill overhaul checks passed: approved baselines plus first Group A dossiers are wired');
