@@ -66,18 +66,23 @@ async function main() {
   if (mandate.getSection('35').page !== 177) throw new Error(`Section 35 page mismatch: ${mandate.getSection('35').page}`);
   if (appendix.page !== 178) throw new Error(`Appendix A page mismatch: ${appendix.page}`);
 
-  const integration = fs.readFileSync(path.join(root, 'compendium-mandate-batch5.js'), 'utf8');
+  const maintainBoatsText = mandate.plainText(mandate.getSection('29.25'));
+  const refs = mandate.findInlineReferences(maintainBoatsText).map(ref => ref.section);
+  if (!refs.includes('20')) throw new Error('Mandate inline reference resolver did not link the section 20 cross-reference in §29.25');
+
+  const integration = fs.readFileSync(path.join(root, 'compendium-mandate.js'), 'utf8');
   for (const marker of [
-    '5 of 5 batches complete · 100%',
-    'Remaining references & final audit',
-    'data-b5-ref',
-    'Migration complete: all',
-    '§§28–35 + Appendix A · pages 165–191'
+    'showMandateReader',
+    'renderToc',
+    'renderDocumentSection',
+    'data-mandate-doc-link',
+    'scrollIntoView',
+    'IntersectionObserver'
   ]) {
-    if (!integration.includes(marker)) throw new Error(`Batch 5 Compendium integration missing marker: ${marker}`);
+    if (!integration.includes(marker)) throw new Error(`Mandate reader integration missing marker: ${marker}`);
   }
 
-  console.log('Mandate Batch 5 checks passed:', batch5.sectionCount, 'new sections;', mandate.sections.length, 'total; migration complete 5/5');
+  console.log('Full Mandate checks passed:', batch5.sectionCount, 'Batch 5 sections;', mandate.sections.length, 'total; continuous reader enabled');
 }
 
 main().catch(error => { console.error(error); process.exit(1); });

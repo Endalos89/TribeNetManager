@@ -13,7 +13,9 @@
   });
 
   function canonicalSection(value) {
-    return String(value || '').trim().replace(/^§\s*/, '').replace(/\.$/, '');
+    const raw = String(value || '').trim().replace(/^§\s*/, '').replace(/\.$/, '');
+    const appendix = raw.match(/^appendix\s+([a-z])$/i);
+    return appendix ? `Appendix ${appendix[1].toUpperCase()}` : raw;
   }
 
   function plainText(section) {
@@ -127,6 +129,31 @@
   };
 
   mandate.plainText = plainText;
+
+  mandate.anchorId = function anchorId(section) {
+    return `mandate-section-${canonicalSection(section).replace(/[^A-Za-z0-9]+/g, '-')}`;
+  };
+
+  mandate.findInlineReferences = function findInlineReferences(text) {
+    const source = String(text || '');
+    const ranges = [];
+    const candidate = /Appendix\s+[A-Z]|\b\d{1,2}(?:\.\d+)*\b/gi;
+    let match;
+    while ((match = candidate.exec(source))) {
+      const raw = match[0];
+      const section = mandate.getSection(raw);
+      if (!section) continue;
+      const before = source.slice(Math.max(0, match.index - 100), match.index);
+      const sentenceBoundary = Math.max(before.lastIndexOf('.'), before.lastIndexOf(';'), before.lastIndexOf('\n'));
+      const clause = before.slice(sentenceBoundary + 1);
+      if (/\bpages?\s*$/i.test(clause)) continue;
+      const explicit = /(?:§{1,2}\s*|\b(?:sections?|rules?|paragraphs?|mandate|see|under|per|refer(?:red|ring)?(?:\s+to)?|reference(?:s|d)?(?:\s+to)?)\b[^.;\n]{0,80})$/i.test(clause);
+      const appendix = /^Appendix\s+[A-Z]$/i.test(raw);
+      if (!explicit && !appendix) continue;
+      ranges.push({ start: match.index, end: match.index + raw.length, text: raw, section: section.section });
+    }
+    return ranges;
+  };
 
   mandate.search = function search(query) {
     const q = String(query || '').trim().toLowerCase();

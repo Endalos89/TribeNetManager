@@ -2,14 +2,6 @@
   const M = window.TRIBENET_MANDATE;
   if (!M) return;
   const SOURCE = M.sourceDocument;
-  const PLAN = [
-    {id:'1',title:'Core game & rules framework',range:'§§1–12',pages:'12–53',complete:true},
-    {id:'2',title:'Activities & villages',range:'§§13–14',pages:'54–89',complete:true},
-    {id:'3',title:'Trade, scouting & combat',range:'§§15–19',pages:'90–133',complete:true},
-    {id:'4',title:'Naval & advanced systems',range:'§§20–27',pages:'134–165',complete:false},
-    {id:'5',title:'Remaining references & final audit',range:'§§28–35 + Appendix A',pages:'165–191',complete:false}
-  ];
-  const done = PLAN.filter(x => x.complete).length;
 
   const originalEnsureMandateSkills = ensureMandateSkills;
   ensureMandateSkills = catalog => {
@@ -17,163 +9,387 @@
     result.sourceDocument = SOURCE;
     return result;
   };
+
   await M.whenReady();
 
-  const SKILL_ALIASES = {'DANCE':['dance','dancing'],'ARCHAEOLOGY':['archaeology','archeology'],'MAINTAIN BOATS':['maintain boats','boat maintenance']};
+  const SKILL_ALIASES = {
+    DANCE: ['dance', 'dancing'],
+    ARCHAEOLOGY: ['archaeology', 'archeology'],
+    'MAINTAIN BOATS': ['maintain boats', 'boat maintenance']
+  };
   const e = value => esc(value);
   const cleanSection = value => String(value || '').replace(/^§\s*/, '').replace(/\.$/, '');
-  const rx = phrase => new RegExp(`(^|[^a-z0-9])${String(phrase).replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+')}([^a-z0-9]|$)`,'i');
+  const rx = phrase => new RegExp(`(^|[^a-z0-9])${String(phrase).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')}([^a-z0-9]|$)`, 'i');
   const sectionText = section => M.plainText(section);
+  let scrollSpy = null;
 
-  function sectionButton(id,label='Reference') {
-    const s=M.getSection(id); if(!s) return '';
-    return `<button class="mandate-ref-button" data-mandate-ref="${e(s.section)}">${e(label)}</button>`;
+  function sectionLabel(section) {
+    const id = typeof section === 'string' ? section : section?.section;
+    return /^Appendix\s+/i.test(String(id || '')) ? String(id) : `§ ${id}`;
   }
-  function articleButton(id,label=null) {
-    const s=M.getSection(id); if(!s) return '';
-    return `<button class="mandate-article-link" data-mandate-section="${e(s.section)}">${e(label || `§ ${s.section} · ${s.title}`)}</button>`;
+
+  function sectionLink(id, label = null, extraClass = '') {
+    const section = M.getSection(id);
+    if (!section) return '';
+    const text = label || `${sectionLabel(section)} · ${section.title}`;
+    return `<a class="mandate-section-link ${extraClass}" href="#${e(M.anchorId(section.section))}" data-mandate-open="${e(section.section)}">${e(text)}</a>`;
   }
-  function exactBlocks(s) {
-    const out=(s.body||[]).map(b=>{
-      if(b.type==='table') return `<div class="mandate-table-wrap"><table class="mandate-table"><tbody>${(b.rows||[]).map(r=>`<tr>${r.map(c=>`<td>${e(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-      const style=String(b.style||'');
-      const cls=style.includes('Bullet')?' mandate-bullet':style.includes('Number')?' mandate-numbered':'';
-      return `<p class="mandate-exact-line${cls}">${e(b.text)}</p>`;
+
+  function linkifyExactText(text) {
+    const source = String(text || '');
+    const refs = M.findInlineReferences(source);
+    if (!refs.length) return e(source);
+    let cursor = 0;
+    let html = '';
+    for (const ref of refs) {
+      if (ref.start < cursor) continue;
+      html += e(source.slice(cursor, ref.start));
+      html += `<a class="mandate-inline-reference" href="#${e(M.anchorId(ref.section))}" data-mandate-doc-link="${e(ref.section)}">${e(source.slice(ref.start, ref.end))}</a>`;
+      cursor = ref.end;
+    }
+    html += e(source.slice(cursor));
+    return html;
+  }
+
+  function exactBlocks(section) {
+    const out = (section.body || []).map(block => {
+      if (block.type === 'table') {
+        return `<div class="mandate-table-wrap"><table class="mandate-table"><tbody>${(block.rows || []).map(row => `<tr>${row.map(cell => `<td>${linkifyExactText(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      }
+      const style = String(block.style || '');
+      const cls = style.includes('Bullet') ? ' mandate-bullet' : style.includes('Number') ? ' mandate-numbered' : '';
+      return `<p class="mandate-exact-line${cls}">${linkifyExactText(block.text || '')}</p>`;
     }).join('');
-    return out || '<p class="comp-muted">This heading contains no direct text before its first subsection.</p>';
+    return out || '';
   }
-  function ensureModal() {
-    if(document.getElementById('mandateReferenceModal')) return;
-    document.body.insertAdjacentHTML('beforeend',`
-      <div id="mandateReferenceModal" class="mandate-modal" aria-hidden="true">
-        <div class="mandate-modal-backdrop" data-mandate-close></div>
-        <section class="mandate-modal-card" role="dialog" aria-modal="true">
-          <header class="mandate-modal-header"><div><div class="comp-kicker">Word-for-word Mandate reference</div><h2 id="mandateModalTitle"></h2><div id="mandateModalMeta" class="mandate-modal-meta"></div></div><button class="mandate-modal-close" data-mandate-close>×</button></header>
-          <div id="mandateModalBody" class="mandate-modal-body"></div>
-          <footer class="mandate-modal-footer"><button id="mandateModalOpenArticle" class="button">Open Compendium article</button><button class="button" data-mandate-close>Close</button></footer>
-        </section>
-      </div>`);
-    document.querySelectorAll('[data-mandate-close]').forEach(n=>n.addEventListener('click',closeReference));
-  }
-  function openReference(id) {
-    const s=M.getSection(id); if(!s) return;
-    ensureModal();
-    $('mandateModalTitle').textContent=`§ ${s.section} — ${s.title}`;
-    $('mandateModalMeta').textContent=`${SOURCE} · printed page ${s.page || '—'}`;
-    $('mandateModalBody').innerHTML=exactBlocks(s);
-    $('mandateModalOpenArticle').onclick=()=>{closeReference();showMandateSection(s.section);};
-    $('mandateReferenceModal').classList.add('open');
-    $('mandateReferenceModal').setAttribute('aria-hidden','false');
-  }
-  function closeReference() {
-    const m=$('mandateReferenceModal'); if(!m) return;
-    m.classList.remove('open'); m.setAttribute('aria-hidden','true');
-  }
-  document.addEventListener('keydown',ev=>{if(ev.key==='Escape') closeReference();});
 
-  function bindMandate(root=document) {
-    root.querySelectorAll('[data-mandate-ref]').forEach(n=>n.onclick=ev=>{ev.preventDefault();ev.stopPropagation();openReference(n.dataset.mandateRef);});
-    root.querySelectorAll('[data-mandate-section]').forEach(n=>n.onclick=()=>showMandateSection(n.dataset.mandateSection));
-    root.querySelectorAll('[data-mandate-batch]').forEach(n=>n.onclick=()=>showMandateBatch(n.dataset.mandateBatch));
-    root.querySelectorAll('[data-view="mandate-home"]').forEach(n=>n.onclick=()=>showMandateHome());
+  function renderDocumentSection(section) {
+    const level = Math.max(1, Number(section.level || 1));
+    const headingLevel = Math.min(6, level + 1);
+    const tag = `h${headingLevel}`;
+    return `<section id="${e(M.anchorId(section.section))}" class="mandate-doc-section mandate-doc-level-${level}" data-mandate-doc-section="${e(section.section)}" data-mandate-top-section="${e(section.topSection || section.section)}">
+      <div class="mandate-doc-heading-row">
+        <${tag} class="mandate-doc-heading"><span class="mandate-doc-number">${e(sectionLabel(section))}</span><span>${e(section.title)}</span></${tag}>
+        ${section.page ? `<span class="mandate-doc-page">p. ${e(section.page)}</span>` : ''}
+      </div>
+      ${exactBlocks(section)}
+    </section>`;
+  }
+
+  function renderToc() {
+    return M.topLevel().map(top => {
+      const descendants = M.sections.filter(section => section.topSection === top.section && section.section !== top.section);
+      return `<div class="mandate-toc-group" data-mandate-toc-group="${e(top.section)}">
+        <div class="mandate-toc-top-row">
+          <a class="mandate-toc-link mandate-toc-top-link" href="#${e(M.anchorId(top.section))}" data-mandate-toc-link="${e(top.section)}" data-mandate-doc-link="${e(top.section)}"><span>${e(sectionLabel(top))}</span><strong>${e(top.title)}</strong></a>
+          ${descendants.length ? `<button class="mandate-toc-toggle" data-mandate-top-toggle="${e(top.section)}" aria-expanded="false" title="Show subsections">›</button>` : ''}
+        </div>
+        ${descendants.length ? `<div class="mandate-toc-children" data-mandate-toc-children="${e(top.section)}" hidden>${descendants.map(child => `<a class="mandate-toc-link mandate-toc-child mandate-toc-level-${Math.min(6, Number(child.level || 2))}" href="#${e(M.anchorId(child.section))}" data-mandate-toc-link="${e(child.section)}" data-mandate-doc-link="${e(child.section)}"><span>${e(sectionLabel(child))}</span><strong>${e(child.title)}</strong></a>`).join('')}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function leaveReaderMode() {
+    if (scrollSpy) {
+      scrollSpy.disconnect();
+      scrollSpy = null;
+    }
+    $('compArticle')?.classList.remove('mandate-reader-mode');
+  }
+
+  function expandTop(topSection, open = true) {
+    const article = $('compArticle');
+    if (!article) return;
+    const children = article.querySelector(`[data-mandate-toc-children="${CSS.escape(String(topSection))}"]`);
+    const toggle = article.querySelector(`[data-mandate-top-toggle="${CSS.escape(String(topSection))}"]`);
+    if (!children || !toggle) return;
+    children.hidden = !open;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.textContent = open ? '⌄' : '›';
+  }
+
+  function setActiveBookmark(sectionId) {
+    const article = $('compArticle');
+    const section = M.getSection(sectionId);
+    if (!article || !section) return;
+    article.querySelectorAll('.mandate-toc-link.active').forEach(node => node.classList.remove('active'));
+    const active = article.querySelector(`[data-mandate-toc-link="${CSS.escape(section.section)}"]`);
+    if (active) active.classList.add('active');
+    expandTop(section.topSection || section.section, true);
+  }
+
+  function scrollToSection(sectionId, smooth = true) {
+    const section = M.getSection(sectionId);
+    if (!section) return;
+    const target = document.getElementById(M.anchorId(section.section));
+    if (!target) return;
+    setActiveBookmark(section.section);
+    target.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+  }
+
+  function installScrollSpy() {
+    if (scrollSpy) scrollSpy.disconnect();
+    const root = document.querySelector('.comp-main');
+    const sections = [...document.querySelectorAll('.mandate-doc-section')];
+    if (!root || !sections.length || typeof IntersectionObserver === 'undefined') return;
+    scrollSpy = new IntersectionObserver(entries => {
+      const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+      if (visible[0]) setActiveBookmark(visible[0].target.dataset.mandateDocSection);
+    }, { root, rootMargin: '-8% 0px -78% 0px', threshold: [0, 1] });
+    sections.forEach(section => scrollSpy.observe(section));
+  }
+
+  function showMandateReader(targetSection = null, push = true) {
+    const target = targetSection && M.getSection(targetSection) ? M.getSection(targetSection).section : null;
+    setView({ type: 'mandate-reader', key: target }, { push });
+    $('compBreadcrumbs').textContent = target ? `Compendium › Mandate › ${sectionLabel(target)}` : 'Compendium › Mandate';
+    const article = $('compArticle');
+    article.classList.add('mandate-reader-mode');
+    article.innerHTML = `<div class="mandate-reader-title"><div><div class="comp-kicker">Canonical rulebook</div><h1>The Mandate</h1><div class="comp-short">${e(SOURCE)} · ${M.sections.length} indexed sections</div></div><span class="comp-badge">Complete</span></div>
+      <div class="mandate-reader-layout">
+        <aside class="mandate-reader-toc" aria-label="Mandate bookmarks">
+          <div class="mandate-toc-sticky"><div class="mandate-toc-title"><strong>Bookmarks</strong><span>Jump to a section</span></div><div class="mandate-toc-scroll">${renderToc()}</div></div>
+        </aside>
+        <div class="mandate-document" data-mandate-document>
+          <header class="mandate-document-cover"><div class="mandate-document-kicker">${e(SOURCE)}</div><h2>TribeNet Mandate</h2><p>Revision ${e(M.revision)} · ${e(M.sourceDate)}</p></header>
+          ${M.sections.map(renderDocumentSection).join('')}
+        </div>
+      </div>`;
+    const main = document.querySelector('.comp-main');
+    if (main && !target) main.scrollTop = 0;
+    requestAnimationFrame(() => {
+      installScrollSpy();
+      if (target) scrollToSection(target, false);
+      else if (M.topLevel()[0]) setActiveBookmark(M.topLevel()[0].section);
+    });
+  }
+
+  function navigateMandate(sectionId, push = true) {
+    const section = M.getSection(sectionId);
+    if (!section) return;
+    const article = $('compArticle');
+    if (compState.view.type !== 'mandate-reader' || !article?.classList.contains('mandate-reader-mode')) {
+      showMandateReader(section.section, push);
+      return;
+    }
+    if (push) setView({ type: 'mandate-reader', key: section.section }, { push: true });
+    $('compBreadcrumbs').textContent = `Compendium › Mandate › ${sectionLabel(section)}`;
+    scrollToSection(section.section, true);
   }
 
   function skillTerms(skill) {
-    const key=canon(skill.name), set=new Set([String(skill.name||'').toLowerCase(),...(SKILL_ALIASES[key]||[])]);
-    return [...set].filter(Boolean);
+    const key = canon(skill.name);
+    return [...new Set([String(skill.name || '').toLowerCase(), ...(SKILL_ALIASES[key] || [])])].filter(Boolean);
   }
-  function mentions(section,terms) { const text=sectionText(section); return terms.some(term=>rx(term).test(text)); }
-  function skillRefs(skill) {
-    const core=new Set((skill.sections||[]).map(cleanSection).filter(x=>M.getSection(x))), other=[];
-    const terms=skillTerms(skill);
-    M.sections.forEach(s=>{
-      if(terms.some(term=>rx(term).test(String(s.title||'')))) core.add(s.section);
-      else if(mentions(s,terms)) other.push(s.section);
-    });
-    return {core:[...core],other:other.filter(x=>!core.has(x))};
-  }
-  function entityRefs(entity) {
-    const core=new Set((entity.sections||[]).map(cleanSection).filter(x=>M.getSection(x))), other=[];
-    const name=String(entity.name||'').toLowerCase(); if(name.length<3) return {core:[...core],other};
-    M.sections.forEach(s=>{if(rx(name).test(sectionText(s))) other.push(s.section);});
-    return {core:[...core],other:other.filter(x=>!core.has(x))};
-  }
-  function skillRelatedEntities(skill,refs) {
-    const ids=[...new Set([...(refs.core||[]),...(refs.other||[])])].filter(id=>M.getSection(id));
-    if(!ids.length) return [];
-    const text=ids.map(id=>sectionText(M.getSection(id))).join('\n');
-    const skillName=canon(skill.name);
-    return entities().filter(entity=>{
-      const name=String(entity.name||'').trim();
-      if(name.length<4 || canon(name)===skillName) return false;
-      return rx(name.toLowerCase()).test(text);
-    }).slice(0,30);
-  }
-  const refList=(ids,max=30)=>[...new Set(ids)].filter(x=>M.getSection(x)).slice(0,max).map(id=>sectionButton(id,`§ ${id}`)).join('');
 
-  function appendCoverage(article,title,refs) {
-    if(!article || (!refs.core.length && !refs.other.length)) return;
-    article.insertAdjacentHTML('beforeend',`<section class="comp-section mandate-cross-links"><h2>${e(title)}</h2>
-      ${refs.core.length?`<div class="mandate-ref-group"><strong>Core rules</strong><div class="comp-tags">${refList(refs.core)}</div></div>`:''}
-      ${refs.other.length?`<div class="mandate-ref-group"><strong>Other uses & mentions</strong><div class="comp-tags">${refList(refs.other)}</div></div>`:''}
-      <p class="comp-muted">Only completed Mandate batches are included. More references will appear as later batches are migrated.</p></section>`);
-    bindMandate(article);
+  function mentions(section, terms) {
+    const text = sectionText(section);
+    return terms.some(term => rx(term).test(text));
   }
-  function appendSkillEntities(article,skill,refs) {
-    const related=skillRelatedEntities(skill,refs);
-    if(!article || !related.length) return;
-    article.insertAdjacentHTML('beforeend',`<section class="comp-section mandate-skill-entities"><h2>Mandate-linked tools, goods & structures</h2><p class="comp-muted">Items below are mentioned in completed Mandate rules connected to this skill.</p><div class="comp-tags">${related.map(x=>`<button class="comp-link" data-entity="${e(x.key)}">${e(x.name)}</button>`).join('')}</div></section>`);
+
+  function skillRefs(skill) {
+    const core = new Set((skill.sections || []).map(cleanSection).filter(id => M.getSection(id)));
+    const other = [];
+    const terms = skillTerms(skill);
+    M.sections.forEach(section => {
+      if (terms.some(term => rx(term).test(String(section.title || '')))) core.add(section.section);
+      else if (mentions(section, terms)) other.push(section.section);
+    });
+    return { core: [...core], other: other.filter(id => !core.has(id)) };
+  }
+
+  function entityRefs(entity) {
+    const core = new Set((entity.sections || []).map(cleanSection).filter(id => M.getSection(id)));
+    const other = [];
+    const name = String(entity.name || '').toLowerCase();
+    if (name.length < 3) return { core: [...core], other };
+    M.sections.forEach(section => {
+      if (rx(name).test(sectionText(section))) other.push(section.section);
+    });
+    return { core: [...core], other: other.filter(id => !core.has(id)) };
+  }
+
+  function skillRelatedEntities(skill, refs) {
+    const ids = [...new Set([...(refs.core || []), ...(refs.other || [])])].filter(id => M.getSection(id));
+    if (!ids.length) return [];
+    const text = ids.map(id => sectionText(M.getSection(id))).join('\n');
+    const skillName = canon(skill.name);
+    return entities().filter(entity => {
+      const name = String(entity.name || '').trim();
+      if (name.length < 4 || canon(name) === skillName) return false;
+      return rx(name.toLowerCase()).test(text);
+    }).slice(0, 30);
+  }
+
+  function refList(ids, max = 40) {
+    return [...new Set(ids)].filter(id => M.getSection(id)).slice(0, max).map(id => sectionLink(id, sectionLabel(id), 'mandate-coverage-link')).join('');
+  }
+
+  function removeLegacyMandateReferences(article) {
+    if (!article) return;
+    [...article.querySelectorAll('.comp-section')].forEach(section => {
+      if (section.querySelector('h2')?.textContent?.trim() === 'Mandate references') section.remove();
+    });
+  }
+
+  function appendCoverage(article, title, refs) {
+    if (!article || (!refs.core.length && !refs.other.length)) return;
+    article.insertAdjacentHTML('beforeend', `<section class="comp-section mandate-cross-links"><h2>${e(title)}</h2>
+      ${refs.core.length ? `<div class="mandate-ref-group"><strong>Core rules</strong><div class="mandate-reference-links">${refList(refs.core)}</div></div>` : ''}
+      ${refs.other.length ? `<div class="mandate-ref-group"><strong>Other uses & mentions</strong><div class="mandate-reference-links">${refList(refs.other)}</div></div>` : ''}
+      <p class="comp-muted">These links open the full Mandate at the relevant section.</p></section>`);
+  }
+
+  function appendSkillEntities(article, skill, refs) {
+    const related = skillRelatedEntities(skill, refs);
+    if (!article || !related.length) return;
+    article.insertAdjacentHTML('beforeend', `<section class="comp-section mandate-skill-entities"><h2>Mandate-linked tools, goods & structures</h2><p class="comp-muted">Items below are mentioned in Mandate rules connected to this skill.</p><div class="comp-tags">${related.map(item => `<button class="comp-link" data-entity="${e(item.key)}">${e(item.name)}</button>`).join('')}</div></section>`);
     bindLinks(article);
   }
-  const oldShowSkill=showSkill;
-  showSkill=function(name,push=true){const r=oldShowSkill(name,push),s=skillByName(name);if(s){const refs=skillRefs(s);appendCoverage($('compArticle'),'Mandate coverage',refs);appendSkillEntities($('compArticle'),s,refs);}return r;};
-  const oldShowEntity=showEntity;
-  showEntity=function(name,push=true){const r=oldShowEntity(name,push),x=entityByName(name);if(x)appendCoverage($('compArticle'),'Mandate coverage',entityRefs(x));return r;};
-  const oldShowTopic=showTopic;
-  showTopic=function(key,push=true){const r=oldShowTopic(key,push),t=topicByKey(key);if(t){const ids=(t.sections||[t.section]).map(cleanSection);appendCoverage($('compArticle'),'Mandate coverage',{core:ids.filter(x=>M.getSection(x)),other:[]});}return r;};
 
-  function showMandateHome(push=true) {
-    setView({type:'mandate-home',key:null},{push});
-    $('compBreadcrumbs').textContent='Compendium › Mandate migration';
-    const pct=Math.round(done/PLAN.length*100);
-    $('compArticle').innerHTML=`<div class="comp-title-row"><div><div class="comp-kicker">Canonical rulebook migration</div><h1>The Mandate</h1><div class="comp-short">${e(SOURCE)} · ${M.sections.length} sections currently indexed</div></div><span class="comp-badge">${done}/5</span></div>
-      <p class="comp-lead">The Mandate is being moved into the Compendium in five auditable batches. Completed batches contain browsable rule articles, exact word-for-word reference pop-ups, search results and cross-links into relevant Compendium entries.</p>
-      <div class="mandate-progress-panel"><div class="mandate-progress-heading"><strong>Migration progress</strong><span>${done} of ${PLAN.length} batches complete · ${pct}%</span></div><div class="mandate-progress-track"><span style="width:${pct}%"></span></div></div>
-      <div class="mandate-batch-grid">${PLAN.map(b=>{const loaded=M.batches.find(x=>x.id===b.id);return `<button class="mandate-batch-card ${b.complete?'complete':'pending'}" data-mandate-batch="${b.id}"><span class="mandate-batch-status">${b.complete?'✓ Complete':'Pending'}</span><strong>Batch ${b.id} · ${e(b.title)}</strong><span>${e(b.range)} · pages ${e(b.pages)}${loaded?` · ${loaded.sectionCount} indexed sections`:''}</span></button>`;}).join('')}</div>
-      <section class="comp-section"><h2>Completed Mandate outline</h2><p class="comp-muted">Only sections from completed batches appear below. Later sections remain hidden until their batch has been migrated and reviewed.</p><div class="mandate-outline">${M.topLevel().map(s=>`<div class="mandate-outline-row">${articleButton(s.section)}<span>${M.sections.filter(x=>x.topSection===s.section&&x.section!==s.section).length} subsections · p. ${s.page||'—'}</span>${sectionButton(s.section,'Exact reference')}</div>`).join('')}</div></section>`;
-    bindMandate($('compArticle'));
-  }
-  function showMandateBatch(id,push=true) {
-    const p=PLAN.find(x=>x.id===String(id)); if(!p) return showMandateHome(push);
-    setView({type:'mandate-batch',key:p.id},{push}); $('compBreadcrumbs').textContent=`Compendium › Mandate › Batch ${p.id}`;
-    const loaded=M.batches.find(x=>x.id===p.id);
-    if(!p.complete||!loaded){$('compArticle').innerHTML=`<div class="comp-title-row"><div><div class="comp-kicker">Mandate batch ${p.id}</div><h1>${e(p.title)}</h1><div class="comp-short">${e(p.range)} · pages ${e(p.pages)}</div></div><span class="comp-badge pending">Pending</span></div><div class="comp-callout">This batch has not been migrated yet. It remains visible so progress can be reviewed after each batch.</div>`;return;}
-    const tops=M.topLevel().filter(s=>loaded.topSections.includes(s.section));
-    $('compArticle').innerHTML=`<div class="comp-title-row"><div><div class="comp-kicker">Mandate batch ${p.id} · Complete</div><h1>${e(p.title)}</h1><div class="comp-short">${loaded.sectionCount} indexed sections · ${e(p.range)} · pages ${e(p.pages)}</div></div><span class="comp-badge">✓ Complete</span></div>
-      <p class="comp-lead">Click any section to browse it, or click Reference for the word-for-word Mandate text.</p>
-      ${tops.map(top=>{const children=M.sections.filter(s=>s.topSection===top.section&&s.section!==top.section);return `<section class="comp-section mandate-top-card"><div class="mandate-top-heading"><div>${articleButton(top.section)}<span>Printed page ${top.page||'—'} · ${children.length} subsections</span></div>${sectionButton(top.section,'Exact reference')}</div>${children.length?`<div class="mandate-child-grid">${children.map(c=>`<div class="mandate-child-row">${articleButton(c.section)}${sectionButton(c.section)}</div>`).join('')}</div>`:''}</section>`;}).join('')}`;
-    bindMandate($('compArticle'));
-  }
-  function showMandateSection(id,push=true) {
-    const s=M.getSection(id); if(!s) return showMandateHome(push);
-    setView({type:'mandate-section',key:s.section},{push}); $('compBreadcrumbs').textContent=`Compendium › Mandate › § ${s.section} › ${s.title}`;
-    const children=M.childrenOf(s.section);
-    const linkedSkills=skills().filter(skill=>mentions(s,skillTerms(skill)));
-    const linkedEntities=entities().filter(x=>String(x.name||'').length>=4&&rx(String(x.name).toLowerCase()).test(sectionText(s))).slice(0,40);
-    $('compArticle').innerHTML=`<div class="comp-title-row"><div><div class="comp-kicker">Mandate § ${e(s.section)}</div><h1>${e(s.title)}</h1><div class="comp-short">${e(SOURCE)} · printed page ${s.page||'—'}</div></div>${sectionButton(s.section,'Word-for-word reference')}</div>
-      <section class="comp-section"><h2>Rule text</h2><div class="mandate-inline-exact">${exactBlocks(s)}</div></section>
-      ${children.length?`<section class="comp-section"><h2>Subsections</h2><div class="mandate-child-grid">${children.map(c=>`<div class="mandate-child-row">${articleButton(c.section)}${sectionButton(c.section)}</div>`).join('')}</div></section>`:''}
-      ${(linkedSkills.length||linkedEntities.length)?`<section class="comp-section"><h2>Related Compendium entries</h2>${linkedSkills.length?`<div class="comp-tags">${linkedSkills.map(x=>`<button class="comp-link" data-skill="${e(x.name)}">${e(x.name)}</button>`).join('')}</div>`:''}${linkedEntities.length?`<div class="comp-tags">${linkedEntities.map(x=>`<button class="comp-link" data-entity="${e(x.key)}">${e(x.name)}</button>`).join('')}</div>`:''}</section>`:''}`;
-    bindLinks($('compArticle')); bindMandate($('compArticle'));
+  function upgradeRecipeReferences(article) {
+    if (!article) return;
+    article.querySelectorAll('.comp-recipe-table tbody tr').forEach(row => {
+      const cell = row.lastElementChild;
+      const id = cleanSection(cell?.textContent || '');
+      if (cell && M.getSection(id)) cell.innerHTML = sectionLink(id, sectionLabel(id), 'mandate-table-reference');
+    });
+    article.querySelectorAll('.comp-method-card small, .comp-use small').forEach(node => {
+      const text = node.textContent || '';
+      const match = text.match(/Mandate\s+§\s*([0-9]+(?:\.[0-9]+)*)/i);
+      if (!match || !M.getSection(match[1])) return;
+      const prefix = text.slice(0, match.index) + 'Mandate ';
+      const suffix = text.slice((match.index || 0) + match[0].length);
+      node.innerHTML = `${e(prefix)}${sectionLink(match[1], `§ ${match[1]}`, 'mandate-inline-compendium-link')}${e(suffix)}`;
+    });
   }
 
-  const oldRenderNav=renderNav;
-  renderNav=function(){oldRenderNav();const host=$('compNav');if(!host||host.querySelector('.mandate-nav-section'))return;const n=document.createElement('section');n.className='comp-nav-section mandate-nav-section';n.innerHTML=`<div class="comp-nav-title">Mandate migration</div><button class="comp-nav-link ${compState.view.type==='mandate-home'?'active':''}" data-view="mandate-home">Progress <small>${done}/5</small></button>${PLAN.map(p=>`<button class="comp-nav-link ${compState.view.type==='mandate-batch'&&compState.view.key===p.id?'active':''}" data-mandate-batch="${p.id}">${p.complete?'✓':'○'} Batch ${p.id} <small>${p.complete?(M.batches.find(x=>x.id===p.id)?.sectionCount||''):'pending'}</small></button>`).join('')}`;host.appendChild(n);bindMandate(n);};
-  const oldRenderView=renderView;
-  renderView=function(view,opt={}){if(view?.type==='mandate-home')return showMandateHome(opt.push||false);if(view?.type==='mandate-batch')return showMandateBatch(view.key,opt.push||false);if(view?.type==='mandate-section')return showMandateSection(view.key,opt.push||false);return oldRenderView(view,opt);};
-  const oldRunSearch=runSearch;
-  runSearch=function(q){const r=oldRunSearch(q),query=String(q||'').trim();if(!query)return r;const hits=M.search(query).slice(0,60),results=$('compArticle')?.querySelector('.comp-search-results');if(results&&hits.length){const block=document.createElement('div');block.className='mandate-search-group';block.innerHTML=`<h3>Mandate sections · completed batches</h3>${hits.map(s=>`<div class="comp-result mandate-search-result" data-mandate-section="${e(s.section)}"><strong>§ ${e(s.section)} · ${e(s.title)}</strong><span>Mandate · printed page ${s.page||'—'}</span>${sectionButton(s.section,'Exact reference')}</div>`).join('')}`;results.appendChild(block);bindMandate(block);}return r;};
+  const oldShowSkill = showSkill;
+  showSkill = function(name, push = true) {
+    leaveReaderMode();
+    const result = oldShowSkill(name, push);
+    const skill = skillByName(name);
+    if (skill) {
+      const article = $('compArticle');
+      removeLegacyMandateReferences(article);
+      const refs = skillRefs(skill);
+      appendCoverage(article, 'Mandate coverage', refs);
+      appendSkillEntities(article, skill, refs);
+      upgradeRecipeReferences(article);
+    }
+    return result;
+  };
 
-  ensureModal();
-  setTimeout(()=>{if(compState.catalog){compState.catalog.sourceDocument=SOURCE;if($('compSource'))$('compSource').textContent=`Primary source: ${SOURCE}`;renderNav();}},0);
+  const oldShowEntity = showEntity;
+  showEntity = function(name, push = true) {
+    leaveReaderMode();
+    const result = oldShowEntity(name, push);
+    const entity = entityByName(name);
+    if (entity) {
+      appendCoverage($('compArticle'), 'Mandate coverage', entityRefs(entity));
+      upgradeRecipeReferences($('compArticle'));
+    }
+    return result;
+  };
+
+  const oldShowTopic = showTopic;
+  showTopic = function(key, push = true) {
+    leaveReaderMode();
+    const result = oldShowTopic(key, push);
+    const topic = topicByKey(key);
+    if (topic) {
+      const ids = (topic.sections || [topic.section]).map(cleanSection);
+      appendCoverage($('compArticle'), 'Mandate coverage', { core: ids.filter(id => M.getSection(id)), other: [] });
+    }
+    return result;
+  };
+
+  const oldShowHome = showHome;
+  showHome = function(push = true) {
+    leaveReaderMode();
+    return oldShowHome(push);
+  };
+
+  const oldShowGroup = showGroup;
+  showGroup = function(group, push = true) {
+    leaveReaderMode();
+    return oldShowGroup(group, push);
+  };
+
+  const oldRenderNav = renderNav;
+  renderNav = function(...args) {
+    const result = oldRenderNav(...args);
+    const host = $('compNav');
+    if (!host) return result;
+    host.querySelectorAll('.mandate-reader-nav-section, .mandate-nav-section').forEach(node => node.remove());
+    const section = document.createElement('section');
+    section.className = 'comp-nav-section mandate-reader-nav-section';
+    section.innerHTML = `<div class="comp-nav-title">Rulebook</div><button class="comp-nav-link ${compState.view.type === 'mandate-reader' ? 'active' : ''}" data-view="mandate-reader">Mandate <small>${M.sections.length}</small></button>`;
+    const first = host.querySelector('.comp-nav-section');
+    if (first?.nextSibling) host.insertBefore(section, first.nextSibling);
+    else host.appendChild(section);
+    return result;
+  };
+
+  const oldRenderView = renderView;
+  renderView = function(view, opt = {}) {
+    if (view?.type === 'mandate-reader') return showMandateReader(view.key, opt.push || false);
+    if (view?.type === 'mandate-section') return showMandateReader(view.key, opt.push || false);
+    if (view?.type === 'mandate-home' || view?.type === 'mandate-batch') return showMandateReader(null, opt.push || false);
+    leaveReaderMode();
+    return oldRenderView(view, opt);
+  };
+
+  const oldRunSearch = runSearch;
+  runSearch = function(query) {
+    leaveReaderMode();
+    const result = oldRunSearch(query);
+    const q = String(query || '').trim();
+    if (!q) return result;
+    const hits = M.search(q).slice(0, 60);
+    const results = $('compArticle')?.querySelector('.comp-search-results');
+    if (results && hits.length) {
+      const block = document.createElement('div');
+      block.className = 'mandate-search-group';
+      block.innerHTML = `<h3>Mandate</h3>${hits.map(section => `<a class="comp-result mandate-search-result" href="#${e(M.anchorId(section.section))}" data-mandate-open="${e(section.section)}"><strong>${e(sectionLabel(section))} · ${e(section.title)}</strong><span>Mandate · printed page ${section.page || '—'}</span></a>`).join('')}`;
+      results.appendChild(block);
+    }
+    return result;
+  };
+
+  document.addEventListener('click', event => {
+    const nav = event.target.closest?.('[data-view="mandate-reader"]');
+    if (nav) {
+      event.preventDefault();
+      showMandateReader(null, true);
+      return;
+    }
+
+    const link = event.target.closest?.('[data-mandate-open], [data-mandate-doc-link]');
+    if (link) {
+      event.preventDefault();
+      const id = link.dataset.mandateOpen || link.dataset.mandateDocLink;
+      navigateMandate(id, true);
+      return;
+    }
+
+    const toggle = event.target.closest?.('[data-mandate-top-toggle]');
+    if (toggle) {
+      event.preventDefault();
+      const id = toggle.dataset.mandateTopToggle;
+      const open = toggle.getAttribute('aria-expanded') !== 'true';
+      expandTop(id, open);
+    }
+  });
+
+  setTimeout(() => {
+    if (compState.catalog) {
+      compState.catalog.sourceDocument = SOURCE;
+      if ($('compSource')) $('compSource').textContent = `Primary source: ${SOURCE}`;
+      renderNav();
+      if (['mandate-home', 'mandate-batch', 'mandate-section'].includes(compState.view?.type)) {
+        showMandateReader(compState.view.type === 'mandate-section' ? compState.view.key : null, false);
+      }
+    }
+  }, 0);
 })();
