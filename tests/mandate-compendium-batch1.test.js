@@ -35,17 +35,20 @@ async function main() {
 
   const extension = fs.readFileSync(path.join(root, 'compendium-mandate.js'), 'utf8');
   for (const marker of [
-    'const PLAN = [',
-    '${done}/5',
-    'data-mandate-ref',
-    'Word-for-word Mandate reference',
-    'Completed Mandate outline',
-    "'DANCE':['dance','dancing']"
+    'showMandateReader',
+    'renderToc',
+    'data-view="mandate-reader"',
+    'data-mandate-doc-link',
+    'M.sections.map(renderDocumentSection)',
+    "DANCE: ['dance', 'dancing']"
   ]) {
-    if (!extension.includes(marker)) throw new Error(`Compendium Mandate integration missing marker: ${marker}`);
+    if (!extension.includes(marker)) throw new Error(`Compendium Mandate reader missing marker: ${marker}`);
+  }
+  for (const obsolete of ['mandateReferenceModal', 'Word-for-word Mandate reference', 'Completed Mandate outline']) {
+    if (extension.includes(obsolete)) throw new Error(`Obsolete reference UI remains: ${obsolete}`);
   }
 
-  console.log('Mandate Batch 1 checks passed:', mandate.sections.length, 'sections; Batch 1 remains isolated from later data');
+  console.log('Mandate Batch 1 checks passed:', mandate.sections.length, 'sections; source data remains isolated and reader wiring is current');
 }
 
 main().catch(error => { console.error(error); process.exit(1); });
