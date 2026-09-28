@@ -10,7 +10,7 @@
       .filter(([name]) => !keys.has(canon(name)))
       .map(([name,status]) => ({
         key: canon(name), name, kind:'Fair item',
-        summary:`Trade Fair item (${status}) with a Year ${benchmark.source.year} base-price benchmark.`,
+        summary:`Trade Fair item (${status}) with a Year ${benchmark.source.year} price benchmark.`,
         sections:[], notes:[], sourceSkills:[], uses:[], producers:[], consumers:[]
       }));
     return [...base, ...pricedOnly];
@@ -20,6 +20,11 @@
     if (value == null || !Number.isFinite(Number(value))) return '—';
     const n = Number(value);
     return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+
+  function fmtQty(value) {
+    if (value == null || !Number.isFinite(Number(value))) return '—';
+    return Number(value).toLocaleString(undefined,{maximumFractionDigits:0});
   }
 
   function fmtPct(value) {
@@ -64,7 +69,7 @@
           ${missing}
         </div>`;
       }).join('')}
-      <small class="comp-economics-note">Uses Year ${benchmark.source.year} Base Price values as a benchmark. Labour/AM, scarcity and dynamic Fair adjustments are not priced into this percentage.</small>
+      <small class="comp-economics-note">Uses Year ${benchmark.source.year} Base Price values as a crafting benchmark. Labour/AM and current market demand are shown separately.</small>
     </div>`;
   }
 
@@ -90,11 +95,14 @@
     const html = price
       ? `<div class="comp-price-summary">
           <div><span>Base item value</span><strong>${fmtSilver(price.basePrice)} silver</strong></div>
+          <div><span>Fair pays each</span><strong>${fmtSilver(price.marketBuyPrice)} silver</strong></div>
+          <div><span>Quantity demand</span><strong>${fmtQty(price.marketBuyQuantity)}</strong></div>
+          <div class="demand"><span>Total silver demand</span><strong>${fmtSilver(price.marketDemandSilver)} silver</strong></div>
           <div><span>Fair category</span><strong>${esc(price.status)}</strong></div>
-          <div><span>Benchmark source</span><strong>Year ${benchmark.source.year} · Base Price</strong></div>
+          <div><span>Market snapshot</span><strong>Year ${benchmark.source.year}</strong></div>
           <small>${esc(benchmark.source.note)}</small>
         </div>`
-      : `<div class="comp-price-summary unavailable"><div><span>Base item value</span><strong>No benchmark price listed</strong></div><small>This item is not present as a priced entry in ${esc(benchmark.source.workbook)}.</small></div>`;
+      : `<div class="comp-price-summary unavailable"><div><span>Market benchmark</span><strong>No Fair price listed</strong></div><small>This item is not present as a priced entry in ${esc(benchmark.source.workbook)}.</small></div>`;
     title.insertAdjacentHTML('afterend', html);
   };
 })();
