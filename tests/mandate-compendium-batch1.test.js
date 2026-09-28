@@ -39,13 +39,13 @@ async function main() {
     '${done}/5',
     'data-mandate-ref',
     'Word-for-word Mandate reference',
-    'Batch 1 outline',
+    'Completed Mandate outline',
     "'DANCE':['dance','dancing']"
   ]) {
     if (!extension.includes(marker)) throw new Error(`Compendium Mandate integration missing marker: ${marker}`);
   }
 
-  console.log('Mandate Batch 1 checks passed:', mandate.sections.length, 'sections; migration progress 1/5');
+  console.log('Mandate Batch 1 checks passed:', mandate.sections.length, 'sections; Batch 1 remains isolated from later data');
 }
 
 main().catch(error => { console.error(error); process.exit(1); });
