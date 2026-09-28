@@ -3,8 +3,8 @@
   if (!M) return;
   const SOURCE = M.sourceDocument;
   const PLAN = [
-    {id:'1',title:'Core game & rules framework',range:'§§1–12',pages:'12–54',complete:true},
-    {id:'2',title:'Activities & villages',range:'§§13–14',pages:'55–89',complete:false},
+    {id:'1',title:'Core game & rules framework',range:'§§1–12',pages:'12–53',complete:true},
+    {id:'2',title:'Activities & villages',range:'§§13–14',pages:'54–89',complete:true},
     {id:'3',title:'Trade, scouting & combat',range:'§§15–19',pages:'90–133',complete:false},
     {id:'4',title:'Naval & advanced systems',range:'§§20–27',pages:'134–165',complete:false},
     {id:'5',title:'Remaining references & final audit',range:'§§28–35 + Appendix A',pages:'165–191',complete:false}
@@ -98,6 +98,17 @@
     M.sections.forEach(s=>{if(rx(name).test(sectionText(s))) other.push(s.section);});
     return {core:[...core],other:other.filter(x=>!core.has(x))};
   }
+  function skillRelatedEntities(skill,refs) {
+    const ids=[...new Set([...(refs.core||[]),...(refs.other||[])])].filter(id=>M.getSection(id));
+    if(!ids.length) return [];
+    const text=ids.map(id=>sectionText(M.getSection(id))).join('\n');
+    const skillName=canon(skill.name);
+    return entities().filter(entity=>{
+      const name=String(entity.name||'').trim();
+      if(name.length<4 || canon(name)===skillName) return false;
+      return rx(name.toLowerCase()).test(text);
+    }).slice(0,30);
+  }
   const refList=(ids,max=30)=>[...new Set(ids)].filter(x=>M.getSection(x)).slice(0,max).map(id=>sectionButton(id,`§ ${id}`)).join('');
 
   function appendCoverage(article,title,refs) {
@@ -108,8 +119,14 @@
       <p class="comp-muted">Only completed Mandate batches are included. More references will appear as later batches are migrated.</p></section>`);
     bindMandate(article);
   }
+  function appendSkillEntities(article,skill,refs) {
+    const related=skillRelatedEntities(skill,refs);
+    if(!article || !related.length) return;
+    article.insertAdjacentHTML('beforeend',`<section class="comp-section mandate-skill-entities"><h2>Mandate-linked tools, goods & structures</h2><p class="comp-muted">Items below are mentioned in completed Mandate rules connected to this skill.</p><div class="comp-tags">${related.map(x=>`<button class="comp-link" data-entity="${e(x.key)}">${e(x.name)}</button>`).join('')}</div></section>`);
+    bindLinks(article);
+  }
   const oldShowSkill=showSkill;
-  showSkill=function(name,push=true){const r=oldShowSkill(name,push),s=skillByName(name);if(s)appendCoverage($('compArticle'),'Mandate coverage',skillRefs(s));return r;};
+  showSkill=function(name,push=true){const r=oldShowSkill(name,push),s=skillByName(name);if(s){const refs=skillRefs(s);appendCoverage($('compArticle'),'Mandate coverage',refs);appendSkillEntities($('compArticle'),s,refs);}return r;};
   const oldShowEntity=showEntity;
   showEntity=function(name,push=true){const r=oldShowEntity(name,push),x=entityByName(name);if(x)appendCoverage($('compArticle'),'Mandate coverage',entityRefs(x));return r;};
   const oldShowTopic=showTopic;
@@ -123,7 +140,7 @@
       <p class="comp-lead">The Mandate is being moved into the Compendium in five auditable batches. Completed batches contain browsable rule articles, exact word-for-word reference pop-ups, search results and cross-links into relevant Compendium entries.</p>
       <div class="mandate-progress-panel"><div class="mandate-progress-heading"><strong>Migration progress</strong><span>${done} of ${PLAN.length} batches complete · ${pct}%</span></div><div class="mandate-progress-track"><span style="width:${pct}%"></span></div></div>
       <div class="mandate-batch-grid">${PLAN.map(b=>{const loaded=M.batches.find(x=>x.id===b.id);return `<button class="mandate-batch-card ${b.complete?'complete':'pending'}" data-mandate-batch="${b.id}"><span class="mandate-batch-status">${b.complete?'✓ Complete':'Pending'}</span><strong>Batch ${b.id} · ${e(b.title)}</strong><span>${e(b.range)} · pages ${e(b.pages)}${loaded?` · ${loaded.sectionCount} indexed sections`:''}</span></button>`;}).join('')}</div>
-      <section class="comp-section"><h2>Batch 1 outline</h2><p class="comp-muted">Later sections appear only after their batch has been migrated and reviewed.</p><div class="mandate-outline">${M.topLevel().map(s=>`<div class="mandate-outline-row">${articleButton(s.section)}<span>${M.sections.filter(x=>x.topSection===s.section&&x.section!==s.section).length} subsections · p. ${s.page||'—'}</span>${sectionButton(s.section,'Exact reference')}</div>`).join('')}</div></section>`;
+      <section class="comp-section"><h2>Completed Mandate outline</h2><p class="comp-muted">Only sections from completed batches appear below. Later sections remain hidden until their batch has been migrated and reviewed.</p><div class="mandate-outline">${M.topLevel().map(s=>`<div class="mandate-outline-row">${articleButton(s.section)}<span>${M.sections.filter(x=>x.topSection===s.section&&x.section!==s.section).length} subsections · p. ${s.page||'—'}</span>${sectionButton(s.section,'Exact reference')}</div>`).join('')}</div></section>`;
     bindMandate($('compArticle'));
   }
   function showMandateBatch(id,push=true) {
@@ -155,7 +172,7 @@
   const oldRenderView=renderView;
   renderView=function(view,opt={}){if(view?.type==='mandate-home')return showMandateHome(opt.push||false);if(view?.type==='mandate-batch')return showMandateBatch(view.key,opt.push||false);if(view?.type==='mandate-section')return showMandateSection(view.key,opt.push||false);return oldRenderView(view,opt);};
   const oldRunSearch=runSearch;
-  runSearch=function(q){const r=oldRunSearch(q),query=String(q||'').trim();if(!query)return r;const hits=M.search(query).slice(0,60),results=$('compArticle')?.querySelector('.comp-search-results');if(results&&hits.length){const block=document.createElement('div');block.className='mandate-search-group';block.innerHTML=`<h3>Mandate sections · Batch 1</h3>${hits.map(s=>`<div class="comp-result mandate-search-result" data-mandate-section="${e(s.section)}"><strong>§ ${e(s.section)} · ${e(s.title)}</strong><span>Mandate · printed page ${s.page||'—'}</span>${sectionButton(s.section,'Exact reference')}</div>`).join('')}`;results.appendChild(block);bindMandate(block);}return r;};
+  runSearch=function(q){const r=oldRunSearch(q),query=String(q||'').trim();if(!query)return r;const hits=M.search(query).slice(0,60),results=$('compArticle')?.querySelector('.comp-search-results');if(results&&hits.length){const block=document.createElement('div');block.className='mandate-search-group';block.innerHTML=`<h3>Mandate sections · completed batches</h3>${hits.map(s=>`<div class="comp-result mandate-search-result" data-mandate-section="${e(s.section)}"><strong>§ ${e(s.section)} · ${e(s.title)}</strong><span>Mandate · printed page ${s.page||'—'}</span>${sectionButton(s.section,'Exact reference')}</div>`).join('')}`;results.appendChild(block);bindMandate(block);}return r;};
 
   ensureModal();
   setTimeout(()=>{if(compState.catalog){compState.catalog.sourceDocument=SOURCE;if($('compSource'))$('compSource').textContent=`Primary source: ${SOURCE}`;renderNav();}},0);
