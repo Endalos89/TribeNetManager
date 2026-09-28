@@ -8,12 +8,23 @@ const prices = global.window.TribeNetFairPriceBenchmark;
 
 assert(prices, 'Fair price benchmark should load');
 assert.strictEqual(prices.source.year, 903);
+assert.strictEqual(prices.source.marketSheet, 'Exchange List');
 assert.strictEqual(prices.rows.length, 171, 'All priced rows from the workbook should be stored');
 assert.strictEqual(prices.lookup('Leather').basePrice, 17);
 assert.strictEqual(prices.lookup('Logs').basePrice, 4);
 assert.strictEqual(prices.lookup('Stones').basePrice, 4);
 assert.strictEqual(prices.lookup('Saddlebags').basePrice, 127);
 assert.strictEqual(prices.lookup('Ring Mail').basePrice, 228);
+
+const clubs = prices.lookup('Club');
+assert.strictEqual(clubs.marketBuyPrice, 4);
+assert.strictEqual(clubs.marketBuyQuantity, 398);
+assert.strictEqual(clubs.marketDemandSilver, 1592);
+assert.strictEqual(clubs.marketDemandSilver, clubs.marketBuyPrice * clubs.marketBuyQuantity);
+const gold = prices.lookup('Gold');
+assert.strictEqual(gold.marketBuyQuantity, 63);
+assert.strictEqual(gold.marketDemandSilver, 27846);
+assert.strictEqual(prices.lookup('Bronze Statue').researchOnly, true);
 
 const leatherSling = prices.evaluateRecipe({
   outputItem:'Sling', outputQuantity:1,
@@ -47,8 +58,12 @@ assert.strictEqual(missing.output, null, 'Do not invent a benchmark for items ab
 assert.strictEqual(missing.variants[0].outputValue, null);
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium.html'), 'utf8');
+const pricing = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-pricing.js'), 'utf8');
 assert.match(html, /fair-price-data\.js/);
 assert.match(html, /compendium-pricing\.js/);
 assert.match(html, /compendium-pricing\.css/);
+assert.match(pricing, /Quantity demand/);
+assert.match(pricing, /Total silver demand/);
+assert.match(pricing, /marketDemandSilver/);
 
-console.log('Fair price benchmark regression tests passed.');
+console.log('Fair price benchmark and market-demand regression tests passed.');
