@@ -1,0 +1,1 @@
+window.TRIBENET_MANDATE.addPackedChunk({"id":"1","chunk":"es9t5Td+1jrg5f7a8xP55RfhL2wicJHY24fcCefV0zyD64qBpwpjQ/RMJ+qbr+6ff/8HCyKzjXrsdm/5LDowfLq09z7oRp9FTjrfyRHTlpnoEjMlFkBN5sITnXS8tc0/wG8jG/3v//lfYhksog==","final":true,"title":"Core game & rules framework","topSections":["1","2","3","4","5","6","7","8","9","10","11","12"]});
