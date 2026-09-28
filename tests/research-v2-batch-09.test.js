@@ -61,4 +61,48 @@ for (const topic of batch) {
   assert(topic.skill && topic.name && topic.dl && topic.page, `Required fields missing for ${topic.name}`);
   assert(topic.effects.length || topic.description || topic.sourceGaps.length, `No rule content/gap marker for ${topic.skill} / ${topic.name}`);
 }
-console.log('Research V2 batch 09 regression tests passed.');
+
+// Final pages 209–212 are a reconciliation/change-log pass rather than another set of research articles.
+require('../src/research-v2-final-audit.js');
+const A=global.window.TribeNetResearchFinalAudit;
+assert(A, 'Final research audit should load');
+assert.strictEqual(R.batches.length,10);
+assert.strictEqual(R.batches[9].id,'research-v2-final-audit');
+assert.strictEqual(R.batches[9].pages,'209–212');
+assert.strictEqual(R.topics.length,322,'Final audit must not invent new active research topics');
+assert(A.added.includes('Spy Glass'));
+assert(A.added.includes('Militia Mobilisation (05/05/2026)'));
+assert.deepStrictEqual(A.removed,['Feudal Security','Astral Navigation','Terracotta Army','Fortress','Castle','Keep','Boat People']);
+assert(A.proposals.some(p=>p.name==='Stained Glass'&&p.status==='proposal'));
+assert(A.proposals.some(p=>p.skill==='Intelligence'&&p.status==='rejected'));
+
+const castle=find('Politics','Castle');
+assert(castle && castle.status==='removed');
+const fortress=find('Politics','Fortress');
+assert(fortress && fortress.status==='removed');
+const terracotta=R.topics.find(t=>R.canon(t.name)===R.canon('Terracotta Army'));
+assert(terracotta && terracotta.status==='removed');
+
+const sewers=find('Sanitation','Sewers');
+assert(sewers.restrictions.some(x=>/Fleets are not affected/i.test(x)));
+const saw=find('Forestry','Saw');
+assert(saw.notes.some(x=>/7 Bronze or 7 Brass with 30 Coal/i.test(x)));
+assert(saw.recipe.variants.some(v=>v.inputs.some(i=>i.item==='Bronze'&&i.quantity===7)&&v.inputs.some(i=>i.item==='Coal'&&i.quantity===30)));
+assert(saw.recipe.variants.some(v=>v.inputs.some(i=>i.item==='Brass'&&i.quantity===7)&&v.inputs.some(i=>i.item==='Coal'&&i.quantity===30)));
+const mv1=find('Scouting','Extra Movement 1');
+const mv2=find('Scouting','Extra Movement 2');
+assert(mv1.effects.some(x=>/Locating/i.test(x)));
+assert(mv2.effects.some(x=>/Locating/i.test(x)));
+const guild=find('Triball','Triball Guild');
+assert(guild.effects.some(x=>/1,600 Warriors/i.test(x)));
+
+const full=R.topics.find(t=>R.canon(t.name)===R.canon('Full Plate'));
+if(full){
+  assert(!full.prerequisites.some(p=>['GREAVES','BASCINET'].includes(R.canon(p.label))));
+  assert(full.restrictions.some(x=>/Greaves and Bascinet.*cannot be used/i.test(x)));
+}
+const ulf=find('Weapons','Ulfbehrt Sword');
+assert(ulf.notes.some(x=>/Gold is not required/i.test(x)));
+assert(!ulf.recipe.inputs.some(i=>R.canon(i.item)==='GOLD'));
+
+console.log('Research V2 batch 09 and final reconciliation audit regression tests passed.');
