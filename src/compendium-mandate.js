@@ -5,7 +5,7 @@
   const PLAN = [
     {id:'1',title:'Core game & rules framework',range:'§§1–12',pages:'12–53',complete:true},
     {id:'2',title:'Activities & villages',range:'§§13–14',pages:'54–89',complete:true},
-    {id:'3',title:'Trade, scouting & combat',range:'§§15–19',pages:'90–133',complete:false},
+    {id:'3',title:'Trade, scouting & combat',range:'§§15–19',pages:'90–133',complete:true},
     {id:'4',title:'Naval & advanced systems',range:'§§20–27',pages:'134–165',complete:false},
     {id:'5',title:'Remaining references & final audit',range:'§§28–35 + Appendix A',pages:'165–191',complete:false}
   ];
