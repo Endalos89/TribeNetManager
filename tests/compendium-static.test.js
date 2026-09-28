@@ -15,6 +15,7 @@ const researchBatch2 = fs.readFileSync(path.join(__dirname, '..', 'src', 'resear
 const researchBatch3 = fs.readFileSync(path.join(__dirname, '..', 'src', 'research-v2-batch-03.js'), 'utf8');
 const researchBatch4 = fs.readFileSync(path.join(__dirname, '..', 'src', 'research-v2-batch-04.js'), 'utf8');
 const researchBatch5 = fs.readFileSync(path.join(__dirname, '..', 'src', 'research-v2-batch-05.js'), 'utf8');
+const researchBatch6 = fs.readFileSync(path.join(__dirname, '..', 'src', 'research-v2-batch-06.js'), 'utf8');
 const researchUi = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-research-v2.js'), 'utf8');
 const researchNotesUi = fs.readFileSync(path.join(__dirname, '..', 'src', 'compendium-research-v2-skill-notes.js'), 'utf8');
 new Function(dataExpansion);
@@ -26,6 +27,7 @@ new Function(researchBatch2);
 new Function(researchBatch3);
 new Function(researchBatch4);
 new Function(researchBatch5);
+new Function(researchBatch6);
 new Function(researchUi);
 new Function(researchNotesUi);
 
@@ -41,6 +43,7 @@ assert.match(html, /research-v2-batch-02\.js/);
 assert.match(html, /research-v2-batch-03\.js/);
 assert.match(html, /research-v2-batch-04\.js/);
 assert.match(html, /research-v2-batch-05\.js/);
+assert.match(html, /research-v2-batch-06\.js/);
 assert.match(html, /compendium-research-v2\.js/);
 assert.match(html, /compendium-research-v2-skill-notes\.js/);
 assert.match(html, /compendium-research-v2\.css/);
@@ -49,6 +52,7 @@ assert(html.indexOf('research-v2-batch-01.js') < html.indexOf('research-v2-batch
 assert(html.indexOf('research-v2-batch-02.js') < html.indexOf('research-v2-batch-03.js'), 'Research batches must load in sequence');
 assert(html.indexOf('research-v2-batch-03.js') < html.indexOf('research-v2-batch-04.js'), 'Research batches must load in sequence');
 assert(html.indexOf('research-v2-batch-04.js') < html.indexOf('research-v2-batch-05.js'), 'Research batches must load in sequence');
+assert(html.indexOf('research-v2-batch-05.js') < html.indexOf('research-v2-batch-06.js'), 'Research batches must load in sequence');
 assert(html.indexOf('compendium-research-v2.js') < html.indexOf('compendium-research-v2-skill-notes.js'), 'Skill source notes must wrap the detailed renderer last');
 assert(html.indexOf('compendium-links.js') < html.indexOf('compendium-research-v2.js'), 'Detailed renderer must wrap the stable Compendium renderer last');
 assert.match(html, /orders-reference-final\.js/);
