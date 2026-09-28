@@ -50,6 +50,42 @@ async function main() {
     if (!mandate.getSection(key)) throw new Error(`Final Mandate audit missing top-level section ${key}`);
   }
 
+  const actualTopLevel = mandate.topLevel().map(section => section.section);
+  if (actualTopLevel.join(',') !== expectedTopLevel.join(',')) {
+    throw new Error(`Mandate bookmark order/hierarchy is wrong. Expected ${expectedTopLevel.join(',')} but got ${actualTopLevel.join(',')}`);
+  }
+
+  for (const section of mandate.sections) {
+    if (!/^\d+(?:\.\d+)*$/.test(section.section)) continue;
+    const labels = section.section.split('.');
+    const expectedLevel = labels.length;
+    const expectedParent = labels.length > 1 ? labels.slice(0, -1).join('.') : null;
+    const expectedTopSection = labels[0];
+    if (section.level !== expectedLevel) throw new Error(`Section ${section.section} hierarchy level is ${section.level}; expected ${expectedLevel}`);
+    if ((section.parent || null) !== expectedParent) throw new Error(`Section ${section.section} parent is ${section.parent}; expected ${expectedParent}`);
+    if (section.topSection !== expectedTopSection) throw new Error(`Section ${section.section} topSection is ${section.topSection}; expected ${expectedTopSection}`);
+  }
+
+  const sectionIds = mandate.sections.map(section => section.section);
+  const orderingProbe = ['13','13.1','13.2','14','14.1','14.15.2','15'];
+  const probePositions = orderingProbe.map(id => sectionIds.indexOf(id));
+  if (probePositions.some(index => index < 0) || probePositions.some((index, i) => i > 0 && index <= probePositions[i - 1])) {
+    throw new Error(`Mandate document ordering is wrong around sections 13–15: ${orderingProbe.map((id, i) => `${id}@${probePositions[i]}`).join(', ')}`);
+  }
+
+  for (let top = 1; top <= 35; top++) {
+    const topId = String(top);
+    const indices = mandate.sections.map((section, index) => section.topSection === topId ? index : -1).filter(index => index >= 0);
+    if (!indices.length) throw new Error(`No indexed sections found for top-level section ${topId}`);
+    const first = Math.min(...indices);
+    const last = Math.max(...indices);
+    for (let index = first; index <= last; index++) {
+      if (mandate.sections[index].topSection !== topId) {
+        throw new Error(`Section ${topId} is split by ${mandate.sections[index].section} in the continuous Mandate reader`);
+      }
+    }
+  }
+
   if (!mandate.plainText(mandate.getSection('28')).includes('organic growth of the TribeNet world')) throw new Error('International NPC wording missing');
   if (!mandate.plainText(mandate.getSection('29.14')).includes('Group C Fair skill')) throw new Error('Dance skill cross-reference wording missing');
   if (!mandate.plainText(mandate.getSection('29.25')).includes('See section 20 Ship Construction')) throw new Error('Maintain Boats cross-reference wording missing');
@@ -82,7 +118,7 @@ async function main() {
     if (!integration.includes(marker)) throw new Error(`Mandate reader integration missing marker: ${marker}`);
   }
 
-  console.log('Full Mandate checks passed:', batch5.sectionCount, 'Batch 5 sections;', mandate.sections.length, 'total; continuous reader enabled');
+  console.log('Full Mandate checks passed:', batch5.sectionCount, 'Batch 5 sections;', mandate.sections.length, 'total; semantic order and bookmark hierarchy verified');
 }
 
 main().catch(error => { console.error(error); process.exit(1); });
