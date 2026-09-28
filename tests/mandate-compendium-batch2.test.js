@@ -58,16 +58,16 @@ async function main() {
 
   const extension = fs.readFileSync(path.join(root, 'compendium-mandate.js'), 'utf8');
   for (const marker of [
-    "{id:'2',title:'Activities & villages',range:'§§13–14',pages:'54–89',complete:true}",
     'skillRelatedEntities',
     'Mandate-linked tools, goods & structures',
-    'Completed Mandate outline',
-    'Mandate sections · completed batches'
+    'Mandate coverage',
+    'These links open the full Mandate at the relevant section.',
+    'navigateMandate'
   ]) {
-    if (!extension.includes(marker)) throw new Error(`Batch 2 Compendium integration missing marker: ${marker}`);
+    if (!extension.includes(marker)) throw new Error(`Batch 2 Compendium reader integration missing marker: ${marker}`);
   }
 
-  console.log('Mandate Batch 2 checks passed:', batch2.sectionCount, 'new sections;', mandate.sections.length, 'total; migration progress 2/5');
+  console.log('Mandate Batch 2 checks passed:', batch2.sectionCount, 'new sections;', mandate.sections.length, 'total; reader cross-link integration current');
 }
 
 main().catch(error => { console.error(error); process.exit(1); });
