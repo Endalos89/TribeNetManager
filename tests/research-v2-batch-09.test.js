@@ -36,7 +36,7 @@ const whaler=find('Whaling','Whaler');
 assert(whaler.effects.some(x=>/does not change the chance/i.test(x)));
 assert(whaler.effects.some(x=>/two whales/i.test(x)));
 assert(whaler.requirements.some(x=>/6 Oars.*Longboat/i.test(x)));
-assert(whaler.sourceIssues.some(x=>/Metalwork 8.*Metalwork 5/i.test(x)));
+assert(whaler.sourceIssues.some(x=>/Metalwork 8.*Mtl 5/i.test(x)));
 assert(whaler.sourceGaps.some(x=>/Sheath 150/i.test(x)));
 assert.strictEqual(R.entity('Whaler').kind,'ship');
 
