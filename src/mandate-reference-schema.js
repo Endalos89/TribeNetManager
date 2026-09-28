@@ -8,7 +8,8 @@
     batches: existing.batches || [],
     _bySection: existing._bySection || new Map(),
     _plainTextCache: existing._plainTextCache || new Map(),
-    _pending: existing._pending || []
+    _pending: existing._pending || [],
+    _packedChunks: existing._packedChunks || Object.create(null)
   });
 
   function canonicalSection(value) {
@@ -77,6 +78,23 @@
     })();
     mandate._pending.push(pending);
     return pending;
+  };
+
+  mandate.addPackedChunk = function addPackedChunk(part) {
+    if (!part || part.id == null || typeof part.chunk !== 'string') return;
+    const id = String(part.id);
+    if (!mandate._packedChunks[id]) mandate._packedChunks[id] = [];
+    mandate._packedChunks[id].push(part.chunk);
+    if (!part.final) return;
+    const data = mandate._packedChunks[id].join('');
+    delete mandate._packedChunks[id];
+    return mandate.registerPackedBatch({
+      id,
+      title: part.title,
+      topSections: part.topSections || [],
+      encoding: 'deflate-base64',
+      data
+    });
   };
 
   mandate.whenReady = function whenReady() {
