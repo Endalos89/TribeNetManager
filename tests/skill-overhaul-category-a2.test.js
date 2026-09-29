@@ -31,7 +31,7 @@ const fishing = S.profile('Fishing');
 if (fishing.layout !== 'category-a-activity' || fishing.mechanic !== 'efficiency') throw new Error('Fishing should use the Hunting-style activity dossier');
 if (!fishing.outputs.some(x => x.item === 'Fish')) throw new Error('Fishing output missing');
 const trawlNet = fishing.implements.find(x => x.name === 'Trawling Net');
-if (!trawlNet || trawlNet.value !== '+2 AM' || trawlNet.baseMaxBenefit !== '+2 AM' || !/not both/i.test(trawlNet.detail)) throw new Error('Trawling Net +2 AM / exclusivity rule missing');
+if (!trawlNet || trawlNet.value !== '+2 AM' || trawlNet.baseMaxBenefit !== '+2 AM' || !/cannot be combined/i.test(trawlNet.detail)) throw new Error('Trawling Net +2 AM / exclusivity rule missing');
 if (!fishing.supportImplements.some(x => x.name === 'Trawler' && /Greater Fishing output/.test(x.value))) throw new Error('Trawler Fishing support missing');
 
 const furrier = S.profile('Furrier');
