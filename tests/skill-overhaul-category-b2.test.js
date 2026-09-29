@@ -87,3 +87,4 @@ if (html.indexOf('skill-overhaul-category-b-2.js') < html.indexOf('skill-overhau
 if (html.indexOf('skill-overhaul-category-b-2.js') > html.indexOf('compendium.js')) throw new Error('B2 data must load before the Compendium renderer');
 
 console.log('Group B batch B2 checks passed: Garrison, Healing, Heavy Weapons, Horsemanship, Intelligence, Leadership and Mariner');
+require('./skill-overhaul-category-b3.test.js');
