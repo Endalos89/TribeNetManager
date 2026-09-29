@@ -89,7 +89,7 @@
       { level:10, use:'City-State / Home City (GL0)', kind:'Major unlock', detail:'The Politics 10 Tribe becomes the Clan Home City, with an initial claim to its occupied hex. Only one Home City is created per Clan.', source:'24' }
     ],
     factors:[
-      { factor:'Pacifiers', effect:'10 Warriors per controlled hex', detail:'Pacifiers require mounts, full metal armour and at least one metal weapon. Without required Pacifiers, the affected territory loses its productive political benefits for that turn.' },
+      { factor:'Pacifiers', effect:'10 Warriors per pacified controlled hex', detail:'Pacifiers require mounts, full metal armour and at least one metal weapon. This applies to the pacified territory through GL4; GL5+ outer rings use the later special rules and cannot be pacified.' },
       { factor:'Governors', effect:'10 Actives per Government Level', detail:'Above GL0, the required Governors are assigned in aggregate from a single unit residing in the Home City. A Courthouse halves this requirement.' },
       { factor:'Government Level', effect:'+1 hex radius per level', detail:'Government Level research extends the State outward from the Home City; the current Mandate permits levels beyond GL5 up to GL8.' },
       { factor:'Controlled-hex defence', effect:'+10% of existing Combat Morale vs invaders', detail:'The State benefit applies to combat against invaders within a controlled hex.' },
@@ -236,7 +236,7 @@
       { factor:'Timing', effect:'After unit movement', detail:'Scouts depart after their parent unit has moved and automatically return to it if they survive.' },
       { factor:'Committed resources', effect:'Unavailable elsewhere that turn', detail:'Warriors, Horses and items assigned to scouting cannot be used for other Activities that turn.' },
       { factor:'Patrol', effect:'Normal exploration mission', detail:'Patrol searches the route/final hex for terrain, minerals, useful finds and other units according to the scouting rules.' },
-      { factor:'Locate / Spy / Raid', effect:'Special scouting missions', detail:'Locate, Spy and Raid are missions performed by scouts; they are not separate current Group B skills.' },
+      { factor:'Locate / Spy / Raid', effect:'Special scouting missions', detail:'Locate and Raid are scouting missions rather than current Group B skill names. Spying is both a scout mission and a separate Group B skill that supports covert information gathering.' },
       { factor:'Raid party size', effect:'10 raiders per Tactics level per party', detail:'Tactics, not a Raiding skill, sets the maximum number of raiders in each scouting party.' },
       { factor:'Fleet scouts', effect:'Land scouting only', detail:'Fleets can send scouts by land when in a land hex such as a coastal or riverside hex; scouts do not scout across Ocean/Lake hexes.' }
     ],
