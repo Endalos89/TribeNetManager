@@ -18,6 +18,9 @@
     }
   };
 
+  // Retained as a regression/audit helper. Group A pages no longer render a
+  // generic relationship cloud because all of these relationships already
+  // appear in context in the dossier tables, outputs and equipment sections.
   function structuredNamesForProfile(profile) {
     const names = new Set();
     if (!profile) return names;
@@ -26,7 +29,6 @@
     addResourceRows(names, profile.requiredUses);
     addResourceRows(names, profile.processRows);
     addResourceRows(names, profile.outputs);
-
     for (const row of profile.levelUses || []) add(names, row.item);
 
     for (const field of ['implements', 'supportImplements', 'modifiers', 'benefitItems']) {
@@ -58,9 +60,6 @@
     const names = structuredNamesForProfile(profile);
     if (!profile) return names;
 
-    // Item-benefit rows are explicit semantic links. Only Mandate-sourced
-    // benefits belong in this Mandate-linked block; Research List items stay
-    // in the research/equipment areas of the dossier instead.
     if (typeof entities === 'function' && typeof S.itemBenefitsFor === 'function') {
       for (const entity of entities() || []) {
         const benefits = S.itemBenefitsFor(entity.name || entity.key) || [];
@@ -111,16 +110,11 @@
     const article = typeof $ === 'function' ? $('compArticle') : null;
     if (!article) return result;
 
-    // The old Mandate integration inferred entity links from every full section
-    // that happened to mention a skill. That produced false positives such as
-    // Adze on Armour. Group A now uses only explicit dossier relationships.
+    // Overhauled Group A dossiers already expose relationships exactly where
+    // they matter: recipes, outputs, prerequisite tables, implements and
+    // research. A second catch-all entity cloud duplicated those links and was
+    // also the source of misleading associations such as Adze on Armour.
     article.querySelectorAll('.mandate-skill-entities').forEach(node => node.remove());
-
-    const related = resolvedEntitiesForSkill(skill.name);
-    if (related.length) {
-      article.insertAdjacentHTML('beforeend', `<section class="comp-section mandate-skill-entities"><h2>Mandate-linked tools, goods & structures</h2><p class="comp-muted">Explicit Group A relationships only. Incidental co-occurrence elsewhere in the Mandate is excluded.</p><div class="comp-tags">${related.map(item => `<button class="comp-link" data-entity="${esc(item.key)}">${esc(item.name)}</button>`).join('')}</div></section>`);
-      if (typeof bindLinks === 'function') bindLinks(article);
-    }
     return result;
   };
 })();
