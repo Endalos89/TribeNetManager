@@ -125,9 +125,9 @@
   benefit('Courthouse', { skill:'Politics', value:'Halves Governing requirement', detail:'A Courthouse halves the number of Actives required for Governing the Home City State.', source:'Mandate', section:'24' });
 
   register('RELIGION ATHEISM', {
-    name:'Religion / Atheism',
-    aliases:['Religion','Atheism','Rel'],
-    researchAliases:['Religion','Atheism','Religion / Atheism','Rel'],
+    name:'Religion',
+    aliases:['Atheism','Rel','Ath','Religion / Atheism'],
+    researchAliases:['Religion','Atheism','Religion / Atheism','Rel','Ath'],
     baseline:'Economics',
     layout:'unlock',
     mechanic:'scaling-unlock',
