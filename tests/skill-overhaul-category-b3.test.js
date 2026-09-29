@@ -99,3 +99,4 @@ if (html.indexOf('skill-overhaul-category-b-3.js') < html.indexOf('skill-overhau
 if (html.indexOf('skill-overhaul-category-b-3.js') > html.indexOf('compendium.js')) throw new Error('B3 data must load before the Compendium renderer');
 
 console.log('Group B batch B3 checks passed: Mobilisation, Navigation, Politics, Religion/Atheism, Rowing, Sailing and Scouting');
+require('./skill-overhaul-category-b4.test.js');
