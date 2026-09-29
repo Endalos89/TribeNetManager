@@ -57,16 +57,6 @@
     if (typeof bindLinks === 'function') bindLinks(article);
   }
 
-  const S = root.TribeNetSkillOverhaul;
-  if (S?.registerItemBenefit) {
-    S.registerItemBenefit('Net', {
-      skill:'Fishing',
-      value:'+0.5 AM',
-      detail:'For Fishing, each Net contributes +0.5 Active Month equivalent (a 50% productivity increment for one fisher).',
-      source:'Community formula'
-    });
-  }
-
   if (typeof showSkill === 'function') {
     const previousShowSkill = showSkill;
     showSkill = function(name, push = true){
