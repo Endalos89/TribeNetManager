@@ -29,6 +29,7 @@ jobs:
         run: |
           npm test
           node tests/skill-overhaul-category-c1.test.js
+          node tests/skill-overhaul-category-c2.test.js
 
       - name: Assign release version
         if: github.event_name != 'pull_request'
