@@ -8,10 +8,10 @@ window.addEventListener('DOMContentLoaded', () => {
     link.rel = 'stylesheet';
     link.href = 'turn-file-library.css';
     document.head.appendChild(link);
-    scripts.push('planned-unit-splits-map.js', 'compendium-launcher.js');
+    scripts.push('planned-unit-splits-map.js', 'compendium-launcher.js', 'fair-launcher.js');
   }
   if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js', 'turn-manager-mandate.js');
-  if (page !== 'compendium.html') scripts.push('session-snapshot.js');
+  if (page !== 'compendium.html' && page !== 'fair.html') scripts.push('session-snapshot.js');
   if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-key-ui-fix.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js', 'turn-file-library-ui.js');
   for (const src of scripts) {
     const script = document.createElement('script');
@@ -19,6 +19,14 @@ window.addEventListener('DOMContentLoaded', () => {
     script.async = false;
     document.body.appendChild(script);
   }
+});
+
+contextBridge.exposeInMainWorld('fairnet', {
+  importWorkbook: turnKey => ipcRenderer.invoke('fair:import', turnKey),
+  listSnapshots: () => ipcRenderer.invoke('fair:list'),
+  getSnapshot: turnKey => ipcRenderer.invoke('fair:get', turnKey),
+  getCraftingCatalog: () => ipcRenderer.invoke('fair:recipes'),
+  backup: () => ipcRenderer.invoke('fair:backup')
 });
 
 contextBridge.exposeInMainWorld('tribenet', {

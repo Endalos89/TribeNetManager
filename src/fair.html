@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fair · TribeNet Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="fair.css" />
+</head>
+<body>
+  <div class="fair-app">
+    <header class="app-header">
+      <div>
+        <div class="brand">TribeNet Manager · Fair</div>
+        <div class="version" id="fairVersion">Fair planning, pricing and crafting</div>
+      </div>
+      <div class="header-actions">
+        <button id="backupFairButton" class="button">Backup Fair Data</button>
+        <button id="backLauncherButton" class="button">← Launcher</button>
+      </div>
+    </header>
+
+    <main class="fair-main">
+      <section class="fair-hero">
+        <div>
+          <p class="eyebrow">MONTH 04 / MONTH 10</p>
+          <h1>Fair Planner</h1>
+          <p>Upload each Fair workbook once. Prices are saved historically and combined with your Results inventory, Tribe skills and Compendium crafting recipes.</p>
+        </div>
+        <div class="fair-hero-metrics">
+          <div><span>Fair trades</span><strong id="maxTradesMetric">10</strong></div>
+          <div><span>Saved Fairs</span><strong id="fairCountMetric">0</strong></div>
+          <div><span>Combined items</span><strong id="inventoryCountMetric">0</strong></div>
+        </div>
+      </section>
+
+      <section class="fair-context-grid">
+        <article class="fair-panel">
+          <div class="fair-panel-heading">
+            <div><p class="eyebrow">PLANNING TURN</p><h2>Fair availability</h2></div>
+            <select id="planningTurnSelect" class="turn-select"></select>
+          </div>
+          <div id="planningTurnNote" class="fair-note"></div>
+          <div class="fair-upload-row">
+            <button id="importFairButton" class="button accent" disabled>Upload Fair Workbook</button>
+            <span id="fairUploadStatus" class="save-status"></span>
+          </div>
+        </article>
+
+        <article class="fair-panel">
+          <div class="fair-panel-heading">
+            <div><p class="eyebrow">TRADE ACCESS</p><h2>Economics check</h2></div>
+          </div>
+          <div id="tradeEligibility" class="trade-banner neutral">Select a planning turn to check Fair access.</div>
+        </article>
+
+        <article class="fair-panel">
+          <div class="fair-panel-heading">
+            <div><p class="eyebrow">PRICE BOOK</p><h2>Fair history</h2></div>
+            <select id="fairSnapshotSelect" class="turn-select"></select>
+          </div>
+          <div id="snapshotNote" class="fair-note">No Fair workbook uploaded yet.</div>
+        </article>
+      </section>
+
+      <section class="fair-panel fair-wide-panel">
+        <div class="fair-panel-heading">
+          <div><p class="eyebrow">MARKET MOVEMENT</p><h2>Fair-to-Fair price changes</h2></div>
+          <label class="fair-search">Filter <input id="priceChangeSearch" type="search" placeholder="Item…" /></label>
+        </div>
+        <div id="priceChangeSummary" class="fair-note"></div>
+        <div class="fair-table-wrap"><table class="fair-table">
+          <thead><tr><th>Item</th><th>Sell to Fair</th><th>Previous</th><th>Change</th><th>Buy from Fair</th><th>Previous</th><th>Change</th></tr></thead>
+          <tbody id="priceChangeBody"></tbody>
+        </table></div>
+      </section>
+
+      <section class="fair-panel fair-wide-panel">
+        <div class="fair-panel-heading">
+          <div><p class="eyebrow">YOUR HOLDINGS</p><h2>Sell prices across all Tribes</h2></div>
+          <label class="fair-search">Filter <input id="inventorySearch" type="search" placeholder="Item…" /></label>
+        </div>
+        <p id="inventoryContext" class="fair-note"></p>
+        <div class="fair-table-wrap"><table class="fair-table">
+          <thead><tr><th>Item</th><th>Combined Qty</th><th>Fair pays each</th><th>Fair Qty Limit</th><th>Potential sale</th><th>Price change</th><th>Where held</th></tr></thead>
+          <tbody id="inventoryBody"></tbody>
+        </table></div>
+      </section>
+
+      <section class="fair-panel fair-wide-panel">
+        <div class="fair-panel-heading fair-profit-heading">
+          <div><p class="eyebrow">PROFIT CALCULATOR</p><h2>Craft from what you already possess</h2></div>
+          <div class="fair-filter-row">
+            <label class="toggle-control"><input id="onlyCraftableToggle" type="checkbox" checked /><span>Only craftable now</span></label>
+            <label class="toggle-control"><input id="positiveProfitToggle" type="checkbox" /><span>Positive profit only</span></label>
+            <label class="fair-search">Filter <input id="profitSearch" type="search" placeholder="Item…" /></label>
+          </div>
+        </div>
+        <div id="profitSummary" class="profit-summary"></div>
+        <p class="fair-note">Input value uses what those consumed materials could themselves be sold to this Fair for. Recursive recipes are followed where your skills and holdings allow. Each item row is evaluated independently, so shared materials are not reserved across several rows.</p>
+        <div class="fair-table-wrap"><table class="fair-table">
+          <thead><tr><th>Use</th><th>Top 10</th><th>Item</th><th>Crafting route</th><th>Fair pays</th><th>Sell Qty</th><th>Input value</th><th>Profit each</th><th>Total profit</th></tr></thead>
+          <tbody id="profitBody"></tbody>
+        </table></div>
+      </section>
+
+      <section class="fair-panel fair-wide-panel">
+        <div class="fair-panel-heading fair-profit-heading">
+          <div><p class="eyebrow">PURCHASE → CRAFT → NEXT FAIR</p><h2>Buy inputs now, sell crafted output later</h2></div>
+          <div class="fair-filter-row">
+            <label class="toggle-control"><input id="purchasePositiveToggle" type="checkbox" checked /><span>Positive profit only</span></label>
+            <label class="fair-search">Filter <input id="purchaseSearch" type="search" placeholder="Item…" /></label>
+          </div>
+        </div>
+        <div id="purchaseCraftNote" class="fair-note"></div>
+        <div class="fair-table-wrap"><table class="fair-table">
+          <thead><tr><th>Craft item</th><th>Buy at this Fair</th><th>Cost / batch</th><th>Output</th><th>Next sell price</th><th>Profit / batch</th><th>ROI</th><th>Max batches</th><th>Max profit</th><th>Trades now</th></tr></thead>
+          <tbody id="purchaseCraftBody"></tbody>
+        </table></div>
+      </section>
+    </main>
+  </div>
+  <script src="fair-core.js"></script>
+  <script src="fair.js"></script>
+</body>
+</html>
