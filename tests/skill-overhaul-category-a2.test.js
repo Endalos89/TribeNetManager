@@ -89,3 +89,4 @@ if (!html.includes('skill-overhaul-category-a-2.js')) throw new Error('A2 skill 
 if (html.indexOf('skill-overhaul-category-a-2.js') < html.indexOf('skill-overhaul-profile-registry.js') || html.indexOf('skill-overhaul-category-a-2.js') > html.indexOf('compendium.js')) throw new Error('A2 skill data script load order is wrong');
 
 console.log('Group A batch A2 checks passed: Excavation, Fishing, Furrier, Gutting, Herding, Jewellery and Leatherwork');
+require('./skill-overhaul-category-a3.test.js');
