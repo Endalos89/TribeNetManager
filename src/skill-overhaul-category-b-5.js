@@ -10,6 +10,11 @@
   });
   const benefit = (name, row) => S.registerItemBenefit?.(name, row);
 
+  // Economics is one of the four approved dossier baselines and is itself a current Group B skill.
+  // Preserve its baseline content while making its Group B classification explicit for the final audit.
+  const economicsBaseline = S.profile('Economics');
+  if (economicsBaseline) S.registerProfile('ECONOMICS', { ...economicsBaseline, status:'baseline', category:'B' });
+
   register('TRIBALL', {
     name:'Triball',
     aliases:['Tri'],
