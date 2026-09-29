@@ -93,9 +93,10 @@ if (/insertAdjacentHTML\([^\n]*Mandate-linked tools, goods & structures/.test(pa
 if (!patch.includes("querySelectorAll('.mandate-skill-entities')")) throw new Error('Group A renderer should actively remove legacy Mandate-linked blocks');
 
 const cleanup = fs.readFileSync(path.join(root, 'compendium-group-a-mandate-cleanup.js'), 'utf8');
-if (!cleanup.includes('await M.whenReady()')) throw new Error('Group A cleanup must wait for the async Mandate wrapper before wrapping showSkill');
-if (!cleanup.includes(".mandate-cross-links, .mandate-skill-entities")) throw new Error('Group A cleanup must remove both legacy Mandate coverage and entity clouds');
-if (!cleanup.includes("skill.skillGroup !== 'A'")) throw new Error('Async cleanup must remain scoped to Group A');
+if (!cleanup.includes('await M.whenReady()')) throw new Error('Dossier cleanup must wait for the async Mandate wrapper before wrapping showSkill');
+if (!cleanup.includes(".mandate-cross-links, .mandate-skill-entities")) throw new Error('Dossier cleanup must remove both legacy Mandate coverage and entity clouds');
+if (cleanup.includes("skill.skillGroup !== 'A'")) throw new Error('Async cleanup must not be limited to Group A now that Group B dossiers exist');
+if (!cleanup.includes('!S.profile(skill.name)')) throw new Error('Async cleanup should apply to every migrated skill profile');
 new Function(`return (async()=>{${cleanup}\n})();`);
 
 const mandateUi = fs.readFileSync(path.join(root, 'compendium-mandate.js'), 'utf8');
@@ -104,7 +105,8 @@ if (!mandateUi.includes('await M.whenReady()') || !mandateUi.includes('appendSki
 const html = fs.readFileSync(path.join(root, 'compendium.html'), 'utf8');
 if (!html.includes('skill-overhaul-armour-refinement.js')) throw new Error('Armour refinement script is not loaded');
 if (html.indexOf('skill-overhaul-armour-refinement.js') > html.indexOf('compendium.js')) throw new Error('Armour refinement must load before Compendium renderers');
-if (!html.includes('compendium-group-a-mandate-cleanup.js')) throw new Error('Async Group A Mandate cleanup script is not loaded');
-if (html.indexOf('compendium-group-a-mandate-cleanup.js') < html.indexOf('compendium-mandate.js')) throw new Error('Async Group A cleanup must be registered after compendium-mandate.js');
+if (!html.includes('compendium-group-a-mandate-cleanup.js')) throw new Error('Async skill-dossier Mandate cleanup script is not loaded');
+if (html.indexOf('compendium-group-a-mandate-cleanup.js') < html.indexOf('compendium-mandate.js')) throw new Error('Async dossier cleanup must be registered after compendium-mandate.js');
 
 console.log('Group A relationship audit passed: generic async Mandate overlays removed, Armour duplication reduced, and Adze is Forestry-only');
+require('./skill-overhaul-category-b1.test.js');
