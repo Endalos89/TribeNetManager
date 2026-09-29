@@ -65,16 +65,16 @@
     researchEffectOverrides:{
       'Outpost':'Security 6 allows use of an Outpost. A qualifying Element with 20+ Warriors cannot be overrun via Locate, reports Locating scouts, and an Outpost Garrison may run +2 scout groups.',
       'Security 11':'+1 Security level, taking Security 10 to 11.',
-      'Security Patrol':'After Security 11, adds 3 percentage points per Security level to detecting scouts on Raid or Locate missions; the source example is +33% at Security 11.',
+      'Security Patrol':'After Security 11, increases the chance of detecting scouts on Raid or Locate missions by 3% per Security level; the source example is +33% at Security 11.',
       'Dog Leash':'With a Leash for each Dog assigned to Security or Suppression, the unit receives +2 Security for determining success.',
-      'Watchtower':'Each Watchtower adds 2 percentage points to Security/Suppression detection, up to six towers; each requires two observers.',
+      'Watchtower':'Each Watchtower adds 2% to Security/Suppression detection chances, up to six towers; each requires two observers.',
       'Posse':'For each 5 Warriors assigned to Security, one Local may be added when required.'
     },
     relatedSkills:['Scouting','Spying','Combat','Leadership','Tactics','Healing']
   });
 
   benefit('Dog Leash', { skill:'Security', value:'+2 Security', detail:'If each Dog assigned to Security or Suppression has a Dog Leash, the unit receives +2 Security when determining success.', source:'Research', research:'Leatherwork / Dog Leash' });
-  benefit('Watchtower', { skill:'Security', value:'+2% detection per tower', detail:'Each Watchtower adds 2 percentage points to Security and Suppression detection; maximum six Watchtowers, with two observers required per tower.', source:'Research', research:'Engineering / Watchtower' });
+  benefit('Watchtower', { skill:'Security', value:'+2% detection per tower', detail:'Each Watchtower adds 2% to Security and Suppression detection chances; maximum six Watchtowers, with two observers required per tower.', source:'Research', research:'Engineering / Watchtower' });
 
   register('SHIPWRIGHT', {
     name:'Shipwright',
@@ -132,7 +132,7 @@
     researchEffectOverrides:{
       'Press Gang':'Once per year, send an Element into a non-Village hex to enslave 50 + 4d12 Locals.'
     },
-    relatedSkills:['Combat','Raiding','Security','Torture']
+    relatedSkills:['Combat','Scouting','Tactics','Security','Torture']
   });
 
   benefit('Shackles', { skill:'Slavery', value:'Counts shackled Slaves as 0.5', detail:'For passive-control and overseeing calculations, each shackled Slave counts as half a Slave.', source:'Mandate', section:'13.1.31' });
@@ -172,7 +172,7 @@
       ]
     }],
     researchEffectOverrides:{
-      'Expert Spies':'+25 percentage points to the chance of a successful Raid, Locate or Spy mission for units belonging to the researching Tribe.'
+      'Expert Spies':'+25% to the chance of a successful Raid, Locate or Spy mission for units belonging to the researching Tribe.'
     },
     relatedSkills:['Scouting','Security','Tactics','Torture']
   });
