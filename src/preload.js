@@ -1,3 +1,4 @@
+require('./fair-preload');
 const { contextBridge, ipcRenderer } = require('electron');
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -11,7 +12,7 @@ window.addEventListener('DOMContentLoaded', () => {
     scripts.push('planned-unit-splits-map.js', 'compendium-launcher.js');
   }
   if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js', 'turn-manager-mandate.js');
-  if (page !== 'compendium.html') scripts.push('session-snapshot.js');
+  if (page !== 'compendium.html' && page !== 'fair.html') scripts.push('session-snapshot.js');
   if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-key-ui-fix.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js', 'turn-file-library-ui.js');
   for (const src of scripts) {
     const script = document.createElement('script');
