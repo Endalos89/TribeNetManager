@@ -79,8 +79,9 @@ const { parseFairWorkbook } = require('../src/fair-parser');
 (function integrationFilesRegression() {
   const src = file => fs.readFileSync(path.join(__dirname, '..', 'src', file), 'utf8');
   assert.match(src('bootstrap.js'), /fair-ipc/);
-  assert.match(src('preload.js'), /fair-preload/);
-  assert.match(src('fair-preload.js'), /fair\.html/);
+  assert.match(src('preload.js'), /fair:import/);
+  assert.match(src('preload.js'), /fair-launcher\.js/);
+  assert.match(src('fair-launcher.js'), /fair\.html/);
   assert.match(src('fair.html'), /PURCHASE → CRAFT → NEXT FAIR/i);
   assert.match(src('update-view-state.js'), /fair\.html/);
 })();
