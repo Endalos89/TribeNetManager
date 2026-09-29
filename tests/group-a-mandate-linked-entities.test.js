@@ -92,8 +92,19 @@ if (/sectionText\(|refs\.other|mentions\(/.test(patch)) throw new Error('Group A
 if (/insertAdjacentHTML\([^\n]*Mandate-linked tools, goods & structures/.test(patch)) throw new Error('Overhauled Group A pages must not render the redundant Mandate-linked catch-all block');
 if (!patch.includes("querySelectorAll('.mandate-skill-entities')")) throw new Error('Group A renderer should actively remove legacy Mandate-linked blocks');
 
+const cleanup = fs.readFileSync(path.join(root, 'compendium-group-a-mandate-cleanup.js'), 'utf8');
+if (!cleanup.includes('await M.whenReady()')) throw new Error('Group A cleanup must wait for the async Mandate wrapper before wrapping showSkill');
+if (!cleanup.includes(".mandate-cross-links, .mandate-skill-entities")) throw new Error('Group A cleanup must remove both legacy Mandate coverage and entity clouds');
+if (!cleanup.includes("skill.skillGroup !== 'A'")) throw new Error('Async cleanup must remain scoped to Group A');
+new Function(`return (async()=>{${cleanup}\n})();`);
+
+const mandateUi = fs.readFileSync(path.join(root, 'compendium-mandate.js'), 'utf8');
+if (!mandateUi.includes('await M.whenReady()') || !mandateUi.includes('appendSkillEntities')) throw new Error('Test fixture no longer represents the async Mandate wrapper that caused the regression');
+
 const html = fs.readFileSync(path.join(root, 'compendium.html'), 'utf8');
 if (!html.includes('skill-overhaul-armour-refinement.js')) throw new Error('Armour refinement script is not loaded');
 if (html.indexOf('skill-overhaul-armour-refinement.js') > html.indexOf('compendium.js')) throw new Error('Armour refinement must load before Compendium renderers');
+if (!html.includes('compendium-group-a-mandate-cleanup.js')) throw new Error('Async Group A Mandate cleanup script is not loaded');
+if (html.indexOf('compendium-group-a-mandate-cleanup.js') < html.indexOf('compendium-mandate.js')) throw new Error('Async Group A cleanup must be registered after compendium-mandate.js');
 
-console.log('Group A relationship audit passed: generic catch-all removed, Armour duplication reduced, and Adze is Forestry-only');
+console.log('Group A relationship audit passed: generic async Mandate overlays removed, Armour duplication reduced, and Adze is Forestry-only');
