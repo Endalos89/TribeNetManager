@@ -74,7 +74,7 @@ const weaving = S.profile('Weaving');
 if (weaving.layout !== 'category-a-craft' || weaving.directCrafts.length !== 10) throw new Error('Weaving base recipe count mismatch');
 if (weaving.directCrafts.filter(row => row.entity === 'Net').length !== 2) throw new Error('Both base Net recipes should be represented');
 if (!weaving.directCrafts.some(row => row.entity === 'Snare' && row.inputs.some(i => i.entity === 'Rope' && i.quantity === 1))) throw new Error('Weaving Snare recipe missing');
-if (!/×2 harvest worker effectiveness/.test(weaving.researchEffectOverrides['Basket'])) throw new Error('Basket farming effect missing');
+if (!/Doubles crop-harvesting worker effectiveness/.test(weaving.researchEffectOverrides['Basket'])) throw new Error('Basket farming effect missing');
 if (!/\+0.06 Military Morale/.test(weaving.researchEffectOverrides['Epic Tapestry'])) throw new Error('Epic Tapestry military morale effect missing');
 
 const whaling = S.profile('Whaling');
