@@ -42,7 +42,7 @@ if (!/8 MP.*4 MP/.test(navigation.researchEffectOverrides['Wetlands Corridor']))
 const politics = S.profile('Politics');
 if (politics.layout !== 'unlock' || politics.primarySection !== '24' || politics.mechanic !== 'scaling-unlock') throw new Error('Politics unlock/scaling dossier mismatch');
 if (!politics.levelUses.some(x => x.level === 10 && /Home City/.test(x.use))) throw new Error('Politics 10 Home City unlock missing');
-if (!politics.factors.some(x => x.factor === 'Pacifiers' && /10 Warriors per controlled hex/.test(x.effect))) throw new Error('Politics Pacifier requirement missing');
+if (!politics.factors.some(x => x.factor === 'Pacifiers' && /10 Warriors per pacified controlled hex/.test(x.effect) && /GL5\+/.test(x.detail))) throw new Error('Politics Pacifier requirement/GL5 exception missing');
 if (!politics.factors.some(x => x.factor === 'Governors' && /10 Actives per Government Level/.test(x.effect) && /Courthouse halves/.test(x.detail))) throw new Error('Politics Governor/Courthouse requirement missing');
 if (!politics.factors.some(x => x.factor === 'Militia' && /20 per controlled hex/.test(x.effect))) throw new Error('Politics Militia rule missing');
 const glTable = politics.factTables.find(x => /Government Level control/.test(x.title));
@@ -53,6 +53,7 @@ if (!S.itemBenefitsFor('Courthouse').some(x => x.skill === 'Politics' && /Halves
 
 const religion = S.profile('Religion / Atheism');
 if (!religion || S.profile('Religion') !== religion || S.profile('Atheism') !== religion) throw new Error('Religion / Atheism aliases missing');
+if (religion.name !== 'Religion') throw new Error('Combined Religion / Atheism dossier should use Religion as its research-index name');
 if (religion.layout !== 'unlock' || religion.primarySection !== '27') throw new Error('Religion / Atheism unlock dossier mismatch');
 for (const level of [2,3,4,5,6]) if (!religion.levelUses.some(x => x.level === level)) throw new Error(`Religion / Atheism level ${level} unlock missing`);
 if (!religion.levelUses.some(x => x.level === 2 && /join/.test(x.use))) throw new Error('Religion 2 joining threshold missing');
@@ -83,7 +84,7 @@ const scouting = S.profile('Scouting');
 if (scouting.primarySection !== '16.3' || scouting.mechanic !== 'efficiency' || scouting.baseline !== 'Hunting') throw new Error('Scouting exploration dossier mismatch');
 if (!/8 scouting parties per Tribe/.test(scouting.workerRule)) throw new Error('Scouting eight-party limit missing');
 if (!scouting.factors.some(x => x.factor === 'Timing' && /After unit movement/.test(x.effect))) throw new Error('Scouting timing rule missing');
-if (!scouting.factors.some(x => x.factor === 'Locate / Spy / Raid' && /not separate current Group B skills/.test(x.detail))) throw new Error('Scouting mission/skill distinction missing');
+if (!scouting.factors.some(x => x.factor === 'Locate / Spy / Raid' && /Locate and Raid are scouting missions/.test(x.detail) && /Spying is both a scout mission and a separate Group B skill/.test(x.detail))) throw new Error('Scouting mission/skill distinction missing');
 if (!scouting.factors.some(x => x.factor === 'Raid party size' && /10 raiders per Tactics level/.test(x.effect))) throw new Error('Raid party Tactics cap missing');
 if (!scouting.factors.some(x => x.factor === 'Fleet scouts' && /Land scouting only/.test(x.effect))) throw new Error('Fleet land-scouting restriction missing');
 if (!/\+2 scouting movement points/.test(scouting.researchEffectOverrides['Extra Movement 1'])) throw new Error('Scouting Extra Movement 1 missing');
