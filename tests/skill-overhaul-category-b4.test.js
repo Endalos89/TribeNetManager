@@ -98,3 +98,4 @@ if (html.indexOf('skill-overhaul-category-b-4.js') < html.indexOf('skill-overhau
 if (html.indexOf('skill-overhaul-category-b-4.js') > html.indexOf('compendium.js')) throw new Error('B4 data must load before the Compendium renderer');
 
 console.log('Group B batch B4 checks passed: Seamanship, Security, Shipwright, Slavery, Spying, Tactics and Torture');
+require('./skill-overhaul-category-b5.test.js');
