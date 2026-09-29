@@ -61,7 +61,7 @@ if (!religion.levelUses.some(x => x.level === 3 && /found/.test(x.use))) throw n
 if (!religion.levelUses.some(x => x.level === 5 && /Missionary Element/.test(x.use))) throw new Error('Religion 5 Missionary Element unlock missing');
 if (!religion.factors.some(x => x.factor === 'Movement formation' && /At least 4 Clans/.test(x.effect))) throw new Error('Religion four-Clan formation rule missing');
 if (!religion.factors.some(x => x.factor === 'Festival month' && /20%/.test(x.effect))) throw new Error('Religion Festival-month meditation rule missing');
-if (!/additional member/i.test(religion.researchEffectOverrides['Additional Member (Atheism / Religion)'])) throw new Error('Religion Additional Member research missing');
+if (!/one member place/i.test(religion.researchEffectOverrides['Additional Member (Atheism / Religion)'])) throw new Error('Religion Additional Member research missing');
 if (!/half Religion level, rounded up/.test(religion.researchEffectOverrides['Military Orders'])) throw new Error('Military Orders Leadership formula missing');
 
 const rowing = S.profile('Rowing');
