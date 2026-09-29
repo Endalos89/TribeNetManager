@@ -81,3 +81,4 @@ if (html.indexOf('skill-overhaul-category-a-3.js') < html.indexOf('skill-overhau
 if (html.indexOf('skill-overhaul-category-a-3.js') > html.indexOf('compendium.js')) throw new Error('A3 data must load before the Compendium renderer');
 
 console.log('Group A batch A3 checks passed: Metalwork, Mining, Pottery, Quarrying, Salting and Sewing');
+require('./skill-overhaul-category-a4.test.js');
