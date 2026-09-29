@@ -37,7 +37,7 @@ if (!security.factors.some(x => x.factor === 'Targets' && /Spies and Raiders/.te
 if (!security.factors.some(x => x.factor === 'Defence availability' && /50%/.test(x.effect) && /one-third/.test(x.detail))) throw new Error('Security half-to-defence rule missing');
 if (!security.factors.some(x => x.factor === 'Who is protected' && /Clan/.test(x.effect) && /Suppression/.test(x.detail))) throw new Error('Security Clan-vs-hex distinction missing');
 if (!/Security 6/.test(security.researchEffectOverrides.Outpost) || !/20\+ Warriors/.test(security.researchEffectOverrides.Outpost) || !/\+2 scout groups/.test(security.researchEffectOverrides.Outpost)) throw new Error('Security Outpost effect missing');
-if (!/3 percentage points per Security level/.test(security.researchEffectOverrides['Security Patrol'])) throw new Error('Security Patrol effect missing');
+if (!/3% per Security level/.test(security.researchEffectOverrides['Security Patrol'])) throw new Error('Security Patrol effect missing');
 if (!S.itemBenefitsFor('Dog Leash').some(x => x.skill === 'Security' && x.value === '+2 Security')) throw new Error('Dog Leash Security backlink missing');
 if (!S.itemBenefitsFor('Watchtower').some(x => x.skill === 'Security' && /\+2% detection/.test(x.value))) throw new Error('Watchtower Security backlink missing');
 
@@ -59,6 +59,7 @@ if (!slavery.factors.some(x => x.factor === 'Shackles' && /count as half/.test(x
 if (!slavery.factors.some(x => x.factor === 'Unsupervised Slaves' && /1 in 5 flee/.test(x.effect))) throw new Error('Slavery escape rate missing');
 if (!/50 \+ 4d12 Locals/.test(slavery.researchEffectOverrides['Press Gang'])) throw new Error('Press Gang research effect missing');
 if (!S.itemBenefitsFor('Shackles').some(x => x.skill === 'Slavery' && /0.5/.test(x.value))) throw new Error('Shackles Slavery backlink missing');
+if (slavery.relatedSkills.includes('Raiding')) throw new Error('Slavery should not link the stale Raiding valid-skill entry as a current skill');
 
 const spying = S.profile('Spying');
 if (spying.primarySection !== '16.4.5' || spying.mechanic !== 'efficiency' || spying.baseline !== 'Hunting') throw new Error('Spying scout-mission dossier mismatch');
@@ -67,7 +68,7 @@ if (!spying.factors.some(x => x.factor === 'Truced Clans' && /prohibited/.test(x
 if (!spying.factors.some(x => x.factor === 'Locate' && /Spying and Scouting/.test(x.effect))) throw new Error('Spying Locate relationship missing');
 const spyTable = spying.factTables.find(x => /successful spy attempt/.test(x.title));
 for (const target of ['Defence / Security','Suppression','Total Warriors']) if (!spyTable?.rows.some(x => x.target === target)) throw new Error(`Spying information target missing: ${target}`);
-if (!/\+25 percentage points/.test(spying.researchEffectOverrides['Expert Spies'])) throw new Error('Expert Spies effect missing');
+if (!/\+25%/.test(spying.researchEffectOverrides['Expert Spies'])) throw new Error('Expert Spies effect missing');
 
 const tactics = S.profile('Tactics');
 if (tactics.primarySection !== '29.37' || tactics.mechanic !== 'scaling') throw new Error('Tactics scaling dossier mismatch');
