@@ -102,5 +102,8 @@ const html = fs.readFileSync(path.join(root, 'compendium.html'), 'utf8');
 if (!html.includes('skill-overhaul-category-a-4.js')) throw new Error('A4 skill data script is not loaded');
 if (html.indexOf('skill-overhaul-category-a-4.js') < html.indexOf('skill-overhaul-profile-registry.js')) throw new Error('A4 data must load after the profile registry');
 if (html.indexOf('skill-overhaul-category-a-4.js') > html.indexOf('compendium.js')) throw new Error('A4 data must load before the Compendium renderer');
+if (!html.includes('compendium-group-a-mandate-links.js')) throw new Error('Corrected Group A Mandate-link renderer is not loaded');
+if (html.indexOf('compendium-group-a-mandate-links.js') < html.indexOf('compendium-skill-overhaul-category-a.js')) throw new Error('Group A Mandate-link correction must load after the Group A renderer');
 
 console.log('Group A batch A4 checks passed: remaining 8 skills converted and all 30 Group A dossiers accounted for');
+require('./group-a-mandate-linked-entities.test.js');
