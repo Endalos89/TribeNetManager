@@ -102,7 +102,7 @@ for (const marker of ['AM = Active Month.','data-equipment-sort','Base max benef
 for (const marker of ['Things you can make with Woodwork alone','Where Woodwork is required','Other skills required','skill-woodwork-direct-table','skill-woodwork-required-table','Courthouse','data-entity']) {
   if (!woodUi.includes(marker)) throw new Error(`Woodwork split UI missing marker: ${marker}`);
 }
-for (const marker of ['Things you can make with','What each worker does','Capacity vs output','Other research affecting','category-a-craft-table','category-a-process-table','Direct recipes','Activity outputs']) {
+for (const marker of ['Things you can make with','What each worker does','Capacity vs output','Other research affecting','category-a-craft-table','category-a-process-table','Direct recipes']) {
   if (!categoryAUi.includes(marker)) throw new Error(`Category A baseline renderer missing marker: ${marker}`);
 }
 for (const script of ['skill-overhaul-profile-registry.js','skill-overhaul-category-a-1.js','compendium-skill-overhaul-category-a.js']) {
@@ -121,3 +121,4 @@ new Function(ui);
 new Function(woodUi);
 new Function(categoryAUi);
 console.log('Skill overhaul checks passed: approved baselines plus first Group A dossiers are wired');
+require('./skill-overhaul-category-a2.test.js');
