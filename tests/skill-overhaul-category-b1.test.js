@@ -88,3 +88,4 @@ if (/skill\.skillGroup\s*!==\s*['"]A['"]/.test(cleanup)) throw new Error('Legacy
 if (!cleanup.includes("!S.profile(skill.name)")) throw new Error('Legacy Mandate cleanup should target any migrated dossier profile');
 
 console.log('Group B batch B1 checks passed: Administration, Apothecary, Archery, Captaincy, Combat, Courier and Diplomacy');
+require('./skill-overhaul-category-b2.test.js');
