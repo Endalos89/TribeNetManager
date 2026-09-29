@@ -23,15 +23,19 @@ const scenarios=calc.scenarioRows({...calc.DEFAULTS,people:20257,huntingSkill:3,
 assert.strictEqual(scenarios.find(row=>row.key==='fine').hunting,52668);
 assert.strictEqual(scenarios.length,6);
 
-// Fishing skill implement list supplied by the user.
-assert.strictEqual(fishing.FISHING_IMPLEMENTS.length,13);
+// Fishing skill lists non-vessel implements only.
+assert.strictEqual(fishing.FISHING_IMPLEMENTS.length,2);
+assert.deepStrictEqual(fishing.FISHING_IMPLEMENTS.map(row=>row.name),['Net','Trawling Nets']);
 const net=fishing.FISHING_IMPLEMENTS.find(row=>row.name==='Net');
 assert.ok(net,'Net must be listed as a Fishing implement');
 assert.strictEqual(net.output,'PROVS');
 assert.strictEqual(net.bonus,'+0.5 AM');
-for(const item of fishing.FISHING_IMPLEMENTS.filter(row=>row.name!=='Net')){
-  assert.strictEqual(item.bonus,'Unknown',`${item.name} should remain Unknown until a bonus is confirmed`);
-  assert.strictEqual(item.output,'PROVS',`${item.name} should be listed as producing PROVS`);
+const trawlingNets=fishing.FISHING_IMPLEMENTS.find(row=>row.name==='Trawling Nets');
+assert.strictEqual(trawlingNets.output,'PROVS');
+assert.strictEqual(trawlingNets.bonus,'Unknown');
+const vesselNames=['Boat','Coaster','Fisher','Large Galley','Longship','Medium Galley','Merchant','Small Galley','Trader','Trawler','Warship'];
+for(const vessel of vesselNames){
+  assert.ok(!fishing.FISHING_IMPLEMENTS.some(row=>row.name===vessel),`${vessel} must not be treated as a Fishing implement`);
 }
 
 // One support target replaces the two legacy workforce-planning inputs.
@@ -43,6 +47,7 @@ const enhancementSource=fs.readFileSync(path.join(__dirname,'..','src','fishing-
 assert.ok(enhancementSource.includes('People / AM to support'));
 assert.ok(enhancementSource.includes('Fishing AM required to support'));
 assert.ok(enhancementSource.includes('Fishing implements'));
+assert.ok(enhancementSource.includes('Boats and vessels are not included as Fishing modifiers.'));
 assert.ok(!enhancementSource.includes('id="fgEaters"'));
 assert.ok(!enhancementSource.includes('id="fgOtherWorkers"'));
 
