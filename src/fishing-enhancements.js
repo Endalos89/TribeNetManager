@@ -1,18 +1,7 @@
 (function(root){
   const FISHING_IMPLEMENTS = [
-    { name:'Boat', output:'PROVS', bonus:'Unknown' },
-    { name:'Coaster', output:'PROVS', bonus:'Unknown' },
-    { name:'Fisher', output:'PROVS', bonus:'Unknown' },
-    { name:'Large Galley', output:'PROVS', bonus:'Unknown' },
-    { name:'Longship', output:'PROVS', bonus:'Unknown' },
-    { name:'Medium Galley', output:'PROVS', bonus:'Unknown' },
-    { name:'Merchant', output:'PROVS', bonus:'Unknown' },
     { name:'Net', output:'PROVS', bonus:'+0.5 AM' },
-    { name:'Small Galley', output:'PROVS', bonus:'Unknown' },
-    { name:'Trader', output:'PROVS', bonus:'Unknown' },
-    { name:'Trawler', output:'PROVS', bonus:'Unknown' },
-    { name:'Trawling Nets', output:'PROVS', bonus:'Unknown' },
-    { name:'Warship', output:'PROVS', bonus:'Unknown' }
+    { name:'Trawling Nets', output:'PROVS', bonus:'Unknown' }
   ];
 
   const SUPPORT_STORAGE_KEY = 'tribenet.compendium.foodGathering.supportTarget.v1';
@@ -49,7 +38,7 @@
     const rows = FISHING_IMPLEMENTS.map(item => `<tr><td>${fishingEntity(item.name)}</td><td>${escapeHtml(item.output)}</td><td><strong>${escapeHtml(item.bonus)}</strong></td></tr>`).join('');
     const section = `<section class="comp-section" data-fishing-implements>
       <h2>Fishing implements</h2>
-      <div class="comp-callout"><strong>Known Fishing bonus:</strong> a Net contributes <strong>+0.5 AM</strong> equivalent. “Unknown” means the item is confirmed as a Fishing implement, but its Fishing bonus has not yet been confirmed.</div>
+      <div class="comp-callout"><strong>Known Fishing bonus:</strong> a Net contributes <strong>+0.5 AM</strong> equivalent. Boats and other vessels are not treated as Fishing implements. “Unknown” means the non-vessel implement is listed for Fishing, but its current Fishing bonus has not yet been confirmed.</div>
       <div class="skill-implement-table-wrap"><table class="skill-implement-table"><thead><tr><th>Implement</th><th>Output</th><th>Fishing bonus</th></tr></thead><tbody>${rows}</tbody></table></div>
     </section>`;
     const anchor = article.querySelector('.comp-info-list') || article.querySelector('.comp-lead') || article.querySelector('.comp-title-row');
@@ -111,10 +100,14 @@
     if (!output) return;
     const section = output.closest('.comp-section');
     if (!section || section.dataset.singleSupportBound === '1') return;
+    section.dataset.singleSupportBound = '1';
 
     const heading = section.querySelector('h2');
     if (!heading || !/Fishing workforce planning/i.test(heading.textContent || '')) return;
-    section.dataset.singleSupportBound = '1';
+
+    const netsInput = root.document.getElementById('fgNets');
+    const netsNote = netsInput?.closest('label')?.querySelector('small');
+    if (netsNote) netsNote.textContent = 'Only Nets are currently treated as Fishing implements. Boats and vessels are not included as Fishing modifiers.';
 
     const intro = section.querySelector('p');
     if (intro) intro.textContent = 'Enter one target workforce / population value. The result shows the Fishing AM needed to support that target while also sustaining the fishers themselves.';
