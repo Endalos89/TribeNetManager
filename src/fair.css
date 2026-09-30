@@ -30,6 +30,11 @@
 .fair-table-wrap { overflow:auto; border:1px solid #263747; border-radius:10px; }
 .fair-table { width:100%; border-collapse:collapse; min-width:940px; }
 .fair-table th { position:sticky; top:0; z-index:1; text-align:left; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:#8fa3b2; background:#111c25; border-bottom:1px solid #314454; padding:11px 12px; white-space:nowrap; }
+.fair-table th.sortable-th { cursor:pointer; user-select:none; padding-right:24px; position:sticky; }
+.fair-table th.sortable-th:hover { color:#d7e3ea; background:#172631; }
+.fair-table th.sortable-th::after { content:'↕'; position:absolute; right:8px; color:#526b7a; font-size:10px; }
+.fair-table th.sortable-th.sort-asc::after { content:'▲'; color:#9ed1a3; }
+.fair-table th.sortable-th.sort-desc::after { content:'▼'; color:#9ed1a3; }
 .fair-table td { padding:10px 12px; border-bottom:1px solid #1f2d38; vertical-align:top; font-size:13px; }
 .fair-table tbody tr:last-child td { border-bottom:0; }
 .fair-table tbody tr:hover { background:#13212b; }

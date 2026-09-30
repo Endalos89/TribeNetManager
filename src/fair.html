@@ -67,15 +67,19 @@
       <section class="fair-panel fair-wide-panel" data-section="market-movement">
         <div class="fair-panel-heading">
           <div><p class="eyebrow">MARKET MOVEMENT</p><h2>Fair-to-Fair price changes</h2></div>
-          <div class="fair-filter-row">
-            <label>Sort <select id="priceSortField"><option value="sellDeltaPct">Sell change</option><option value="purchaseDeltaPct">Buy change</option><option value="sellPrice">Sell price</option><option value="purchasePrice">Buy price</option><option value="name">Item</option></select></label>
-            <select id="priceSortDirection" aria-label="Sort direction"><option value="desc">Most → least</option><option value="asc">Least → most</option></select>
-            <label class="fair-search">Filter <input id="priceChangeSearch" type="search" placeholder="Item…" /></label>
-          </div>
+          <label class="fair-search">Filter <input id="priceChangeSearch" type="search" placeholder="Item…" /></label>
         </div>
         <div id="priceChangeSummary" class="fair-note"></div>
-        <div class="fair-table-wrap"><table class="fair-table">
-          <thead><tr><th>Item</th><th>Sell to Fair</th><th>Previous</th><th>Change</th><th>Buy from Fair</th><th>Previous</th><th>Change</th></tr></thead>
+        <div class="fair-table-wrap"><table class="fair-table" data-sort-table="price">
+          <thead><tr>
+            <th class="sortable-th" data-sort-key="name">Item</th>
+            <th class="sortable-th" data-sort-key="sellPrice">Sell to Fair</th>
+            <th class="sortable-th" data-sort-key="oldSellPrice">Previous</th>
+            <th class="sortable-th" data-sort-key="sellDeltaPct">Change</th>
+            <th class="sortable-th" data-sort-key="purchasePrice">Buy from Fair</th>
+            <th class="sortable-th" data-sort-key="oldPurchasePrice">Previous</th>
+            <th class="sortable-th" data-sort-key="purchaseDeltaPct">Change</th>
+          </tr></thead>
           <tbody id="priceChangeBody"></tbody>
         </table></div>
       </section>
@@ -83,15 +87,19 @@
       <section class="fair-panel fair-wide-panel" data-section="holdings">
         <div class="fair-panel-heading">
           <div><p class="eyebrow">YOUR HOLDINGS</p><h2>Sell prices across all Tribes</h2></div>
-          <div class="fair-filter-row">
-            <label>Sort <select id="inventorySortField"><option value="potentialSale">Potential sale</option><option value="quantity">Quantity</option><option value="sellPrice">Fair pays</option><option value="limit">Fair limit</option><option value="change">Price change</option><option value="name">Item</option></select></label>
-            <select id="inventorySortDirection" aria-label="Sort direction"><option value="desc">Most → least</option><option value="asc">Least → most</option></select>
-            <label class="fair-search">Filter <input id="inventorySearch" type="search" placeholder="Item…" /></label>
-          </div>
+          <label class="fair-search">Filter <input id="inventorySearch" type="search" placeholder="Item…" /></label>
         </div>
         <p id="inventoryContext" class="fair-note"></p>
-        <div class="fair-table-wrap"><table class="fair-table">
-          <thead><tr><th>Item</th><th>Combined Qty</th><th>Fair pays each</th><th>Fair Qty Limit</th><th>Potential sale</th><th>Price change</th><th>Where held</th></tr></thead>
+        <div class="fair-table-wrap"><table class="fair-table" data-sort-table="inventory">
+          <thead><tr>
+            <th class="sortable-th" data-sort-key="name">Item</th>
+            <th class="sortable-th" data-sort-key="quantity">Combined Qty</th>
+            <th class="sortable-th" data-sort-key="sellPrice">Fair pays each</th>
+            <th class="sortable-th" data-sort-key="limit">Fair Qty Limit</th>
+            <th class="sortable-th" data-sort-key="potentialSale">Potential sale</th>
+            <th class="sortable-th" data-sort-key="change">Price change</th>
+            <th class="sortable-th" data-sort-key="locationCount">Where held</th>
+          </tr></thead>
           <tbody id="inventoryBody"></tbody>
         </table></div>
       </section>
@@ -99,35 +107,48 @@
       <section class="fair-panel fair-wide-panel" data-section="resource-buying">
         <div class="fair-panel-heading fair-profit-heading">
           <div><p class="eyebrow">BUY RESOURCES</p><h2>Resources you want from this Fair</h2></div>
-          <div class="fair-filter-row">
-            <label>Sort <select id="resourceBuySortField"><option value="purchasePrice">Buy price</option><option value="purchaseQuantityLimit">Available quantity</option><option value="name">Item</option></select></label>
-            <select id="resourceBuySortDirection" aria-label="Sort direction"><option value="asc">Least → most</option><option value="desc">Most → least</option></select>
-            <label class="fair-search">Filter <input id="resourceBuySearch" type="search" placeholder="Item…" /></label>
-          </div>
+          <label class="fair-search">Filter <input id="resourceBuySearch" type="search" placeholder="Item…" /></label>
         </div>
         <div id="resourceBuySummary" class="profit-summary"></div>
         <p class="fair-note">Each selected resource counts as one of the Fair's maximum trades. Enter the quantity you want, or choose <strong>All</strong> to use the Fair's full purchase limit.</p>
-        <div class="fair-table-wrap"><table class="fair-table">
-          <thead><tr><th>Buy</th><th>Item</th><th>Fair price</th><th>Fair limit</th><th>Amount wanted</th><th>All</th><th>Silver spend</th></tr></thead>
+        <div class="fair-table-wrap"><table class="fair-table" data-sort-table="resourceBuy">
+          <thead><tr>
+            <th class="sortable-th" data-sort-key="selected">Buy</th>
+            <th class="sortable-th" data-sort-key="name">Item</th>
+            <th class="sortable-th" data-sort-key="purchasePrice">Fair price</th>
+            <th class="sortable-th" data-sort-key="purchaseQuantityLimit">Fair limit</th>
+            <th class="sortable-th" data-sort-key="plannedQuantity">Amount wanted</th>
+            <th class="sortable-th" data-sort-key="allSelected">All</th>
+            <th class="sortable-th" data-sort-key="plannedSpend">Silver spend</th>
+          </tr></thead>
           <tbody id="resourceBuyBody"></tbody>
         </table></div>
       </section>
 
       <section class="fair-panel fair-wide-panel" data-section="profit-calculator">
         <div class="fair-panel-heading fair-profit-heading">
-          <div><p class="eyebrow">PROFIT CALCULATOR</p><h2>Craft from what you already possess</h2></div>
+          <div><p class="eyebrow">PROFIT CALCULATOR</p><h2>Plan production for the Fair</h2></div>
           <div class="fair-filter-row">
             <label>Skills <select id="skillGapSelect"><option value="0">Current skills only</option><option value="1">Allow 1 skillup</option><option value="2">Allow 2 skillups</option><option value="3">Allow 3 skillups</option><option value="999">Show any skill gap</option></select></label>
             <label class="toggle-control"><input id="positiveProfitToggle" type="checkbox" /><span>Positive profit only</span></label>
-            <label>Sort <select id="profitSortField"><option value="totalProfit">Total profit</option><option value="profitEach">Profit each</option><option value="sellPrice">Fair pays</option><option value="sellQuantity">Sell quantity</option><option value="inputValue">Input value</option><option value="skillUpsNeeded">Skillups needed</option><option value="item">Item</option></select></label>
-            <select id="profitSortDirection" aria-label="Sort direction"><option value="desc">Most → least</option><option value="asc">Least → most</option></select>
             <label class="fair-search">Filter <input id="profitSearch" type="search" placeholder="Item…" /></label>
           </div>
         </div>
         <div id="profitSummary" class="profit-summary"></div>
-        <p class="fair-note">Input value is still calculated when you do not yet have the required skill. The Skills filter lets you include recipes that are 1, 2 or 3 skillups away. Recursive material production is considered for the input calculation; facility/location requirements remain flagged separately.</p>
-        <div class="fair-table-wrap"><table class="fair-table">
-          <thead><tr><th>Use</th><th>Best trades</th><th>Item</th><th>Skill gap</th><th>Crafting route</th><th>Fair pays</th><th>Sell Qty</th><th>Input value</th><th>Profit each</th><th>Total profit</th></tr></thead>
+        <p class="fair-note">Production is planned to the Fair quantity limit from known Compendium sources rather than capped by what is currently in inventory. The Planning inputs column shows the total source resources you need to obtain. Skill gaps and facility/location conditions remain visible for planning.</p>
+        <div class="fair-table-wrap"><table class="fair-table" data-sort-table="profit">
+          <thead><tr>
+            <th class="sortable-th" data-sort-key="included">Use</th>
+            <th class="sortable-th" data-sort-key="selectedTrade">Best trades</th>
+            <th class="sortable-th" data-sort-key="item">Item</th>
+            <th class="sortable-th" data-sort-key="skillUpsNeeded">Skill gap</th>
+            <th class="sortable-th" data-sort-key="recipeName">Planning inputs</th>
+            <th class="sortable-th" data-sort-key="sellPrice">Fair pays</th>
+            <th class="sortable-th" data-sort-key="sellQuantity">Planned Sell Qty</th>
+            <th class="sortable-th" data-sort-key="inputValue">Input value</th>
+            <th class="sortable-th" data-sort-key="profitEach">Profit each</th>
+            <th class="sortable-th" data-sort-key="totalProfit">Total profit</th>
+          </tr></thead>
           <tbody id="profitBody"></tbody>
         </table></div>
       </section>
@@ -137,14 +158,23 @@
           <div><p class="eyebrow">PURCHASE → CRAFT → NEXT FAIR</p><h2>Buy inputs now, sell crafted output later</h2></div>
           <div class="fair-filter-row">
             <label class="toggle-control"><input id="purchasePositiveToggle" type="checkbox" checked /><span>Positive profit only</span></label>
-            <label>Sort <select id="purchaseSortField"><option value="profitPerBatch">Profit / batch</option><option value="maxProfit">Max profit</option><option value="roi">ROI</option><option value="currentFairCost">Cost / batch</option><option value="nextSellPrice">Next sell price</option><option value="item">Item</option></select></label>
-            <select id="purchaseSortDirection" aria-label="Sort direction"><option value="desc">Most → least</option><option value="asc">Least → most</option></select>
             <label class="fair-search">Filter <input id="purchaseSearch" type="search" placeholder="Item…" /></label>
           </div>
         </div>
         <div id="purchaseCraftNote" class="fair-note"></div>
-        <div class="fair-table-wrap"><table class="fair-table">
-          <thead><tr><th>Craft item</th><th>Buy at this Fair</th><th>Cost / batch</th><th>Output</th><th>Next sell price</th><th>Profit / batch</th><th>ROI</th><th>Max batches</th><th>Max profit</th><th>Trades now</th></tr></thead>
+        <div class="fair-table-wrap"><table class="fair-table" data-sort-table="purchase">
+          <thead><tr>
+            <th class="sortable-th" data-sort-key="item">Craft item</th>
+            <th class="sortable-th" data-sort-key="inputText">Buy at this Fair</th>
+            <th class="sortable-th" data-sort-key="currentFairCost">Cost / batch</th>
+            <th class="sortable-th" data-sort-key="outputQuantity">Output</th>
+            <th class="sortable-th" data-sort-key="nextSellPrice">Next sell price</th>
+            <th class="sortable-th" data-sort-key="profitPerBatch">Profit / batch</th>
+            <th class="sortable-th" data-sort-key="roi">ROI</th>
+            <th class="sortable-th" data-sort-key="maxBatches">Max batches</th>
+            <th class="sortable-th" data-sort-key="maxProfit">Max profit</th>
+            <th class="sortable-th" data-sort-key="currentFairTradesNeeded">Trades now</th>
+          </tr></thead>
           <tbody id="purchaseCraftBody"></tbody>
         </table></div>
       </section>
@@ -153,6 +183,7 @@
   <script src="fair-core.js"></script>
   <script src="fair-analysis.js"></script>
   <script src="fair-turns.js"></script>
+  <script src="fair-table-sort.js"></script>
   <script src="fair.js"></script>
 </body>
 </html>

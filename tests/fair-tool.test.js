@@ -18,7 +18,7 @@ const { parseFairWorkbook } = require('../src/fair-parser');
     ['Frame','Normal',20,100,2000,null,0,'Frame','Normal',25,80]
   ];
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Exchange List');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.ao_to_sheet ? XLSX.utils.ao_to_sheet(rows) : XLSX.utils.aoa_to_sheet(rows), 'Exchange List');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tribenet-fair-parser-'));
   const filePath = path.join(root, '906-04 Fair Prices.xlsx');
   XLSX.writeFile(workbook, filePath);
@@ -57,21 +57,26 @@ const { parseFairWorkbook } = require('../src/fair-parser');
 
 (function fairCoreRegression() {
   const skillDefinitions = [
-    { name:'Woodwork', shortname:'Wd' }, { name:'Metalwork', shortname:'Mtl' }, { name:'Economics', shortname:'Eco' }
+    { name:'Woodwork', shortname:'Wd' }, { name:'Metalwork', shortname:'Mtl' }, { name:'Economics', shortname:'Eco' },
+    { name:'Forestry', shortname:'For' }, { name:'Mining', shortname:'Min' }
   ];
   const resultTurn = { turnKey:'906-03', units:[
-    { unitCode:'0485', unitType:'Tribe', skills:{ Wd:3, Mtl:2, Eco:5 }, resources:{ 'Raw Materials':{ Log:4 }, Minerals:{ Iron:2 } } },
+    { unitCode:'0485', unitType:'Tribe', skills:{ Wd:3, Mtl:2, Eco:5, For:1, Min:1 }, resources:{ 'Raw Materials':{ Log:4 }, Minerals:{ Iron:2 } } },
     { unitCode:'0485e1', unitType:'Element', skills:{}, resources:{ 'Finished Goods':{ Frame:1 } } }
   ] };
   const recipes = [
+    { key:'source-log', name:'Fell Logs', primarySkill:'Forestry', skillLevel:1, requirements:[], facilities:[], conditions:['Forest or Jungle'], inputs:[], output:{ item:'Log', quantity:4 } },
+    { key:'source-iron', name:'Mine Iron', primarySkill:'Mining', skillLevel:1, requirements:[], facilities:[], conditions:['Iron source'], inputs:[], output:{ item:'Iron', quantity:1 } },
     { key:'frame', name:'Frame', primarySkill:'Woodwork', skillLevel:2, requirements:[], facilities:[], conditions:[], inputs:[{ item:'Log', quantity:1 }], output:{ item:'Frame', quantity:2 } },
-    { key:'widget', name:'Widget', primarySkill:'Metalwork', skillLevel:2, requirements:[], facilities:[], conditions:[], inputs:[{ item:'Frame', quantity:2 }, { item:'Iron', quantity:1 }], output:{ item:'Widget', quantity:1 } }
+    { key:'widget', name:'Widget', primarySkill:'Metalwork', skillLevel:2, requirements:[], facilities:[], conditions:[], inputs:[{ item:'Frame', quantity:2 }, { item:'Iron', quantity:1 }], output:{ item:'Widget', quantity:1 } },
+    { key:'wagon', name:'Wagon', primarySkill:'Woodwork', skillLevel:3, requirements:[], facilities:[], conditions:[], inputs:[{ item:'Log', quantity:6 }], output:{ item:'Wagon', quantity:1 } }
   ];
   const fair = { turnKey:'906-04', turnSort:90604, maxTransactions:10, items:[
-    { name:'Log', sellPrice:4, sellQuantityLimit:100, purchasePrice:5, purchaseQuantityLimit:100 },
+    { name:'Log', sellPrice:4, sellQuantityLimit:1000, purchasePrice:5, purchaseQuantityLimit:1000 },
     { name:'Frame', sellPrice:20, sellQuantityLimit:100, purchasePrice:25, purchaseQuantityLimit:100 },
-    { name:'Iron', sellPrice:6, sellQuantityLimit:100, purchasePrice:8, purchaseQuantityLimit:100 },
-    { name:'Widget', sellPrice:60, sellQuantityLimit:10, purchasePrice:75, purchaseQuantityLimit:10 }
+    { name:'Iron', sellPrice:6, sellQuantityLimit:1000, purchasePrice:8, purchaseQuantityLimit:1000 },
+    { name:'Widget', sellPrice:60, sellQuantityLimit:10, purchasePrice:75, purchaseQuantityLimit:10 },
+    { name:'Wagon', sellPrice:100, sellQuantityLimit:160, purchasePrice:125, purchaseQuantityLimit:120 }
   ] };
 
   const inventory = core.aggregateInventory(resultTurn);
@@ -99,15 +104,24 @@ const { parseFairWorkbook } = require('../src/fair-parser');
   assert.strictEqual(actual.valuationTurn, '906-10');
   assert.strictEqual(actual.profitPerBatch, 32);
 
+  const sourceRows = analysis.buildProfitRows({ recipes, resultTurn, skillDefinitions, snapshot:fair });
+  const wagon = sourceRows.find(row => row.key === 'WAGON');
+  assert(wagon.sourceAvailable, 'Wagon should be production-available because Logs have a Forestry source.');
+  assert.strictEqual(wagon.sellQuantity, 160, 'Profit planning should target the Fair quantity limit rather than current Log stock.');
+  const wagonLogs = wagon.plannedInputs.find(row => row.key === 'LOG');
+  assert.strictEqual(wagonLogs.quantity, 960, '160 Wagons should plan for 960 Logs.');
+  assert.strictEqual(wagonLogs.sourceRecipe, 'Fell Logs');
+  assert.strictEqual(wagon.inputValue, 3840, 'Planned input value should value all 960 Logs at their Fair opportunity value.');
+
   const behindOnSkill = JSON.parse(JSON.stringify(resultTurn));
   behindOnSkill.units[0].skills.Mtl = 0;
   const gapRows = analysis.buildProfitRows({ recipes, resultTurn:behindOnSkill, skillDefinitions, snapshot:fair });
   const gapWidget = gapRows.find(row => row.key === 'WIDGET');
-  assert.strictEqual(gapWidget.skillUpsNeeded, 2, 'Profit analysis should identify how many skillups the best Tribe is missing.');
+  assert.strictEqual(gapWidget.skillUpsNeeded, 2, 'Profit analysis should identify how many skillups are missing across the production chain.');
   assert.strictEqual(gapWidget.craftableNow, false);
-  assert.strictEqual(gapWidget.batches, 2, 'Missing skills must not suppress the material/input calculation.');
-  assert.strictEqual(gapWidget.inputValue, 40);
-  assert.strictEqual(gapWidget.totalProfit, 80, 'Profit should still be shown for recipes that are within a future skill plan.');
+  assert.strictEqual(gapWidget.batches, 10, 'Missing skills must not suppress Fair-limit production planning.');
+  assert.strictEqual(gapWidget.inputValue, 100);
+  assert.strictEqual(gapWidget.totalProfit, 500, 'Profit should still be shown for recipes that are within a future skill plan.');
   assert.deepStrictEqual(analysis.sortRows([{ value:1 }, { value:3 }, { value:2 }], 'value', 'desc').map(row => row.value), [3,2,1]);
 })();
 
@@ -118,13 +132,18 @@ const { parseFairWorkbook } = require('../src/fair-parser');
   assert.match(src('preload.js'), /fair-launcher\.js/);
   assert.match(src('fair-launcher.js'), /fair\.html/);
   assert.match(src('fair.html'), /fair-analysis\.js/);
+  assert.match(src('fair.html'), /fair-table-sort\.js/);
+  assert.match(src('fair.html'), /sortable-th/);
   assert.match(src('fair.html'), /resourceBuyBody/);
   assert.match(src('fair.html'), /skillGapSelect/);
   assert.match(src('fair.html'), /PURCHASE → CRAFT → NEXT FAIR/i);
   assert.match(src('fair.js'), /baselineSnapshotFor/);
   assert.match(src('fair.js'), /remainingSaleTrades/);
   assert.match(src('fair.js'), /initializeCollapsibles/);
+  assert.match(src('fair-table-sort.js'), /Click to sort/);
+  assert.match(src('fair-table-sort.js'), /input\[type="checkbox"\]/);
   assert.match(src('fair.css'), /section-collapsed/);
+  assert.match(src('fair.css'), /sortable-th/);
   assert.match(src('fair.css'), /\.fair-app\s*\{[^}]*height:100%[^}]*overflow-y:auto/s, 'Fair page must provide its own vertical scrolling because the global shell hides body overflow.');
   assert.match(src('update-view-state.js'), /fair\.html/);
 })();
