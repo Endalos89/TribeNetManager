@@ -1,4 +1,5 @@
-.fair-app { min-height:100vh; background:#0b1117; color:#e9f0f5; }
+.fair-app { height:100%; min-height:0; overflow-y:auto; overflow-x:hidden; background:#0b1117; color:#e9f0f5; }
+.fair-app > .app-header { position:sticky; top:0; z-index:20; }
 .fair-main { max-width:1500px; margin:0 auto; padding:28px; display:grid; gap:20px; }
 .fair-hero { display:flex; justify-content:space-between; gap:28px; align-items:flex-end; padding:28px; border:1px solid #263747; border-radius:16px; background:linear-gradient(135deg,#101b25,#0d151d); }
 .fair-hero h1 { margin:4px 0 8px; font-size:36px; }
