@@ -19,7 +19,7 @@
     const tribes = (resultTurn?.units || []).filter(unit => String(unit.unitType || '').toLowerCase() === 'tribe');
     if (!tribes.length) return {
       ok:false, unitCode:null, skillUpsNeeded:null, maxGap:null,
-      missing:requirements.map(req => ({ ...req, current:null, gap:null }))
+      missing:requirements.map(req => ({ skill:req.skill, required:req.level, current:null, gap:null }))
     };
 
     let best = null;
@@ -51,133 +51,222 @@
     return map;
   }
 
-  function stockState(inventory = []) {
-    const stock = new Map();
-    for (const row of inventory) stock.set(row.key || itemKey(row.name), Number(row.quantity || 0));
-    return { stock, origin:new Map(stock), ledger:new Map() };
+  function materialInputs(recipe) {
+    return (recipe?.inputs || []).filter(input => !input.optional && Number(input.quantity || 0) > 0);
   }
 
-  function cloneState(state) {
-    return { stock:new Map(state.stock), origin:new Map(state.origin), ledger:new Map(state.ledger) };
+  function contextWarnings(recipe) {
+    return [
+      ...(recipe?.facilities || []).map(value => `Facility: ${value}`),
+      ...(recipe?.conditions || []).map(value => `Condition: ${value}`)
+    ];
   }
 
-  function consumeStock(key, quantity, state) {
-    const available = Math.max(0, Number(state.stock.get(key) || 0));
-    const used = Math.min(available, Math.max(0, Number(quantity || 0)));
-    if (used <= 0) return 0;
-    state.stock.set(key, available - used);
-    const original = Math.max(0, Number(state.origin.get(key) || 0));
-    const fromOriginal = Math.min(original, used);
-    if (fromOriginal > 0) {
-      state.origin.set(key, original - fromOriginal);
-      state.ledger.set(key, Number(state.ledger.get(key) || 0) + fromOriginal);
+  function combineRequirements(rows = []) {
+    const map = new Map();
+    for (const row of rows) {
+      const key = row.key || itemKey(row.name);
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, { ...row, key, quantity:0, routes:new Set() });
+      const current = map.get(key);
+      current.quantity += Number(row.quantity || 0);
+      if (row.sourceRecipe) current.routes.add(row.sourceRecipe);
+      for (const route of row.routes || []) current.routes.add(route);
+      if (row.sourceAvailable === false) current.sourceAvailable = false;
+      if (row.sourceAvailable === true && current.sourceAvailable !== false) current.sourceAvailable = true;
+      if (!current.name && row.name) current.name = row.name;
+      if (!current.sourceSkill && row.sourceSkill) current.sourceSkill = row.sourceSkill;
+      if (!current.sourceOutputQty && row.sourceOutputQty) current.sourceOutputQty = row.sourceOutputQty;
+      current.warnings = [...new Set([...(current.warnings || []), ...(row.warnings || [])])];
     }
-    return used;
+    return [...map.values()].map(row => ({ ...row, routes:[...row.routes] }));
   }
 
-  function validMaterialRecipe(recipe) {
-    if (!recipe?.output?.item) return false;
-    if ((recipe.facilities || []).length || (recipe.conditions || []).length) return false;
-    return (recipe.inputs || []).some(input => !input.optional && Number(input.quantity || 0) > 0);
+  function chooseBetterPlan(current, candidate) {
+    if (!candidate) return current;
+    if (!current) return candidate;
+    if (candidate.sourceAvailable !== current.sourceAvailable) return candidate.sourceAvailable ? candidate : current;
+    const candidateGap = candidate.skillUpsNeeded == null ? Infinity : candidate.skillUpsNeeded;
+    const currentGap = current.skillUpsNeeded == null ? Infinity : current.skillUpsNeeded;
+    if (candidateGap !== currentGap) return candidateGap < currentGap ? candidate : current;
+    if (candidate.unknownSources !== current.unknownSources) return candidate.unknownSources < current.unknownSources ? candidate : current;
+    return candidate.requirements.length < current.requirements.length ? candidate : current;
   }
 
-  function ensureItem(key, quantity, state, recipesByOutput, stack = new Set()) {
-    let attempt = cloneState(state);
-    let remaining = Math.max(0, Number(quantity || 0));
-    remaining -= consumeStock(key, remaining, attempt);
-    if (remaining <= 1e-9) return attempt;
-    if (stack.has(key)) return null;
-
-    for (const recipe of (recipesByOutput.get(key) || []).filter(validMaterialRecipe)) {
-      let candidate = cloneState(attempt);
-      const outputQty = Math.max(1e-9, Number(recipe.output?.quantity || 1));
-      const batches = Math.ceil(remaining / outputQty);
+  function sourcePlanForItem(item, quantity, context, stack = new Set()) {
+    const requested = Math.max(0, Number(quantity || 0));
+    const keys = core.itemOptions(item);
+    let best = null;
+    for (const key of keys) {
+      if (!key || stack.has(key)) continue;
+      const candidates = context.recipesByOutput.get(key) || [];
       const nextStack = new Set(stack); nextStack.add(key);
-      let ok = true;
-      for (let batch = 0; batch < batches && ok; batch += 1) {
-        for (const input of recipe.inputs || []) {
-          if (input.optional || Number(input.quantity || 0) <= 0) continue;
-          let fulfilled = null;
-          for (const option of core.itemOptions(input.item)) {
-            fulfilled = ensureItem(option, Number(input.quantity), candidate, recipesByOutput, nextStack);
-            if (fulfilled) break;
-          }
-          if (!fulfilled) { ok = false; break; }
-          candidate = fulfilled;
-        }
-        if (ok) candidate.stock.set(key, Number(candidate.stock.get(key) || 0) + outputQty);
+
+      // A no-material production recipe is a source: Forestry -> Logs, Mining -> ore, etc.
+      for (const recipe of candidates.filter(row => materialInputs(row).length === 0)) {
+        const skill = bestSkillGap(recipe, context.resultTurn, context.skillDefinitions);
+        const outputQty = Math.max(1e-9, Number(recipe.output?.quantity || 1));
+        const plan = {
+          sourceAvailable:true,
+          unknownSources:0,
+          skillUpsNeeded:skill.skillUpsNeeded,
+          missingSkills:skill.missing || [],
+          warnings:contextWarnings(recipe),
+          requirements:[{
+            key,
+            name:recipe.output?.item || item,
+            quantity:requested,
+            sourceAvailable:true,
+            sourceRecipe:recipe.name,
+            sourceSkill:recipe.primarySkill || null,
+            sourceOutputQty:outputQty,
+            sourceBatches:Math.ceil(requested / outputQty),
+            warnings:contextWarnings(recipe)
+          }]
+        };
+        best = chooseBetterPlan(best, plan);
       }
-      if (!ok) continue;
-      if (consumeStock(key, remaining, candidate) + 1e-9 >= remaining) return candidate;
+
+      // Otherwise recursively reduce manufactured inputs to their known sources.
+      for (const recipe of candidates.filter(row => materialInputs(row).length > 0)) {
+        const outputQty = Math.max(1e-9, Number(recipe.output?.quantity || 1));
+        const batches = Math.ceil(requested / outputQty);
+        const skill = bestSkillGap(recipe, context.resultTurn, context.skillDefinitions);
+        const requirementRows = [];
+        const missingSkills = [...(skill.missing || [])];
+        const warnings = [...contextWarnings(recipe)];
+        let sourceAvailable = true;
+        let unknownSources = 0;
+        let skillUpsNeeded = skill.skillUpsNeeded == null ? null : Number(skill.skillUpsNeeded || 0);
+
+        for (const input of materialInputs(recipe)) {
+          const child = sourcePlanForItem(input.item, Number(input.quantity) * batches, context, nextStack);
+          if (!child) {
+            sourceAvailable = false;
+            unknownSources += 1;
+            requirementRows.push({ key:itemKey(input.item), name:input.item, quantity:Number(input.quantity) * batches, sourceAvailable:false, warnings:[] });
+            continue;
+          }
+          sourceAvailable = sourceAvailable && child.sourceAvailable;
+          unknownSources += Number(child.unknownSources || 0);
+          requirementRows.push(...child.requirements);
+          missingSkills.push(...(child.missingSkills || []));
+          warnings.push(...(child.warnings || []));
+          if (skillUpsNeeded == null || child.skillUpsNeeded == null) skillUpsNeeded = null;
+          else skillUpsNeeded += Number(child.skillUpsNeeded || 0);
+        }
+
+        best = chooseBetterPlan(best, {
+          sourceAvailable,
+          unknownSources,
+          skillUpsNeeded,
+          missingSkills,
+          warnings:[...new Set(warnings)],
+          requirements:combineRequirements(requirementRows)
+        });
+      }
+
+      // If the Compendium has no way to create it, expose it as an unresolved source requirement.
+      if (!candidates.length) {
+        best = chooseBetterPlan(best, {
+          sourceAvailable:false,
+          unknownSources:1,
+          skillUpsNeeded:0,
+          missingSkills:[], warnings:[],
+          requirements:[{ key, name:item, quantity:requested, sourceAvailable:false, warnings:[] }]
+        });
+      }
     }
-    return null;
+    return best;
   }
 
-  function simulateMaterials(recipe, inventory, recipesByOutput, batchCap = 1) {
-    const contextBlocked = (recipe.facilities || []).length || (recipe.conditions || []).length;
-    const inputs = (recipe.inputs || []).filter(input => !input.optional && Number(input.quantity || 0) > 0);
-    if (!inputs.length) return { batches:0, producedQuantity:0, ledger:new Map(), contextBlocked:false, reason:'No material-limited crafting recipe.' };
-    let state = stockState(inventory);
-    let batches = 0;
-    const cap = Math.max(1, Math.min(10000, Number.isFinite(Number(batchCap)) ? Math.ceil(Number(batchCap)) : 10000));
-    for (let batch = 0; batch < cap; batch += 1) {
-      let attempt = cloneState(state);
-      let ok = true;
-      for (const input of inputs) {
-        let fulfilled = null;
-        for (const option of core.itemOptions(input.item)) {
-          fulfilled = ensureItem(option, Number(input.quantity), attempt, recipesByOutput, new Set([itemKey(recipe.output?.item)]));
-          if (fulfilled) break;
-        }
-        if (!fulfilled) { ok = false; break; }
-        attempt = fulfilled;
-      }
-      if (!ok) break;
-      state = attempt; batches += 1;
+  function valueRequirements(requirements, snapshot) {
+    const prices = core.fairItemMap(snapshot);
+    let value = 0;
+    const unpriced = [];
+    const parts = [];
+    for (const requirement of requirements || []) {
+      const fair = prices.get(requirement.key || itemKey(requirement.name));
+      const price = fair && Number(fair.sellPrice) > 0 ? Number(fair.sellPrice) : null;
+      if (price == null) unpriced.push(requirement.key || itemKey(requirement.name));
+      else value += Number(requirement.quantity || 0) * price;
+      parts.push({
+        ...requirement,
+        unitValue:price,
+        value:price == null ? null : Number(requirement.quantity || 0) * price
+      });
     }
-    return {
-      batches,
-      producedQuantity:batches * Number(recipe.output?.quantity || 1),
-      ledger:state.ledger,
-      contextBlocked:Boolean(contextBlocked),
-      reason:batches ? (contextBlocked ? 'Materials are available, but facility/location prerequisites still need checking.' : '') : 'Current combined holdings cannot supply one complete production chain.'
-    };
+    return { value, unpriced, parts, complete:unpriced.length === 0 };
   }
 
   function buildProfitRows({ recipes = [], resultTurn = null, skillDefinitions = [], snapshot = null } = {}) {
     if (!snapshot) return [];
-    const inventory = core.aggregateInventory(resultTurn);
     const recipesByOutput = recipeMap(recipes);
     const fairItems = core.fairItemMap(snapshot);
+    const context = { recipesByOutput, resultTurn, skillDefinitions };
     const candidates = [];
 
     for (const recipe of recipes) {
       const key = itemKey(recipe?.output?.item);
       const fair = fairItems.get(key);
       if (!fair || !(Number(fair.sellPrice) > 0)) continue;
+      const directInputs = materialInputs(recipe);
+      if (!directInputs.length) continue;
+
       const outputQty = Math.max(1e-9, Number(recipe.output?.quantity || 1));
-      const fairLimit = Number(fair.sellQuantityLimit);
-      const batchCap = Number.isFinite(fairLimit) && fairLimit > 0 ? Math.ceil(fairLimit / outputQty) : 10000;
-      const material = simulateMaterials(recipe, inventory, recipesByOutput, batchCap);
-      const skill = bestSkillGap(recipe, resultTurn, skillDefinitions);
-      const sellQty = material.batches > 0
-        ? Math.min(material.producedQuantity, Number.isFinite(fairLimit) && fairLimit > 0 ? fairLimit : material.producedQuantity)
-        : 0;
-      const inputValue = core.valueLedger(material.ledger, snapshot);
-      const revenue = sellQty * Number(fair.sellPrice || 0);
-      const totalProfit = sellQty > 0 ? revenue - inputValue.value : null;
-      const craftableNow = sellQty > 0 && skill.ok && !material.contextBlocked;
+      const fairLimitRaw = Number(fair.sellQuantityLimit);
+      const sellQuantity = Number.isFinite(fairLimitRaw) && fairLimitRaw > 0 ? fairLimitRaw : outputQty;
+      const batches = Math.ceil(sellQuantity / outputQty);
+      const rootSkill = bestSkillGap(recipe, resultTurn, skillDefinitions);
+      const requirementRows = [];
+      const missingSkills = [...(rootSkill.missing || [])];
+      const warnings = [...contextWarnings(recipe)];
+      let sourceAvailable = true;
+      let unknownSources = 0;
+      let skillUpsNeeded = rootSkill.skillUpsNeeded == null ? null : Number(rootSkill.skillUpsNeeded || 0);
+
+      for (const input of directInputs) {
+        const child = sourcePlanForItem(input.item, Number(input.quantity) * batches, context, new Set([key]));
+        if (!child) {
+          sourceAvailable = false;
+          unknownSources += 1;
+          requirementRows.push({ key:itemKey(input.item), name:input.item, quantity:Number(input.quantity) * batches, sourceAvailable:false, warnings:[] });
+          continue;
+        }
+        sourceAvailable = sourceAvailable && child.sourceAvailable;
+        unknownSources += Number(child.unknownSources || 0);
+        requirementRows.push(...child.requirements);
+        missingSkills.push(...(child.missingSkills || []));
+        warnings.push(...(child.warnings || []));
+        if (skillUpsNeeded == null || child.skillUpsNeeded == null) skillUpsNeeded = null;
+        else skillUpsNeeded += Number(child.skillUpsNeeded || 0);
+      }
+
+      const plannedInputs = combineRequirements(requirementRows);
+      const inputValue = valueRequirements(plannedInputs, snapshot);
+      const revenue = sellQuantity * Number(fair.sellPrice || 0);
+      const totalProfit = revenue - inputValue.value;
+      const readyNow = sourceAvailable && Number(skillUpsNeeded || 0) === 0;
+      const unresolved = plannedInputs.filter(row => row.sourceAvailable === false).map(row => row.name || row.key);
+      const reasonParts = [];
+      if (unresolved.length) reasonParts.push(`No production source modelled for: ${unresolved.join(', ')}`);
+      if (skillUpsNeeded > 0) reasonParts.push(`${skillUpsNeeded} skillup${skillUpsNeeded === 1 ? '' : 's'} needed across the production chain`);
+      if (warnings.length) reasonParts.push('Check listed facility/location conditions');
+
       candidates.push({
         key, item:fair.name, recipeKey:recipe.key, recipeName:recipe.name,
-        craftTribe:skill.unitCode, craftableNow, skillUpsNeeded:skill.skillUpsNeeded,
-        maxSkillGap:skill.maxGap, missingSkills:skill.missing, contextBlocked:material.contextBlocked,
-        reason:craftableNow ? '' : material.reason || (skill.ok ? '' : 'Required skill levels are not yet available.'),
-        sellPrice:Number(fair.sellPrice || 0), fairLimit:Number.isFinite(fairLimit) ? fairLimit : null,
-        batches:material.batches, producedQuantity:material.producedQuantity, sellQuantity:sellQty,
+        craftTribe:rootSkill.unitCode, craftableNow:readyNow, sourceAvailable,
+        skillUpsNeeded, maxSkillGap:rootSkill.maxGap, missingSkills,
+        contextBlocked:warnings.length > 0, contextWarnings:[...new Set(warnings)],
+        reason:reasonParts.join('. '),
+        sellPrice:Number(fair.sellPrice || 0), fairLimit:Number.isFinite(fairLimitRaw) ? fairLimitRaw : null,
+        batches, producedQuantity:batches * outputQty, sellQuantity,
         inputValue:inputValue.value, inputValueComplete:inputValue.complete, unpricedInputs:inputValue.unpriced,
-        consumedInputs:inputValue.parts, revenue,
-        profitEach:sellQty > 0 && totalProfit != null ? totalProfit / sellQty : null,
-        totalProfit
+        consumedInputs:inputValue.parts, plannedInputs:inputValue.parts,
+        revenue,
+        profitEach:sellQuantity > 0 ? totalProfit / sellQuantity : null,
+        totalProfit:sellQuantity > 0 ? totalProfit : null,
+        unknownSources
       });
     }
 
@@ -186,9 +275,13 @@
       const current = best.get(row.key);
       const score = Number(row.totalProfit ?? -Infinity);
       const currentScore = Number(current?.totalProfit ?? -Infinity);
+      const availableScore = row.sourceAvailable ? 1 : 0;
+      const currentAvailableScore = current?.sourceAvailable ? 1 : 0;
       const gap = row.skillUpsNeeded == null ? Infinity : row.skillUpsNeeded;
       const currentGap = current?.skillUpsNeeded == null ? Infinity : current.skillUpsNeeded;
-      if (!current || score > currentScore || (score === currentScore && gap < currentGap)) best.set(row.key, row);
+      if (!current || availableScore > currentAvailableScore ||
+          (availableScore === currentAvailableScore && score > currentScore) ||
+          (availableScore === currentAvailableScore && score === currentScore && gap < currentGap)) best.set(row.key, row);
     }
     return [...best.values()];
   }
@@ -212,5 +305,5 @@
     return `${row.skillUpsNeeded} skillup${row.skillUpsNeeded === 1 ? '' : 's'} needed`;
   }
 
-  return { recipeRequirements, bestSkillGap, buildProfitRows, sortRows, skillGapLabel };
+  return { recipeRequirements, bestSkillGap, buildProfitRows, sortRows, skillGapLabel, sourcePlanForItem, valueRequirements };
 });
