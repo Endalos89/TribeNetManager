@@ -4,6 +4,8 @@ const os = require('os');
 const path = require('path');
 const XLSX = require('xlsx');
 const core = require('../src/fair-core');
+global.TribeNetFairCore = core;
+const analysis = require('../src/fair-analysis');
 const fairTurns = require('../src/fair-turns');
 const { parseFairWorkbook } = require('../src/fair-parser');
 
@@ -35,18 +37,18 @@ const { parseFairWorkbook } = require('../src/fair-parser');
 (function fairTurnSelectorRegression() {
   assert.deepStrictEqual(
     fairTurns.buildFairTurnOptions([{ turnKey:'906-03' }], []),
-    ['905-10','906-04'],
-    'A pre-Fair latest turn should expose the previous Fair and the immediately upcoming Fair.'
+    ['906-04'],
+    'A pre-Fair latest turn should expose only the upcoming Fair; no synthetic Fair before the known history is needed.'
   );
   assert.deepStrictEqual(
     fairTurns.buildFairTurnOptions([{ turnKey:'906-08' }, { turnKey:'906-03' }], []),
-    ['905-10','906-04','906-10'],
-    'Only Month 04/10 turns should appear, with one Fair before the first known turn and one Fair after the latest.'
+    ['906-04','906-10'],
+    'Only Month 04/10 turns should appear, including one Fair after the latest known turn.'
   );
   assert.deepStrictEqual(
     fairTurns.buildFairTurnOptions([{ turnKey:'906-10' }, { turnKey:'906-04' }], []),
-    ['905-10','906-04','906-10','907-04'],
-    'If the known range begins/ends on a Fair, the selector should still include one additional Fair on each side.'
+    ['906-04','906-10','907-04'],
+    'If the known range ends on a Fair, the selector should still include the next Fair but not invent an earlier one.'
   );
   assert.strictEqual(fairTurns.fairAtOrAfter('906-03'), '906-04');
   assert.strictEqual(fairTurns.fairAtOrAfter('906-04'), '906-04');
@@ -96,6 +98,17 @@ const { parseFairWorkbook } = require('../src/fair-parser');
   assert.strictEqual(actual.valuation, 'actual');
   assert.strictEqual(actual.valuationTurn, '906-10');
   assert.strictEqual(actual.profitPerBatch, 32);
+
+  const behindOnSkill = JSON.parse(JSON.stringify(resultTurn));
+  behindOnSkill.units[0].skills.Mtl = 0;
+  const gapRows = analysis.buildProfitRows({ recipes, resultTurn:behindOnSkill, skillDefinitions, snapshot:fair });
+  const gapWidget = gapRows.find(row => row.key === 'WIDGET');
+  assert.strictEqual(gapWidget.skillUpsNeeded, 2, 'Profit analysis should identify how many skillups the best Tribe is missing.');
+  assert.strictEqual(gapWidget.craftableNow, false);
+  assert.strictEqual(gapWidget.batches, 2, 'Missing skills must not suppress the material/input calculation.');
+  assert.strictEqual(gapWidget.inputValue, 40);
+  assert.strictEqual(gapWidget.totalProfit, 80, 'Profit should still be shown for recipes that are within a future skill plan.');
+  assert.deepStrictEqual(analysis.sortRows([{ value:1 }, { value:3 }, { value:2 }], 'value', 'desc').map(row => row.value), [3,2,1]);
 })();
 
 (function integrationFilesRegression() {
@@ -104,11 +117,17 @@ const { parseFairWorkbook } = require('../src/fair-parser');
   assert.match(src('preload.js'), /fair:import/);
   assert.match(src('preload.js'), /fair-launcher\.js/);
   assert.match(src('fair-launcher.js'), /fair\.html/);
-  assert.match(src('fair.html'), /fair-turns\.js/);
+  assert.match(src('fair.html'), /fair-analysis\.js/);
+  assert.match(src('fair.html'), /resourceBuyBody/);
+  assert.match(src('fair.html'), /skillGapSelect/);
   assert.match(src('fair.html'), /PURCHASE → CRAFT → NEXT FAIR/i);
-  assert.match(src('fair.js'), /buildFairTurnOptions/);
+  assert.match(src('fair.js'), /baselineSnapshotFor/);
+  assert.match(src('fair.js'), /remainingSaleTrades/);
+  assert.match(src('fair.js'), /initializeCollapsibles/);
+  assert.match(src('fair.css'), /section-collapsed/);
   assert.match(src('fair.css'), /\.fair-app\s*\{[^}]*height:100%[^}]*overflow-y:auto/s, 'Fair page must provide its own vertical scrolling because the global shell hides body overflow.');
   assert.match(src('update-view-state.js'), /fair\.html/);
 })();
 
+delete global.TribeNetFairCore;
 console.log('Fair tool regression tests passed.');
