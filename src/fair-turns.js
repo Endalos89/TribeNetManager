@@ -72,7 +72,6 @@
     const first = basis[0];
     const last = basis[basis.length - 1];
     for (const key of fairsBetween(first.turnKey, last.turnKey)) options.add(key);
-    options.add(previousFairBefore(first.turnKey));
     options.add(nextFairAfter(last.turnKey));
 
     return [...options]
