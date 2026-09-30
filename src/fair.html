@@ -29,13 +29,14 @@
         </div>
         <div class="fair-hero-metrics">
           <div><span>Fair trades</span><strong id="maxTradesMetric">10</strong></div>
+          <div><span>Trades planned</span><strong id="plannedTradesMetric">0</strong></div>
           <div><span>Saved Fairs</span><strong id="fairCountMetric">0</strong></div>
           <div><span>Combined items</span><strong id="inventoryCountMetric">0</strong></div>
         </div>
       </section>
 
       <section class="fair-context-grid">
-        <article class="fair-panel">
+        <article class="fair-panel" data-section="availability">
           <div class="fair-panel-heading">
             <div><p class="eyebrow">PLANNING TURN</p><h2>Fair availability</h2></div>
             <select id="planningTurnSelect" class="turn-select"></select>
@@ -47,14 +48,14 @@
           </div>
         </article>
 
-        <article class="fair-panel">
+        <article class="fair-panel" data-section="economics">
           <div class="fair-panel-heading">
             <div><p class="eyebrow">TRADE ACCESS</p><h2>Economics check</h2></div>
           </div>
           <div id="tradeEligibility" class="trade-banner neutral">Select a Fair turn to check Fair access.</div>
         </article>
 
-        <article class="fair-panel">
+        <article class="fair-panel" data-section="history">
           <div class="fair-panel-heading">
             <div><p class="eyebrow">PRICE BOOK</p><h2>Fair history</h2></div>
             <select id="fairSnapshotSelect" class="turn-select"></select>
@@ -63,10 +64,14 @@
         </article>
       </section>
 
-      <section class="fair-panel fair-wide-panel">
+      <section class="fair-panel fair-wide-panel" data-section="market-movement">
         <div class="fair-panel-heading">
           <div><p class="eyebrow">MARKET MOVEMENT</p><h2>Fair-to-Fair price changes</h2></div>
-          <label class="fair-search">Filter <input id="priceChangeSearch" type="search" placeholder="Item…" /></label>
+          <div class="fair-filter-row">
+            <label>Sort <select id="priceSortField"><option value="sellDeltaPct">Sell change</option><option value="purchaseDeltaPct">Buy change</option><option value="sellPrice">Sell price</option><option value="purchasePrice">Buy price</option><option value="name">Item</option></select></label>
+            <select id="priceSortDirection" aria-label="Sort direction"><option value="desc">Most → least</option><option value="asc">Least → most</option></select>
+            <label class="fair-search">Filter <input id="priceChangeSearch" type="search" placeholder="Item…" /></label>
+          </div>
         </div>
         <div id="priceChangeSummary" class="fair-note"></div>
         <div class="fair-table-wrap"><table class="fair-table">
@@ -75,10 +80,14 @@
         </table></div>
       </section>
 
-      <section class="fair-panel fair-wide-panel">
+      <section class="fair-panel fair-wide-panel" data-section="holdings">
         <div class="fair-panel-heading">
           <div><p class="eyebrow">YOUR HOLDINGS</p><h2>Sell prices across all Tribes</h2></div>
-          <label class="fair-search">Filter <input id="inventorySearch" type="search" placeholder="Item…" /></label>
+          <div class="fair-filter-row">
+            <label>Sort <select id="inventorySortField"><option value="potentialSale">Potential sale</option><option value="quantity">Quantity</option><option value="sellPrice">Fair pays</option><option value="limit">Fair limit</option><option value="change">Price change</option><option value="name">Item</option></select></label>
+            <select id="inventorySortDirection" aria-label="Sort direction"><option value="desc">Most → least</option><option value="asc">Least → most</option></select>
+            <label class="fair-search">Filter <input id="inventorySearch" type="search" placeholder="Item…" /></label>
+          </div>
         </div>
         <p id="inventoryContext" class="fair-note"></p>
         <div class="fair-table-wrap"><table class="fair-table">
@@ -87,28 +96,49 @@
         </table></div>
       </section>
 
-      <section class="fair-panel fair-wide-panel">
+      <section class="fair-panel fair-wide-panel" data-section="resource-buying">
+        <div class="fair-panel-heading fair-profit-heading">
+          <div><p class="eyebrow">BUY RESOURCES</p><h2>Resources you want from this Fair</h2></div>
+          <div class="fair-filter-row">
+            <label>Sort <select id="resourceBuySortField"><option value="purchasePrice">Buy price</option><option value="purchaseQuantityLimit">Available quantity</option><option value="name">Item</option></select></label>
+            <select id="resourceBuySortDirection" aria-label="Sort direction"><option value="asc">Least → most</option><option value="desc">Most → least</option></select>
+            <label class="fair-search">Filter <input id="resourceBuySearch" type="search" placeholder="Item…" /></label>
+          </div>
+        </div>
+        <div id="resourceBuySummary" class="profit-summary"></div>
+        <p class="fair-note">Each selected resource counts as one of the Fair's maximum trades. Enter the quantity you want, or choose <strong>All</strong> to use the Fair's full purchase limit.</p>
+        <div class="fair-table-wrap"><table class="fair-table">
+          <thead><tr><th>Buy</th><th>Item</th><th>Fair price</th><th>Fair limit</th><th>Amount wanted</th><th>All</th><th>Silver spend</th></tr></thead>
+          <tbody id="resourceBuyBody"></tbody>
+        </table></div>
+      </section>
+
+      <section class="fair-panel fair-wide-panel" data-section="profit-calculator">
         <div class="fair-panel-heading fair-profit-heading">
           <div><p class="eyebrow">PROFIT CALCULATOR</p><h2>Craft from what you already possess</h2></div>
           <div class="fair-filter-row">
-            <label class="toggle-control"><input id="onlyCraftableToggle" type="checkbox" checked /><span>Only craftable now</span></label>
+            <label>Skills <select id="skillGapSelect"><option value="0">Current skills only</option><option value="1">Allow 1 skillup</option><option value="2">Allow 2 skillups</option><option value="3">Allow 3 skillups</option><option value="999">Show any skill gap</option></select></label>
             <label class="toggle-control"><input id="positiveProfitToggle" type="checkbox" /><span>Positive profit only</span></label>
+            <label>Sort <select id="profitSortField"><option value="totalProfit">Total profit</option><option value="profitEach">Profit each</option><option value="sellPrice">Fair pays</option><option value="sellQuantity">Sell quantity</option><option value="inputValue">Input value</option><option value="skillUpsNeeded">Skillups needed</option><option value="item">Item</option></select></label>
+            <select id="profitSortDirection" aria-label="Sort direction"><option value="desc">Most → least</option><option value="asc">Least → most</option></select>
             <label class="fair-search">Filter <input id="profitSearch" type="search" placeholder="Item…" /></label>
           </div>
         </div>
         <div id="profitSummary" class="profit-summary"></div>
-        <p class="fair-note">Input value uses what those consumed materials could themselves be sold to this Fair for. Recursive recipes are followed where your skills and holdings allow. Each item row is evaluated independently, so shared materials are not reserved across several rows.</p>
+        <p class="fair-note">Input value is still calculated when you do not yet have the required skill. The Skills filter lets you include recipes that are 1, 2 or 3 skillups away. Recursive material production is considered for the input calculation; facility/location requirements remain flagged separately.</p>
         <div class="fair-table-wrap"><table class="fair-table">
-          <thead><tr><th>Use</th><th>Top 10</th><th>Item</th><th>Crafting route</th><th>Fair pays</th><th>Sell Qty</th><th>Input value</th><th>Profit each</th><th>Total profit</th></tr></thead>
+          <thead><tr><th>Use</th><th>Best trades</th><th>Item</th><th>Skill gap</th><th>Crafting route</th><th>Fair pays</th><th>Sell Qty</th><th>Input value</th><th>Profit each</th><th>Total profit</th></tr></thead>
           <tbody id="profitBody"></tbody>
         </table></div>
       </section>
 
-      <section class="fair-panel fair-wide-panel">
+      <section class="fair-panel fair-wide-panel" data-section="purchase-craft">
         <div class="fair-panel-heading fair-profit-heading">
           <div><p class="eyebrow">PURCHASE → CRAFT → NEXT FAIR</p><h2>Buy inputs now, sell crafted output later</h2></div>
           <div class="fair-filter-row">
             <label class="toggle-control"><input id="purchasePositiveToggle" type="checkbox" checked /><span>Positive profit only</span></label>
+            <label>Sort <select id="purchaseSortField"><option value="profitPerBatch">Profit / batch</option><option value="maxProfit">Max profit</option><option value="roi">ROI</option><option value="currentFairCost">Cost / batch</option><option value="nextSellPrice">Next sell price</option><option value="item">Item</option></select></label>
+            <select id="purchaseSortDirection" aria-label="Sort direction"><option value="desc">Most → least</option><option value="asc">Least → most</option></select>
             <label class="fair-search">Filter <input id="purchaseSearch" type="search" placeholder="Item…" /></label>
           </div>
         </div>
@@ -121,6 +151,7 @@
     </main>
   </div>
   <script src="fair-core.js"></script>
+  <script src="fair-analysis.js"></script>
   <script src="fair-turns.js"></script>
   <script src="fair.js"></script>
 </body>
