@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const XLSX = require('xlsx');
 const core = require('../src/fair-core');
+const fairTurns = require('../src/fair-turns');
 const { parseFairWorkbook } = require('../src/fair-parser');
 
 (function fairParserRegression() {
@@ -29,6 +30,27 @@ const { parseFairWorkbook } = require('../src/fair-parser');
   } finally {
     fs.rmSync(root, { recursive:true, force:true });
   }
+})();
+
+(function fairTurnSelectorRegression() {
+  assert.deepStrictEqual(
+    fairTurns.buildFairTurnOptions([{ turnKey:'906-03' }], []),
+    ['905-10','906-04'],
+    'A pre-Fair latest turn should expose the previous Fair and the immediately upcoming Fair.'
+  );
+  assert.deepStrictEqual(
+    fairTurns.buildFairTurnOptions([{ turnKey:'906-08' }, { turnKey:'906-03' }], []),
+    ['905-10','906-04','906-10'],
+    'Only Month 04/10 turns should appear, with one Fair before the first known turn and one Fair after the latest.'
+  );
+  assert.deepStrictEqual(
+    fairTurns.buildFairTurnOptions([{ turnKey:'906-10' }, { turnKey:'906-04' }], []),
+    ['905-10','906-04','906-10','907-04'],
+    'If the known range begins/ends on a Fair, the selector should still include one additional Fair on each side.'
+  );
+  assert.strictEqual(fairTurns.fairAtOrAfter('906-03'), '906-04');
+  assert.strictEqual(fairTurns.fairAtOrAfter('906-04'), '906-04');
+  assert.strictEqual(fairTurns.fairAtOrAfter('906-11'), '907-04');
 })();
 
 (function fairCoreRegression() {
@@ -82,7 +104,10 @@ const { parseFairWorkbook } = require('../src/fair-parser');
   assert.match(src('preload.js'), /fair:import/);
   assert.match(src('preload.js'), /fair-launcher\.js/);
   assert.match(src('fair-launcher.js'), /fair\.html/);
+  assert.match(src('fair.html'), /fair-turns\.js/);
   assert.match(src('fair.html'), /PURCHASE → CRAFT → NEXT FAIR/i);
+  assert.match(src('fair.js'), /buildFairTurnOptions/);
+  assert.match(src('fair.css'), /\.fair-app\s*\{[^}]*height:100%[^}]*overflow-y:auto/s, 'Fair page must provide its own vertical scrolling because the global shell hides body overflow.');
   assert.match(src('update-view-state.js'), /fair\.html/);
 })();
 

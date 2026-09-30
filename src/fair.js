@@ -8,6 +8,7 @@ const $ = id => document.getElementById(id);
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits:2 });
 const money = new Intl.NumberFormat(undefined, { maximumFractionDigits:2 });
 const core = window.TribeNetFairCore;
+const fairTurns = window.TribeNetFairTurns;
 
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>\"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '\"':'&quot;', "'":'&#39;' }[char])); }
 function number(value) { return value == null || Number.isNaN(Number(value)) ? '—' : nf.format(Number(value)); }
@@ -74,13 +75,18 @@ async function refreshSnapshots(preferredTurnKey = null) {
 
 async function refreshPlanningTurns() {
   fairState.managedTurns = await window.tribenet.listManagedTurns();
+  const options = fairTurns.buildFairTurnOptions(fairState.managedTurns, fairState.snapshots);
   const select = $('planningTurnSelect');
-  select.innerHTML = fairState.managedTurns.length
-    ? fairState.managedTurns.map(row => `<option value="${escapeHtml(row.turnKey)}">Turn ${escapeHtml(row.turnKey)}</option>`).join('')
-    : '<option value="">No planning turns available</option>';
-  if (!fairState.managedTurns.length) return selectPlanningTurn('');
+  select.innerHTML = options.length
+    ? options.map(turnKey => `<option value="${escapeHtml(turnKey)}">Turn ${escapeHtml(turnKey)}</option>`).join('')
+    : '<option value="">No Fair turns available</option>';
+  if (!options.length) return selectPlanningTurn('');
+
   const stored = localStorage.getItem('tribenet:fair:planningTurn');
-  const preferred = fairState.managedTurns.some(row => row.turnKey === stored) ? stored : fairState.managedTurns[0].turnKey;
+  const managedParsed = fairState.managedTurns.map(row => fairTurns.parseTurnKey(row.turnKey)).filter(Boolean).sort((a,b) => a.sort - b.sort);
+  const latestManaged = managedParsed.at(-1);
+  const suggested = latestManaged ? fairTurns.fairAtOrAfter(latestManaged.turnKey) : options.at(-1);
+  const preferred = options.includes(stored) ? stored : options.includes(suggested) ? suggested : options.at(-1);
   select.value = preferred;
   await selectPlanningTurn(preferred);
 }
@@ -168,19 +174,20 @@ function renderContext() {
   const matching = fairSnapshotFor(turn);
   $('importFairButton').disabled = !fairMonth;
   $('importFairButton').textContent = matching ? `Replace ${turn} Fair Workbook` : 'Upload Fair Workbook';
-  if (!turn) $('planningTurnNote').textContent = 'Import Results first. The next planning turn will then be available here.';
-  else if (fairMonth) $('planningTurnNote').innerHTML = `<strong>Turn ${escapeHtml(turn)} is a Fair month.</strong> ${matching ? `Workbook uploaded: ${escapeHtml(matching.sourceFile)}.` : 'Upload the Fair workbook when it is issued.'}`;
-  else $('planningTurnNote').innerHTML = `<strong>Turn ${escapeHtml(turn)} is not a Fair month.</strong> Fair workbook uploads are enabled in Months 04 and 10.`;
+  if (!turn) $('planningTurnNote').textContent = 'Import Results first. Fair upload slots will then be generated around your known turn range.';
+  else if (fairMonth && fairState.managedTurn) $('planningTurnNote').innerHTML = `<strong>Turn ${escapeHtml(turn)} is a Fair month.</strong> ${matching ? `Workbook uploaded: ${escapeHtml(matching.sourceFile)}.` : 'Upload the Fair workbook when it is issued.'}`;
+  else if (fairMonth) $('planningTurnNote').innerHTML = `<strong>Turn ${escapeHtml(turn)} is an upload slot outside your imported turn history.</strong> You can upload this Fair one step before/after your known range; holdings and skills will appear once matching Results exist.`;
+  else $('planningTurnNote').textContent = 'Only Month 04 and Month 10 Fair turns are available here.';
   const eligibility = fairState.resultTurn ? core.tradeEligibility(fairState.resultTurn, fairState.catalog.skills) : null;
   const banner = $('tradeEligibility');
   banner.className = `trade-banner ${eligibility?.status || 'neutral'}`;
-  banner.textContent = eligibility?.message || 'No beginning-of-turn Results state is available for this planning turn.';
+  banner.textContent = eligibility?.message || 'No beginning-of-turn Results state is available for this Fair turn.';
 }
 function renderSnapshotContext() {
   const snapshot = fairState.snapshot;
   $('maxTradesMetric').textContent = number(snapshot?.maxTransactions || 10);
-  if (!snapshot) { $('snapshotNote').textContent = 'No Fair workbook selected. Upload one in a Month 04/10 planning turn.'; return; }
-  const relationship = snapshot.turnKey === fairState.planningTurnKey ? 'Prices match the selected planning turn.' : fairState.planningTurnKey ? `Valuing Turn ${fairState.planningTurnKey} holdings against Fair ${snapshot.turnKey} prices.` : '';
+  if (!snapshot) { $('snapshotNote').textContent = 'No Fair workbook selected. Upload one for a Month 04/10 Fair turn.'; return; }
+  const relationship = snapshot.turnKey === fairState.planningTurnKey ? 'Prices match the selected Fair turn.' : fairState.planningTurnKey ? `Valuing Turn ${fairState.planningTurnKey} holdings against Fair ${snapshot.turnKey} prices.` : '';
   $('snapshotNote').textContent = `${snapshot.sourceFile} · ${snapshot.items.length} items · ${snapshot.maxTransactions} maximum trades. ${relationship}`;
 }
 function renderTables() { renderPriceChanges(); renderInventory(); renderProfit(); renderPurchaseCraft(); }
@@ -201,7 +208,7 @@ function renderPriceChanges() {
 function renderInventory() {
   const body = $('inventoryBody');
   const resultKey = fairState.managedTurn?.start?.data?.resultTurnKey;
-  $('inventoryContext').textContent = fairState.resultTurn ? `Combined holdings from all units in Results ${resultKey || fairState.resultTurn.turnKey}. You can use the per-unit breakdown to arrange transfers before the Fair.` : 'No Results inventory is available for this planning turn.';
+  $('inventoryContext').textContent = fairState.resultTurn ? `Combined holdings from all units in Results ${resultKey || fairState.resultTurn.turnKey}. You can use the per-unit breakdown to arrange transfers before the Fair.` : 'No Results inventory is available for this Fair turn.';
   if (!fairState.resultTurn) { body.innerHTML = emptyRow(7, 'No Results inventory available.'); return; }
   const fairMap = core.fairItemMap(fairState.snapshot);
   const changeMap = new Map(fairState.changes.map(row => [row.key,row]));
@@ -221,7 +228,7 @@ function renderInventory() {
 
 function renderProfit() {
   const body = $('profitBody');
-  if (!fairState.snapshot || !fairState.resultTurn) { body.innerHTML = emptyRow(9, 'Select Fair prices and a planning turn with Results inventory.'); $('profitSummary').innerHTML = ''; return; }
+  if (!fairState.snapshot || !fairState.resultTurn) { body.innerHTML = emptyRow(9, 'Select Fair prices and a Fair turn with Results inventory.'); $('profitSummary').innerHTML = ''; return; }
   const onlyCraftable = $('onlyCraftableToggle').checked;
   const positiveOnly = $('positiveProfitToggle').checked;
   const search = $('profitSearch').value.trim().toLowerCase();
@@ -245,7 +252,7 @@ function renderProfit() {
 
 function renderPurchaseCraft() {
   const body = $('purchaseCraftBody');
-  if (!fairState.snapshot || !fairState.resultTurn) { body.innerHTML = emptyRow(10, 'Select Fair prices and a planning turn with Tribe skills.'); $('purchaseCraftNote').textContent = ''; return; }
+  if (!fairState.snapshot || !fairState.resultTurn) { body.innerHTML = emptyRow(10, 'Select Fair prices and a Fair turn with Tribe skills.'); $('purchaseCraftNote').textContent = ''; return; }
   const next = core.nextFairSnapshot(fairState.snapshot, [...fairState.snapshotDetails.values()]);
   $('purchaseCraftNote').textContent = next ? `Using actual sell prices from the next saved Fair, ${next.turnKey}. Purchase quantity limits come from ${fairState.snapshot.turnKey}. Rows are standalone opportunities and do not allocate shared Fair limits across several plans.` : `No later Fair is saved yet. The next-Fair sell value is estimated using ${fairState.snapshot.turnKey}'s current sell price and will switch to actual prices automatically when the next workbook is uploaded.`;
   const positiveOnly = $('purchasePositiveToggle').checked;
