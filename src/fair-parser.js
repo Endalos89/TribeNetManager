@@ -24,6 +24,40 @@ function assertFairTurn(turnKey) {
   return parsed;
 }
 
+function compactSheetRows(sheet) {
+  if (!sheet) return [];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header:1, raw:true, defval:null });
+  const nonEmpty = rows.filter(row => Array.isArray(row) && row.some(cell => cell != null && String(cell).trim() !== ''));
+  let maxColumn = 0;
+  for (const row of nonEmpty) {
+    for (let index = row.length - 1; index >= 0; index -= 1) {
+      if (row[index] != null && String(row[index]).trim() !== '') {
+        maxColumn = Math.max(maxColumn, index + 1);
+        break;
+      }
+    }
+  }
+  return nonEmpty.map(row => row.slice(0, maxColumn).map(value => value == null ? '' : value));
+}
+
+function parseSupplementalSheets(input) {
+  const workbook = typeof input === 'string'
+    ? XLSX.readFile(input, { cellDates:false, raw:true })
+    : input;
+  if (!workbook?.Sheets) return {};
+  const mappings = [
+    ['culturalActivities', 'Cultural Activities'],
+    ['researchSpecials', 'Research and Specials']
+  ];
+  const result = {};
+  for (const [key, sheetName] of mappings) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) continue;
+    result[key] = { name:sheetName, rows:compactSheetRows(sheet) };
+  }
+  return result;
+}
+
 function parseFairWorkbook(filePath, requestedTurnKey = null) {
   const workbook = XLSX.readFile(filePath, { cellDates:false, raw:true });
   const sheet = workbook.Sheets['Exchange List'];
@@ -74,8 +108,9 @@ function parseFairWorkbook(filePath, requestedTurnKey = null) {
     importedAt:new Date().toISOString(),
     maxTransactions,
     warnings,
-    items
+    items,
+    supplementalSheets:parseSupplementalSheets(workbook)
   };
 }
 
-module.exports = { canonical, numberOrNull, parseTurnKey, assertFairTurn, parseFairWorkbook };
+module.exports = { canonical, numberOrNull, parseTurnKey, assertFairTurn, compactSheetRows, parseSupplementalSheets, parseFairWorkbook };
