@@ -30,6 +30,7 @@ assert.match(feedback, /Export JSON/, 'feedback panel should offer JSON export')
 assert.match(feedback, /tribenet-feedback-/, 'feedback export should use a recognizable filename');
 assert.match(feedback, /status:\s*['"]open['"]/, 'new comments should start open');
 assert.match(feedback, /Resolve/, 'comments should be resolvable');
+assert.doesNotThrow(() => new Function(drag), 'draggable feedback script should parse');
 assert.match(drag, /feedback-dialog__head/, 'comment dialog header should be draggable');
 assert.match(drag, /feedback-panel__head/, 'feedback panel header should be draggable');
 assert.match(drag, /window\.innerWidth/, 'dragging should constrain the window horizontally');
