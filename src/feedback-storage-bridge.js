@@ -17,6 +17,7 @@
     await inject('feedback-drag.js');
     await inject('feedback-review-fixes.js');
     await inject('feedback-review-cultural-profit.js');
+    await inject('feedback-followup-fixes.js');
   }
 
   start();
