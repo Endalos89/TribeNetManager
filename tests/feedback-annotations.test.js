@@ -9,15 +9,17 @@ const bridge = src('feedback-storage-bridge.js');
 const css = src('feedback.css');
 
 assert.match(preload, /feedbackCss\.href\s*=\s*['"]feedback\.css['"]/, 'feedback CSS should load on every app page');
-assert.match(preload, /scripts\.push\(['"]feedback-storage-bridge\.js['"]\)/, 'feedback storage bridge should load on every app page');
-assert.match(preload, /loadFeedbackComments/, 'preload should expose shared feedback loading');
-assert.match(preload, /saveFeedbackComments/, 'preload should expose shared feedback saving');
-assert.match(preload, /feedback-comments\.json/, 'feedback should persist to the shared user-data folder');
+assert.match(preload, /scripts\.push\(['"]feedback-storage-bridge\.js['"]\)/, 'feedback bootstrap should load on every app page');
+assert.doesNotMatch(preload, /require\(['"]fs['"]\)/, 'sandboxed preload must not require fs');
+assert.doesNotMatch(preload, /require\(['"]path['"]\)/, 'sandboxed preload must not require path');
+assert.match(preload, /compendium-launcher\.js/, 'Compendium launcher hook must remain available');
+assert.match(preload, /fair-launcher\.js/, 'Fair launcher hook must remain available');
 
-assert.match(bridge, /tribenet\.loadFeedbackComments/, 'bridge should hydrate shared comments');
-assert.match(bridge, /tribenet\.saveFeedbackComments/, 'bridge should persist feedback changes');
-assert.match(bridge, /script\.src\s*=\s*['"]feedback\.js['"]/, 'bridge should start the feedback UI after hydration');
+assert.match(bridge, /script\.src\s*=\s*['"]feedback\.js['"]/, 'renderer bootstrap should start the feedback UI');
+assert.doesNotMatch(bridge, /Storage\.prototype/, 'feedback bootstrap must not monkey-patch browser storage');
 
+assert.match(feedback, /localStorage\.getItem\(STORAGE_KEY\)/, 'feedback should load from renderer storage');
+assert.match(feedback, /localStorage\.setItem\(STORAGE_KEY/, 'feedback should persist in renderer storage');
 assert.match(feedback, /event\.ctrlKey/, 'Ctrl+click should activate feedback capture');
 assert.match(feedback, /stopImmediatePropagation/, 'feedback capture should suppress the normal click action');
 assert.match(feedback, /xRatio/, 'feedback should store relative click position');
