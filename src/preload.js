@@ -13,7 +13,7 @@ window.addEventListener('DOMContentLoaded', () => {
     link.rel = 'stylesheet';
     link.href = 'turn-file-library.css';
     document.head.appendChild(link);
-    scripts.push('planned-unit-splits-map.js', 'compendium-launcher.js', 'fair-launcher.js');
+    scripts.push('planned-unit-splits-map.js', 'compendium-launcher.js', 'fair-turns.js', 'fair-launcher.js');
   }
   if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js', 'turn-manager-mandate.js');
   if (page === 'fair.html' && isEmbeddedFair()) scripts.push('fair-embed.js');
