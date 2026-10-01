@@ -1,4 +1,4 @@
-const RESTORABLE_PAGES = new Set(['index.html', 'turn-manager.html', 'tribe-manager.html', 'compendium.html', 'fair.html']);
+const RESTORABLE_PAGES = new Set(['index.html', 'turn-manager.html', 'tribe-manager.html', 'compendium.html', 'fair.html', 'fairground.html']);
 const SNAPSHOT_VERSION = 2;
 const MAX_SNAPSHOT_BYTES = 512 * 1024;
 
@@ -52,6 +52,12 @@ function normalizeView(view) {
     };
   } else if (page === 'fair.html') {
     normalized.screen = 'fair';
+    if (cloned.turnKey) normalized.turnKey = String(cloned.turnKey);
+    else delete normalized.turnKey;
+    if (cloned.fairTurnKey) normalized.fairTurnKey = String(cloned.fairTurnKey);
+    else delete normalized.fairTurnKey;
+  } else if (page === 'fairground.html') {
+    normalized.screen = 'fairground';
     if (cloned.turnKey) normalized.turnKey = String(cloned.turnKey);
     else delete normalized.turnKey;
     if (cloned.fairTurnKey) normalized.fairTurnKey = String(cloned.fairTurnKey);
