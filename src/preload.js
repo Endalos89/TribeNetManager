@@ -60,7 +60,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (page === 'fair.html') scripts.push('fair-launcher-managed.js');
   if (page !== 'compendium.html' && page !== 'fair.html' && page !== 'fairground.html') scripts.push('session-snapshot.js');
   if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-key-ui-fix.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js', 'turn-file-library-ui.js');
-  scripts.push('feedback.js');
+  scripts.push('feedback-storage-bridge.js');
   for (const src of scripts) {
     const script = document.createElement('script');
     script.src = src;
