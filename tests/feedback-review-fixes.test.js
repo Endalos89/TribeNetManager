@@ -7,6 +7,7 @@ const fixes = src('feedback-review-fixes.js');
 const bridge = src('feedback-storage-bridge.js');
 const preload = src('preload.js');
 
+assert.doesNotThrow(() => new Function(fixes), 'exported feedback review script should parse');
 assert.match(bridge, /feedback-review-fixes\.js/, 'feedback review fixes should load renderer-side');
 assert.doesNotMatch(preload, /require\(['"]fs['"]\)/, 'review changes must not reintroduce fs into sandboxed preload');
 assert.doesNotMatch(preload, /require\(['"]path['"]\)/, 'review changes must not reintroduce path into sandboxed preload');
