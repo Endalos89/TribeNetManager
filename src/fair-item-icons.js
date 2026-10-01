@@ -9,8 +9,8 @@
     [/iron|steel|bronze|copper|tin|lead|silver|gold|ore|metal/i,'⛓️','metal'], [/stone|flint|clay|brick/i,'🪨','stone'],
     [/axe|adze|hammer|saw|tool|pick/i,'🪓','tools'], [/sword|spear|bow|arrow|shield|weapon|arbalest|spetum|sling/i,'⚔️','weapons'],
     [/rope|net|cloth|linen|wool|textile|canvas/i,'🧶','textiles'], [/leather|hide|fur/i,'🦬','leather'],
-    [/fish/i,'🐟','food'], [/meat|beef|pork|venison/i,'🥩','food'], [/grain|wheat|barley|oat/i,'🌾','food'], [/bread/i,'🍞','food'], [/ale|beer|wine/i,'🍺','food'], [/salt/i,'🧂','food'],
-    [/boat|ship|barge|canoe|longship|fisher/i,'⛵','boats'], [/frame|plank|board/i,'🪚','wood'], [/backpack|bag|sack/i,'🎒','goods'], [/trap|snare/i,'🪤','tools'],
+    [/boat|ship|barge|canoe|longship|fisher/i,'⛵','boats'], [/fish/i,'🐟','food'], [/meat|beef|pork|venison/i,'🥩','food'], [/grain|wheat|barley|oat/i,'🌾','food'], [/bread/i,'🍞','food'], [/ale|beer|wine/i,'🍺','food'], [/salt/i,'🧂','food'],
+    [/frame|plank|board/i,'🪚','wood'], [/backpack|bag|sack/i,'🎒','goods'], [/trap|snare/i,'🪤','tools'],
     [/pot|jar|ceramic/i,'🏺','goods'], [/jewel|gem/i,'💎','luxury'], [/coin|money/i,'🪙','luxury'], [/book|scroll/i,'📜','knowledge']
   ];
 
