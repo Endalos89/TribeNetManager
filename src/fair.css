@@ -67,6 +67,11 @@
 .fair-panel.section-collapsed .fair-panel-heading { margin-bottom:0; align-items:center; }
 .fair-panel.section-collapsed .fair-panel-heading > :not(:first-child):not(.collapse-button) { display:none !important; }
 .trade-over-cap { color:#f2a0a0; }
+.fair-app.embedded-mode { overflow-y:auto; }
+.fair-app.embedded-mode .fair-main { max-width:none; padding:14px; gap:14px; }
+.fair-app.embedded-mode .fair-context-grid { grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
+.fair-app.embedded-mode .fair-panel { border-radius:10px; }
+.fair-app.embedded-mode .collapse-button { display:none !important; }
 @media (max-width:1100px) {
   .fair-context-grid { grid-template-columns:1fr; }
   .fair-hero { align-items:flex-start; flex-direction:column; }
