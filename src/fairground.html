@@ -6,7 +6,6 @@
   <title>Fairground Preview · TribeNet Manager</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="fairground.css" />
-  <style>.fairground-app[data-season="summer"] .scene-sun { background:#ffe57d; }</style>
 </head>
 <body>
   <div class="fairground-app" data-season="summer">
@@ -25,8 +24,9 @@
       <section class="fairground-status-ribbon" aria-label="Fair status">
         <label class="fairground-turn-control"><span>Fair</span><select id="fairgroundTurnSelect" class="turn-select"></select></label>
         <div class="ribbon-stat"><span>Season</span><strong id="seasonStatus">Start of Summer</strong></div>
-        <div class="ribbon-stat"><span>Trades</span><strong id="tradeStatus">0 / 10</strong></div>
-        <div class="ribbon-stat"><span>Planned spend</span><strong id="spendStatus">0 Silver</strong></div>
+        <div class="ribbon-stat"><span>Trades planned</span><strong id="tradeStatus">0 / 10</strong></div>
+        <div class="ribbon-stat"><span>Buying</span><strong id="spendStatus">0 Silver</strong></div>
+        <div class="ribbon-stat"><span>Selling</span><strong id="incomeStatus">0 Silver</strong></div>
         <div class="ribbon-stat"><span>Trade access</span><strong id="accessStatus">Checking…</strong></div>
         <div class="ribbon-stat ribbon-pricing"><span>Prices</span><strong id="pricingStatus">No Fair data</strong></div>
       </section>
@@ -49,13 +49,13 @@
         <div class="scene-bunting bunting-one">◆　◆　◆　◆　◆　◆</div>
         <div class="scene-bunting bunting-two">◆　◆　◆　◆</div>
         <div id="fairgroundHotspots" class="fairground-hotspots"></div>
-        <button id="fairEntranceButton" class="fair-entrance" type="button"><span>Welcome to the Fair</span><small>Overview</small></button>
-        <div id="fairgroundEmptyState" class="fairground-empty-state hidden">Import Results and a Fair workbook through the Classic Fair or Fairmaster to populate the Fairground.</div>
+        <button id="fairEntranceButton" class="fair-entrance" type="button"><span>Welcome to the Fair</span><small>Return to overview</small></button>
+        <div id="fairgroundEmptyState" class="fairground-empty-state hidden">Import Results and the Fair workbook from the Launcher to populate the Fairground.</div>
       </section>
 
       <section class="fairground-help">
-        <span>Hover over a location for a live summary.</span>
-        <span>Click a location to open its planning tools.</span>
+        <span>Hover for a live summary.</span>
+        <span>Click a location to enter it without leaving the Fairground.</span>
         <span>Month 04 = Summer Fair · Month 10 = Winter Fair.</span>
       </section>
     </main>
@@ -65,19 +65,33 @@
     <div id="featureBackdrop" class="feature-backdrop hidden" aria-hidden="true"></div>
     <aside id="featureDrawer" class="feature-drawer hidden" aria-hidden="true">
       <header class="feature-drawer-header">
-        <button id="closeFeatureButton" class="button">← Back to Fairground</button>
-        <div class="feature-title-wrap"><span id="featureIcon" class="feature-icon"></span><div><p class="eyebrow" id="featureEyebrow">FAIRGROUND</p><h2 id="featureTitle">Fairground feature</h2><p id="featureSubtitle"></p></div></div>
+        <button id="closeFeatureButton" class="button fairground-back-button">← Back to Fairground</button>
+        <div class="feature-title-wrap">
+          <span id="featureIcon" class="feature-icon"></span>
+          <div><p class="eyebrow" id="featureEyebrow">FAIRGROUND</p><h2 id="featureTitle">Fairground feature</h2><p id="featureSubtitle"></p></div>
+        </div>
+        <div id="featureHeaderStatus" class="feature-header-status"></div>
       </header>
       <div id="featureDrawerBody" class="feature-drawer-body">
-        <iframe id="fairFeatureFrame" class="fair-feature-frame hidden" title="Fair feature"></iframe>
-        <div id="fairSheetPanel" class="fair-sheet-panel hidden"></div>
+        <div id="featureContent" class="feature-content"></div>
       </div>
     </aside>
+
+    <div id="interactionBackdrop" class="interaction-backdrop hidden" aria-hidden="true"></div>
+    <section id="interactionDialog" class="interaction-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="interactionTitle">
+      <button id="closeInteractionButton" class="interaction-close" type="button" aria-label="Close">×</button>
+      <div id="interactionIcon" class="interaction-icon">📦</div>
+      <p id="interactionEyebrow" class="eyebrow">FAIR TRADE</p>
+      <h2 id="interactionTitle">Trade item</h2>
+      <div id="interactionBody" class="interaction-body"></div>
+      <div id="interactionActions" class="interaction-actions"></div>
+    </section>
   </div>
 
   <script src="fair-core.js"></script>
   <script src="fair-analysis.js"></script>
   <script src="fair-turns.js"></script>
+  <script src="fair-item-icons.js"></script>
   <script src="fairground-hotspots.js"></script>
   <script src="fairground.js"></script>
 </body>
