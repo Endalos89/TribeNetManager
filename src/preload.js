@@ -17,6 +17,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js', 'turn-manager-mandate.js');
   if (page === 'fair.html' && isEmbeddedFair()) scripts.push('fair-embed.js');
+  if (page === 'fair.html') scripts.push('fair-launcher-managed.js');
   if (page !== 'compendium.html' && page !== 'fair.html' && page !== 'fairground.html') scripts.push('session-snapshot.js');
   if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-key-ui-fix.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js', 'turn-file-library-ui.js');
   for (const src of scripts) {
