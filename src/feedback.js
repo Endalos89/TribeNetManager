@@ -2,12 +2,14 @@
   'use strict';
 
   const STORAGE_KEY = 'tribenet.feedback.v1';
+  const SHOW_RESOLVED_KEY = 'tribenet.feedback.showResolved';
   const ROOT_ATTR = 'data-feedback-ui';
   const TYPES = ['change', 'bug', 'data', 'ui'];
   let notes = loadNotes();
   let markerLayer = null;
   let launcher = null;
   let renderQueued = false;
+  let showResolved = loadShowResolved();
 
   function loadNotes() {
     try {
@@ -16,6 +18,19 @@
     } catch (_) {
       return [];
     }
+  }
+
+  function loadShowResolved() {
+    try {
+      const saved = localStorage.getItem(SHOW_RESOLVED_KEY);
+      return saved == null ? true : saved === 'true';
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function saveShowResolved() {
+    try { localStorage.setItem(SHOW_RESOLVED_KEY, String(showResolved)); } catch (_) {}
   }
 
   function saveNotes() {
@@ -144,7 +159,7 @@
   }
 
   function getAppVersion() {
-    const ids = ['versionLabel', 'compVersion', 'tmVersion', 'tribeManagerVersion', 'fairVersion'];
+    const ids = ['versionLabel', 'compVersion', 'tmVersion', 'tribeManagerVersion', 'fairVersion', 'fairgroundVersion'];
     for (const id of ids) {
       const el = document.getElementById(id);
       if (el && textPreview(el)) return textPreview(el);
@@ -219,7 +234,7 @@
         <label class="feedback-field"><span>Comment</span><textarea class="feedback-comment" placeholder="What did you spot, and what should change?"></textarea></label>
         <div class="feedback-actions">
           ${existing ? '<button class="feedback-button feedback-delete feedback-button--danger" type="button">Delete</button>' : ''}
-          ${existing ? `<button class="feedback-button feedback-resolve" type="button">${note.status === 'resolved' ? 'Reopen' : 'Resolve'}</button>` : ''}
+          ${existing ? `<button class="feedback-button feedback-resolve" type="button">${note.status === 'resolved' ? 'Reopen' : 'Pass'}</button>` : ''}
           <button class="feedback-button feedback-cancel" type="button">Cancel</button>
           <button class="feedback-button feedback-button--primary feedback-save" type="button">Save Comment</button>
         </div>
@@ -303,18 +318,22 @@
       if (!target) return;
       const rect = target.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0 || rect.bottom < 0 || rect.top > innerHeight || rect.right < 0 || rect.left > innerWidth) return;
-      const point = note.target.point || { xRatio: .5, yRatio: .5 };
+      const point = note.target.point || { xRatio:.5, yRatio:.5 };
+      const rawX = Number(point.xRatio);
+      const rawY = Number(point.yRatio);
+      const xRatio = Number.isFinite(rawX) ? rawX : .5;
+      const yRatio = Number.isFinite(rawY) ? rawY : .5;
       const marker = document.createElement('button');
       marker.type = 'button';
       marker.className = 'feedback-marker';
       marker.dataset.type = note.type || 'change';
       marker.textContent = String(index + 1);
       marker.title = note.comment;
-      marker.style.left = `${rect.left + rect.width * (Number(point.xRatio) || .5)}px`;
-      marker.style.top = `${rect.top + rect.height * (Number(point.yRatio) || .5)}px`;
+      marker.style.left = `${rect.left + rect.width * xRatio}px`;
+      marker.style.top = `${rect.top + rect.height * yRatio}px`;
       marker.addEventListener('click', event => {
         event.preventDefault(); event.stopPropagation();
-        openEditor(note, { element: target, location: note.target });
+        openEditor(note, { element:target, location:note.target });
       });
       markerLayer.appendChild(marker);
     });
@@ -339,6 +358,21 @@
     launcher.querySelector('.feedback-launcher__count').textContent = String(notes.filter(note => note.status !== 'resolved').length);
   }
 
+  function appendFollowUp(note, value) {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    const stamp = new Date();
+    const label = stamp.toLocaleString();
+    note.comment = `${String(note.comment || '').trim()}\n\nFollow-up (${label}): ${text}`.trim();
+    note.status = 'open';
+    note.updatedAt = stamp.toISOString();
+    note.context = { ...(note.context || {}), ...currentContext() };
+    const index = notes.findIndex(item => item.id === note.id);
+    if (index >= 0) notes[index] = note;
+    saveNotes();
+    return true;
+  }
+
   function openPanel() {
     const backdrop = document.createElement('div');
     backdrop.className = 'feedback-backdrop';
@@ -349,33 +383,88 @@
     document.body.appendChild(backdrop);
 
     const draw = () => {
-      const ordered = [...notes].sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+      const ordered = [...notes].sort((a, b) => {
+        const aResolved = a.status === 'resolved' ? 1 : 0;
+        const bResolved = b.status === 'resolved' ? 1 : 0;
+        if (aResolved !== bResolved) return aResolved - bResolved;
+        return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+      });
+      const visible = showResolved ? ordered : ordered.filter(note => note.status !== 'resolved');
+      const openCount = notes.filter(n => n.status !== 'resolved').length;
+      const resolvedCount = notes.filter(n => n.status === 'resolved').length;
       panel.innerHTML = `
         <div class="feedback-panel__head"><h2>Feedback comments</h2><button class="feedback-close" type="button">×</button></div>
-        <div class="feedback-help">Ctrl+click anywhere in TribeNet Manager to attach a comment to that area. Comments stay local until you export them.</div>
-        ${ordered.length ? '<div class="feedback-list"></div>' : '<div class="feedback-empty">No comments yet. Ctrl+click an area to add one.</div>'}
+        <div class="feedback-help">Ctrl+click anywhere to add feedback. Use <strong>Pass</strong> when a fix is confirmed; use <strong>Fail</strong> to append what still needs changing.</div>
+        ${visible.length ? '<div class="feedback-list"></div>' : `<div class="feedback-empty">${notes.length ? 'No open comments are visible.' : 'No comments yet. Ctrl+click an area to add one.'}</div>`}
         <div class="feedback-panel__footer">
-          <span>${notes.filter(n => n.status !== 'resolved').length} open · ${notes.filter(n => n.status === 'resolved').length} resolved</span>
-          <button class="feedback-button feedback-button--primary feedback-export" type="button">Export JSON</button>
+          <span>${openCount} open · ${resolvedCount} resolved</span>
+          <div class="feedback-footer-actions">
+            <button class="feedback-button feedback-toggle-resolved" type="button">${showResolved ? 'Hide resolved' : 'Show resolved'}</button>
+            <button class="feedback-button feedback-button--primary feedback-export" type="button">Export JSON</button>
+          </div>
         </div>`;
       panel.querySelector('.feedback-close').addEventListener('click', () => backdrop.remove());
       panel.querySelector('.feedback-export').addEventListener('click', downloadExport);
+      panel.querySelector('.feedback-toggle-resolved').addEventListener('click', () => {
+        showResolved = !showResolved;
+        saveShowResolved();
+        draw();
+      });
       const list = panel.querySelector('.feedback-list');
       if (!list) return;
-      ordered.forEach(note => {
+      visible.forEach(note => {
         const card = document.createElement('div');
         card.className = `feedback-card${note.status === 'resolved' ? ' feedback-card--resolved' : ''}`;
+        card.dataset.feedbackId = note.id;
         card.innerHTML = `
           <span class="feedback-type">${escapeHtml(note.type || 'change')}</span>
-          <div><div class="feedback-card__comment"></div><div class="feedback-card__meta"></div></div>
-          <div class="feedback-card__buttons"><button class="feedback-icon-button feedback-jump" type="button" title="Jump to area">↗</button><button class="feedback-icon-button feedback-edit" type="button" title="Edit">✎</button></div>`;
+          <div><div class="feedback-card__comment"></div><div class="feedback-card__meta"></div><div class="feedback-followup-slot"></div></div>
+          <div class="feedback-card__buttons">
+            <button class="feedback-button feedback-button--compact feedback-fail" type="button">Fail</button>
+            <button class="feedback-button feedback-button--compact ${note.status === 'resolved' ? '' : 'feedback-button--pass'} feedback-pass" type="button">${note.status === 'resolved' ? 'Reopen' : 'Pass'}</button>
+            <button class="feedback-icon-button feedback-jump" type="button" title="Jump to area">↗</button>
+            <button class="feedback-icon-button feedback-edit" type="button" title="Edit">✎</button>
+          </div>`;
         card.querySelector('.feedback-card__comment').textContent = note.comment || '';
         card.querySelector('.feedback-card__meta').textContent = `${note.page?.title || note.page?.key || 'Page'} · ${targetDescription(note.target)}`;
         card.querySelector('.feedback-edit').addEventListener('click', () => {
           backdrop.remove();
-          openEditor(note, { element: locateTarget(note), location: note.target });
+          openEditor(note, { element:locateTarget(note), location:note.target });
         });
         card.querySelector('.feedback-jump').addEventListener('click', () => jumpToNote(note, backdrop));
+        card.querySelector('.feedback-pass').addEventListener('click', () => {
+          note.status = note.status === 'resolved' ? 'open' : 'resolved';
+          note.updatedAt = new Date().toISOString();
+          const index = notes.findIndex(item => item.id === note.id);
+          if (index >= 0) notes[index] = note;
+          saveNotes();
+          draw();
+        });
+        card.querySelector('.feedback-fail').addEventListener('click', () => {
+          const slot = card.querySelector('.feedback-followup-slot');
+          if (slot.querySelector('textarea')) {
+            slot.querySelector('textarea').focus();
+            return;
+          }
+          slot.innerHTML = `
+            <div class="feedback-followup">
+              <textarea placeholder="What still needs changing?"></textarea>
+              <div class="feedback-followup-actions">
+                <button class="feedback-button feedback-button--compact feedback-followup-cancel" type="button">Cancel</button>
+                <button class="feedback-button feedback-button--compact feedback-button--primary feedback-followup-save" type="button">Add follow-up</button>
+              </div>
+            </div>`;
+          const field = slot.querySelector('textarea');
+          field.focus();
+          slot.querySelector('.feedback-followup-cancel').addEventListener('click', () => { slot.innerHTML = ''; });
+          slot.querySelector('.feedback-followup-save').addEventListener('click', () => {
+            if (!appendFollowUp(note, field.value)) {
+              field.focus();
+              return;
+            }
+            draw();
+          });
+        });
         list.appendChild(card);
       });
     };
@@ -391,13 +480,13 @@
     const target = locateTarget(note);
     if (!target) return;
     panelBackdrop.remove();
-    target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-    target.animate?.([{ outline: '3px solid #d8a643' }, { outline: '0 solid transparent' }], { duration: 1100 });
+    target.scrollIntoView({ behavior:'smooth', block:'center', inline:'center' });
+    target.animate?.([{ outline:'3px solid #d8a643' }, { outline:'0 solid transparent' }], { duration:1100 });
     setTimeout(queueMarkers, 350);
   }
 
   function escapeHtml(value) {
-    return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    return String(value).replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
   }
 
   function handleCapture(event) {
@@ -407,7 +496,7 @@
     if (!target || target === document.documentElement || target === document.body) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    openEditor(null, { element: target, location: makeLocation(target, event) });
+    openEditor(null, { element:target, location:makeLocation(target, event) });
   }
 
   function init() {
@@ -417,15 +506,15 @@
     window.addEventListener('scroll', queueMarkers, true);
     window.addEventListener('resize', queueMarkers);
     const observer = new MutationObserver(queueMarkers);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+    observer.observe(document.body, { childList:true, subtree:true, attributes:true, attributeFilter:['class', 'style'] });
     window.TribeNetFeedback = {
       list: () => notes.map(note => ({ ...note })),
       exportPayload,
-      exportJson: downloadExport,
+      exportJson:downloadExport,
       clearResolved: () => { notes = notes.filter(note => note.status !== 'resolved'); saveNotes(); }
     };
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once:true });
   else init();
 })();
