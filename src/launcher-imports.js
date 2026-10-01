@@ -1,10 +1,12 @@
 (() => {
   const status = document.getElementById('launcherImportStatus');
-  const fairStatus = document.getElementById('launcherFairImportStatus');
   const resultsButton = document.getElementById('launcherImportResultsButton');
   const completedButton = document.getElementById('launcherImportCompletedButton');
-  const fairButton = document.getElementById('launcherImportFairButton');
   const RESULT_TURN_STORAGE_KEY = 'tribenet:selectedResultTurn';
+  let busy = false;
+
+  const fairButton = () => document.getElementById('launcherImportFairButton');
+  const fairStatus = () => document.getElementById('launcherFairImportStatus');
 
   function canonicalTurnKey(value) {
     const text = String(value || '').trim();
@@ -19,6 +21,7 @@
     if (!match) return null;
     const year = Number(match[1]);
     const month = Number(match[2]);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return null;
     return { year, month, turnKey:`${year}-${String(month).padStart(2,'0')}`, sort:year * 12 + month };
   }
 
@@ -31,10 +34,12 @@
     return `${turn.year + 1}-04`;
   }
 
-  function setBusy(busy) {
+  function setBusy(nextBusy) {
+    busy = Boolean(nextBusy);
     if (resultsButton) resultsButton.disabled = busy;
     if (completedButton) completedButton.disabled = busy;
-    if (fairButton) fairButton.disabled = busy || !fairButton.dataset.turnKey;
+    const button = fairButton();
+    if (button) button.disabled = busy || !button.dataset.turnKey;
   }
 
   function planningTurnKey(resultTurn) {
@@ -43,7 +48,9 @@
     if (resultTurn?.metadata?.nextTurn) return canonicalTurnKey(current);
     const match = current.match(/^(\d+)([-_])(\d+)$/);
     if (!match) return canonicalTurnKey(current);
-    return canonicalTurnKey(`${match[1]}-${Number(match[3]) + 1}`);
+    const year = Number(match[1]);
+    const month = Number(match[3]);
+    return month >= 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2,'0')}`;
   }
 
   async function refreshPlanningTurn(turnKey, preferredImportId = null) {
@@ -51,44 +58,53 @@
     if (!turnKey) return;
     localStorage.setItem(RESULT_TURN_STORAGE_KEY, turnKey);
     if (typeof refreshResultTurns === 'function') await refreshResultTurns(turnKey);
-
     if (preferredImportId != null && typeof syncPlannerOverlayToResultTurn === 'function') {
-      await syncPlannerOverlayToResultTurn(turnKey, preferredImportId, { redraw: false });
+      await syncPlannerOverlayToResultTurn(turnKey, preferredImportId, { redraw:false });
     }
   }
 
   async function nextFairTurn() {
     const managedTurns = await window.tribenet.listManagedTurns();
-    const parsed = (managedTurns || []).map(row => parseTurnKey(row?.turnKey)).filter(Boolean).sort((a,b) => a.sort - b.sort);
-    if (parsed.length) return fairAtOrAfter(parsed.at(-1).turnKey);
+    const managedParsed = (managedTurns || [])
+      .map(row => parseTurnKey(row?.turnKey ?? row))
+      .filter(Boolean)
+      .sort((a,b) => a.sort - b.sort);
+    if (managedParsed.length) return fairAtOrAfter(managedParsed.at(-1).turnKey);
 
     const results = await window.tribenet.listResultTurns();
-    const resultParsed = (results || []).map(row => parseTurnKey(row?.turnKey ?? row)).filter(Boolean).sort((a,b) => a.sort - b.sort);
+    const resultParsed = (results || [])
+      .map(row => parseTurnKey(row?.turnKey ?? row))
+      .filter(Boolean)
+      .sort((a,b) => a.sort - b.sort);
     if (!resultParsed.length) return null;
     const latestResult = resultParsed.at(-1);
-    const nextPlanning = latestResult.month >= 12 ? `${latestResult.year + 1}-01` : `${latestResult.year}-${String(latestResult.month + 1).padStart(2,'0')}`;
+    const nextPlanning = latestResult.month >= 12
+      ? `${latestResult.year + 1}-01`
+      : `${latestResult.year}-${String(latestResult.month + 1).padStart(2,'0')}`;
     return fairAtOrAfter(nextPlanning);
   }
 
   async function refreshFairStatus() {
-    if (!fairButton) return;
+    const button = fairButton();
+    const fairLine = fairStatus();
+    if (!button) return;
     const target = await nextFairTurn();
-    fairButton.dataset.turnKey = target || '';
+    button.dataset.turnKey = target || '';
     if (!target) {
-      fairButton.disabled = true;
-      fairButton.textContent = 'Import Fair Workbook';
-      if (fairStatus) fairStatus.textContent = 'Fair workbook: import Results first so the next Month 04 / Month 10 Fair can be identified.';
+      button.disabled = true;
+      button.textContent = 'Import Fair Workbook';
+      if (fairLine) fairLine.textContent = 'Fair workbook: import Results first so the next Month 04 / Month 10 Fair can be identified.';
       return;
     }
 
     const snapshots = await window.fairnet.listSnapshots();
     const existing = (snapshots || []).find(row => canonicalTurnKey(row.turnKey) === target);
-    fairButton.disabled = false;
-    fairButton.textContent = existing ? `Replace Fair ${target}` : `Import Fair ${target}`;
-    if (fairStatus) {
-      fairStatus.textContent = existing
-        ? `Fair ${target}: ${existing.sourceFile} is loaded and shared by Classic Fair and Fairground.`
-        : `Fair ${target}: no workbook loaded yet. Both Fair tools will use the latest earlier Fair as a price baseline until you import it here.`;
+    button.disabled = busy;
+    button.textContent = existing ? `Replace Fair ${target}` : `Import Fair ${target}`;
+    if (fairLine) {
+      fairLine.textContent = existing
+        ? `Fair ${target}: ${existing.sourceFile} is loaded and shared with Fairground.`
+        : `Fair ${target}: no workbook loaded yet. Import it here for this Month 04 / Month 10 Fair.`;
     }
   }
 
@@ -107,11 +123,11 @@
       }
       const nextTurn = planningTurnKey(result.turn);
       await refreshPlanningTurn(nextTurn);
-      await refreshFairStatus();
       window.dispatchEvent(new CustomEvent('tribenet-import-complete'));
       if (status) status.textContent = `Turn ${canonicalTurnKey(result.turn.turnKey)} Results imported. Planning Turn ${nextTurn} is ready.`;
     } finally {
       setBusy(false);
+      await refreshFairStatus().catch(console.error);
     }
   }
 
@@ -133,43 +149,65 @@
       const scoutCount = imported?.plan?.scouts?.length || 0;
       const turnKey = canonicalTurnKey(imported?.turnKey);
       await refreshPlanningTurn(turnKey, imported?.id);
-      await refreshFairStatus();
       window.dispatchEvent(new CustomEvent('tribenet-import-complete'));
       if (status) status.textContent = `Turn ${turnKey} Completed Orders imported and made authoritative. ${movementCount} movement route${movementCount === 1 ? '' : 's'} and ${scoutCount} scout route${scoutCount === 1 ? '' : 's'} loaded for verification.`;
     } finally {
       setBusy(false);
+      await refreshFairStatus().catch(console.error);
     }
   }
 
   async function importFair() {
-    const turnKey = fairButton?.dataset.turnKey;
-    if (!turnKey) return;
+    const button = fairButton();
+    const turnKey = button?.dataset.turnKey;
+    if (!button || !turnKey) return;
     setBusy(true);
-    if (fairStatus) fairStatus.textContent = `Importing Fair ${turnKey} workbook…`;
+    const fairLine = fairStatus();
+    if (fairLine) fairLine.textContent = `Importing Fair ${turnKey} workbook…`;
     try {
       const result = await window.fairnet.importWorkbook(turnKey);
       if (result?.canceled) {
-        if (fairStatus) fairStatus.textContent = `Fair ${turnKey} import cancelled.`;
+        if (fairLine) fairLine.textContent = `Fair ${turnKey} import cancelled.`;
         return;
       }
       if (result?.error) {
-        if (fairStatus) fairStatus.textContent = `Fair ${turnKey} import failed: ${result.error}`;
+        if (fairLine) fairLine.textContent = `Fair ${turnKey} import failed: ${result.error}`;
         return;
       }
       localStorage.setItem('tribenet:fair:planningTurn', turnKey);
-      await refreshFairStatus();
       window.dispatchEvent(new CustomEvent('tribenet-fair-import-complete', { detail:{ turnKey } }));
     } finally {
       setBusy(false);
+      await refreshFairStatus().catch(console.error);
     }
+  }
+
+  function bindFairButton() {
+    const button = fairButton();
+    if (!button) return false;
+    if (!button.dataset.launcherImportBound) {
+      button.dataset.launcherImportBound = 'true';
+      // Also tells the older feedback compatibility layer not to attach a second importer.
+      button.dataset.feedbackFairBound = 'true';
+      button.addEventListener('click', importFair);
+    }
+    refreshFairStatus().catch(error => {
+      console.error('Could not refresh Fair launcher status', error);
+      const fairLine = fairStatus();
+      if (fairLine) fairLine.textContent = 'Fair workbook status could not be loaded.';
+    });
+    return true;
   }
 
   resultsButton?.addEventListener('click', importResults);
   completedButton?.addEventListener('click', importCompleted);
-  fairButton?.addEventListener('click', importFair);
   window.addEventListener('tribenet-import-complete', () => refreshFairStatus().catch(console.error));
-  refreshFairStatus().catch(error => {
-    console.error('Could not refresh Fair launcher status', error);
-    if (fairStatus) fairStatus.textContent = 'Fair workbook status could not be loaded.';
-  });
+  window.addEventListener('tribenet-fair-import-complete', () => refreshFairStatus().catch(console.error));
+
+  if (!bindFairButton()) {
+    const observer = new MutationObserver(() => {
+      if (bindFairButton()) observer.disconnect();
+    });
+    observer.observe(document.body, { childList:true, subtree:true });
+  }
 })();
