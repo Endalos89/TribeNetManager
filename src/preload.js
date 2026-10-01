@@ -1,5 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+function isEmbeddedFair() {
+  try { return new URLSearchParams(window.location.search || '').get('embed') === '1'; }
+  catch (_) { return false; }
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   const page = String(window.location.pathname || '').split('/').pop() || 'index.html';
   const scripts = [];
@@ -11,7 +16,8 @@ window.addEventListener('DOMContentLoaded', () => {
     scripts.push('planned-unit-splits-map.js', 'compendium-launcher.js', 'fair-launcher.js');
   }
   if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js', 'turn-manager-mandate.js');
-  if (page !== 'compendium.html' && page !== 'fair.html') scripts.push('session-snapshot.js');
+  if (page === 'fair.html' && isEmbeddedFair()) scripts.push('fair-embed.js');
+  if (page !== 'compendium.html' && page !== 'fair.html' && page !== 'fairground.html') scripts.push('session-snapshot.js');
   if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-key-ui-fix.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js', 'turn-file-library-ui.js');
   for (const src of scripts) {
     const script = document.createElement('script');
@@ -76,7 +82,7 @@ contextBridge.exposeInMainWorld('tribenet', {
   scanTurnFiles: () => ipcRenderer.invoke('turn-files:scan'),
   getTurnFilesInfo: () => ipcRenderer.invoke('turn-files:info'),
   openTurnFilesFolder: () => ipcRenderer.invoke('turn-files:open'),
-  reportCurrentView: view => ipcRenderer.invoke('app:report-view', view),
+  reportCurrentView: view => isEmbeddedFair() ? Promise.resolve(null) : ipcRenderer.invoke('app:report-view', view),
   consumeStartupView: () => ipcRenderer.invoke('app:consume-startup-view'),
   getVersion: () => ipcRenderer.invoke('app:version'),
   getUserDataPath: () => ipcRenderer.invoke('app:userDataPath'),
