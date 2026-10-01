@@ -4,17 +4,25 @@ const os = require('os');
 const path = require('path');
 const XLSX = require('xlsx');
 const hotspots = require('../src/fairground-hotspots');
+const itemIcons = require('../src/fair-item-icons');
 const { parseFairWorkbook, parseSupplementalSheets } = require('../src/fair-parser');
 
 (function hotspotRegression() {
-  assert.strictEqual(hotspots.HOTSPOTS.length, 8, 'Batch 1 should expose the eight agreed Fairground hotspots.');
+  assert.strictEqual(hotspots.HOTSPOTS.length, 8, 'Fairground should expose the eight agreed hotspots.');
   assert.deepStrictEqual(
     hotspots.HOTSPOTS.map(row => row.id),
     ['scholar','fairmaster','caravan','market','workshop','pavilion','storehouse','trading-wagon']
   );
-  assert.strictEqual(hotspots.getHotspot('workshop').sections[0], 'profit-calculator');
   assert.strictEqual(hotspots.getHotspot('pavilion').sheetKey, 'culturalActivities');
   assert.strictEqual(hotspots.getHotspot('scholar').sheetKey, 'researchSpecials');
+})();
+
+(function iconRegression() {
+  assert.strictEqual(itemIcons.iconFor('Logs'), '🪵');
+  assert.strictEqual(itemIcons.iconFor('Wagon'), '🛒');
+  assert.strictEqual(itemIcons.iconFor('Iron'), '⛓️');
+  assert.strictEqual(itemIcons.iconFor('Fishing Boat'), '⛵');
+  assert.strictEqual(itemIcons.iconFor('Unmapped Thing'), '📦');
 })();
 
 (function supplementalFairSheetsRegression() {
@@ -47,20 +55,45 @@ const { parseFairWorkbook, parseSupplementalSheets } = require('../src/fair-pars
   const src = file => fs.readFileSync(path.join(__dirname, '..', 'src', file), 'utf8');
   const html = src('fairground.html');
   const css = src('fairground.css');
+  const gameCss = src('fairground-game.css');
   const js = src('fairground.js');
   const launcher = src('fair-launcher.js');
+  const launcherImports = src('launcher-imports.js');
   const preload = src('preload.js');
+  const classicManaged = src('fair-launcher-managed.js');
   const viewState = src('update-view-state.js');
 
   assert.match(launcher, /openFairButton/, 'Classic Fair launcher must remain available during preview.');
   assert.match(launcher, /openFairgroundButton/, 'Fairground Preview needs an additional launcher button.');
-  assert.match(launcher, /fairground\.html/);
+  assert.match(launcher, /launcherImportFairButton/, 'Fair workbook import belongs on the main Launcher.');
+  assert.match(launcherImports, /fairnet\.importWorkbook/);
+  assert.match(launcherImports, /fairAtOrAfter/);
+  assert.match(launcherImports, /Replace Fair/);
+
   assert.match(html, /fairgroundHotspots/);
+  assert.match(html, /featureContent/);
+  assert.match(html, /interactionDialog/);
+  assert.match(html, /fair-item-icons\.js/);
   assert.match(html, /Month 04 = Summer Fair · Month 10 = Winter Fair/);
+  assert.doesNotMatch(html, /<iframe/i, 'Batch 2 must stay inside the Fairground instead of embedding another page.');
   assert.match(css, /data-season="winter"/);
-  assert.match(js, /seasonForTurn/);
-  assert.match(js, /fair\.html\?embed=1/);
-  assert.match(preload, /fair-embed\.js/);
+  assert.match(gameCss, /market-item-card/);
+  assert.match(gameCss, /interaction-dialog/);
+
+  assert.match(js, /renderTradingWagon/);
+  assert.match(js, /openTradeDialog/);
+  assert.match(js, /resourceSales/);
+  assert.match(js, /renderStorehouse/);
+  assert.match(js, /renderMarket/);
+  assert.match(js, /renderWorkshop/);
+  assert.match(js, /renderPavilion/);
+  assert.match(js, /renderScholar/);
+  assert.match(js, /renderFairmaster/);
+  assert.match(js, /renderCaravan/);
+  assert.doesNotMatch(js, /fair\.html\?embed=1/, 'Fairground must not navigate into Classic Fair feature pages.');
+
+  assert.match(preload, /fair-launcher-managed\.js/);
+  assert.match(classicManaged, /Manage Fair Files on Launcher/);
   assert.match(preload, /fairground\.html/);
   assert.match(viewState, /fairground\.html/);
 })();
