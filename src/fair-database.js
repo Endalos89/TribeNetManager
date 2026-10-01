@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const { parseSupplementalSheets } = require('./fair-parser');
 
 class FairDatabase {
   constructor(userDataPath) {
@@ -72,11 +73,25 @@ class FairDatabase {
     });
   }
 
+  hydrateSupplementalSheets(snapshot, archiveFile) {
+    if (!snapshot || Object.keys(snapshot.supplementalSheets || {}).length) return snapshot;
+    const archivePath = path.join(this.sourceDir, archiveFile || snapshot.archiveFile || '');
+    if (!archiveFile || !fs.existsSync(archivePath)) return snapshot;
+    try {
+      return { ...snapshot, supplementalSheets:parseSupplementalSheets(archivePath) };
+    } catch (error) {
+      console.warn('Could not hydrate Fair supplemental sheets', error.message || error);
+      return snapshot;
+    }
+  }
+
   getSnapshot(turnKey) {
-    const row = this.db.prepare('SELECT snapshot_json AS snapshotJson FROM fair_snapshots WHERE turn_key=?').get(turnKey);
+    const row = this.db.prepare('SELECT archive_file AS archiveFile, snapshot_json AS snapshotJson FROM fair_snapshots WHERE turn_key=?').get(turnKey);
     if (!row) return null;
-    try { return JSON.parse(row.snapshotJson); }
-    catch (_) { return null; }
+    try {
+      const snapshot = JSON.parse(row.snapshotJson);
+      return this.hydrateSupplementalSheets(snapshot, row.archiveFile);
+    } catch (_) { return null; }
   }
 
   createBackup() {

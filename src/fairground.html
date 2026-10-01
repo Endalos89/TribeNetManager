@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fairground Preview · TribeNet Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="fairground.css" />
+  <style>.fairground-app[data-season="summer"] .scene-sun { background:#ffe57d; }</style>
+</head>
+<body>
+  <div class="fairground-app" data-season="summer">
+    <header class="app-header fairground-header">
+      <div>
+        <div class="brand">TribeNet Manager · Fairground <span class="preview-pill">Preview</span></div>
+        <div class="version" id="fairgroundVersion">Interactive Fair planning</div>
+      </div>
+      <div class="header-actions">
+        <button id="classicFairButton" class="button">Classic Fair</button>
+        <button id="fairgroundLauncherButton" class="button">← Launcher</button>
+      </div>
+    </header>
+
+    <main class="fairground-main">
+      <section class="fairground-status-ribbon" aria-label="Fair status">
+        <label class="fairground-turn-control"><span>Fair</span><select id="fairgroundTurnSelect" class="turn-select"></select></label>
+        <div class="ribbon-stat"><span>Season</span><strong id="seasonStatus">Start of Summer</strong></div>
+        <div class="ribbon-stat"><span>Trades</span><strong id="tradeStatus">0 / 10</strong></div>
+        <div class="ribbon-stat"><span>Planned spend</span><strong id="spendStatus">0 Silver</strong></div>
+        <div class="ribbon-stat"><span>Trade access</span><strong id="accessStatus">Checking…</strong></div>
+        <div class="ribbon-stat ribbon-pricing"><span>Prices</span><strong id="pricingStatus">No Fair data</strong></div>
+      </section>
+
+      <section id="fairgroundScene" class="fairground-scene" aria-label="Interactive TribeNet Fairground">
+        <div class="scene-sky"></div>
+        <div class="scene-sun"></div>
+        <div class="scene-cloud cloud-one"></div>
+        <div class="scene-cloud cloud-two"></div>
+        <div class="scene-hills hills-back"></div>
+        <div class="scene-hills hills-front"></div>
+        <div class="scene-ground"></div>
+        <div class="scene-road"></div>
+        <div class="scene-road road-branch-left"></div>
+        <div class="scene-road road-branch-right"></div>
+        <div class="scene-snow" aria-hidden="true"></div>
+        <div class="scene-lanterns" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="scene-tree tree-one">♣</div><div class="scene-tree tree-two">♣</div><div class="scene-tree tree-three">♣</div>
+        <div class="scene-tree tree-four">♣</div><div class="scene-tree tree-five">♣</div>
+        <div class="scene-bunting bunting-one">◆　◆　◆　◆　◆　◆</div>
+        <div class="scene-bunting bunting-two">◆　◆　◆　◆</div>
+        <div id="fairgroundHotspots" class="fairground-hotspots"></div>
+        <button id="fairEntranceButton" class="fair-entrance" type="button"><span>Welcome to the Fair</span><small>Overview</small></button>
+        <div id="fairgroundEmptyState" class="fairground-empty-state hidden">Import Results and a Fair workbook through the Classic Fair or Fairmaster to populate the Fairground.</div>
+      </section>
+
+      <section class="fairground-help">
+        <span>Hover over a location for a live summary.</span>
+        <span>Click a location to open its planning tools.</span>
+        <span>Month 04 = Summer Fair · Month 10 = Winter Fair.</span>
+      </section>
+    </main>
+
+    <div id="fairgroundTooltip" class="fairground-tooltip hidden" role="tooltip"></div>
+
+    <div id="featureBackdrop" class="feature-backdrop hidden" aria-hidden="true"></div>
+    <aside id="featureDrawer" class="feature-drawer hidden" aria-hidden="true">
+      <header class="feature-drawer-header">
+        <button id="closeFeatureButton" class="button">← Back to Fairground</button>
+        <div class="feature-title-wrap"><span id="featureIcon" class="feature-icon"></span><div><p class="eyebrow" id="featureEyebrow">FAIRGROUND</p><h2 id="featureTitle">Fairground feature</h2><p id="featureSubtitle"></p></div></div>
+      </header>
+      <div id="featureDrawerBody" class="feature-drawer-body">
+        <iframe id="fairFeatureFrame" class="fair-feature-frame hidden" title="Fair feature"></iframe>
+        <div id="fairSheetPanel" class="fair-sheet-panel hidden"></div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="fair-core.js"></script>
+  <script src="fair-analysis.js"></script>
+  <script src="fair-turns.js"></script>
+  <script src="fairground-hotspots.js"></script>
+  <script src="fairground.js"></script>
+</body>
+</html>
