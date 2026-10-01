@@ -18,6 +18,7 @@ assert.match(preload, /fair-launcher\.js/, 'Fair launcher hook must remain avail
 
 assert.match(bridge, /inject\(['"]feedback\.js['"]\)/, 'renderer bootstrap should start the feedback UI');
 assert.match(bridge, /inject\(['"]feedback-drag\.js['"]\)/, 'renderer bootstrap should add draggable feedback behavior');
+assert.match(bridge, /inject\(['"]feedback-review-fixes\.js['"]\)/, 'renderer bootstrap should load reviewed UI fixes');
 assert.doesNotMatch(bridge, /Storage\.prototype/, 'feedback bootstrap must not monkey-patch browser storage');
 
 assert.match(feedback, /localStorage\.getItem\(STORAGE_KEY\)/, 'feedback should load from renderer storage');
@@ -39,4 +40,5 @@ assert.match(drag, /event\.target\.closest\('button, input, select, textarea, a,
 assert.match(css, /\.feedback-marker/, 'comment markers should be styled');
 assert.match(css, /\.feedback-launcher/, 'feedback panel launcher should be styled');
 
+require('./feedback-review-fixes.test.js');
 console.log('feedback annotation regression tests passed');
