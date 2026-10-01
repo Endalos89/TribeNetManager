@@ -4,6 +4,14 @@
 
   const importPanel = document.getElementById('launcherImportResultsButton')?.closest('.data-panel');
   const importActions = importPanel?.querySelector('.header-actions');
+  if (importPanel) {
+    const copy = importPanel.querySelector('div:first-child');
+    const title = copy?.querySelector('strong');
+    const description = title?.nextElementSibling?.tagName === 'BR' ? title.nextElementSibling.nextSibling : null;
+    if (title) title.textContent = 'Shared turn & Fair imports';
+    if (description?.nodeType === Node.TEXT_NODE) description.textContent = ' Results creates the next planning turn. Completed Orders becomes authoritative for that turn. Fair workbooks are imported once here and shared by both Fair views.';
+  }
+
   if (importPanel && importActions && !document.getElementById('launcherImportFairButton')) {
     const fairButton = document.createElement('button');
     fairButton.id = 'launcherImportFairButton';
