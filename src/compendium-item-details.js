@@ -246,8 +246,15 @@
     }
     return `<section class="comp-section item-acquisition" data-item-acquisition><h2>Where to get this item</h2>${table(["Method", "Item / Fair", "Skill / labour", "Quantities, requirements & restrictions", "Source"], obtain)}<p class="comp-muted">Fair rows use imported workbooks for the named Fair. A historical price does not guarantee availability at a future Fair. Fairs occur in months 04 and 10; one Tribe per Clan may trade, using goods available at the start of the turn. See Mandate § 15.1 for post access and linked-unit restrictions.${fairError ? ` ${esc(fairError)}` : ""}</p></section><section class="comp-section item-usage" data-item-usage><h2>Recipes & supported skills</h2>${table(["Recipe / skill", "Required level", "Use", "Quantity / effect", "Requirements & restrictions", "Source"], uses)}</section>`;
   }
+  // Source data is static after catalogue initialization. Rebuild only when the
+  // catalogue is replaced or initialization adds skills/entities.
+  let catalogueCache, catalogueSource, catalogueStamp, entityIndex = new Map();
+  const tableCache = new Map();
   const previousEntities = entities;
   entities = function () {
+    const stamp = `${compState.catalog?.entities?.length || 0}:${compState.catalog?.skills?.length || 0}`;
+    if (catalogueCache && catalogueSource === compState.catalog && catalogueStamp === stamp)
+      return catalogueCache;
     const list = previousEntities();
     const present = new Set(list.map((e) => K.key(e.name)));
     for (const { key, name } of window.TribeNetItemIconCatalogue || []) {
@@ -265,8 +272,26 @@
       });
       present.add(key);
     }
+    catalogueSource = compState.catalog;
+    catalogueStamp = stamp;
+    catalogueCache = list;
+    entityIndex = new Map();
+    for (const entity of list)
+      for (const value of [entity.key, entity.name]) {
+        const key = canon(value);
+        if (!entityIndex.has(key)) entityIndex.set(key, entity);
+      }
+    tableCache.clear();
     return list;
   };
+  entityByName = function (name) {
+    entities();
+    return entityIndex.get(canon(name)) || null;
+  };
+  function cachedTables(entity) {
+    if (!tableCache.has(entity)) tableCache.set(entity, render(entity));
+    return tableCache.get(entity);
+  }
   const previousShowEntity = showEntity;
   showEntity = function (name, push = true) {
     const result = previousShowEntity(name, push);
@@ -296,12 +321,18 @@
       ...article.querySelectorAll(":scope > .comp-section"),
     ].find((s) => s.querySelector("h2")?.textContent === "Mandate references");
     if (references)
-      references.insertAdjacentHTML("beforebegin", render(entity));
-    else article.insertAdjacentHTML("beforeend", render(entity));
+      references.insertAdjacentHTML("beforebegin", cachedTables(entity));
+    else article.insertAdjacentHTML("beforeend", cachedTables(entity));
     bindLinks(article);
     return result;
   };
-  async function refresh() {
+  let refreshPromise, fairSignature = "";
+  function refresh() {
+    if (refreshPromise) return refreshPromise;
+    refreshPromise = refreshFair().finally(() => { refreshPromise = null; });
+    return refreshPromise;
+  }
+  async function refreshFair() {
     try {
       if (!window.fairnet) return;
       const summaries = await window.fairnet.listSnapshots();
@@ -314,27 +345,37 @@
     } catch (error) {
       fairError = `Fair data could not be loaded: ${error.message || error}`;
     }
+    const signature = JSON.stringify([snapshots, fairError]);
+    if (signature === fairSignature) return;
+    fairSignature = signature;
+    tableCache.clear();
     if (compState.view?.type === "entity")
       showEntity(compState.view.key, false);
   }
-  function decorateLinks() {
-    for (const el of document.querySelectorAll("[data-entity]")) {
-      if (el.querySelector(":scope > .item-inline-icon")) continue;
+  const decorated = new WeakSet();
+  function decorateLinks(root) {
+    const links = root.matches?.("[data-entity]") ? [root] : [];
+    links.push(...(root.querySelectorAll?.("[data-entity]") || []));
+    for (const el of links) {
+      if (decorated.has(el)) continue;
+      decorated.add(el);
       const e = entityByName(el.dataset.entity);
       const filename =
         window.TribeNetItemIconManifest?.[K.key(e?.name || el.dataset.entity)];
-      if (!filename) continue;
+      if (!filename || el.querySelector(":scope > .item-inline-icon")) continue;
       el.insertAdjacentHTML(
         "afterbegin",
-        `<img class="item-inline-icon" src="item-icons/${esc(filename)}" width="20" height="20" alt="" aria-hidden="true" loading="lazy">`,
+        `<img class="item-inline-icon" src="item-icons/${esc(filename)}" width="20" height="20" alt="" aria-hidden="true" loading="lazy" decoding="async">`,
       );
     }
   }
-  new MutationObserver(decorateLinks).observe($("compArticle"), {
-    childList: true,
-    subtree: true,
-  });
-  decorateLinks();
+  new MutationObserver((records) => {
+    // Visit added content only. Our own image insertions contain no item links.
+    for (const record of records)
+      for (const node of record.addedNodes)
+        if (node.nodeType === 1) decorateLinks(node);
+  }).observe($("compArticle"), { childList: true, subtree: true });
+  decorateLinks($("compArticle"));
   refresh();
   window.addEventListener("focus", refresh);
 })();
