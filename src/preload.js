@@ -1,47 +1,13 @@
-const fs = require('fs');
-const path = require('path');
 const { contextBridge, ipcRenderer } = require('electron');
-
-const FEEDBACK_FILENAME = 'feedback-comments.json';
 
 function isEmbeddedFair() {
   try { return new URLSearchParams(window.location.search || '').get('embed') === '1'; }
   catch (_) { return false; }
 }
 
-async function feedbackFilePath() {
-  const userDataPath = await ipcRenderer.invoke('app:userDataPath');
-  return path.join(userDataPath, FEEDBACK_FILENAME);
-}
-
-async function loadFeedbackComments() {
-  try {
-    const filePath = await feedbackFilePath();
-    if (!fs.existsSync(filePath)) return [];
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.error('Could not load feedback comments', error);
-    return [];
-  }
-}
-
-async function saveFeedbackComments(comments) {
-  try {
-    const filePath = await feedbackFilePath();
-    const tempPath = `${filePath}.tmp`;
-    const safeComments = Array.isArray(comments) ? comments : [];
-    fs.writeFileSync(tempPath, JSON.stringify(safeComments, null, 2), 'utf8');
-    fs.renameSync(tempPath, filePath);
-    return { ok: true, count: safeComments.length };
-  } catch (error) {
-    console.error('Could not save feedback comments', error);
-    return { ok: false, error: error.message };
-  }
-}
-
 window.addEventListener('DOMContentLoaded', () => {
   const page = String(window.location.pathname || '').split('/').pop() || 'index.html';
+
   const feedbackCss = document.createElement('link');
   feedbackCss.rel = 'stylesheet';
   feedbackCss.href = 'feedback.css';
@@ -61,6 +27,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (page !== 'compendium.html' && page !== 'fair.html' && page !== 'fairground.html') scripts.push('session-snapshot.js');
   if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-key-ui-fix.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js', 'turn-file-library-ui.js');
   scripts.push('feedback-storage-bridge.js');
+
   for (const src of scripts) {
     const script = document.createElement('script');
     script.src = src;
@@ -128,8 +95,6 @@ contextBridge.exposeInMainWorld('tribenet', {
   consumeStartupView: () => ipcRenderer.invoke('app:consume-startup-view'),
   getVersion: () => ipcRenderer.invoke('app:version'),
   getUserDataPath: () => ipcRenderer.invoke('app:userDataPath'),
-  loadFeedbackComments,
-  saveFeedbackComments,
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
   onUpdateStatus: callback => {
