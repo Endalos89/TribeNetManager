@@ -19,18 +19,26 @@ assert.match(preload, /fair-launcher\.js/, 'Fair launcher hook must remain avail
 assert.match(bridge, /inject\(['"]feedback\.js['"]\)/, 'renderer bootstrap should start the feedback UI');
 assert.match(bridge, /inject\(['"]feedback-drag\.js['"]\)/, 'renderer bootstrap should add draggable feedback behavior');
 assert.match(bridge, /inject\(['"]feedback-review-fixes\.js['"]\)/, 'renderer bootstrap should load reviewed UI fixes');
+assert.match(bridge, /inject\(['"]feedback-followup-fixes\.js['"]\)/, 'renderer bootstrap should load follow-up fixes');
 assert.doesNotMatch(bridge, /Storage\.prototype/, 'feedback bootstrap must not monkey-patch browser storage');
 
+assert.doesNotThrow(() => new Function(feedback), 'feedback core should parse');
 assert.match(feedback, /localStorage\.getItem\(STORAGE_KEY\)/, 'feedback should load from renderer storage');
 assert.match(feedback, /localStorage\.setItem\(STORAGE_KEY/, 'feedback should persist in renderer storage');
 assert.match(feedback, /event\.ctrlKey/, 'Ctrl+click should activate feedback capture');
 assert.match(feedback, /stopImmediatePropagation/, 'feedback capture should suppress the normal click action');
 assert.match(feedback, /xRatio/, 'feedback should store relative click position');
+assert.match(feedback, /Number\.isFinite\(rawX\)/, 'marker position should preserve valid zero ratios');
 assert.match(feedback, /canvas:/, 'feedback should capture canvas metadata');
 assert.match(feedback, /Export JSON/, 'feedback panel should offer JSON export');
 assert.match(feedback, /tribenet-feedback-/, 'feedback export should use a recognizable filename');
 assert.match(feedback, /status:\s*['"]open['"]/, 'new comments should start open');
-assert.match(feedback, /Resolve/, 'comments should be resolvable');
+assert.match(feedback, />Fail</, 'feedback review should provide a Fail action');
+assert.match(feedback, />Pass</, 'feedback review should provide a Pass action');
+assert.match(feedback, /Add follow-up/, 'Fail should allow an additional follow-up comment');
+assert.match(feedback, /Hide resolved/, 'feedback panel should allow resolved feedback to be hidden');
+assert.match(feedback, /Show resolved/, 'feedback panel should allow resolved feedback to be shown');
+assert.match(feedback, /aResolved - bResolved/, 'resolved feedback should sort below open feedback');
 assert.doesNotThrow(() => new Function(drag), 'draggable feedback script should parse');
 assert.match(drag, /feedback-dialog__head/, 'comment dialog header should be draggable');
 assert.match(drag, /feedback-panel__head/, 'feedback panel header should be draggable');
@@ -39,6 +47,7 @@ assert.match(drag, /window\.innerHeight/, 'dragging should constrain the window 
 assert.match(drag, /event\.target\.closest\('button, input, select, textarea, a, label'\)/, 'interactive header controls should not start a drag');
 assert.match(css, /\.feedback-marker/, 'comment markers should be styled');
 assert.match(css, /\.feedback-launcher/, 'feedback panel launcher should be styled');
+assert.match(css, /feedback-card--resolved/, 'resolved cards should have a distinct greyed treatment');
 
 require('./feedback-review-fixes.test.js');
 console.log('feedback annotation regression tests passed');
