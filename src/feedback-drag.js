@@ -15,6 +15,7 @@
 
     surface.setAttribute(BOUND_ATTR, 'true');
     handle.title = 'Drag to move';
+    handle.style.cursor = 'grab';
 
     handle.addEventListener('mousedown', event => {
       if (event.button !== 0) return;
@@ -30,8 +31,8 @@
       surface.style.top = `${rect.top}px`;
       surface.style.margin = '0';
       surface.style.width = `${rect.width}px`;
-      surface.classList.add('feedback-window--dragging');
-      document.body.classList.add('feedback-window-drag-active');
+      handle.style.cursor = 'grabbing';
+      document.body.style.userSelect = 'none';
 
       const move = moveEvent => {
         const current = surface.getBoundingClientRect();
@@ -42,8 +43,8 @@
       };
 
       const stop = () => {
-        surface.classList.remove('feedback-window--dragging');
-        document.body.classList.remove('feedback-window-drag-active');
+        handle.style.cursor = 'grab';
+        document.body.style.userSelect = '';
         window.removeEventListener('mousemove', move, true);
         window.removeEventListener('mouseup', stop, true);
       };
