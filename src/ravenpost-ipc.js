@@ -10,6 +10,11 @@ let ravenResultsDatabase = null;
 let pollTimer = null;
 let syncInFlight = null;
 
+function requireDb() {
+  if (!ravenDb) throw new Error('Ravenpost is still starting.');
+  return ravenDb;
+}
+
 function requireService() {
   if (!ravenService) throw new Error('Ravenpost is still starting.');
   return ravenService;
@@ -32,7 +37,7 @@ function openRavenpost() {
 
 function showNewMailNotification(message) {
   const settings = ravenService?.getSettings();
-  if (!settings) return;
+  if (!settings || !ravenDb) return;
 
   const contact = ravenDb.getContact(message.senderEmail);
   if (contact?.status === 'not_interested') return;
@@ -119,20 +124,20 @@ function registerHandlers() {
   });
   ipcMain.handle('ravenpost:sync', () => syncNow({ background: false }));
   ipcMain.handle('ravenpost:list-messages', (_event, filter, limit) =>
-    ravenDb.listMessages(filter || 'inbox', limit || 200)
+    requireDb().listMessages(filter || 'inbox', limit || 200)
   );
-  ipcMain.handle('ravenpost:get-message', (_event, gmailId) => ravenDb.getMessage(gmailId));
-  ipcMain.handle('ravenpost:mark-read', (_event, gmailId) => ravenDb.markRead(gmailId));
-  ipcMain.handle('ravenpost:counts', () => ravenDb.getCounts());
-  ipcMain.handle('ravenpost:list-contacts', (_event, status) => ravenDb.listContacts(status || null));
+  ipcMain.handle('ravenpost:get-message', (_event, gmailId) => requireDb().getMessage(gmailId));
+  ipcMain.handle('ravenpost:mark-read', (_event, gmailId) => requireDb().markRead(gmailId));
+  ipcMain.handle('ravenpost:counts', () => requireDb().getCounts());
+  ipcMain.handle('ravenpost:list-contacts', (_event, status) => requireDb().listContacts(status || null));
   ipcMain.handle('ravenpost:update-contact', (_event, email, update) => {
-    const contact = ravenDb.updateContact(email, update || {});
+    const contact = requireDb().updateContact(email, update || {});
     sendToWindows('ravenpost:contacts-changed', { email, contact });
     return contact;
   });
   ipcMain.handle('ravenpost:list-clans', () => requireService().listClans());
   ipcMain.handle('ravenpost:send', (_event, payload) => requireService().sendMessage(payload || {}));
-  ipcMain.handle('ravenpost:backup', () => ravenDb.createBackup());
+  ipcMain.handle('ravenpost:backup', () => requireDb().createBackup());
   ipcMain.handle('ravenpost:open-external', (_event, url) => {
     const allowed = new URL(String(url || ''));
     if (!['https:', 'http:'].includes(allowed.protocol)) throw new Error('Only web links can be opened.');
