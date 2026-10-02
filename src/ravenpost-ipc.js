@@ -32,12 +32,12 @@ function openRavenpost() {
 
 function showNewMailNotification(message) {
   const settings = ravenService?.getSettings();
-  if (!settings?.notificationsEnabled) return;
+  if (!settings) return;
 
   const contact = ravenDb.getContact(message.senderEmail);
   if (contact?.status === 'not_interested') return;
 
-  if (Notification.isSupported()) {
+  if (settings.notificationsEnabled && Notification.isSupported()) {
     const sender = contact?.displayName || message.senderName || message.senderEmail || 'Unknown sender';
     const notification = new Notification({
       title: 'Ravenpost · New raven arrived',
