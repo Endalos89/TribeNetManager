@@ -1,4 +1,4 @@
-const RESTORABLE_PAGES = new Set(['index.html', 'turn-manager.html', 'tribe-manager.html', 'compendium.html', 'fair.html', 'fairground.html']);
+const RESTORABLE_PAGES = new Set(['index.html', 'turn-manager.html', 'tribe-manager.html', 'compendium.html', 'fair.html', 'fairground.html', 'ravenpost.html']);
 const SNAPSHOT_VERSION = 2;
 const MAX_SNAPSHOT_BYTES = 512 * 1024;
 
@@ -62,6 +62,8 @@ function normalizeView(view) {
     else delete normalized.turnKey;
     if (cloned.fairTurnKey) normalized.fairTurnKey = String(cloned.fairTurnKey);
     else delete normalized.fairTurnKey;
+  } else if (page === 'ravenpost.html') {
+    normalized.screen = 'ravenpost';
   }
 
   return normalized;
