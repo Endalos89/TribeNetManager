@@ -19,7 +19,7 @@ window.addEventListener('DOMContentLoaded', () => {
     link.rel = 'stylesheet';
     link.href = 'turn-file-library.css';
     document.head.appendChild(link);
-    scripts.push('planned-unit-splits-map.js', 'compendium-launcher.js', 'fair-turns.js', 'fair-launcher.js');
+    scripts.push('planned-unit-splits-map.js', 'compendium-launcher.js', 'fair-turns.js', 'fair-launcher.js', 'ravenpost-launcher.js');
   }
   if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js', 'turn-manager-mandate.js');
   if (page === 'fair.html' && isEmbeddedFair()) scripts.push('fair-embed.js');
@@ -27,6 +27,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (page !== 'compendium.html' && page !== 'fair.html' && page !== 'fairground.html') scripts.push('session-snapshot.js');
   if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-key-ui-fix.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js', 'turn-file-library-ui.js', 'mapper-food-gathering.js');
   if (page === 'compendium.html') scripts.push('compendium-round4-cleanup.js');
+  scripts.push('ravenpost-notifications.js');
   scripts.push('feedback-storage-bridge.js');
 
   for (const src of scripts) {
@@ -43,6 +44,39 @@ contextBridge.exposeInMainWorld('fairnet', {
   getSnapshot: turnKey => ipcRenderer.invoke('fair:get', turnKey),
   getCraftingCatalog: () => ipcRenderer.invoke('fair:recipes'),
   backup: () => ipcRenderer.invoke('fair:backup')
+});
+
+contextBridge.exposeInMainWorld('ravenpost', {
+  getSettings: () => ipcRenderer.invoke('ravenpost:settings'),
+  saveSettings: settings => ipcRenderer.invoke('ravenpost:save-settings', settings),
+  authorize: () => ipcRenderer.invoke('ravenpost:authorize'),
+  disconnect: () => ipcRenderer.invoke('ravenpost:disconnect'),
+  syncNow: () => ipcRenderer.invoke('ravenpost:sync'),
+  listMessages: (filter, limit) => ipcRenderer.invoke('ravenpost:list-messages', filter, limit),
+  getMessage: gmailId => ipcRenderer.invoke('ravenpost:get-message', gmailId),
+  markRead: gmailId => ipcRenderer.invoke('ravenpost:mark-read', gmailId),
+  getCounts: () => ipcRenderer.invoke('ravenpost:counts'),
+  listContacts: status => ipcRenderer.invoke('ravenpost:list-contacts', status || null),
+  updateContact: (email, update) => ipcRenderer.invoke('ravenpost:update-contact', email, update),
+  listClans: () => ipcRenderer.invoke('ravenpost:list-clans'),
+  sendMessage: payload => ipcRenderer.invoke('ravenpost:send', payload),
+  createBackup: () => ipcRenderer.invoke('ravenpost:backup'),
+  openExternal: url => ipcRenderer.invoke('ravenpost:open-external', url),
+  onNewMail: callback => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('ravenpost:new-mail', listener);
+    return () => ipcRenderer.removeListener('ravenpost:new-mail', listener);
+  },
+  onSyncStatus: callback => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('ravenpost:sync-status', listener);
+    return () => ipcRenderer.removeListener('ravenpost:sync-status', listener);
+  },
+  onContactsChanged: callback => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('ravenpost:contacts-changed', listener);
+    return () => ipcRenderer.removeListener('ravenpost:contacts-changed', listener);
+  }
 });
 
 contextBridge.exposeInMainWorld('tribenet', {
