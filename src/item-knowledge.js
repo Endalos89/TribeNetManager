@@ -24,6 +24,7 @@
     SHAFTS: "SHAFT",
     SHACKLES: "SHACKLE",
     "H BOW": "HORSE BOW",
+    ABSINTH: "ABSINTHE",
   };
   const key = (v) => aliases[canonical(v)] || canonical(v);
   const same = (a, b) => key(a) === key(b);
