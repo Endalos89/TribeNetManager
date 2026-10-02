@@ -13,6 +13,8 @@
   }
 
   async function start() {
+    await inject('feedback-round3.js');
+    try { await window.TribeNetFeedbackRound3Ready; } catch (_) {}
     await inject('feedback.js');
     await inject('feedback-drag.js');
     await inject('feedback-review-fixes.js');
