@@ -102,10 +102,11 @@
     const resolvedCount = notes.filter(note => note.status === 'resolved').length;
 
     const launcherCount = document.querySelector('.feedback-launcher__count');
-    if (launcherCount) launcherCount.textContent = String(openCount);
+    if (launcherCount && launcherCount.textContent !== String(openCount)) launcherCount.textContent = String(openCount);
 
     document.querySelectorAll('.feedback-marker').forEach(marker => {
-      marker.style.display = actionedComments.has(String(marker.title || '')) ? 'none' : '';
+      const display = actionedComments.has(String(marker.title || '')) ? 'none' : '';
+      if (marker.style.display !== display) marker.style.display = display;
     });
 
     const panel = document.querySelector('.feedback-panel');
@@ -116,27 +117,40 @@
         const note = byId.get(String(card.dataset.feedbackId || ''));
         const actioned = note?.status === 'actioned';
         card.classList.toggle('feedback-card--actioned', actioned);
-        card.querySelector('.feedback-actioned-badge')?.remove();
+        let badge = card.querySelector('.feedback-actioned-badge');
         if (actioned) {
-          const badge = document.createElement('div');
-          badge.className = 'feedback-actioned-badge';
-          badge.textContent = `Actioned in ${versionNumber(note.actionedVersion) || 'this build'} · awaiting update`;
-          card.querySelector('.feedback-card__meta')?.insertAdjacentElement('afterend', badge);
+          const badgeText = `Actioned in ${versionNumber(note.actionedVersion) || 'this build'} · awaiting update`;
+          if (!badge) {
+            badge = document.createElement('div');
+            badge.className = 'feedback-actioned-badge';
+            card.querySelector('.feedback-card__meta')?.insertAdjacentElement('afterend', badge);
+          }
+          if (badge.textContent !== badgeText) badge.textContent = badgeText;
           const fail = card.querySelector('.feedback-fail');
           const pass = card.querySelector('.feedback-pass');
           if (fail) { fail.disabled = true; fail.title = 'Available again after the next app update'; }
-          if (pass) { pass.disabled = true; pass.textContent = 'Awaiting update'; pass.title = 'This feedback will return for Pass / Fail after the next app version'; }
+          if (pass) {
+            pass.disabled = true;
+            if (pass.textContent !== 'Awaiting update') pass.textContent = 'Awaiting update';
+            pass.title = 'This feedback will return for Pass / Fail after the next app version';
+          }
+        } else {
+          badge?.remove();
         }
       });
-      cards.sort((a,b) => {
+      const sorted = [...cards].sort((a,b) => {
         const left = byId.get(String(a.dataset.feedbackId || ''));
         const right = byId.get(String(b.dataset.feedbackId || ''));
         return noteRank(left) - noteRank(right);
-      }).forEach(card => list.appendChild(card));
+      });
+      const currentOrder = cards.map(card => card.dataset.feedbackId || '').join('|');
+      const desiredOrder = sorted.map(card => card.dataset.feedbackId || '').join('|');
+      if (currentOrder !== desiredOrder) sorted.forEach(card => list.appendChild(card));
     }
 
     const footerCount = panel?.querySelector('.feedback-panel__footer > span');
-    if (footerCount) footerCount.textContent = `${openCount} open · ${actionedCount} actioned · ${resolvedCount} resolved`;
+    const footerText = `${openCount} open · ${actionedCount} actioned · ${resolvedCount} resolved`;
+    if (footerCount && footerCount.textContent !== footerText) footerCount.textContent = footerText;
   }
 
   function queuePresentation() {
@@ -195,7 +209,8 @@
         if (hotspot) { openHotspot(hotspot); return true; }
       }
     } catch (_) {}
-    const button = document.querySelector(`[data-hotspot="${CSS.escape(feature)}"]`);
+    const escaped = window.CSS?.escape ? CSS.escape(feature) : String(feature).replace(/[^a-zA-Z0-9_-]/g, '');
+    const button = document.querySelector(`[data-hotspot="${escaped}"]`);
     if (button) { button.click(); return true; }
     return false;
   }
@@ -317,7 +332,12 @@
       }
     }, true);
 
-    const observer = new MutationObserver(() => {
+    const relevantSelector = '.feedback-panel,.feedback-list,.feedback-panel__footer,.feedback-marker,.feedback-launcher';
+    const observer = new MutationObserver(records => {
+      const relevant = records.some(record => [...(record.addedNodes || [])].some(node =>
+        node.nodeType === 1 && (node.matches?.(relevantSelector) || node.querySelector?.(relevantSelector))
+      ));
+      if (!relevant) return;
       enhanceFeedbackPanel();
       queuePresentation();
     });
