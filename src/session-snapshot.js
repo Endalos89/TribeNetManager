@@ -202,7 +202,7 @@
     }
 
     if (snapshot.map && typeof state !== 'undefined') {
-      if (Number.isFinite(Number(snapshot.map.scale))) state.scale = Math.max(9, Math.min(68, Number(snapshot.map.scale)));
+      if (Number.isFinite(Number(snapshot.map.scale))) state.scale = Math.max(9, Math.min(snapshot.map.isometric ? 180 : 68, Number(snapshot.map.scale)));
       if (Number.isFinite(Number(snapshot.map.cameraX))) state.cameraX = Number(snapshot.map.cameraX);
       if (Number.isFinite(Number(snapshot.map.cameraY))) state.cameraY = Number(snapshot.map.cameraY);
       if (typeof snapshot.map.planningVisible === 'boolean') state.planningVisible = snapshot.map.planningVisible;

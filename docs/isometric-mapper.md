@@ -2,16 +2,18 @@
 
 Open **3D Mapper** from the launcher and choose a submap or enter a coordinate. The original **Mapper** tile continues to open the top-down view. Both views use the existing local terrain data, selected Results turn, hex editor, history, movement planner, saved routes and unit overlays.
 
-The new view uses software-rendered 3D terrain meshes under an orthographic isometric projection. It requires no extra runtime dependency, CDN, image downloads or graphics service. Drag to pan, scroll to zoom, click to inspect, and use the Labels and Hex grid toggles as needed. Session restore remembers which projection was open.
+The new view uses software-rendered 3D terrain meshes under an north-up orthographic 3D projection. It requires no extra runtime dependency, CDN, image downloads or graphics service. Drag to pan, scroll to zoom, click to inspect, and use the Labels and Hex grid toggles as needed. Session restore remembers which projection was open.
 
 ## Terrain
 
 - Forests, jungle, hills, mountains, snow, desert, swamp and open ground have terrain-specific geometry or details.
 - Scenery is deterministically generated from the uppercase coordinate. Identical coordinates have identical details across installations running this renderer version.
-- Neighbour-aware corners and shared edges connect the ground geometry. Outer colour bands blend adjoining terrain.
+- Neighbour-aware corners and shared edges connect the ground geometry. A world-space surface blends adjoining terrain and gives both owners of each shared vertex the same height and colour. Dry terrain never borrows the water colour.
 - Oceans and lakes fill their entire hex. Coastal water and a bank extend into the adjacent land hex.
 - Unknown terrain and unknown border regions are covered by opaque fog. Only terrain in the selected turn's cache contributes to transitions.
-- Geometry is culled to the viewport and scenery is simplified at low zoom.
+- Matching forests populate their shared boundaries to form continuous woodland. Hills use smooth, connected slopes rather than separate pyramid models.
+- North is always vertically up. The 3D view zooms to 180; the original view retains its 68 limit. Selection tests the elevated surface.
+- Geometry is culled to the viewport, scenery is simplified at low zoom, and an overscanned landscape buffer keeps normal panning responsive. Data/notes, zoom, viewport and display-density changes invalidate that buffer.
 
 ## Rivers
 
@@ -21,8 +23,8 @@ Edge annotations are stored in the existing notes field as `[Rivers: N, NE]`, pr
 
 ## Validation
 
-- `node tests/isometric-mapper.test.js`: coordinate projection/inverse, deterministic variation, river annotations, physical shared endpoints across odd/even columns and submap boundaries.
-- `node tests/isometric-browser.test.js`: optional Playwright browser fixture; launcher, terrain renderer, selection, river editing/save, zoom anchor, pan direction, classic view, shared notes, historical edit permissions, runtime errors. Requires a separately installed Playwright/browser. Electron IPC is represented by an in-memory fixture.
+- `node tests/isometric-mapper.test.js`: coordinate projection/inverse, deterministic variation, river annotations, physical shared endpoints across odd/even columns and submap boundaries, north-up orientation, continuous hill heights and dry/coastal colour boundaries.
+- `node tests/isometric-browser.test.js`: optional Playwright browser fixture; launcher, terrain renderer, selection, river editing/save, zoom anchor, pan direction, classic view, shared notes, historical edit permissions, increased zoom limit, north-up projection, runtime errors. Requires a separately installed Playwright/browser. Electron IPC is represented by an in-memory fixture.
 - Existing movement, fog, Results history/reprocessing, saved route, planned split and session restore regressions pass.
 - The full `npm test` run is blocked by the pre-existing assertion `skill groups should filter the current skill table` in `tests/feedback-review-fixes.test.js`, invoked by the feedback annotations suite. The same assertion fails on the unmodified base commit.
 
