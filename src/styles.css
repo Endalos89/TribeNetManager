@@ -137,3 +137,13 @@ input:focus, select:focus, textarea:focus { border-color: #6fa775; box-shadow: 0
   .module-grid { grid-template-columns: 1fr; }
   .planner-controls { order: 3; }
 }
+
+/* Isometric mapper controls share the original mapper's responsive shell. */
+#isoViewControls:not(.hidden) { display:flex; gap:12px; align-items:center; }
+.river-edge-editor { border:1px solid #38515c; border-radius:8px; margin:12px 0; padding:10px; display:flex; flex-wrap:wrap; gap:10px; }
+.river-edge-editor legend { color:#aac1cb; font-size:12px; }
+.river-edge-editor label { display:flex; align-items:center; gap:4px; font-size:12px; }
+.river-edge-editor small { flex-basis:100%; color:#91a5ad; line-height:1.5; }
+.isometric-mode #mapCanvas { background:#162730; }
+.isometric-mode .mapper-toolbar { flex-wrap:wrap; overflow-x:visible; }
+.isometric-mode .detail-controls { flex-wrap:wrap; }

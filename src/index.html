@@ -45,6 +45,7 @@
           <div><h2>Mapper</h2><p>Use Results knowledge automatically, plan movement/scouting by turn, and overlay the completed orders after submission.</p></div>
           <span class="module-status">Open</span>
         </button>
+        <button id="openIsometricMapperButton" class="module-card enabled"><div class="module-icon">◈</div><div><h2>3D Mapper</h2><p>Explore a seeded isometric landscape with forests, mountains, coastlines, rivers and fog. Uses your shared map and turn history.</p></div><span class="module-status">Open</span></button>
         <button id="openTurnManagerButton" class="module-card enabled" onclick="location.href='turn-manager.html'">
           <div class="module-icon">☷</div>
           <div><h2>Turn Manager</h2><p>Plan activities directly from the Results baseline. Completed Orders become authoritative when imported and replace the draft plan.</p></div>
@@ -72,6 +73,7 @@
           <select id="turnSelect" class="turn-select" title="Completed orders history"><option value="">No completed orders imported</option></select>
           <span id="planStatus" class="toolbar-readout"></span>
         </div>
+        <div id="isoViewControls" class="hidden"><label class="toggle-control"><input id="isoLabels" type="checkbox" checked />Labels</label><label class="toggle-control"><input id="isoGrid" type="checkbox" />Hex grid</label></div>
         <div id="detailControls" class="detail-controls hidden">
           <button id="detailOverviewButton" class="button">Overview</button>
           <button id="movementPlannerButton" class="button" disabled>Plan Movement</button>
@@ -196,9 +198,11 @@
   <script src="movement-planner-core.js"></script>
   <script src="renderer.js"></script>
   <script src="unit-logistics.js"></script>
+  <script src="isometric-core.js"></script>
   <script src="results-map.js"></script>
   <script src="movement-planner.js"></script>
   <script src="saved-movement-plans.js"></script>
   <script src="launcher-imports.js"></script>
+  <script src="isometric-mapper.js"></script>
 </body>
 </html>

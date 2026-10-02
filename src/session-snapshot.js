@@ -60,6 +60,7 @@
     snapshot.resultTurnKey = typeof resultsTimeline !== 'undefined' ? resultsTimeline.turn?.turnKey || null : null;
     snapshot.planImportId = typeof state !== 'undefined' ? state.planImport?.id || null : null;
     snapshot.map = typeof state !== 'undefined' ? {
+      isometric: typeof IsoMapper !== 'undefined' && IsoMapper.enabled,
       cameraX: finite(state.cameraX),
       cameraY: finite(state.cameraY),
       scale: finite(state.scale),
@@ -192,6 +193,7 @@
     }
 
     if (snapshot.screen === 'mapper') {
+      if (typeof IsoMapper !== 'undefined') IsoMapper.setEnabled(Boolean(snapshot.map?.isometric));
       showMapper();
       if (snapshot.mode === 'detail') showDetail();
       else showOverview();

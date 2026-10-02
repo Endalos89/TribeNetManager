@@ -1,0 +1,29 @@
+# 3D Mapper
+
+Open **3D Mapper** from the launcher and choose a submap or enter a coordinate. The original **Mapper** tile continues to open the top-down view. Both views use the existing local terrain data, selected Results turn, hex editor, history, movement planner, saved routes and unit overlays.
+
+The new view uses software-rendered 3D terrain meshes under an orthographic isometric projection. It requires no extra runtime dependency, CDN, image downloads or graphics service. Drag to pan, scroll to zoom, click to inspect, and use the Labels and Hex grid toggles as needed. Session restore remembers which projection was open.
+
+## Terrain
+
+- Forests, jungle, hills, mountains, snow, desert, swamp and open ground have terrain-specific geometry or details.
+- Scenery is deterministically generated from the uppercase coordinate. Identical coordinates have identical details across installations running this renderer version.
+- Neighbour-aware corners and shared edges connect the ground geometry. Outer colour bands blend adjoining terrain.
+- Oceans and lakes fill their entire hex. Coastal water and a bank extend into the adjacent land hex.
+- Unknown terrain and unknown border regions are covered by opaque fog. Only terrain in the selected turn's cache contributes to transitions.
+- Geometry is culled to the viewport and scenery is simplified at low zoom.
+
+## Rivers
+
+The current map data has no structured river-edge field. The hex editor therefore offers six River edges checkboxes, using the same map directions as movement commands. Choose edges and use **Save Hex**. Rivers follow shared edges and connect at corners; a mark on either bank is sufficient. Both banks must be known before a river is displayed across their border.
+
+Edge annotations are stored in the existing notes field as `[Rivers: N, NE]`, preserving existing database backup/history support without a schema migration. Removing every edge removes the annotation. Existing notes are retained. Edges follow the existing editing permissions: historical Results knowledge remains read-only. Automatic extraction of river directions from report prose is not added by this change.
+
+## Validation
+
+- `node tests/isometric-mapper.test.js`: coordinate projection/inverse, deterministic variation, river annotations, physical shared endpoints across odd/even columns and submap boundaries.
+- `node tests/isometric-browser.test.js`: optional Playwright browser fixture; launcher, terrain renderer, selection, river editing/save, zoom anchor, pan direction, classic view, shared notes, historical edit permissions, runtime errors. Requires a separately installed Playwright/browser. Electron IPC is represented by an in-memory fixture.
+- Existing movement, fog, Results history/reprocessing, saved route, planned split and session restore regressions pass.
+- The full `npm test` run is blocked by the pre-existing assertion `skill groups should filter the current skill table` in `tests/feedback-review-fixes.test.js`, invoked by the feedback annotations suite. The same assertion fails on the unmodified base commit.
+
+Water is static in this first version. Windows/Electron installer testing remains separate from the browser verification.
