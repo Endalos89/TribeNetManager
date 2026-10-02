@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ravenpost · TribeNet Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="ravenpost.css" />
+</head>
+<body>
+  <div class="ravenpost-shell">
+    <header class="app-header">
+      <div class="rp-brand-wrap">
+        <div class="rp-mark" aria-hidden="true">R</div>
+        <div>
+          <div class="brand">Ravenpost</div>
+          <div class="version" id="ravenpostSubtitle">TribeNet correspondence carried by raven</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span id="rpHeaderStatus" class="update-message"></span>
+        <button id="rpSyncButton" class="button">Sync Gmail</button>
+        <button class="button" onclick="location.href='index.html'">← Launcher</button>
+      </div>
+    </header>
+
+    <main class="rp-layout">
+      <aside class="rp-sidebar">
+        <div class="rp-account">
+          <div class="rp-account-icon">R</div>
+          <div>
+            <strong id="rpAccountName">Ravenpost</strong>
+            <span id="rpAccountEmail">Not connected</span>
+          </div>
+        </div>
+
+        <button id="rpComposeButton" class="button accent rp-compose">＋ Send a Raven</button>
+
+        <nav class="rp-nav" aria-label="Ravenpost folders">
+          <button class="rp-nav-item active" data-filter="inbox">
+            <span>Inbox</span><span id="rpUnreadCount" class="rp-count">0</span>
+          </button>
+          <button class="rp-nav-item" data-filter="unknown">
+            <span>Unknown Senders</span><span id="rpUnknownCount" class="rp-count warning">0</span>
+          </button>
+          <button class="rp-nav-item" data-filter="linked"><span>Linked Clans / Tribes</span></button>
+          <button class="rp-nav-item" data-filter="sent"><span>Sent Ravens</span></button>
+          <button class="rp-nav-item" data-filter="ignored">
+            <span>Not Interested</span><span id="rpIgnoredCount" class="rp-count muted">0</span>
+          </button>
+        </nav>
+
+        <div class="rp-sidebar-spacer"></div>
+        <button id="rpSettingsButton" class="rp-nav-item rp-settings-nav">
+          <span>⚙ Settings</span>
+        </button>
+        <div class="rp-sync-foot">
+          <span id="rpConnectionDot" class="rp-dot"></span>
+          <span id="rpLastSync">Gmail not connected</span>
+        </div>
+      </aside>
+
+      <section class="rp-list-column">
+        <div class="rp-list-header">
+          <div>
+            <p class="eyebrow" id="rpListEyebrow">RAVENPOST</p>
+            <h1 id="rpListTitle">Inbox</h1>
+          </div>
+          <button id="rpRefreshButton" class="button square" title="Refresh local message list">↻</button>
+        </div>
+        <div id="rpMessageList" class="rp-message-list">
+          <div class="rp-empty">No ravens have arrived yet.</div>
+        </div>
+      </section>
+
+      <section class="rp-detail-column">
+        <div id="rpEmptyDetail" class="rp-empty-detail">
+          <div class="rp-raven-sigil">R</div>
+          <h2>Select a message</h2>
+          <p>Read correspondence, link unknown senders to a Clan / Tribe, and reply without leaving TribeNet Manager.</p>
+        </div>
+
+        <article id="rpMessageDetail" class="rp-message-detail hidden">
+          <header class="rp-message-header">
+            <div>
+              <p class="eyebrow" id="rpDetailType">INCOMING RAVEN</p>
+              <h1 id="rpDetailSubject">—</h1>
+              <div class="rp-message-meta">
+                <strong id="rpDetailSender">—</strong>
+                <span id="rpDetailEmail">—</span>
+                <span>•</span>
+                <span id="rpDetailDate">—</span>
+              </div>
+            </div>
+            <span id="rpDetailClan" class="rp-clan-pill hidden"></span>
+          </header>
+
+          <section id="rpUnknownBanner" class="rp-link-banner hidden">
+            <div>
+              <strong>This sender is not linked yet.</strong>
+              <span>Link the address to one of your known Clans / Tribes, or mark it Not Interested.</span>
+            </div>
+            <div class="rp-link-actions">
+              <select id="rpClanSelect">
+                <option value="">Choose Clan / Tribe…</option>
+              </select>
+              <button id="rpLinkClanButton" class="button accent">Link Sender</button>
+              <button id="rpIgnoreSenderButton" class="button">Not Interested</button>
+            </div>
+          </section>
+
+          <section id="rpIgnoredBanner" class="rp-link-banner ignored hidden">
+            <div>
+              <strong>This sender is marked Not Interested.</strong>
+              <span>Messages stay available here but do not trigger Ravenpost alerts.</span>
+            </div>
+            <button id="rpRestoreSenderButton" class="button">Restore Sender</button>
+          </section>
+
+          <div id="rpMessageBody" class="rp-message-body"></div>
+
+          <section id="rpReplySection" class="rp-reply-section">
+            <div class="rp-section-heading">
+              <div><p class="eyebrow">REPLY</p><h2>Send a raven back</h2></div>
+              <span id="rpReplyTo"></span>
+            </div>
+            <textarea id="rpReplyBody" rows="7" placeholder="Write your reply…"></textarea>
+            <div class="rp-reply-actions">
+              <span id="rpReplyStatus" class="save-status"></span>
+              <button id="rpSendReplyButton" class="button accent">Send Raven</button>
+            </div>
+          </section>
+        </article>
+
+        <section id="rpComposePanel" class="rp-panel hidden">
+          <p class="eyebrow">NEW CORRESPONDENCE</p>
+          <h1>Send a Raven</h1>
+          <label class="field-label" for="rpComposeTo">To</label>
+          <input id="rpComposeTo" type="email" placeholder="player@example.com" />
+          <label class="field-label" for="rpComposeSubject">Subject</label>
+          <input id="rpComposeSubject" type="text" placeholder="Subject" />
+          <label class="field-label" for="rpComposeBody">Message</label>
+          <textarea id="rpComposeBody" rows="14" placeholder="Write your message…"></textarea>
+          <div class="rp-panel-actions">
+            <span id="rpComposeStatus" class="save-status"></span>
+            <button id="rpSendComposeButton" class="button accent">Send Raven</button>
+          </div>
+        </section>
+
+        <section id="rpSettingsPanel" class="rp-panel hidden">
+          <div class="rp-settings-heading">
+            <div>
+              <p class="eyebrow">RAVENPOST SETTINGS</p>
+              <h1>Gmail connection</h1>
+              <p>Ravenpost uses Google's Desktop OAuth flow. Your Gmail password is never stored in TribeNet Manager.</p>
+            </div>
+            <span id="rpSettingsConnection" class="rp-status-pill">Not connected</span>
+          </div>
+
+          <section class="rp-settings-card">
+            <div class="rp-card-heading">
+              <div><h2>Google OAuth credentials</h2><p>Create a Desktop app OAuth client in Google Cloud with the Gmail API enabled.</p></div>
+            </div>
+            <label class="field-label" for="rpClientId">OAuth Client ID</label>
+            <input id="rpClientId" type="text" autocomplete="off" placeholder="…apps.googleusercontent.com" />
+            <label class="field-label" for="rpClientSecret">OAuth Client Secret</label>
+            <input id="rpClientSecret" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved secret" />
+            <div id="rpCredentialStorageNote" class="rp-help"></div>
+            <div class="rp-inline-actions">
+              <button id="rpSaveSettingsButton" class="button">Save Settings</button>
+              <button id="rpConnectButton" class="button accent">Connect Gmail</button>
+              <button id="rpDisconnectButton" class="button danger">Disconnect</button>
+            </div>
+            <div id="rpSettingsStatus" class="save-status"></div>
+          </section>
+
+          <section class="rp-settings-card">
+            <div class="rp-card-heading">
+              <div><h2>Automatic delivery</h2><p>Ravenpost checks Gmail while TribeNet Manager is running.</p></div>
+            </div>
+            <label class="field-label" for="rpPollSeconds">Check for mail</label>
+            <select id="rpPollSeconds">
+              <option value="30">Every 30 seconds</option>
+              <option value="60">Every minute</option>
+              <option value="120">Every 2 minutes</option>
+              <option value="300">Every 5 minutes</option>
+              <option value="600">Every 10 minutes</option>
+            </select>
+            <label class="rp-check"><input id="rpNotificationsEnabled" type="checkbox" checked /> Show a computer notification for new mail</label>
+            <label class="rp-check"><input id="rpSoundEnabled" type="checkbox" checked /> Play a short raven-call sound</label>
+            <div class="rp-inline-actions">
+              <button id="rpSaveDeliveryButton" class="button accent">Save Delivery Settings</button>
+              <button id="rpTestRavenButton" class="button">Test Raven Call</button>
+            </div>
+          </section>
+
+          <section class="rp-settings-card rp-setup-guide">
+            <div class="rp-card-heading"><div><h2>One-time Google setup</h2><p>Use the dedicated ravenwake_0485 Gmail account for this connection.</p></div></div>
+            <ol>
+              <li>Create or select a Google Cloud project and enable the <strong>Gmail API</strong>.</li>
+              <li>Configure the Google Auth consent screen. If the app is in testing, add your Ravenpost Gmail account as a test user.</li>
+              <li>Create an <strong>OAuth Client ID → Desktop app</strong>.</li>
+              <li>Paste the Client ID and Client Secret above, save, then click <strong>Connect Gmail</strong>.</li>
+            </ol>
+            <button id="rpOpenGoogleConsoleButton" class="button">Open Google Cloud Console</button>
+          </section>
+
+          <section class="rp-settings-card">
+            <div class="rp-card-heading"><div><h2>Ravenpost data</h2><p>Messages, sender links and settings are stored locally in a separate Ravenpost database.</p></div></div>
+            <button id="rpBackupButton" class="button">Create Ravenpost Backup</button>
+          </section>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script src="ravenpost.js"></script>
+</body>
+</html>
