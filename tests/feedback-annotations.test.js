@@ -67,4 +67,5 @@ assert.match(css, /\.feedback-launcher/, 'feedback panel launcher should be styl
 assert.match(css, /feedback-card--resolved/, 'resolved cards should have a distinct greyed treatment');
 
 require('./feedback-review-fixes.test.js');
+require('./additional-feedback-round4.test.js');
 console.log('feedback annotation regression tests passed');
