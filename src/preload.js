@@ -24,7 +24,8 @@ window.addEventListener('DOMContentLoaded', () => {
   if (page === 'turn-manager.html') scripts.push('planned-unit-splits-turn.js', 'turn-manager-mandate.js');
   if (page === 'fair.html' && isEmbeddedFair()) scripts.push('fair-embed.js');
   if (page === 'fair.html') scripts.push('fair-launcher-managed.js');
-  if (page !== 'compendium.html' && page !== 'fair.html' && page !== 'fairground.html') scripts.push('session-snapshot.js');
+  if (!['compendium.html', 'fair.html', 'fairground.html', 'ravenpost.html'].includes(page)) scripts.push('session-snapshot.js');
+  if (page === 'ravenpost.html') scripts.push('ravenpost-view-state.js');
   if (page === 'index.html') scripts.push('turn-lifecycle-core.js', 'turn-key-ui-fix.js', 'turn-lifecycle.js', 'planning-turn-movement-bridge.js', 'turn-file-library-ui.js', 'mapper-food-gathering.js');
   if (page === 'compendium.html') scripts.push('compendium-round4-cleanup.js');
   scripts.push('ravenpost-notifications.js');
@@ -101,7 +102,7 @@ contextBridge.exposeInMainWorld('tribenet', {
   deletePlannedActivity: id => ipcRenderer.invoke('turn-manager:delete-activity', id),
   addPlannedUnitSplit: (turnKey, split) => ipcRenderer.invoke('turn-manager:add-unit-split', turnKey, split),
   listPlannedUnitSplits: turnKey => ipcRenderer.invoke('turn-manager:list-unit-splits', turnKey),
-  deletePlannedUnitSplit: id => ipcRenderer.invoke('turn-manager:delete-unit-split', id),
+  deletePlannedUnitSplits: id => ipcRenderer.invoke('turn-manager:delete-unit-split', id),
   saveTurnContext: (turnKey, notes) => ipcRenderer.invoke('turn-manager:save-context', turnKey, notes),
   getActivityCatalog: () => ipcRenderer.invoke('turn-manager:catalog'),
   backupTurnManager: () => ipcRenderer.invoke('turn-manager:backup'),
