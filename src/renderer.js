@@ -233,7 +233,7 @@ function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, c =>
 
 function updateCenterReadout() { const nearest = nearestHex(state.cameraX, state.cameraY); $('centerCoordinateLabel').textContent = nearest ? `Centre: ${coordinateFor(nearest.globalCol, nearest.globalRow)}` : ''; }
 function setZoom(newScale, screenX, screenY) {
-  const oldScale = state.scale, clamped = Math.max(9, Math.min(68, newScale)); if (clamped === oldScale) return;
+  const oldScale = state.scale, clamped = Math.max(9, Math.min(typeof IsoMapper !== "undefined" && IsoMapper.enabled ? 180 : 68, newScale)); if (clamped === oldScale) return;
   const rect = canvas.getBoundingClientRect(), x = screenX ?? rect.width / 2, y = screenY ?? rect.height / 2, before = baseFromScreen(x, y);
   state.scale = clamped; const after = baseFromScreen(x, y); state.cameraX += before.x - after.x; state.cameraY += before.y - after.y; requestVisibleData(); draw();
 }

@@ -21,3 +21,20 @@ for(const col of [28,29,30,31])for(let i=0;i<6;i++){
  assert.ok(Math.hypot(p.x+u.x-n.x-v.x,p.y+u.y-n.y-v.y)<1e-9);
 }
 console.log('Isometric geometry, deterministic scenery, river notes and seam tests passed');
+// North remains vertically up, while projection still preserves relief.
+assert.equal(G.project(0,-1).x,0);assert.ok(G.project(0,-1).y<0);
+assert.ok(G.project(1,0).x>0);assert.equal(G.project(1,0).y,0);
+const palette=()=> '#83b653';
+const hill=()=>({terrain:'GH'}),flat=()=>({terrain:'PR'});
+const p=center(30,20),n=center(30,21),mid={x:(p.x+n.x)/2,y:(p.y+n.y)/2};
+const left=G.surface(mid.x,mid.y-1e-5,hill,palette),right=G.surface(mid.x,mid.y+1e-5,hill,palette);
+assert.ok(Math.abs(left.z-right.z)<1e-4,'hill surface remains continuous through shared edge');
+assert.ok(left.z>.25,'adjoining hills must not drop to the flat plane at their shared edge');
+assert.equal(left.color,right.color,'matching ground has no per-tile colour border');
+assert.equal(G.surface(mid.x,mid.y,flat,palette).color,palette(),'dry land should have no blue border tint');
+const wet=(c,r)=>c===30&&r===20?{terrain:'O'}:{terrain:'PR'};
+assert.equal(G.surface(p.x,p.y,wet,palette).water,true);
+assert.equal(G.surface(mid.x,mid.y,wet,palette).water,true,'water covers full ocean including edge');
+assert.equal(G.surface(mid.x,mid.y+.1,wet,palette).water,true,'coastal water extends into land');
+assert.equal(G.surface(n.x,n.y,wet,palette).water,false,'coastal band does not consume whole land hex');
+console.log('North-up projection, continuous hills and dry/coastal boundary checks passed');

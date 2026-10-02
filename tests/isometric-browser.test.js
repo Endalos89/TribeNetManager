@@ -27,13 +27,15 @@ const {chromium}=require('playwright');
  // Cursor-centred zoom is invariant; a click still selects the projected hex.
  const click=await page.evaluate(()=>{const p=screenFromBase(baseCenter(316,328)),r=canvas.getBoundingClientRect();const before=baseFromScreen(p.x,p.y);setZoom(45,p.x,p.y);clearTimeout(areaRequestTimer);const after=baseFromScreen(p.x,p.y);return {x:r.left+p.x,y:r.top+p.y,error:Math.hypot(before.x-after.x,before.y-after.y),ref:coordinateFor(316,328)};});
  assert.ok(click.error<1e-8);await page.mouse.click(click.x,click.y);await page.waitForTimeout(80);assert.equal(await page.textContent('#selectedCoordinate'),click.ref);
- // Drag the projected origin by a known screen distance.
- const drag=await page.evaluate(()=>{const r=canvas.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,camera:{x:state.cameraX,y:state.cameraY}};});
+ // The projected terrain point keeps its elevation offset while dragging.
+ const drag=await page.evaluate(()=>{const r=canvas.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,camera:{x:state.cameraX,y:state.cameraY},anchor:screenFromBase({x:state.cameraX,y:state.cameraY})};});
  await page.mouse.move(drag.x,drag.y);await page.mouse.down();await page.mouse.move(drag.x+90,drag.y+40);await page.mouse.up();
- const pan=await page.evaluate(c=>{const p=screenFromBase(c),r=canvas.getBoundingClientRect();return {x:p.x-r.width/2,y:p.y-r.height/2};},drag.camera);
- assert.ok(Math.abs(pan.x-90)<.01&&Math.abs(pan.y-40)<.01);
+ const pan=await page.evaluate(c=>{const p=screenFromBase(c),r=canvas.getBoundingClientRect();return {x:p.x,y:p.y};},drag.camera);
+ assert.ok(Math.abs(pan.x-drag.anchor.x-90)<.01&&Math.abs(pan.y-drag.anchor.y-40)<.01);
  await page.evaluate(()=>{centerOnHex(315,327);state.scale=62;draw();});await page.waitForTimeout(100);
 
+ const zoom=await page.evaluate(()=>{setZoom(180);return state.scale;});assert.equal(zoom,180);
+ const north=await page.evaluate(()=>{const a=IsoGeometry.project(0,0),b=IsoGeometry.project(0,-1);return {x:b.x-a.x,y:b.y-a.y};});assert.equal(north.x,0);assert.ok(north.y<0);
  await page.click('#backButton');await page.click('#openMapperButton');
  assert.equal(await page.evaluate(()=>IsoMapper.enabled),false);
  await page.evaluate(()=>{showDetail();centerOnHex(315,327);});await page.waitForTimeout(100);
