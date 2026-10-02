@@ -237,7 +237,7 @@ class RavenpostDatabase {
     } else if (filter === 'sent') {
       where = "m.direction = 'outbound'";
     } else if (filter === 'all') {
-      where = '1 = 1';
+      where = "m.direction = 'outbound' OR COALESCE(c.status, 'unlinked') <> 'not_interested'";
     }
     return this.db.prepare(`
       SELECT m.gmail_id AS gmailId, m.thread_id AS threadId, m.direction,
