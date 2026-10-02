@@ -117,9 +117,10 @@ function resizeCanvas() {
   const rect = canvas.getBoundingClientRect(); const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.max(1, Math.floor(rect.width * dpr)); canvas.height = Math.max(1, Math.floor(rect.height * dpr)); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-function screenFromBase(p) { const rect = canvas.getBoundingClientRect(); return { x: (p.x - state.cameraX) * state.scale + rect.width / 2, y: (p.y - state.cameraY) * state.scale + rect.height / 2 }; }
-function baseFromScreen(x, y) { const rect = canvas.getBoundingClientRect(); return { x: (x - rect.width / 2) / state.scale + state.cameraX, y: (y - rect.height / 2) / state.scale + state.cameraY }; }
+function screenFromBase(p) { if (typeof IsoMapper !== "undefined" && IsoMapper.enabled) return IsoMapper.project(p); const rect = canvas.getBoundingClientRect(); return { x: (p.x - state.cameraX) * state.scale + rect.width / 2, y: (p.y - state.cameraY) * state.scale + rect.height / 2 }; }
+function baseFromScreen(x, y) { if (typeof IsoMapper !== "undefined" && IsoMapper.enabled) return IsoMapper.inverse(x,y); const rect = canvas.getBoundingClientRect(); return { x: (x - rect.width / 2) / state.scale + state.cameraX, y: (y - rect.height / 2) / state.scale + state.cameraY }; }
 function visibleBounds() {
+  if (typeof IsoMapper !== "undefined" && IsoMapper.enabled) return IsoMapper.bounds();
   const rect = canvas.getBoundingClientRect();
   const minBaseX = state.cameraX - rect.width / (2 * state.scale) - 2, maxBaseX = state.cameraX + rect.width / (2 * state.scale) + 2;
   const minBaseY = state.cameraY - rect.height / (2 * state.scale) - SQRT3 * 2, maxBaseY = state.cameraY + rect.height / (2 * state.scale) + SQRT3 * 2;
@@ -138,6 +139,9 @@ function requestVisibleData() {
 }
 
 function hexPath(cx, cy, radius) {
+  if (typeof IsoMapper !== "undefined" && IsoMapper.enabled) {
+    ctx.beginPath(); IsoGeometry.corners.forEach((p,i)=>{const q=IsoGeometry.project(p.x*radius,p.y*radius); i?ctx.lineTo(cx+q.x,cy+q.y):ctx.moveTo(cx+q.x,cy+q.y);});ctx.closePath();return;
+  }
   ctx.beginPath();
   for (let i = 0; i < 6; i++) { const angle = Math.PI / 180 * (60 * i); const x = cx + radius * Math.cos(angle), y = cy + radius * Math.sin(angle); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
   ctx.closePath();
@@ -154,6 +158,7 @@ function drawTerrain(cx, cy, radius, terrain) {
 
 function draw() {
   if (state.mode !== 'detail') return;
+  if (typeof IsoMapper !== 'undefined' && IsoMapper.enabled) return IsoMapper.draw();
   const rect = canvas.getBoundingClientRect(); ctx.clearRect(0, 0, rect.width, rect.height); ctx.fillStyle = '#05090c'; ctx.fillRect(0, 0, rect.width, rect.height);
   const bounds = visibleBounds(), radius = state.scale * .96;
   for (let col = bounds.minCol; col <= bounds.maxCol; col++) {
@@ -230,7 +235,7 @@ function updateCenterReadout() { const nearest = nearestHex(state.cameraX, state
 function setZoom(newScale, screenX, screenY) {
   const oldScale = state.scale, clamped = Math.max(9, Math.min(68, newScale)); if (clamped === oldScale) return;
   const rect = canvas.getBoundingClientRect(), x = screenX ?? rect.width / 2, y = screenY ?? rect.height / 2, before = baseFromScreen(x, y);
-  state.scale = clamped; state.cameraX = before.x - (x - rect.width / 2) / state.scale; state.cameraY = before.y - (y - rect.height / 2) / state.scale; requestVisibleData(); draw();
+  state.scale = clamped; const after = baseFromScreen(x, y); state.cameraX += before.x - after.x; state.cameraY += before.y - after.y; requestVisibleData(); draw();
 }
 function goToCoordinate() {
   const parsed = parseCoordinate($('coordinateInput').value);
@@ -407,7 +412,7 @@ function bindEvents() {
   $('installUpdateButton').addEventListener('click', () => window.tribenet.installUpdate());
   window.addEventListener('resize', () => { if (state.mode === 'detail') { resizeCanvas(); draw(); requestVisibleData(); } });
   canvas.addEventListener('mousedown', e => { state.dragging = true; state.dragStart = { x:e.clientX,y:e.clientY,cameraX:state.cameraX,cameraY:state.cameraY }; canvas.classList.add('dragging'); });
-  window.addEventListener('mousemove', e => { if (!state.dragging) return; state.cameraX = state.dragStart.cameraX - (e.clientX - state.dragStart.x) / state.scale; state.cameraY = state.dragStart.cameraY - (e.clientY - state.dragStart.y) / state.scale; draw(); requestVisibleData(); });
+  window.addEventListener('mousemove', e => { if (!state.dragging) return; const dx=(e.clientX-state.dragStart.x)/state.scale, dy=(e.clientY-state.dragStart.y)/state.scale; const delta=typeof IsoMapper!=="undefined" && IsoMapper.enabled ? IsoGeometry.unproject(dx,dy) : {x:dx,y:dy}; state.cameraX = state.dragStart.cameraX-delta.x; state.cameraY = state.dragStart.cameraY-delta.y; draw(); requestVisibleData(); });
   window.addEventListener('mouseup', e => { if (!state.dragging) return; const moved=Math.hypot(e.clientX-state.dragStart.x,e.clientY-state.dragStart.y); state.dragging=false; canvas.classList.remove('dragging'); if (moved<5 && state.mode==='detail') { const rect=canvas.getBoundingClientRect(),base=baseFromScreen(e.clientX-rect.left,e.clientY-rect.top),hex=nearestHex(base.x,base.y); if(hex) selectHex(hex.globalCol,hex.globalRow); } });
   canvas.addEventListener('wheel', e => { e.preventDefault(); const rect=canvas.getBoundingClientRect(); setZoom(state.scale*(e.deltaY<0?1.12:1/1.12),e.clientX-rect.left,e.clientY-rect.top); }, {passive:false});
 }
