@@ -226,6 +226,7 @@ const IsoMapper = (() => {
     }
     if(state.planningVisible && state.planImport?.plan)drawPlanOverlay();
     IsoUnits.drawSelectionHighlight();
+    if(typeof drawResultsPlaybackOverlay==='function')drawResultsPlaybackOverlay();
     updateCenterReadout();frameRect=null;
   }
   function setEnabled(value, options = {}) {

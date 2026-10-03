@@ -2,7 +2,7 @@
   margin: 0 16px 12px;
   padding: 9px 12px;
   display: grid;
-  grid-template-columns: minmax(185px, auto) auto auto minmax(180px, 1fr) auto auto;
+  grid-template-columns: minmax(185px, auto) auto auto auto minmax(180px, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   border: 1px solid #263a45;
@@ -65,7 +65,7 @@
 
 @media (max-width: 1200px) {
   .results-timeline-bar {
-    grid-template-columns: minmax(180px, 1fr) auto auto auto auto;
+    grid-template-columns: minmax(180px, 1fr) auto auto auto auto auto;
   }
   .results-turn-slider {
     grid-column: 1 / -1;
