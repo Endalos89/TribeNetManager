@@ -33,7 +33,8 @@ const terrainStyle = {
 const state = {
   mode: 'overview', cameraX: 0, cameraY: 0, scale: 29, selected: null,
   hexCache: new Map(), loadedArea: null, dragging: false, dragStart: null, summaries: new Map(),
-  planningVisible: true, scoutingVisible: true, planImport: null, planHistory: [], routeCache: null
+  planningVisible: true, scoutingVisible: true, planImport: null, planHistory: [], routeCache: null,
+  selectedUnitHex: null
 };
 
 const $ = id => document.getElementById(id);
@@ -182,6 +183,7 @@ function draw() {
   }
   drawSubmapLabels(bounds); drawWorldBorder();
   if (state.planningVisible && state.planImport?.plan) drawPlanOverlay();
+  drawSelectedUnitHighlight();
   updateCenterReadout();
 }
 function drawSubmapLabels(bounds) {
@@ -383,7 +385,10 @@ function routeFor(startHex, orders, options = {}) {
 function buildPlanRoutes(plan) {
   const movements = [], movementWarnings = [], ends = new Map();
   for (const m of plan.movements || []) {
-    const route = routeFor(m.startHex, m.orders, { label: m.unit }); movements.push({ ...m, route }); movementWarnings.push(...route.warnings);
+    const movementType = String(m.movementType || '').trim().toUpperCase();
+    const orders = /^FO[LR]$/.test(movementType) && !(m.orders || []).some(order => /^FO[LR]$/i.test(order))
+      ? [movementType, ...(m.orders || [])] : (m.orders || []);
+    const route = routeFor(m.startHex, orders, { label: m.unit }); movements.push({ ...m, route }); movementWarnings.push(...route.warnings);
     if (route.points.length) ends.set(m.unit, route.points[route.points.length - 1]);
   }
   const scouts = [], scoutWarnings = [];
@@ -417,6 +422,15 @@ function drawUnitLabel(point, unit, type, offsetIndex = 0, extra = '', snapshot 
     ctx.strokeStyle = '#ffe18a'; ctx.lineWidth = Math.max(1.5, state.scale * .05); ctx.stroke();
   }
   ctx.fillStyle = '#f4e5c4'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x + w/2, y + h/2 + .5); ctx.restore();
+}
+function drawSelectedUnitHighlight() {
+  if (!state.selectedUnit || !state.selectedUnitHex || (typeof IsoMapper !== 'undefined' && IsoMapper.enabled)) return;
+  const parsed = parseCoordinate(state.selectedUnitHex); if (!parsed) return;
+  const p = screenFromBase(baseCenter(parsed.globalCol, parsed.globalRow));
+  ctx.save(); hexPath(p.x, p.y, Math.max(state.scale * 1.02, 24));
+  ctx.fillStyle = 'rgba(72,212,239,.10)'; ctx.fill();
+  ctx.strokeStyle = '#58d4ef'; ctx.lineWidth = Math.max(3, state.scale * .10); ctx.stroke();
+  ctx.strokeStyle = '#ffe18a'; ctx.lineWidth = Math.max(1.5, state.scale * .05); ctx.stroke(); ctx.restore();
 }
 function roundedRect(context, x, y, w, h, r) {
   const rr = Math.min(r, w/2, h/2); context.beginPath(); context.moveTo(x+rr,y); context.arcTo(x+w,y,x+w,y+h,rr); context.arcTo(x+w,y+h,x,y+h,rr); context.arcTo(x,y+h,x,y,rr); context.arcTo(x,y,x+w,y,rr); context.closePath();
@@ -458,8 +472,8 @@ function bindEvents() {
   $('saveHexButton').addEventListener('click', saveSelectedHex); $('fogHexButton').addEventListener('click', clearSelectedHex); $('importOrdersButton').addEventListener('click', importOrdersWorkbook);
   $('planningToggle').addEventListener('change', e => { state.planningVisible = e.target.checked; $('scoutingToggle').disabled = !state.planningVisible || !state.planImport; updatePlanUI(); draw(); });
   $('scoutingToggle').addEventListener('change', e => { state.scoutingVisible = e.target.checked; renderPlanWarnings(); draw(); });
-  $('mapperViewMode').addEventListener('change', e => {
-    const use3d = e.target.value === '3d';
+  $('mapperViewToggle').addEventListener('change', e => {
+    const use3d = e.target.checked;
     if (typeof IsoMapper !== 'undefined' && IsoMapper.enabled !== use3d) IsoMapper.setEnabled(use3d, { overview:false });
   });
   $('turnSelect').addEventListener('change', e => loadPlan(Number(e.target.value), true));
