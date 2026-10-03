@@ -176,7 +176,7 @@ function drawHistoricalUnits() {
     if (!point) continue;
     const key = point.coordinate;
     const slot = slots.get(key) || 0;
-    drawUnitLabel(point, unit.unitCode, unit.unitType, slot, '');
+    drawUnitLabel(point, unit.unitCode, unit.unitType, slot, '', unit);
     slots.set(key, slot + 1);
   }
 }

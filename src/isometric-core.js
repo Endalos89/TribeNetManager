@@ -61,6 +61,11 @@
     const color='#'+land.map((v,i)=>Math.round(bank[i]*(1-shore)+v*shore).toString(16).padStart(2,'0')).join('');
     return {x,y,z,color,water:false};
   }
-  const api={surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
+  // Keep scenery bases inside the revealed polygon. Raised crowns may extend
+  // naturally across a fog bank, but no hidden-side trees are generated.
+  function sceneryVisible(x,y,neighbours) {
+    return neighbours.every((known,i)=>known || x*Math.cos((i+.5)*Math.PI/3)+y*Math.sin((i+.5)*Math.PI/3)<Math.sqrt(3)/2*.67-.04);
+  }
+  const api={sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
   if(typeof module!=='undefined' && module.exports) module.exports=api; else root.IsoGeometry=api;
 })(typeof window!=='undefined'?window:globalThis);

@@ -232,10 +232,16 @@ async function loadHexHistory(coordinate) {
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 
 function updateCenterReadout() { const nearest = nearestHex(state.cameraX, state.cameraY); $('centerCoordinateLabel').textContent = nearest ? `Centre: ${coordinateFor(nearest.globalCol, nearest.globalRow)}` : ''; }
+let mapDrawFrame=null;
+function scheduleMapDraw() {
+  if(mapDrawFrame!==null)return;
+  mapDrawFrame=requestAnimationFrame(()=>{mapDrawFrame=null;draw();});
+}
 function setZoom(newScale, screenX, screenY) {
   const oldScale = state.scale, clamped = Math.max(9, Math.min(typeof IsoMapper !== "undefined" && IsoMapper.enabled ? 180 : 68, newScale)); if (clamped === oldScale) return;
+  if(typeof IsoMapper!=='undefined' && IsoMapper.enabled)IsoMapper.interact();
   const rect = canvas.getBoundingClientRect(), x = screenX ?? rect.width / 2, y = screenY ?? rect.height / 2, before = baseFromScreen(x, y);
-  state.scale = clamped; const after = baseFromScreen(x, y); state.cameraX += before.x - after.x; state.cameraY += before.y - after.y; requestVisibleData(); draw();
+  state.scale = clamped; const after = baseFromScreen(x, y); state.cameraX += before.x - after.x; state.cameraY += before.y - after.y; requestVisibleData(); scheduleMapDraw();
 }
 function goToCoordinate() {
   const parsed = parseCoordinate($('coordinateInput').value);
@@ -359,7 +365,8 @@ function drawArrowSegment(a, b, style = {}) {
 function drawRoute(points, style = {}) {
   if (!points || points.length < 2) return; for (let i = 1; i < points.length; i++) drawArrowSegment(points[i-1], points[i], { ...style, dashed: style.dashed || points[i].kind === 'approx' });
 }
-function drawUnitLabel(point, unit, type, offsetIndex = 0, extra = '') {
+function drawUnitLabel(point, unit, type, offsetIndex = 0, extra = '', snapshot = null) {
+  if(typeof IsoMapper!=='undefined' && IsoMapper.enabled){IsoUnits.draw(point,unit,type,offsetIndex,extra,snapshot);return;}
   if (!point) return; const p = screenFromBase(baseCenter(point.globalCol, point.globalRow));
   const text = `${type === 'Element' ? 'E' : type === 'Tribe' ? 'T' : 'U'} ${unit}${extra ? ` ${extra}` : ''}`; ctx.save();
   ctx.font = `700 ${Math.max(9, Math.min(12, state.scale * .32))}px Segoe UI`; const w = ctx.measureText(text).width + 12, h = 19;
@@ -412,8 +419,8 @@ function bindEvents() {
   $('installUpdateButton').addEventListener('click', () => window.tribenet.installUpdate());
   window.addEventListener('resize', () => { if (state.mode === 'detail') { resizeCanvas(); draw(); requestVisibleData(); } });
   canvas.addEventListener('mousedown', e => { state.dragging = true; state.dragStart = { x:e.clientX,y:e.clientY,cameraX:state.cameraX,cameraY:state.cameraY }; canvas.classList.add('dragging'); });
-  window.addEventListener('mousemove', e => { if (!state.dragging) return; const dx=(e.clientX-state.dragStart.x)/state.scale, dy=(e.clientY-state.dragStart.y)/state.scale; const delta=typeof IsoMapper!=="undefined" && IsoMapper.enabled ? IsoGeometry.unproject(dx,dy) : {x:dx,y:dy}; state.cameraX = state.dragStart.cameraX-delta.x; state.cameraY = state.dragStart.cameraY-delta.y; draw(); requestVisibleData(); });
-  window.addEventListener('mouseup', e => { if (!state.dragging) return; const moved=Math.hypot(e.clientX-state.dragStart.x,e.clientY-state.dragStart.y); state.dragging=false; canvas.classList.remove('dragging'); if (moved<5 && state.mode==='detail') { const rect=canvas.getBoundingClientRect(),base=baseFromScreen(e.clientX-rect.left,e.clientY-rect.top),hex=nearestHex(base.x,base.y); if(hex) selectHex(hex.globalCol,hex.globalRow); } });
+  window.addEventListener('mousemove', e => { if (!state.dragging) return; const dx=(e.clientX-state.dragStart.x)/state.scale, dy=(e.clientY-state.dragStart.y)/state.scale; const delta=typeof IsoMapper!=="undefined" && IsoMapper.enabled ? IsoGeometry.unproject(dx,dy) : {x:dx,y:dy}; state.cameraX = state.dragStart.cameraX-delta.x; state.cameraY = state.dragStart.cameraY-delta.y; if(typeof IsoMapper!=='undefined' && IsoMapper.enabled)IsoMapper.interact(); scheduleMapDraw(); requestVisibleData(); });
+  window.addEventListener('mouseup', e => { if (!state.dragging) return; const moved=Math.hypot(e.clientX-state.dragStart.x,e.clientY-state.dragStart.y); state.dragging=false; canvas.classList.remove('dragging'); if (moved<5 && state.mode==='detail') { const rect=canvas.getBoundingClientRect(),base=baseFromScreen(e.clientX-rect.left,e.clientY-rect.top),hex=typeof IsoMapper!=='undefined' && IsoMapper.enabled ? IsoMapper.pick(e.clientX-rect.left,e.clientY-rect.top) || nearestHex(base.x,base.y) : nearestHex(base.x,base.y); if(hex) selectHex(hex.globalCol,hex.globalRow); } });
   canvas.addEventListener('wheel', e => { e.preventDefault(); const rect=canvas.getBoundingClientRect(); setZoom(state.scale*(e.deltaY<0?1.12:1/1.12),e.clientX-rect.left,e.clientY-rect.top); }, {passive:false});
 }
 function updateUpdateUI(payload) { $('updateMessage').textContent = payload.message || ''; $('installUpdateButton').classList.toggle('hidden', payload.state !== 'ready'); $('updateButton').disabled = payload.state === 'checking' || payload.state === 'downloading'; }

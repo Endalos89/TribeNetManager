@@ -38,3 +38,20 @@ assert.equal(G.surface(mid.x,mid.y,wet,palette).water,true,'water covers full oc
 assert.equal(G.surface(mid.x,mid.y+.1,wet,palette).water,true,'coastal water extends into land');
 assert.equal(G.surface(n.x,n.y,wet,palette).water,false,'coastal band does not consume whole land hex');
 console.log('North-up projection, continuous hills and dry/coastal boundary checks passed');
+// Fog only excludes scenery whose BASE is concealed, never clipping its crown.
+assert.equal(G.sceneryVisible(0,0,[false,false,false,false,false,false]),true);
+assert.equal(G.sceneryVisible(0,-.7,[true,true,true,true,false,true]),false);
+assert.equal(G.sceneryVisible(0,-.7,[true,true,true,true,true,true]),true);
+const {composition}=require('../src/isometric-units');
+const report={people:{Warriors:10,Actives:20,Inactives:5,People:35},resources:{Animals:{Horse:35},Goods:{Wagon:0}}};
+assert.deepEqual(composition(report),{warriors:10,actives:20,inactives:5,horses:35,carts:0,mounted:true});
+assert.equal(composition({...report,resources:{Animals:{Horse:34}}}).mounted,false);
+assert.equal(composition({...report,resources:{Animals:{Horse:35},Goods:{Cart:1}}}).mounted,false);
+assert.equal(composition({...report,resources:{Animals:{Horse:35},Goods:{Wagon:1}}}).mounted,false);
+assert.equal(composition({...report,people:{...report.people,Slaves:1}}).mounted,false);
+assert.equal(composition({...report,people:{...report.people,People:40}}).mounted,false);
+assert.equal(composition({warrior:10,active:20,inactive:5,totalPeople:35,horseCount:35,wagonCount:0}).mounted,true);
+assert.equal(composition({warrior:10,active:20,inactive:5,totalPeople:35,horseCount:35,wagonCount:0,inventory:[{item:'CART',quantity:1}]}).mounted,false);
+assert.equal(composition({people:{},resources:{Animals:{Horses:10}}}).mounted,false);
+assert.equal(composition(null),null);
+console.log('Fog scenery and reported/planned unit composition checks passed');
