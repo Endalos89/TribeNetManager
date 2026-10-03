@@ -88,3 +88,27 @@ U.prepare();
 assert.equal(U.occupies('PK1711',0,0),true);
 assert.equal(U.occupies('PK1810',0,0),false);
 console.log('Planned unit models remain on origin hex checks passed');
+
+// Historical result rendering uses the resolved unit position only; the
+// synced plan must not add a second model back at its movement origin.
+global.resultsTimeline={turn:{turnKey:'906-04',isPlanningTurn:false,units:[{unitCode:'0485',unitType:'Tribe',currentHex:'PK1810'}]}};
+global.state.planImport={id:2,turnKey:'906-04',plan:{}};
+global.state.routeCache={movements:[{unit:'0485',route:{points:[{coordinate:'PK1711'},{coordinate:'PK1810'}]}}]};
+U.prepare();
+assert.equal(U.occupies('PK1711',0,0),false);
+assert.equal(U.occupies('PK1810',0,0),true);
+console.log('Historical results use one resolved unit position checks passed');
+
+// A moving model is centred on the shared edge (the midpoint between the
+// current and next hex); a model without a route stays at the hex centre.
+global.baseCenter=(col,row)=>({x:1+col*1.5,y:Math.sqrt(3)/2+Math.sqrt(3)*(row+(col%2?.5:0))});
+global.IsoMapper={surface:()=>({z:0}),project:p=>p,enabled:false};
+global.canvas={getBoundingClientRect:()=>({width:1000,height:1000})};
+global.ctx={save(){},restore(){},measureText(){return {width:10};}};
+global.state={scale:50,scoutingVisible:true,planningVisible:true,planImport:{plan:{unitStats:[{unit:'0485',warrior:1,active:0,inactive:0}]}},routeCache:{movements:[{unit:'0485',route:{points:[{coordinate:'AA0101',globalCol:0,globalRow:0},{coordinate:'AA0201',globalCol:1,globalRow:0}]}}]}};
+const moving=U.layout({coordinate:'AA0101',globalCol:0,globalRow:0},'0485','Tribe');
+global.state.routeCache={movements:[]};
+const still=U.layout({coordinate:'AA0101',globalCol:0,globalRow:0},'0485','Tribe');
+assert.equal(moving.models[0].x-still.models[0].x,.75);
+assert.equal(still.models[0].x,1.313764635128913);
+console.log('Moving edge midpoint and stationary centre checks passed');

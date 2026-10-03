@@ -448,11 +448,13 @@ function drawConditionalMarker(point, text, color) {
 }
 function drawPlanOverlay() {
   if (!state.routeCache) state.routeCache = buildPlanRoutes(state.planImport.plan); const plan = state.planImport.plan;
+  const historicalResults = typeof resultsTimeline !== 'undefined' && resultsTimeline.turn && !resultsTimeline.turn.isPlanningTurn;
   const labelSlots = new Map();
   for (const m of state.routeCache.movements) {
     drawRoute(m.route.points, { color:'#f0b45e', width:Math.max(2.2,state.scale*.11), alpha:.94 });
     const start = m.route.points[0], end = m.route.points[m.route.points.length - 1]; if (!start) continue;
-    const key = start.coordinate, slot = labelSlots.get(key) || 0; drawUnitLabel(start, m.unit, m.type, slot, 'start'); labelSlots.set(key, slot+1);
+    const key = start.coordinate, slot = labelSlots.get(key) || 0;
+    if (!historicalResults) { drawUnitLabel(start, m.unit, m.type, slot, 'start'); labelSlots.set(key, slot+1); }
     if (m.route.unresolved.length) drawConditionalMarker(end || start, m.route.unresolved[0], '#f0b45e');
   }
   for (const creation of plan.unitCreations || []) {

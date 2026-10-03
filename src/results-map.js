@@ -175,12 +175,16 @@ function drawResultPartialMarker(point, radius, data) {
 function drawHistoricalUnits() {
   if (!resultsTimeline.turn?.units?.length) return;
   const slots = new Map();
+  const seen = new Set();
   for (const unit of resultsTimeline.turn.units) {
+    const unitCode = String(unit.unitCode);
+    if (seen.has(unitCode)) continue;
+    seen.add(unitCode);
     const point = parseCoordinate(unit.currentHex);
     if (!point) continue;
     const key = point.coordinate;
     const slot = slots.get(key) || 0;
-    drawUnitLabel(point, unit.unitCode, unit.unitType, slot, '', unit);
+    drawUnitLabel(point, unitCode, unit.unitType, slot, '', unit);
     slots.set(key, slot + 1);
   }
 }
