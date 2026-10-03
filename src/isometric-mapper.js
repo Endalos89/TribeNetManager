@@ -225,6 +225,7 @@ const IsoMapper = (() => {
       if(!t.known && state.scale>=35){renderCtx.fillStyle='#71838b';renderCtx.textAlign='center';renderCtx.font='12px Segoe UI';renderCtx.fillText('?',t.p.x,t.p.y);}
     }
     if(state.planningVisible && state.planImport?.plan)drawPlanOverlay();
+    IsoUnits.drawSelectionHighlight();
     updateCenterReadout();frameRect=null;
   }
   function setEnabled(value, options = {}) {
@@ -232,11 +233,11 @@ const IsoMapper = (() => {
     $('isoViewControls').classList.toggle('hidden',!value);
     $('openMapperButton').querySelector('h2').textContent='Mapper';
     if(value && state.scale<43)state.scale=52;
-    const selector=$('mapperViewMode');if(selector)selector.value=value?'3d':'2d';
+    const toggle=$('mapperViewToggle');if(toggle)toggle.checked=Boolean(value);
     showMapper({overview:options.overview !== false});
   }
   function setup() {
-    $('openMapperButton').addEventListener('click',()=>setEnabled(($('mapperViewMode')?.value||'2d')==='3d'));
+    $('openMapperButton').addEventListener('click',()=>setEnabled(Boolean($('mapperViewToggle')?.checked)));
     $('isoLabels').addEventListener('change',e=>{labels=e.target.checked;draw();});
     $('isoGrid').addEventListener('change',e=>{grid=e.target.checked;draw();});
     const field=document.createElement('fieldset');field.id='riverEdgeEditor';field.className='river-edge-editor';

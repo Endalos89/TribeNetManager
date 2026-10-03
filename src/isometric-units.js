@@ -38,7 +38,7 @@
   }
   function prepare() {
     const context=JSON.stringify([resultsTimeline.turn?.turnKey,state.planImport?.id,state.planImport?.turnKey]);
-    if(selectionContext!==null && context!==selectionContext){cycle=null;if(state.selectedUnit){state.selectedUnit=null;$('unitEditor').classList.add('hidden');if(!state.selected)$('noSelection').classList.remove('hidden');}}
+    if(selectionContext!==null && context!==selectionContext){cycle=null;state.selectedUnitHex=null;if(state.selectedUnit){state.selectedUnit=null;$('unitEditor').classList.add('hidden');if(!state.selected)$('noSelection').classList.remove('hidden');}}
     selectionContext=context;
     const refs=new Set();occupants=new Map();
     const add=(ref,code)=>{if(!ref)return;refs.add(ref);if(!occupants.has(ref))occupants.set(ref,new Set());occupants.get(ref).add(String(code));};
@@ -55,18 +55,19 @@
     const group=[...(occupants.get(point.coordinate)||[])].sort(),slot=Math.max(0,group.indexOf(String(code))),multiple=group.length>1;
     const spread=multiple?.46:1,angle=slot*Math.PI*2/Math.max(1,group.length);
     const shift=multiple?{x:Math.cos(angle)*.33,y:Math.sin(angle)*.33}:{x:0,y:0};
-    const movement=(state.planImport?.plan?.movements||[]).find(row=>String(row.unit)===String(code));
     const movementRoute=state.routeCache?.movements?.find(row=>String(row.unit)===String(code))?.route;
     const scoutRoute=state.scoutingVisible ? state.routeCache?.scouts?.find(row=>String(row.unit)===String(code))?.route : null;
     const route=movementRoute?.points?.length>1 ? movementRoute : scoutRoute;
     const first=route?.points?.[0], next=route?.points?.[1];
     const heading=first?.coordinate===point.coordinate && next ? Math.atan2(baseCenter(next.globalCol,next.globalRow).y-baseCenter(first.globalCol,first.globalRow).y,baseCenter(next.globalCol,next.globalRow).x-baseCenter(first.globalCol,first.globalRow).x) : null;
+    const travellingFromStart=first?.coordinate===point.coordinate && next;
+    const travelOffset=travellingFromStart ? {x:(baseCenter(next.globalCol,next.globalRow).x-center.x)*.5,y:(baseCenter(next.globalCol,next.globalRow).y-center.y)*.5} : {x:0,y:0};
     const models=formation(counts,`${point.coordinate||''}:${code}`).map(m=>{
-      const x=center.x+shift.x+m.x*spread,y=center.y+shift.y+m.y*spread;
+      const x=center.x+shift.x+travelOffset.x+m.x*spread,y=center.y+shift.y+travelOffset.y+m.y*spread;
       return {...m,x,y,z:IsoMapper.surface(x,y).z,heading};
     }).sort((a,b)=>a.y-b.y);
     const text=`${type==='Element'?'E':type==='Tribe'?'T':type==='Fleet'?'F':'U'} ${code}${extra?` ${extra}`:''}`;
-    const anchor=IsoMapper.project({x:center.x+shift.x,y:center.y+shift.y+.56});
+    const anchor=IsoMapper.project({x:center.x+shift.x+travelOffset.x,y:center.y+shift.y+travelOffset.y+.56});
     anchor.y+=15+(multiple?slot*13:0);
     ctx.save();ctx.font='700 11px Segoe UI';const labelWidth=ctx.measureText(text).width+12;ctx.restore();
     const points=models.map(m=>IsoMapper.project(m,m.z)),extent=Math.max(4,state.scale*.16),height=state.scale*.43;
@@ -172,10 +173,26 @@
     const ref=coordinateFor(point.globalCol,point.globalRow),units=unitsAt(ref);
     const key=JSON.stringify([resultsTimeline.turn?.turnKey,state.planImport?.id,state.planImport?.turnKey,ref]);
     cycle=nextSelection(cycle,key,units.map(u=>u.code));
-    if(cycle.code!==null){const entry=units.find(u=>u.code===cycle.code);showUnitLogistics(entry.code,entry.snapshot);draw();}
-    else{state.selectedUnit=null;$('unitEditor').classList.add('hidden');selectHex(point.globalCol,point.globalRow);}
+    if(cycle.code!==null){const entry=units.find(u=>u.code===cycle.code);state.selectedUnitHex=ref;showUnitLogistics(entry.code,entry.snapshot);draw();}
+    else{state.selectedUnit=null;state.selectedUnitHex=null;$('unitEditor').classList.add('hidden');selectHex(point.globalCol,point.globalRow);}
   }
-  const api={resetSelection:()=>{cycle=null;},nextSelection,unitsAt,composition,modelCount,formation,layout,draw,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];},clickHex};
+  function drawSelectionHighlight() {
+    if(!state.selectedUnit || !state.selectedUnitHex || !IsoMapper.enabled)return;
+    const point=parseCoordinate(state.selectedUnitHex);if(!point)return;
+    IsoMapper.withProjection(()=>{
+      const movementRoute=state.routeCache?.movements?.find(row=>String(row.unit)===String(state.selectedUnit))?.route;
+      const scoutRoute=state.scoutingVisible ? state.routeCache?.scouts?.find(row=>String(row.unit)===String(state.selectedUnit))?.route : null;
+      const route=movementRoute?.points?.length>1 ? movementRoute : scoutRoute;
+      const first=route?.points?.[0],next=route?.points?.[1];
+      const base=baseCenter(point.globalCol,point.globalRow);
+      const c=first?.coordinate===point.coordinate&&next ? {x:(base.x+baseCenter(next.globalCol,next.globalRow).x)*.5,y:(base.y+baseCenter(next.globalCol,next.globalRow).y)*.5} : base;
+      const p=IsoMapper.project(c);
+      ctx.save();ctx.beginPath();ctx.ellipse(p.x,p.y,state.scale*.62,state.scale*.27,0,0,Math.PI*2);
+      ctx.fillStyle='rgba(72,212,239,.12)';ctx.fill();ctx.strokeStyle='#58d4ef';ctx.lineWidth=Math.max(3,state.scale*.085);ctx.stroke();
+      ctx.strokeStyle='#ffe18a';ctx.lineWidth=Math.max(1.5,state.scale*.04);ctx.stroke();ctx.restore();
+    });
+  }
+  const api={resetSelection:()=>{cycle=null;},nextSelection,unitsAt,composition,modelCount,formation,layout,draw,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];},clickHex,drawSelectionHighlight};
   if(typeof module!=='undefined' && module.exports)module.exports=api;
   else {
     root.IsoUnits=api;

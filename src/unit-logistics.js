@@ -282,6 +282,7 @@ window.addEventListener('mouseup', event => {
 
   state.dragging = false;
   canvas.classList.remove('dragging');
+  state.selectedUnitHex = hit.point?.coordinate || state.selectedUnitHex;
   showUnitLogistics(hit.unit);
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -305,6 +306,7 @@ $('turnSelect').addEventListener('change', () => {
     if (exists) showUnitLogistics(state.selectedUnit);
     else {
       state.selectedUnit = null;
+      state.selectedUnitHex = null;
       $('unitEditor').classList.add('hidden');
       if (!state.selected) $('noSelection').classList.remove('hidden');
     }
