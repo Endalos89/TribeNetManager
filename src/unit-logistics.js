@@ -270,7 +270,7 @@ function showUnitLogistics(unit, snapshot = null) {
 
 // Intercept a simple click on a drawn Tribe/Element label before the ordinary hex click handler runs.
 window.addEventListener('mouseup', event => {
-  if(typeof IsoMapper!=='undefined' && IsoMapper.enabled)return;
+  if(typeof IsoUnits!=='undefined')return;
   if (!state.dragging || state.mode !== 'detail' || !state.planningVisible) return;
   const moved = state.dragStart ? Math.hypot(event.clientX - state.dragStart.x, event.clientY - state.dragStart.y) : Infinity;
   if (moved >= 5) return;

@@ -103,7 +103,11 @@ function buildWorldGrid() {
   }
 }
 function showLauncher() { $('launcherView').classList.remove('hidden'); $('mapperView').classList.add('hidden'); }
-function showMapper() { $('launcherView').classList.add('hidden'); $('mapperView').classList.remove('hidden'); showOverview(); }
+function showMapper(options = {}) {
+  $('launcherView').classList.add('hidden'); $('mapperView').classList.remove('hidden');
+  if (options.overview !== false) showOverview();
+  else if (state.mode === 'detail') { resizeCanvas(); requestVisibleData(); draw(); }
+}
 function showOverview() {
   state.mode = 'overview'; $('overviewPanel').classList.remove('hidden'); $('detailPanel').classList.add('hidden'); $('detailControls').classList.add('hidden');
   $('overviewButton').classList.add('active'); updatePlanUI(); refreshSummaries().then(buildWorldGrid);
@@ -134,7 +138,11 @@ function requestVisibleData() {
   if (state.mode !== 'detail') return; clearTimeout(areaRequestTimer);
   areaRequestTimer = setTimeout(async () => {
     const b = visibleBounds(); const rows = await window.tribenet.getHexesInArea(b);
-    for (const row of rows) state.hexCache.set(row.coordinate, row); state.loadedArea = b; draw();
+    for (const row of rows) state.hexCache.set(row.coordinate, row); state.loadedArea = b;
+    // Follow-ocean routes depend on revealed terrain. Re-evaluate them after
+    // each area refresh so the marker advances as scouting data arrives.
+    if (state.planImport?.plan) state.routeCache = null;
+    draw();
   }, 55);
 }
 
@@ -312,6 +320,32 @@ function underlyingDirection(order) {
   const map = { NL:'N', NEL:'NE', NWL:'NW', SL:'S', SEL:'SE', SWL:'SW' }; return map[order] || null;
 }
 function isFollowDirective(order) { return /^(FO[LR]|FC[LR]|FL[LR]|FM[LR]|FR[LR]|FOLLOW)$/i.test(order); }
+function followCoastRoute(start, side, options = {}) {
+  const points = [{ globalCol:start.globalCol, globalRow:start.globalRow, coordinate:start.coordinate, kind:'exact' }];
+  const queue = [{ point:start, path:points }];
+  const visited = new Set([start.coordinate]);
+  const dirs = ['N','NE','SE','S','SW','NW'];
+  const known = point => state.hexCache.get(point.coordinate);
+  const ocean = point => known(point)?.terrain === 'O';
+  const unexplored = point => { const data=known(point); return !data || data.terrain==='UNKNOWN' || data.knowledgeLevel==='observed' || data.knowledgeLevel==='attempted'; };
+  while (queue.length && visited.size <= 90) {
+    const current = queue.shift();
+    const oceanIndexes = dirs.map((d,i)=>({i,p:stepHex(current.point,d)})).filter(x=>x.p&&ocean(x.p));
+    const preferred=[];
+    for (const edge of oceanIndexes) {
+      const delta=side==='right'?-1:1;
+      for (const offset of [delta,delta*2,-delta,-delta*2,0]) {
+        const candidate=stepHex(current.point,dirs[(edge.i+offset+6)%6]);
+        if(candidate&&!preferred.some(p=>p.coordinate===candidate.coordinate))preferred.push(candidate);
+      }
+    }
+    for(const candidate of preferred){
+      if(unexplored(candidate))return {points:[...current.path,{...candidate,kind:'approx',order:options.order}],found:true};
+      if(known(candidate)?.terrain!=='O'&&!visited.has(candidate.coordinate)){visited.add(candidate.coordinate);queue.push({point:candidate,path:[...current.path,{...candidate,kind:'approx',order:options.order}]});}
+    }
+  }
+  return {points,found:false};
+}
 function routeFor(startHex, orders, options = {}) {
   const start = parseCoordinate(startHex); if (!start) return { points: [], warnings: [`Invalid start hex ${startHex}`], unresolved: [] };
   const points = [{ globalCol: start.globalCol, globalRow: start.globalRow, coordinate: start.coordinate, kind: 'exact' }]; const warnings = [], unresolved = [];
@@ -328,6 +362,12 @@ function routeFor(startHex, orders, options = {}) {
       const count = options.limitSteps || 5;
       for (let i = 0; i < count; i++) { const next = stepHex(current, limitDir); if (!next) break; current = { ...next, kind:'approx', order }; points.push(current); }
       warnings.push(`${options.label || 'Route'}: ${order} means ${limitDir} to movement limit; dashed continuation is illustrative.`); unresolved.push(order); break;
+    }
+    if (/^FO[LR]$/i.test(order)) {
+      const coast=followCoastRoute(current,/^FOR$/i.test(order)?'right':'left',{order});
+      if(coast.points.length>1){current=coast.points[coast.points.length-1];points.push(...coast.points.slice(1));warnings.push(`${options.label || 'Route'}: ${order} ends at the first potential unexplored coastal hex revealed by the current map; continuation remains illustrative.`);}
+      else warnings.push(`${options.label || 'Route'}: ${order} has no revealed ocean edge to follow yet.`);
+      unresolved.push(order);break;
     }
     if (isFollowDirective(order)) {
       warnings.push(`${options.label || 'Route'}: ${order} is conditional on terrain/coastline; route cannot yet be fixed.`); unresolved.push(order); break;
@@ -371,7 +411,12 @@ function drawUnitLabel(point, unit, type, offsetIndex = 0, extra = '', snapshot 
   const text = `${type === 'Element' ? 'E' : type === 'Tribe' ? 'T' : 'U'} ${unit}${extra ? ` ${extra}` : ''}`; ctx.save();
   ctx.font = `700 ${Math.max(9, Math.min(12, state.scale * .32))}px Segoe UI`; const w = ctx.measureText(text).width + 12, h = 19;
   const x = p.x - w / 2, y = p.y - state.scale * .78 - offsetIndex * (h + 3); ctx.fillStyle = 'rgba(15,24,31,.94)'; ctx.strokeStyle = '#d7a754'; ctx.lineWidth = 1.2;
-  roundedRect(ctx, x, y, w, h, 5); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#f4e5c4'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x + w/2, y + h/2 + .5); ctx.restore();
+  roundedRect(ctx, x, y, w, h, 5); ctx.fill(); ctx.stroke();
+  if (String(state.selectedUnit) === String(unit)) {
+    hexPath(p.x, p.y, Math.max(state.scale * 1.02, 24)); ctx.strokeStyle = '#58d4ef'; ctx.lineWidth = Math.max(3, state.scale * .10); ctx.stroke();
+    ctx.strokeStyle = '#ffe18a'; ctx.lineWidth = Math.max(1.5, state.scale * .05); ctx.stroke();
+  }
+  ctx.fillStyle = '#f4e5c4'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x + w/2, y + h/2 + .5); ctx.restore();
 }
 function roundedRect(context, x, y, w, h, r) {
   const rr = Math.min(r, w/2, h/2); context.beginPath(); context.moveTo(x+rr,y); context.arcTo(x+w,y,x+w,y+h,rr); context.arcTo(x+w,y+h,x,y+h,rr); context.arcTo(x,y+h,x,y,rr); context.arcTo(x,y,x+w,y,rr); context.closePath();
@@ -413,6 +458,10 @@ function bindEvents() {
   $('saveHexButton').addEventListener('click', saveSelectedHex); $('fogHexButton').addEventListener('click', clearSelectedHex); $('importOrdersButton').addEventListener('click', importOrdersWorkbook);
   $('planningToggle').addEventListener('change', e => { state.planningVisible = e.target.checked; $('scoutingToggle').disabled = !state.planningVisible || !state.planImport; updatePlanUI(); draw(); });
   $('scoutingToggle').addEventListener('change', e => { state.scoutingVisible = e.target.checked; renderPlanWarnings(); draw(); });
+  $('mapperViewMode').addEventListener('change', e => {
+    const use3d = e.target.value === '3d';
+    if (typeof IsoMapper !== 'undefined' && IsoMapper.enabled !== use3d) IsoMapper.setEnabled(use3d, { overview:false });
+  });
   $('turnSelect').addEventListener('change', e => loadPlan(Number(e.target.value), true));
   $('backupButton').addEventListener('click', async () => { const backupPath = await window.tribenet.createBackup(); $('dataPathLabel').textContent = `Backup created: ${backupPath}`; await window.tribenet.showBackup(backupPath); });
   $('updateButton').addEventListener('click', async () => { $('updateButton').disabled = true; $('updateMessage').textContent = 'Checking for updates…'; await window.tribenet.checkForUpdates(); setTimeout(() => { $('updateButton').disabled = false; }, 1000); });

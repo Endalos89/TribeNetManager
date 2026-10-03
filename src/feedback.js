@@ -173,7 +173,7 @@
       schemaVersion: 1,
       exportedAt: new Date().toISOString(),
       appVersion: getAppVersion(),
-      comments: notes.map(note => ({ ...note }))
+      comments: notes.filter(note => note.status !== 'resolved').map(note => ({ ...note }))
     };
   }
 

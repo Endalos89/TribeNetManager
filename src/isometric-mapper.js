@@ -227,16 +227,16 @@ const IsoMapper = (() => {
     if(state.planningVisible && state.planImport?.plan)drawPlanOverlay();
     updateCenterReadout();frameRect=null;
   }
-  function setEnabled(value) {
+  function setEnabled(value, options = {}) {
     enabled=value;IsoUnits.resetSelection();interactive=false;clearTimeout(settleTimer);if(!value)state.scale=Math.min(68,state.scale);document.body.classList.toggle('isometric-mode',value);
     $('isoViewControls').classList.toggle('hidden',!value);
     $('openMapperButton').querySelector('h2').textContent='Mapper';
     if(value && state.scale<43)state.scale=52;
-    showMapper();
+    const selector=$('mapperViewMode');if(selector)selector.value=value?'3d':'2d';
+    showMapper({overview:options.overview !== false});
   }
   function setup() {
-    $('openIsometricMapperButton').addEventListener('click',()=>setEnabled(true));
-    $('openMapperButton').addEventListener('click',()=>setEnabled(false));
+    $('openMapperButton').addEventListener('click',()=>setEnabled(($('mapperViewMode')?.value||'2d')==='3d'));
     $('isoLabels').addEventListener('change',e=>{labels=e.target.checked;draw();});
     $('isoGrid').addEventListener('change',e=>{grid=e.target.checked;draw();});
     const field=document.createElement('fieldset');field.id='riverEdgeEditor';field.className='river-edge-editor';

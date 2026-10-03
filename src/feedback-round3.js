@@ -81,7 +81,7 @@
       schemaVersion:1,
       exportedAt:now,
       appVersion:`Version ${version} · Local desktop application`,
-      comments:notes.map(note => ({ ...note }))
+      comments:notes.filter(note => note.status !== 'resolved').map(note => ({ ...note }))
     });
     queuePresentation();
   }

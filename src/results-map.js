@@ -133,6 +133,7 @@ requestVisibleData = function requestVisibleDataWithResults() {
       state.hexCache.clear();
       for (const row of rows) state.hexCache.set(row.coordinate, row);
       state.loadedArea = b;
+      if (state.planImport?.plan) state.routeCache = null;
       draw();
     } finally {
       resultsTimeline.loadingArea = false;
@@ -150,8 +151,11 @@ refreshSummaries = async function refreshHistoricalSummaries() {
 function drawResultPartialMarker(point, radius, data) {
   const blocked = resultHasBlockedEvidence(data);
   const markerRadius = Math.max(8, Math.min(13, radius * .30));
-  const x = point.x + radius * .48;
-  const y = point.y - radius * .42;
+  // In the isometric view the projected centre is already the correct visual
+  // anchor; the old corner offset made partial-exploration markers look like
+  // they belonged to the neighbouring face of the hex.
+  const x = typeof IsoMapper !== 'undefined' && IsoMapper.enabled ? point.x : point.x + radius * .48;
+  const y = typeof IsoMapper !== 'undefined' && IsoMapper.enabled ? point.y : point.y - radius * .42;
   ctx.save();
   ctx.beginPath();
   ctx.arc(x, y, markerRadius, 0, Math.PI * 2);
