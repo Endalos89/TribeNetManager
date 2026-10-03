@@ -28,7 +28,7 @@ const context = {
   },
   buildPlanRoutes: () => ({
     movements: [{ unit: 'T1', route: { points: [{ globalCol: 0, globalRow: 0 }, { globalCol: 1, globalRow: 0 }, { globalCol: 1, globalRow: 1 }] } }],
-    scouts: [{ unit: 'T1', id: 1, noOfScouts: 284, route: { points: [{ globalCol: 0, globalRow: 0 }, { globalCol: 0, globalRow: 1 }] } }]
+    scouts: [{ unit: 'T1', id: 1, noOfScouts: 284, route: { points: [{ globalCol: 0, globalRow: 0, coordinate: 'AA0101' }, { globalCol: 0, globalRow: 1, coordinate: 'AA0102' }] } }]
   })
 };
 context.window = context;
@@ -47,6 +47,10 @@ const events = context.resultsPlayback.buildEvents({
 assert.strictEqual(context.resultsPlayback.modelCount(1), 1);
 assert.strictEqual(context.resultsPlayback.modelCount(99), 2);
 assert.strictEqual(context.resultsPlayback.modelCount(1000), 4);
+assert.strictEqual(context.resultsPlayback.activitySound('40 people Skin\\gut\\bone 60 Goat'), 'butcher');
+assert.strictEqual(context.resultsPlayback.activitySound('B/axe 50'), 'wood');
+assert.strictEqual(context.resultsPlayback.activitySound('20257 people hunted 52668 provs'), 'hunt');
+assert.strictEqual(context.resultsPlayback.activitySound('275 herders allocated'), 'herd');
 assert.strictEqual(events.filter(event => event.phase === 'activities').length, 2);
 assert.ok(events.some(event => event.changes.some(change => change.name === 'Goat' && change.amount === -60)));
 assert.ok(events.some(event => event.changes.some(change => change.name === 'Leather' && change.amount === -100)));
@@ -57,6 +61,7 @@ assert.strictEqual(events.filter(event => event.phase === 'scouting')[0].riders,
   const started = await context.startResultsPlayback();
   assert.strictEqual(started, true, 'Play Turn should find the shared current results turn');
   assert.strictEqual(context.resultsPlayback.active, true);
+  assert.strictEqual(context.resultsPlayback.revealTargets.size, 1, 'Scout destinations should be staged behind fog until reached');
   context.stopResultsPlayback();
   console.log('Results playback event, start path and log-scale tests passed');
 })();

@@ -10,10 +10,14 @@
     targetTurnKey: null,
     targetUnitCodes: new Set(),
     revealed: new Set(),
+    revealTargets: new Set(),
     raf: null,
     audioContext: null,
-    audioByPhase: new Map()
+    audioByPhase: new Map(),
+    speed: 1
   };
+
+  const SPEED_STORAGE_KEY = 'tribenet:resultsPlaybackSpeed';
 
   const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 
@@ -79,6 +83,23 @@
     return changes.length || !isLastClause ? changes : deltaChanges(unit);
   }
 
+  function activitySound(text) {
+    const value = String(text || '').toLowerCase();
+    if (/skin|gut|bone|slaughter|butcher/.test(value)) return 'butcher';
+    if (/wood|log|axe|b\/axe|carv|made .*sling|crafted|craft/.test(value)) return 'wood';
+    if (/hunt|hunted/.test(value)) return 'hunt';
+    if (/herd|herder|bred|breed/.test(value)) return 'herd';
+    if (/cured|tanned|tan/.test(value)) return 'craft';
+    return 'unknown';
+  }
+
+  function currentSpeed() {
+    const value = Number(playback.speed);
+    return Number.isFinite(value) && value > 0 ? value : 1;
+  }
+
+  function now() { return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now(); }
+
   function actualPlan(turn) {
     if (typeof TurnLifecycleCore !== 'undefined' && TurnLifecycleCore.actualPlanFromResult) return TurnLifecycleCore.actualPlanFromResult(turn);
     return { movements: [], scouts: [] };
@@ -101,21 +122,23 @@
       for (let clauseIndex = 0; clauseIndex < activityList.length; clauseIndex += 1) {
         const clause = activityList[clauseIndex];
         const changes = activityChanges(clause, unit, clauseIndex === activityList.length - 1);
-        events.push({ phase: 'activities', unitCode: String(event.unitCode || ''), coordinate: unit?.previousHex || unit?.currentHex, title: 'Activity', text: clause, changes, duration: 1050 });
+        events.push({ phase: 'activities', unitCode: String(event.unitCode || ''), coordinate: unit?.previousHex || unit?.currentHex, title: 'Activity', text: clause, changes, sound: activitySound(clause), duration: 1050 });
       }
     }
 
     const routes = routesFor(turn);
     for (const movement of routes.movements || []) {
       const points = movement.route?.points || [];
-      for (let i = 1; i < points.length; i += 1) events.push({ phase: 'movement', unitCode: String(movement.unit), from: points[i - 1], to: points[i], duration: 420 });
+      for (let i = 1; i < points.length; i += 1) events.push({ phase: 'movement', unitCode: String(movement.unit), from: points[i - 1], to: points[i], sound: 'movement', duration: 420 });
     }
 
     for (const scout of routes.scouts || []) {
       const points = scout.route?.points || [];
       const source = (turn?.units || []).find(unit => String(unit.unitCode) === String(scout.unit));
-      const riders = modelCount(scout.noOfScouts || source?.scouts?.find(row => Number(row.id) === Number(scout.id))?.noOfScouts || 1);
-      for (let i = 1; i < points.length; i += 1) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, from: points[i - 1], to: points[i], duration: 440 });
+      const sourceScout = source?.scouts?.find(row => Number(row.id) === Number(scout.id));
+      const riders = modelCount(scout.noOfScouts || sourceScout?.noOfScouts || 1);
+      const mounted = Number(scout.noOfHorses || sourceScout?.noOfHorses || 0) > 0 || scout.mounted === true || sourceScout?.mounted === true;
+      for (let i = 1; i < points.length; i += 1) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: points[i - 1], to: points[i], sound: mounted ? 'horse' : 'scout', duration: 440 });
     }
     return events;
   }
@@ -136,11 +159,16 @@
     // for installations where the browser blocks local audio or a file is
     // unavailable; it is deliberately only a tiny UI cue.
     try {
-      const sources = { activities: 'assets/results-sounds/chimes.ogg', movement: 'assets/results-sounds/click_1.ogg', scouting: 'assets/results-sounds/dum.ogg' };
+      const sources = {
+        butcher: 'assets/results-sounds/butcher.ogg', wood: 'assets/results-sounds/woodcutting.ogg', hunt: 'assets/results-sounds/dum.ogg',
+        herd: 'assets/results-sounds/chimes.ogg', craft: 'assets/results-sounds/click_1.ogg', unknown: 'assets/results-sounds/dum.ogg',
+        movement: 'assets/results-sounds/click_1.ogg', scout: 'assets/results-sounds/dum.ogg', horse: 'assets/results-sounds/horse-gallop.ogg'
+      };
       const Audio = root.Audio;
-      if (Audio && sources[phase]) {
-        let audio = playback.audioByPhase.get(phase);
-        if (!audio) { audio = new Audio(sources[phase]); audio.preload = 'auto'; playback.audioByPhase.set(phase, audio); }
+      const sound = sources[phase] ? phase : 'unknown';
+      if (Audio && sources[sound]) {
+        let audio = playback.audioByPhase.get(sound);
+        if (!audio) { audio = new Audio(sources[sound]); audio.preload = 'auto'; playback.audioByPhase.set(sound, audio); }
         audio.currentTime = 0;
         audio.volume = .32;
         const started = audio.play();
@@ -152,8 +180,8 @@
       playback.audioContext ||= new AudioContext();
       const oscillator = playback.audioContext.createOscillator();
       const gain = playback.audioContext.createGain();
-      oscillator.frequency.value = phase === 'activities' ? 420 : phase === 'movement' ? 250 : 690;
-      oscillator.type = phase === 'scouting' ? 'triangle' : 'sine';
+      oscillator.frequency.value = phase === 'butcher' ? 180 : phase === 'wood' ? 310 : phase === 'horse' ? 120 : phase === 'movement' ? 250 : 690;
+      oscillator.type = phase === 'scout' || phase === 'horse' ? 'triangle' : 'sine';
       gain.gain.setValueAtTime(.045, playback.audioContext.currentTime);
       gain.gain.exponentialRampToValueAtTime(.001, playback.audioContext.currentTime + .08);
       oscillator.connect(gain); gain.connect(playback.audioContext.destination); oscillator.start(); oscillator.stop(playback.audioContext.currentTime + .09);
@@ -174,7 +202,7 @@
   function stopResultsPlayback() {
     cancelFrame();
     playback.active = false; playback.phase = 'idle'; playback.events = []; playback.index = 0; playback.progress = 0;
-    playback.targetTurnKey = null; playback.targetUnitCodes = new Set(); playback.revealed = new Set();
+    playback.targetTurnKey = null; playback.targetUnitCodes = new Set(); playback.revealed = new Set(); playback.revealTargets = new Set();
     setButton();
     if (typeof draw === 'function') draw();
   }
@@ -186,22 +214,23 @@
     const events = buildEvents(turn);
     stopResultsPlayback();
     playback.events = events; playback.active = events.length > 0; playback.index = 0; playback.progress = 0;
-    playback.startedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now(); playback.targetTurnKey = turn.turnKey;
+    playback.startedAt = now(); playback.targetTurnKey = turn.turnKey;
     playback.targetUnitCodes = new Set(events.map(event => event.unitCode).filter(Boolean));
+    playback.revealTargets = new Set(events.filter(event => event.phase === 'scouting').map(event => event.to?.coordinate).filter(Boolean));
     playback.phase = events[0]?.phase || 'idle';
     setButton();
     if (!playback.active) return false;
-    playTone(playback.phase);
+    playTone(events[0]?.sound || playback.phase);
     if (typeof draw === 'function') draw();
     requestFrame(tick);
     return true;
   }
 
   function finishEvent(event) {
-    if (event?.to?.coordinate) playback.revealed.add(event.to.coordinate);
+    if (event?.phase === 'scouting' && event?.to?.coordinate) playback.revealed.add(event.to.coordinate);
     playback.index += 1; playback.progress = 0;
     const next = playback.events[playback.index]; playback.phase = next?.phase || 'complete';
-    if (next) playTone(next.phase);
+    if (next) playTone(next.sound || next.phase);
   }
 
   function tick(now) {
@@ -209,7 +238,7 @@
     const event = playback.events[playback.index];
     if (!event) { stopResultsPlayback(); return; }
     playback.phase = event.phase;
-    playback.progress = Math.min(1, Math.max(0, (now - playback.startedAt) / event.duration));
+    playback.progress = Math.min(1, Math.max(0, (now - playback.startedAt) / (event.duration / currentSpeed())));
     if (playback.progress >= 1) {
       finishEvent(event); playback.startedAt = now;
       if (!playback.events[playback.index]) { stopResultsPlayback(); return; }
@@ -225,8 +254,9 @@
   }
 
   function lerpPoint(from, to, progress) {
+    const eased = progress * progress * (3 - 2 * progress);
     const a = baseCenter(from.globalCol, from.globalRow), b = baseCenter(to.globalCol, to.globalRow);
-    return { x: a.x + (b.x - a.x) * progress, y: a.y + (b.y - a.y) * progress };
+    return { x: a.x + (b.x - a.x) * eased, y: a.y + (b.y - a.y) * eased };
   }
 
   function roundedPanel(x, y, width, height, border) {
@@ -237,12 +267,13 @@
 
   function drawActivity(event) {
     const point = projectBase(pointFor(event.coordinate)); if (!point) return;
+    const fadeIn = Math.min(1, playback.progress / .14), fadeOut = Math.min(1, (1 - playback.progress) / .16);
     const lines = [event.title + (event.unitCode ? ` · ${event.unitCode}` : ''), event.text, event.changes?.length ? changeText(event.changes) : ''].filter(Boolean);
-    ctx.save(); ctx.font = '700 12px Segoe UI';
+    ctx.save(); ctx.globalAlpha = Math.min(fadeIn, fadeOut); ctx.font = '700 12px Segoe UI';
     const width = Math.min(360, Math.max(170, ...lines.map(line => ctx.measureText(line).width + 26))), height = 17 + lines.length * 16;
     const x = Math.max(8, Math.min(canvas.clientWidth - width - 8, point.x - width / 2)), y = Math.max(8, point.y - height - state.scale * .55);
-    ctx.restore(); roundedPanel(x, y, width, height, '#e4bd62');
-    ctx.save(); ctx.font = '700 12px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.restore(); ctx.save(); ctx.globalAlpha = Math.min(fadeIn, fadeOut); roundedPanel(x, y, width, height, '#e4bd62');
+    ctx.font = '700 12px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     lines.forEach((line, index) => { ctx.fillStyle = index === 0 ? '#ffe4a4' : index === lines.length - 1 && event.changes?.length ? '#9fe0bd' : '#eef4f6'; ctx.fillText(line, x + width / 2, y + 14 + index * 16); });
     ctx.restore();
   }
@@ -263,9 +294,28 @@
     ctx.restore();
   }
 
+  function drawRevealFog() {
+    if (!playback.revealTargets.size) return;
+    const hidden = [...playback.revealTargets].filter(coordinate => !playback.revealed.has(coordinate));
+    if (!hidden.length) return;
+    ctx.save(); ctx.fillStyle = '#18242b'; ctx.strokeStyle = '#263842'; ctx.lineWidth = Math.max(1, state.scale * .055);
+    for (const coordinate of hidden) {
+      const parsed = pointFor(coordinate); if (!parsed) continue;
+      const center = baseCenter(parsed.globalCol, parsed.globalRow);
+      if (typeof IsoMapper !== 'undefined' && IsoMapper.enabled && typeof IsoGeometry !== 'undefined') {
+        const points = IsoGeometry.corners.map(point => IsoMapper.project({ x: center.x + point.x, y: center.y + point.y }));
+        ctx.beginPath(); points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)); ctx.closePath(); ctx.fill(); ctx.stroke();
+      } else {
+        const point = screenFromBase(center); hexPath(point.x, point.y, state.scale * .96); ctx.fill(); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   function drawResultsPlaybackOverlay() {
     if (!playback.active) return;
     const drawOverlay = () => {
+      drawRevealFog();
       drawScoutReveals();
       const event = playback.events[playback.index]; if (!event) return;
       if (event.phase === 'activities') drawActivity(event);
@@ -285,6 +335,22 @@
   root.resultsPlaybackShouldHideUnit = resultsPlaybackShouldHideUnit;
   root.resultsPlayback.buildEvents = buildEvents;
   root.resultsPlayback.modelCount = modelCount;
+  root.resultsPlayback.activitySound = activitySound;
+
+  function bindSpeedSetting() {
+    const select = document.getElementById('mapResultPlaybackSpeed');
+    const stored = root.localStorage?.getItem(SPEED_STORAGE_KEY);
+    playback.speed = Number(stored) > 0 ? Number(stored) : 1;
+    if (!select) return;
+    select.value = String(playback.speed);
+    select.addEventListener('change', event => {
+      const speed = Number(event.target.value);
+      playback.speed = Number.isFinite(speed) && speed > 0 ? speed : 1;
+      root.localStorage?.setItem(SPEED_STORAGE_KEY, String(playback.speed));
+    });
+  }
+
+  bindSpeedSetting();
 
   const button = document.getElementById('mapResultPlayTurn');
   if (button) button.addEventListener('click', () => { if (playback.active) stopResultsPlayback(); else startResultsPlayback(); });
