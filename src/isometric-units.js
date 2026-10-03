@@ -55,9 +55,15 @@
     const group=[...(occupants.get(point.coordinate)||[])].sort(),slot=Math.max(0,group.indexOf(String(code))),multiple=group.length>1;
     const spread=multiple?.46:1,angle=slot*Math.PI*2/Math.max(1,group.length);
     const shift=multiple?{x:Math.cos(angle)*.33,y:Math.sin(angle)*.33}:{x:0,y:0};
+    const movement=(state.planImport?.plan?.movements||[]).find(row=>String(row.unit)===String(code));
+    const movementRoute=state.routeCache?.movements?.find(row=>String(row.unit)===String(code))?.route;
+    const scoutRoute=state.scoutingVisible ? state.routeCache?.scouts?.find(row=>String(row.unit)===String(code))?.route : null;
+    const route=movementRoute?.points?.length>1 ? movementRoute : scoutRoute;
+    const first=route?.points?.[0], next=route?.points?.[1];
+    const heading=first?.coordinate===point.coordinate && next ? Math.atan2(baseCenter(next.globalCol,next.globalRow).y-baseCenter(first.globalCol,first.globalRow).y,baseCenter(next.globalCol,next.globalRow).x-baseCenter(first.globalCol,first.globalRow).x) : null;
     const models=formation(counts,`${point.coordinate||''}:${code}`).map(m=>{
       const x=center.x+shift.x+m.x*spread,y=center.y+shift.y+m.y*spread;
-      return {...m,x,y,z:IsoMapper.surface(x,y).z};
+      return {...m,x,y,z:IsoMapper.surface(x,y).z,heading};
     }).sort((a,b)=>a.y-b.y);
     const text=`${type==='Element'?'E':type==='Tribe'?'T':type==='Fleet'?'F':'U'} ${code}${extra?` ${extra}`:''}`;
     const anchor=IsoMapper.project({x:center.x+shift.x,y:center.y+shift.y+.56});
@@ -74,7 +80,8 @@
     ctx.beginPath();vertices.forEach((v,i)=>{const p=IsoMapper.project(v,v.z);i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);});ctx.closePath();ctx.fillStyle=color;ctx.fill();
   }
   function box(m,x,y,z,w,d,h,color) {
-    const p=(a,b,c)=>({x:m.x+x+a,y:m.y+y+b,z:m.z+z+c});
+    const angle=Number.isFinite(m.heading)?m.heading:0,co=Math.cos(angle),si=Math.sin(angle);
+    const p=(a,b,c)=>({x:m.x+x+a*co-b*si,y:m.y+y+a*si+b*co,z:m.z+z+c});
     const dark=IsoGeometry.mix([color,'#343e3b']),light=IsoGeometry.mix([color,color,'#e9dfbf']);
     face([p(-w/2,d/2,0),p(w/2,d/2,0),p(w/2,d/2,h),p(-w/2,d/2,h)],dark);
     face([p(w/2,-d/2,0),p(w/2,d/2,0),p(w/2,d/2,h),p(w/2,-d/2,h)],color);
@@ -104,7 +111,7 @@
   function cart(m) {
     // Face diagonally up-map. Wheels are vertical discs on their axles,
     // not screen-aligned circles painted over the wagon bed.
-    const angle=Math.PI/3,co=Math.cos(angle),si=Math.sin(angle);
+    const angle=Number.isFinite(m.heading)?m.heading:Math.PI/3,co=Math.cos(angle),si=Math.sin(angle);
     const p=(x,y,z)=>({x:m.x+x*co-y*si,y:m.y+x*si+y*co,z:m.z+z});
     const wheel=(x,y)=>{
       const ring=Array.from({length:20},(_,i)=>{const a=i*Math.PI/10;return p(x+Math.cos(a)*.055,y,.058+Math.sin(a)*.055);});
@@ -136,8 +143,12 @@
     const b=layout(point,code,type,offset,extra,snapshot),r=canvas.getBoundingClientRect();
     if(b.x+b.w<0 || b.x>r.width || b.y+b.h<0 || b.y>r.height)return;
     hits.push(b);IsoMapper.withProjection(()=>{ctx.save();
+    const selected=String(state.selectedUnit)===String(code);
+    const center=IsoMapper.project({x:baseCenter(point.globalCol,point.globalRow).x+(b.models[0]?.x-baseCenter(point.globalCol,point.globalRow).x||0),y:baseCenter(point.globalCol,point.globalRow).y+(b.models[0]?.y-baseCenter(point.globalCol,point.globalRow).y||0)},b.models[0]?.z||0);
+    if(selected){ctx.beginPath();ctx.ellipse(center.x,center.y,state.scale*.52,state.scale*.22,0,0,Math.PI*2);ctx.fillStyle='rgba(72,212,239,.22)';ctx.fill();ctx.strokeStyle='#58d4ef';ctx.lineWidth=Math.max(2.5,state.scale*.075);ctx.stroke();}
     for(const m of b.models){
       const p=IsoMapper.project(m,m.z);ctx.beginPath();ctx.ellipse(p.x,p.y,state.scale*(m.kind==='horses'||m.kind==='carts'||m.mounted?.14:.06),state.scale*.026,0,0,Math.PI*2);ctx.fillStyle='#142b2944';ctx.fill();
+      if(selected){ctx.strokeStyle='#ffe18a';ctx.lineWidth=Math.max(1.5,state.scale*.035);ctx.stroke();}
       if(m.kind==='horses')horse(m);else if(m.kind==='carts')cart(m);else person(m);
     }
     ctx.font='700 11px Segoe UI';ctx.textAlign='center';ctx.textBaseline='alphabetic';ctx.strokeStyle='#172c29';ctx.lineWidth=3;ctx.strokeText(b.text,b.anchor.x,b.anchor.y);ctx.fillStyle=String(state.selectedUnit)===String(code)?'#ffffff':'#ffe4a4';ctx.fillText(b.text,b.anchor.x,b.anchor.y);ctx.restore();});
@@ -164,17 +175,17 @@
     if(cycle.code!==null){const entry=units.find(u=>u.code===cycle.code);showUnitLogistics(entry.code,entry.snapshot);draw();}
     else{state.selectedUnit=null;$('unitEditor').classList.add('hidden');selectHex(point.globalCol,point.globalRow);}
   }
-  const api={resetSelection:()=>{cycle=null;},nextSelection,unitsAt,composition,modelCount,formation,layout,draw,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];}};
+  const api={resetSelection:()=>{cycle=null;},nextSelection,unitsAt,composition,modelCount,formation,layout,draw,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];},clickHex};
   if(typeof module!=='undefined' && module.exports)module.exports=api;
   else {
     root.IsoUnits=api;
     window.addEventListener('mouseup',e=>{
-      if(!IsoMapper.enabled || state.mode!=='detail' || !state.dragging || e.button!==0)return;
+      if(state.mode!=='detail' || !state.dragging || e.button!==0)return;
       if(movementPlannerState.active){cycle=null;return;}
       if(Math.hypot(e.clientX-state.dragStart.x,e.clientY-state.dragStart.y)>=5)return;
       const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
       if(x<0 || y<0 || x>r.width || y>r.height)return;
-      const base=baseFromScreen(x,y),point=IsoMapper.pick(x,y)||nearestHex(base.x,base.y);
+      const base=baseFromScreen(x,y),point=(IsoMapper.enabled ? IsoMapper.pick(x,y) : null)||nearestHex(base.x,base.y);
       if(!point)return;
       state.dragging=false;canvas.classList.remove('dragging');e.preventDefault();e.stopImmediatePropagation();clickHex(point);
     },true);

@@ -42,10 +42,9 @@
       <section class="module-grid">
         <button id="openMapperButton" class="module-card enabled">
           <div class="module-icon">⬢</div>
-          <div><h2>Mapper</h2><p>Use Results knowledge automatically, plan movement/scouting by turn, and overlay the completed orders after submission.</p></div>
+          <div><h2>Mapper</h2><p>Use Results knowledge automatically, plan movement/scouting by turn, and switch between the classic and 3D views.</p></div>
           <span class="module-status">Open</span>
         </button>
-        <button id="openIsometricMapperButton" class="module-card enabled"><div class="module-icon">◈</div><div><h2>3D Mapper</h2><p>Explore a seeded isometric landscape with forests, mountains, coastlines, rivers and fog. Uses your shared map and turn history.</p></div><span class="module-status">Open</span></button>
         <button id="openTurnManagerButton" class="module-card enabled" onclick="location.href='turn-manager.html'">
           <div class="module-icon">☷</div>
           <div><h2>Turn Manager</h2><p>Plan activities directly from the Results baseline. Completed Orders become authoritative when imported and replace the draft plan.</p></div>
@@ -74,6 +73,7 @@
           <span id="planStatus" class="toolbar-readout"></span>
         </div>
         <div id="isoViewControls" class="hidden"><span class="toolbar-readout" title="North is always up">↑ N</span><label class="toggle-control"><input id="isoLabels" type="checkbox" checked />Labels</label><label class="toggle-control"><input id="isoGrid" type="checkbox" />Hex grid</label><span class="toolbar-readout" title="Terrain miniatures: warriors (shield), actives (tool), inactives (hat), horses and carts/wagons. Each category: 1–9 = 1 model, 10–99 = 2, 100–999 = 3, and so on. Hover a gathering for exact counts. Click a hex repeatedly to select each unit, then the land. People ride with enough horses for everyone and no carts/wagons.">Unit figures (i)</span></div>
+        <label class="mapper-view-switch">View <select id="mapperViewMode" aria-label="Mapper view"><option value="2d">Classic 2D</option><option value="3d">3D terrain</option></select></label>
         <div id="detailControls" class="detail-controls hidden">
           <button id="detailOverviewButton" class="button">Overview</button>
           <button id="movementPlannerButton" class="button" disabled>Plan Movement</button>
@@ -110,7 +110,7 @@
       <section id="detailPanel" class="detail-panel hidden">
         <div id="canvasWrap" class="canvas-wrap">
           <canvas id="mapCanvas"></canvas>
-          <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex for report knowledge/history · Click a unit label for logistics</div>
+          <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex to cycle units, then inspect the land · Click a unit label for logistics</div>
           <div id="movementPlannerCard" class="movement-planner-card hidden">
             <div class="movement-planner-title"><strong id="movementPlannerTitle">Movement planner</strong><span>lowest MP route</span></div>
             <div id="movementPlannerSummary"></div>
