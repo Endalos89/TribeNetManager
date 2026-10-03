@@ -75,3 +75,16 @@ assert.equal(U.nextSelection(selection,'newTurn:hex',codes).code,'0485');
 assert.equal(U.nextSelection(selection,'turn:hex',['0485e1']).code,'0485e1');
 assert.equal(U.nextSelection(null,'empty',[]).code,null);
 console.log('Unit-first click cycling, terrain stop and context reset checks passed');
+
+// Planned units stay at their origin; the route arrow carries the movement
+// information and the destination must not receive a duplicate model.
+global.resultsTimeline={};
+global.state={
+  planningVisible:true,
+  planImport:{id:1,turnKey:'906-04',plan:{}},
+  routeCache:{movements:[{unit:'0485',route:{points:[{coordinate:'PK1711'},{coordinate:'PK1810'}]}}]}
+};
+U.prepare();
+assert.equal(U.occupies('PK1711',0,0),true);
+assert.equal(U.occupies('PK1810',0,0),false);
+console.log('Planned unit models remain on origin hex checks passed');

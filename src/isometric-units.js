@@ -42,11 +42,15 @@
     selectionContext=context;
     const refs=new Set();occupants=new Map();
     const add=(ref,code)=>{if(!ref)return;refs.add(ref);if(!occupants.has(ref))occupants.set(ref,new Set());occupants.get(ref).add(String(code));};
-    for(const u of resultsTimeline.turn?.units||[])add(u.currentHex,u.unitCode);
+    const plannedOrigins=new Map();
     if(state.planningVisible && state.planImport?.plan){
       if(!state.routeCache)state.routeCache=buildPlanRoutes(state.planImport.plan);
-      for(const m of state.routeCache.movements||[]){const ps=m.route?.points||[];if(ps.length){add(ps[0].coordinate,m.unit);add(ps[ps.length-1].coordinate,m.unit);}}
+      // Planned movement is represented by an arrow, while the unit model
+      // remains at its origin until the turn is resolved.  Registering the
+      // destination here made the same unit appear at both ends of the route.
+      for(const m of state.routeCache.movements||[]){const ps=m.route?.points||[];if(ps.length){plannedOrigins.set(String(m.unit),ps[0].coordinate);add(ps[0].coordinate,m.unit);}}
     }
+    for(const u of resultsTimeline.turn?.units||[])if(!plannedOrigins.has(String(u.unitCode)))add(u.currentHex,u.unitCode);
     clearings=refs;return [...refs].sort().join('|');
   }
   function occupies(ref,x,y){return clearings.has(ref) && Math.hypot(x,y)<.70;}
@@ -60,14 +64,12 @@
     const route=movementRoute?.points?.length>1 ? movementRoute : scoutRoute;
     const first=route?.points?.[0], next=route?.points?.[1];
     const heading=first?.coordinate===point.coordinate && next ? Math.atan2(baseCenter(next.globalCol,next.globalRow).y-baseCenter(first.globalCol,first.globalRow).y,baseCenter(next.globalCol,next.globalRow).x-baseCenter(first.globalCol,first.globalRow).x) : null;
-    const travellingFromStart=first?.coordinate===point.coordinate && next;
-    const travelOffset=travellingFromStart ? {x:(baseCenter(next.globalCol,next.globalRow).x-center.x)*.5,y:(baseCenter(next.globalCol,next.globalRow).y-center.y)*.5} : {x:0,y:0};
     const models=formation(counts,`${point.coordinate||''}:${code}`).map(m=>{
-      const x=center.x+shift.x+travelOffset.x+m.x*spread,y=center.y+shift.y+travelOffset.y+m.y*spread;
+      const x=center.x+shift.x+m.x*spread,y=center.y+shift.y+m.y*spread;
       return {...m,x,y,z:IsoMapper.surface(x,y).z,heading};
     }).sort((a,b)=>a.y-b.y);
     const text=`${type==='Element'?'E':type==='Tribe'?'T':type==='Fleet'?'F':'U'} ${code}${extra?` ${extra}`:''}`;
-    const anchor=IsoMapper.project({x:center.x+shift.x+travelOffset.x,y:center.y+shift.y+travelOffset.y+.56});
+    const anchor=IsoMapper.project({x:center.x+shift.x,y:center.y+shift.y+.56});
     anchor.y+=15+(multiple?slot*13:0);
     ctx.save();ctx.font='700 11px Segoe UI';const labelWidth=ctx.measureText(text).width+12;ctx.restore();
     const points=models.map(m=>IsoMapper.project(m,m.z)),extent=Math.max(4,state.scale*.16),height=state.scale*.43;
@@ -180,13 +182,8 @@
     if(!state.selectedUnit || !state.selectedUnitHex || !IsoMapper.enabled)return;
     const point=parseCoordinate(state.selectedUnitHex);if(!point)return;
     IsoMapper.withProjection(()=>{
-      const movementRoute=state.routeCache?.movements?.find(row=>String(row.unit)===String(state.selectedUnit))?.route;
-      const scoutRoute=state.scoutingVisible ? state.routeCache?.scouts?.find(row=>String(row.unit)===String(state.selectedUnit))?.route : null;
-      const route=movementRoute?.points?.length>1 ? movementRoute : scoutRoute;
-      const first=route?.points?.[0],next=route?.points?.[1];
       const base=baseCenter(point.globalCol,point.globalRow);
-      const c=first?.coordinate===point.coordinate&&next ? {x:(base.x+baseCenter(next.globalCol,next.globalRow).x)*.5,y:(base.y+baseCenter(next.globalCol,next.globalRow).y)*.5} : base;
-      const p=IsoMapper.project(c);
+      const p=IsoMapper.project(base);
       ctx.save();ctx.beginPath();ctx.ellipse(p.x,p.y,state.scale*.62,state.scale*.27,0,0,Math.PI*2);
       ctx.fillStyle='rgba(72,212,239,.12)';ctx.fill();ctx.strokeStyle='#58d4ef';ctx.lineWidth=Math.max(3,state.scale*.085);ctx.stroke();
       ctx.strokeStyle='#ffe18a';ctx.lineWidth=Math.max(1.5,state.scale*.04);ctx.stroke();ctx.restore();
