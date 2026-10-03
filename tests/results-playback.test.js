@@ -41,7 +41,7 @@ vm.runInNewContext(source, context, { filename: 'results-playback.js' });
 
 const events = context.resultsPlayback.buildEvents({
   units: [{ unitCode: 'T1', previousHex: 'AA0101', currentHex: 'AA0202', deltas: { resources: { food: { Goat: -60 } } } }],
-  events: [{ unitCode: 'T1', eventType: 'activities', message: 'Tribe Activities, Skin\\gut\\bone 60 Goat, 100 people made 100 Sling (using 100 Leather)' }]
+  events: [{ unitCode: 'T1', eventType: 'activities', message: 'Tribe Activities, Skin\\gut\\bone 60 Goat, 100 people made 100 Sling (using 100 Leather), 275 herders allocated, Bred ( Cattle 32, Goat 284, Horse 21 )' }]
 });
 
 assert.strictEqual(context.resultsPlayback.modelCount(1), 1);
@@ -51,7 +51,8 @@ assert.strictEqual(context.resultsPlayback.activitySound('40 people Skin\\gut\\b
 assert.strictEqual(context.resultsPlayback.activitySound('B/axe 50'), 'wood');
 assert.strictEqual(context.resultsPlayback.activitySound('20257 people hunted 52668 provs'), 'hunt');
 assert.strictEqual(context.resultsPlayback.activitySound('275 herders allocated'), 'herd');
-assert.strictEqual(events.filter(event => event.phase === 'activities').length, 2);
+assert.strictEqual(events.filter(event => event.phase === 'activities').length, 3);
+assert.strictEqual(events.filter(event => event.phase === 'activities' && event.sound === 'herd').length, 1);
 assert.ok(events.some(event => event.changes.some(change => change.name === 'Goat' && change.amount === -60)));
 assert.ok(events.some(event => event.changes.some(change => change.name === 'Leather' && change.amount === -100)));
 assert.strictEqual(events.filter(event => event.phase === 'movement').length, 2);

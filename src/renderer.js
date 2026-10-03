@@ -421,7 +421,7 @@ function drawRoute(points, style = {}) {
 }
 function drawUnitLabel(point, unit, type, offsetIndex = 0, extra = '', snapshot = null) {
   if(typeof IsoMapper!=='undefined' && IsoMapper.enabled){IsoUnits.draw(point,unit,type,offsetIndex,extra,snapshot);return;}
-  if (!point) return; const p = screenFromBase(baseCenter(point.globalCol, point.globalRow));
+  if (!point) return; const p = screenFromBase(Number.isFinite(point.x) && Number.isFinite(point.y) ? point : baseCenter(point.globalCol, point.globalRow));
   const text = `${type === 'Element' ? 'E' : type === 'Tribe' ? 'T' : 'U'} ${unit}${extra ? ` ${extra}` : ''}`; ctx.save();
   ctx.font = `700 ${Math.max(9, Math.min(12, state.scale * .32))}px Segoe UI`; const w = ctx.measureText(text).width + 12, h = 19;
   const x = p.x - w / 2, y = p.y - state.scale * .78 - offsetIndex * (h + 3); ctx.fillStyle = 'rgba(15,24,31,.94)'; ctx.strokeStyle = '#d7a754'; ctx.lineWidth = 1.2;

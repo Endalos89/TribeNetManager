@@ -51,12 +51,15 @@
       // destination here made the same unit appear at both ends of the route.
       for(const m of state.routeCache.movements||[]){const ps=m.route?.points||[];if(ps.length){plannedOrigins.set(String(m.unit),ps[0].coordinate);add(ps[0].coordinate,m.unit);}}
     }
-    for(const u of resultsTimeline.turn?.units||[])if(!plannedOrigins.has(String(u.unitCode)))add(u.currentHex,u.unitCode);
+    for(const u of resultsTimeline.turn?.units||[])if(!plannedOrigins.has(String(u.unitCode))){
+      const position=typeof resultsPlaybackUnitPosition==='function'?resultsPlaybackUnitPosition(String(u.unitCode),u.currentHex):null;
+      add(position?.coordinate||u.currentHex,u.unitCode);
+    }
     clearings=refs;return [...refs].sort().join('|');
   }
   function occupies(ref,x,y){return clearings.has(ref) && Math.hypot(x,y)<.70;}
   function layout(point,code,type,offset=0,extra='',snapshot=null) {
-    const counts=composition(record(code,snapshot)),center=baseCenter(point.globalCol,point.globalRow);
+    const counts=composition(record(code,snapshot)),center=Number.isFinite(point.x)&&Number.isFinite(point.y)?{x:point.x,y:point.y}:baseCenter(point.globalCol,point.globalRow);
     const group=[...(occupants.get(point.coordinate)||[])].sort(),slot=Math.max(0,group.indexOf(String(code))),multiple=group.length>1;
     const spread=multiple?.46:1,angle=slot*Math.PI*2/Math.max(1,group.length);
     const shift=multiple?{x:Math.cos(angle)*.33,y:Math.sin(angle)*.33}:{x:0,y:0};
@@ -150,7 +153,8 @@
     if(b.x+b.w<0 || b.x>r.width || b.y+b.h<0 || b.y>r.height)return;
     hits.push(b);IsoMapper.withProjection(()=>{ctx.save();
     const selected=String(state.selectedUnit)===String(code);
-    const center=IsoMapper.project({x:baseCenter(point.globalCol,point.globalRow).x+(b.models[0]?.x-baseCenter(point.globalCol,point.globalRow).x||0),y:baseCenter(point.globalCol,point.globalRow).y+(b.models[0]?.y-baseCenter(point.globalCol,point.globalRow).y||0)},b.models[0]?.z||0);
+    const origin=Number.isFinite(point.x)&&Number.isFinite(point.y)?point:baseCenter(point.globalCol,point.globalRow);
+    const center=IsoMapper.project({x:origin.x+(b.models[0]?.x-origin.x||0),y:origin.y+(b.models[0]?.y-origin.y||0)},b.models[0]?.z||0);
     if(selected){ctx.beginPath();ctx.ellipse(center.x,center.y,state.scale*.52,state.scale*.22,0,0,Math.PI*2);ctx.fillStyle='rgba(72,212,239,.22)';ctx.fill();ctx.strokeStyle='#58d4ef';ctx.lineWidth=Math.max(2.5,state.scale*.075);ctx.stroke();}
     for(const m of b.models){
       const p=IsoMapper.project(m,m.z);ctx.beginPath();ctx.ellipse(p.x,p.y,state.scale*(m.kind==='horses'||m.kind==='carts'||m.mounted?.14:.06),state.scale*.026,0,0,Math.PI*2);ctx.fillStyle='#142b2944';ctx.fill();
