@@ -182,10 +182,11 @@ function drawHistoricalUnits() {
   const seen = new Set();
   for (const unit of resultsTimeline.turn.units) {
     const unitCode = String(unit.unitCode);
-    if (typeof resultsPlaybackShouldHideUnit === 'function' && resultsPlaybackShouldHideUnit(unitCode)) continue;
     if (seen.has(unitCode)) continue;
     seen.add(unitCode);
-    const point = parseCoordinate(unit.currentHex);
+    const point = typeof resultsPlaybackUnitPosition === 'function'
+      ? resultsPlaybackUnitPosition(unitCode, unit.currentHex)
+      : parseCoordinate(unit.currentHex);
     if (!point) continue;
     const key = point.coordinate;
     const slot = slots.get(key) || 0;

@@ -11,6 +11,8 @@ Additional short cues are trimmed from these CC0 sources:
   https://freesound.org/people/HebronTheatre/sounds/197212/
 - Wood: “Woodcutting” by fvcalderan, OpenGameArt
   https://opengameart.org/content/woodcutting
+- Footsteps: “Different steps on wood, stone, leaves, gravel and mud” by TinyWorlds, OpenGameArt
+  https://opengameart.org/content/different-steps-on-wood-stone-leaves-gravel-and-mud
 
 They are used as short, optional cues for results playback. The app keeps a
 silent/procedural fallback for systems that block local audio playback.

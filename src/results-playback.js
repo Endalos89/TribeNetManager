@@ -80,6 +80,10 @@
     if (/skin|gut|bone|slaughter|hunted/i.test(text)) {
       for (const match of text.matchAll(/\b([\d,]+)\s+(Goat|Cattle|Horse|Cow|Sheep|Pig|Deer|Animal)s?\b/gi)) add(match[2], -number(match[1].replace(/,/g, '')));
     }
+    const butchered = text.match(/\b(skin(?:\\gut)?(?:\\bone)?|gut(?:\\bone)?|bone)\s+([\d,]+)\s+(Goat|Cattle|Horse|Cow|Sheep|Pig|Deer|Animal)s?\b/i);
+    if (butchered) {
+      for (const output of butchered[1].split('\\')) add(output, number(butchered[2].replace(/,/g, '')));
+    }
     return changes.length || !isLastClause ? changes : deltaChanges(unit);
   }
 
@@ -105,6 +109,22 @@
     return { movements: [], scouts: [] };
   }
 
+  function playbackUnitPosition(unitCode, fallbackCoordinate) {
+    const fallback = pointFor(fallbackCoordinate);
+    if (!playback.active) return fallback;
+    const events = playback.events.filter(event => event.phase === 'movement' && String(event.unitCode) === String(unitCode));
+    if (!events.length) return fallback;
+    const current = playback.events[playback.index];
+    if (current?.phase === 'movement' && String(current.unitCode) === String(unitCode)) {
+      const from = baseCenter(current.from.globalCol, current.from.globalRow), to = baseCenter(current.to.globalCol, current.to.globalRow);
+      const eased = playback.progress * playback.progress * (3 - 2 * playback.progress);
+      return { ...current.from, x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased, coordinate: current.from.coordinate || fallback?.coordinate };
+    }
+    const completed = playback.events.slice(0, playback.index).reverse().find(event => event.phase === 'movement' && String(event.unitCode) === String(unitCode));
+    if (completed?.to) return pointFor(completed.to.coordinate) || completed.to;
+    return pointFor(events[0].from.coordinate) || events[0].from || fallback;
+  }
+
   function routesFor(turn) {
     const plan = actualPlan(turn);
     if (typeof buildPlanRoutes === 'function') return buildPlanRoutes(plan);
@@ -118,7 +138,13 @@
     for (const event of activityEvents) {
       const unit = units.get(String(event.unitCode));
       const clauses = activityClauses(event.message);
-      const activityList = clauses.length ? clauses : [event.message];
+      const rawActivityList = clauses.length ? clauses : [event.message];
+      const activityList = [];
+      for (const clause of rawActivityList) {
+        const previous = activityList[activityList.length - 1];
+        if (previous && activitySound(previous) === 'herd' && activitySound(clause) === 'herd') activityList[activityList.length - 1] = `${previous}, ${clause}`;
+        else activityList.push(clause);
+      }
       for (let clauseIndex = 0; clauseIndex < activityList.length; clauseIndex += 1) {
         const clause = activityList[clauseIndex];
         const changes = activityChanges(clause, unit, clauseIndex === activityList.length - 1);
@@ -162,7 +188,7 @@
       const sources = {
         butcher: 'assets/results-sounds/butcher.ogg', wood: 'assets/results-sounds/woodcutting.ogg', hunt: 'assets/results-sounds/dum.ogg',
         herd: 'assets/results-sounds/chimes.ogg', craft: 'assets/results-sounds/click_1.ogg', unknown: 'assets/results-sounds/dum.ogg',
-        movement: 'assets/results-sounds/click_1.ogg', scout: 'assets/results-sounds/dum.ogg', horse: 'assets/results-sounds/horse-gallop.ogg'
+        movement: 'assets/results-sounds/footstep.ogg', scout: 'assets/results-sounds/footstep.ogg', horse: 'assets/results-sounds/horse-gallop.ogg'
       };
       const Audio = root.Audio;
       const sound = sources[phase] ? phase : 'unknown';
@@ -180,7 +206,7 @@
       playback.audioContext ||= new AudioContext();
       const oscillator = playback.audioContext.createOscillator();
       const gain = playback.audioContext.createGain();
-      oscillator.frequency.value = phase === 'butcher' ? 180 : phase === 'wood' ? 310 : phase === 'horse' ? 120 : phase === 'movement' ? 250 : 690;
+      oscillator.frequency.value = phase === 'butcher' ? 180 : phase === 'wood' ? 310 : phase === 'horse' ? 120 : phase === 'movement' || phase === 'scout' ? 250 : 690;
       oscillator.type = phase === 'scout' || phase === 'horse' ? 'triangle' : 'sine';
       gain.gain.setValueAtTime(.045, playback.audioContext.currentTime);
       gain.gain.exponentialRampToValueAtTime(.001, playback.audioContext.currentTime + .08);
@@ -216,7 +242,10 @@
     playback.events = events; playback.active = events.length > 0; playback.index = 0; playback.progress = 0;
     playback.startedAt = now(); playback.targetTurnKey = turn.turnKey;
     playback.targetUnitCodes = new Set(events.map(event => event.unitCode).filter(Boolean));
-    playback.revealTargets = new Set(events.filter(event => event.phase === 'scouting').map(event => event.to?.coordinate).filter(Boolean));
+    playback.revealTargets = new Set(events.filter(event => event.phase === 'scouting').map(event => event.to?.coordinate).filter(coordinate => {
+      const row = typeof state !== 'undefined' && state.hexCache?.get(coordinate);
+      return !row || String(row.discoveredTurn || '') === String(turn.turnKey);
+    }));
     playback.phase = events[0]?.phase || 'idle';
     setButton();
     if (!playback.active) return false;
@@ -326,13 +355,16 @@
   }
 
   function resultsPlaybackShouldHideUnit(unitCode) {
-    return playback.active && playback.targetUnitCodes.has(String(unitCode));
+    // Historical units remain rendered throughout playback; callers can use
+    // playbackUnitPosition() to place them at their interpolated location.
+    return false;
   }
 
   root.startResultsPlayback = startResultsPlayback;
   root.stopResultsPlayback = stopResultsPlayback;
   root.drawResultsPlaybackOverlay = drawResultsPlaybackOverlay;
   root.resultsPlaybackShouldHideUnit = resultsPlaybackShouldHideUnit;
+  root.resultsPlaybackUnitPosition = playbackUnitPosition;
   root.resultsPlayback.buildEvents = buildEvents;
   root.resultsPlayback.modelCount = modelCount;
   root.resultsPlayback.activitySound = activitySound;
