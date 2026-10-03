@@ -66,3 +66,12 @@ assert.equal(U.formation(null,'unknown').length,0);
 const mountedGroup=U.formation({warriors:10,actives:10,inactives:1,horses:21,carts:0,mounted:true},'mounted');
 assert.ok(mountedGroup.filter(m=>m.kind!=='horses').every(m=>m.mounted));
 console.log('Logarithmic miniature counts, seeded formation and mounted model checks passed');
+
+let selection=null;
+const codes=['0485','0485e1'];
+for(const expected of ['0485','0485e1',null,'0485']){selection=U.nextSelection(selection,'turn:hex',codes);assert.equal(selection.code,expected);}
+assert.equal(U.nextSelection(selection,'turn:otherHex',codes).code,'0485');
+assert.equal(U.nextSelection(selection,'newTurn:hex',codes).code,'0485');
+assert.equal(U.nextSelection(selection,'turn:hex',['0485e1']).code,'0485e1');
+assert.equal(U.nextSelection(null,'empty',[]).code,null);
+console.log('Unit-first click cycling, terrain stop and context reset checks passed');

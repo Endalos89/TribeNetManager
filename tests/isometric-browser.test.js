@@ -11,7 +11,7 @@ const {chromium}=require('playwright');
  getVersion:async()=>'Browser fixture',getUserDataPath:async()=>'Fixture data',onUpdateStatus:()=>{},
  getHexesInArea:async()=>[...window.fixtureRows.values()],getHex:async(c)=>window.fixtureRows.get(c)||null,
  saveHex:async(h)=>{window.fixtureRows.set(h.coordinate,h);return h;},clearHex:async(c)=>{window.fixtureRows.delete(c);return true;},
- getSubmapSummaries:async()=>[],getPlannerImports:async()=>[],listResultTurns:async()=>[],getHexHistory:async()=>[],listPlannedRoutes:async()=>[]
+ getSubmapSummaries:async()=>[],getPlannerImports:async()=>[],listResultTurns:async()=>[],getHexHistory:async()=>[],getResultHexHistory:async()=>[],listPlannedRoutes:async()=>[]
  },{get:(target,key)=>target[key]|| (async()=>null)});
  });
  await page.goto(pathToFileURL(path.join(__dirname,'../src/index.html')).href);
@@ -71,7 +71,19 @@ const {chromium}=require('playwright');
    state.routeCache.movements=[{unit:'0485e1',type:'Element',route:{points:[point],unresolved:[]}}];draw();
    const b=plannerLabelHitboxes()[0];return {unit:plannerUnitLabelAt(b.x+b.w/2,b.y+b.h-4)?.unit};
  });assert.equal(hit.unit,'0485e1');
- await page.evaluate(()=>{resultsTimeline.turn=null;state.planImport=null;state.routeCache=null;draw();});
+ // Real clicks: two reported units without orders overlay, then the land.
+ await page.evaluate(()=>{state.planningVisible=false;state.planImport=null;state.routeCache=null;resultsTimeline.turn.units[1].currentHex=resultsTimeline.turn.units[0].currentHex;draw();});
+ const unitClick=async()=>{const p=await page.evaluate(()=>{const h=parseCoordinate(resultsTimeline.turn.units[0].currentHex),p=screenFromBase(baseCenter(h.globalCol,h.globalRow)),r=canvas.getBoundingClientRect();return {x:r.left+p.x,y:r.top+p.y};});await page.mouse.click(p.x,p.y);await page.waitForTimeout(40);};
+ await unitClick();assert.equal(await page.evaluate(()=>state.selectedUnit),'0485');assert.match(await page.textContent('#unitTurnContext'),/reported state/);assert.equal(await page.locator('#unitEditor').isVisible(),true);
+ await unitClick();assert.equal(await page.evaluate(()=>state.selectedUnit),'0485e1');assert.equal(await page.textContent('#unitPeople'),'50');
+ await unitClick();assert.equal(await page.evaluate(()=>state.selectedUnit),null);assert.equal(await page.evaluate(()=>state.selected.coordinate),await page.evaluate(()=>resultsTimeline.turn.units[0].currentHex));assert.equal(await page.locator('#selectionEditor').isVisible(),true);
+ await unitClick();assert.equal(await page.evaluate(()=>state.selectedUnit),'0485');
+ // A selected unit is cleared when the report turn changes.
+ await page.evaluate(()=>{resultsTimeline.turn={...resultsTimeline.turn,turnKey:'906-05'};draw();});assert.equal(await page.evaluate(()=>state.selectedUnit),null);
+ await unitClick();assert.equal(await page.evaluate(()=>state.selectedUnit),'0485');
+ // Planning mode bypasses the unit cycle and retains land selection.
+ await page.evaluate(()=>{movementPlannerState.active=true;movementPlannerState.origin=null;});await unitClick();assert.equal(await page.evaluate(()=>state.selectedUnit),null);
+ await page.evaluate(()=>{movementPlannerState.active=false;resultsTimeline.turn=null;state.planImport=null;state.routeCache=null;state.planningVisible=true;draw();});
  const north=await page.evaluate(()=>{const a=IsoGeometry.project(0,0),b=IsoGeometry.project(0,-1);return {x:b.x-a.x,y:b.y-a.y};});assert.equal(north.x,0);assert.ok(north.y<0);
  await page.click('#backButton');await page.click('#openMapperButton');
  assert.equal(await page.evaluate(()=>IsoMapper.enabled),false);

@@ -41,3 +41,11 @@ Fog cover is drawn on the ground before scenery. Scenery bases in the concealed 
 Pan/wheel input is coalesced to animation frames. During navigation the padded terrain image is translated/scaled and hit-testing uses the same transform. Detailed rendering resumes 150 ms after movement stops. Models are drawn with the current projection; no terrain rebuild is needed for their animation-free figures. Clearings are invalidated when unit locations change.
 
 Validation covers logarithmic count boundaries, deterministic formations, mounted eligibility, ground elevations, exact-count hover, planner hitboxes, deferred landscape rebuild and existing mapper navigation/editing.
+
+## Unit selection
+
+In the 3D view, a simple click anywhere on an occupied hex selects the first unit (natural unit-code order). Repeated clicks select each remaining unit, then the land hex, then restart. Report and planned endpoint records are deduplicated by unit code. Clicking another hex, changing the turn/unit roster or reopening a mapper view restarts the cycle. Dragging does not advance it; active movement planning bypasses the cycle so route selection works normally.
+
+Reported units open their selected-turn population/inventory and reported weight/capacities even without a planning workbook. Unknown logistics are shown as unavailable rather than inferred from another turn. Planned-only units retain movement-time logistics. The selected unit label is highlighted.
+
+Wagons face diagonally with a raised bed and vertical wheel discs projected in the axle plane. Rear wheels render behind the bed, with the near wheels in front.

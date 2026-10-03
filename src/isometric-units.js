@@ -37,6 +37,9 @@
       (resultsTimeline.turn?.units || []).find(u=>String(u.unitCode)===String(code)) || null;
   }
   function prepare() {
+    const context=JSON.stringify([resultsTimeline.turn?.turnKey,state.planImport?.id,state.planImport?.turnKey]);
+    if(selectionContext!==null && context!==selectionContext){cycle=null;if(state.selectedUnit){state.selectedUnit=null;$('unitEditor').classList.add('hidden');if(!state.selected)$('noSelection').classList.remove('hidden');}}
+    selectionContext=context;
     const refs=new Set();occupants=new Map();
     const add=(ref,code)=>{if(!ref)return;refs.add(ref);if(!occupants.has(ref))occupants.set(ref,new Set());occupants.get(ref).add(String(code));};
     for(const u of resultsTimeline.turn?.units||[])add(u.currentHex,u.unitCode);
@@ -99,12 +102,29 @@
     }else{box(m,0,0,.225*size,.078,.072,.013,'#ad8854');}
   }
   function cart(m) {
-    box(m,0,0,.075,.23,.14,.04,'#9b7449');box(m,0,-.065,.10,.23,.022,.09,'#bd955d');
-    box(m,0,.065,.10,.23,.022,.09,'#a77b45');box(m,-.105,0,.10,.022,.14,.09,'#bd955d');
-    box(m,.105,0,.10,.022,.14,.09,'#bd955d');box(m,.18,0,.075,.15,.015,.015,'#d5b77b');
-    for(const x of [-.07,.07])for(const y of [-.082,.082]){
-      const p=IsoMapper.project({x:m.x+x,y:m.y+y},m.z+.06);ctx.beginPath();ctx.ellipse(p.x,p.y,state.scale*.044,state.scale*.055,0,0,Math.PI*2);ctx.fillStyle='#4b473b';ctx.fill();ctx.strokeStyle='#d2ad6f';ctx.lineWidth=Math.max(.7,state.scale*.008);ctx.stroke();
-    }
+    // Face diagonally up-map. Wheels are vertical discs on their axles,
+    // not screen-aligned circles painted over the wagon bed.
+    const angle=Math.PI/3,co=Math.cos(angle),si=Math.sin(angle);
+    const p=(x,y,z)=>({x:m.x+x*co-y*si,y:m.y+x*si+y*co,z:m.z+z});
+    const wheel=(x,y)=>{
+      const ring=Array.from({length:20},(_,i)=>{const a=i*Math.PI/10;return p(x+Math.cos(a)*.055,y,.058+Math.sin(a)*.055);});
+      face(ring,'#493f31');ctx.strokeStyle='#c6a367';ctx.lineWidth=Math.max(.7,state.scale*.009);ctx.stroke();
+      const hub=IsoMapper.project(p(x,y,.058),m.z+.058);ctx.fillStyle='#d8b984';ctx.beginPath();ctx.arc(hub.x,hub.y,Math.max(.7,state.scale*.008),0,Math.PI*2);ctx.fill();
+    };
+    const bed=(x,y,z,w,d,h,color)=>{
+      const faces=[[[x-w/2,y-d/2,z],[x+w/2,y-d/2,z],[x+w/2,y-d/2,z+h],[x-w/2,y-d/2,z+h]],
+        [[x-w/2,y+d/2,z],[x+w/2,y+d/2,z],[x+w/2,y+d/2,z+h],[x-w/2,y+d/2,z+h]],
+        [[x-w/2,y-d/2,z],[x-w/2,y+d/2,z],[x-w/2,y+d/2,z+h],[x-w/2,y-d/2,z+h]],
+        [[x+w/2,y-d/2,z],[x+w/2,y+d/2,z],[x+w/2,y+d/2,z+h],[x+w/2,y-d/2,z+h]]];
+      faces.map(f=>f.map(v=>p(...v))).sort((a,b)=>a.reduce((n,v)=>n+v.y,0)-b.reduce((n,v)=>n+v.y,0)).forEach(f=>face(f,color));
+      face([p(x-w/2,y-d/2,z+h),p(x+w/2,y-d/2,z+h),p(x+w/2,y+d/2,z+h),p(x-w/2,y+d/2,z+h)],IsoGeometry.mix([color,'#dfc98d']));
+    };
+    for(const x of [-.075,.075])wheel(x,-.086);
+    bed(0,0,.09,.24,.14,.035,'#9b7449');
+    bed(0,-.065,.125,.24,.018,.09,'#a77b45');bed(0,.065,.125,.24,.018,.09,'#a77b45');
+    bed(-.111,0,.125,.018,.14,.09,'#bd955d');bed(.111,0,.125,.018,.14,.09,'#bd955d');
+    bed(.20,0,.09,.16,.014,.014,'#cbae74');
+    for(const x of [-.075,.075])wheel(x,.086);
   }
   function tooltip(b) {
     if(!b.counts)return `${b.text} — composition unavailable`;
@@ -120,12 +140,44 @@
       const p=IsoMapper.project(m,m.z);ctx.beginPath();ctx.ellipse(p.x,p.y,state.scale*(m.kind==='horses'||m.kind==='carts'||m.mounted?.14:.06),state.scale*.026,0,0,Math.PI*2);ctx.fillStyle='#142b2944';ctx.fill();
       if(m.kind==='horses')horse(m);else if(m.kind==='carts')cart(m);else person(m);
     }
-    ctx.font='700 11px Segoe UI';ctx.textAlign='center';ctx.textBaseline='alphabetic';ctx.strokeStyle='#172c29';ctx.lineWidth=3;ctx.strokeText(b.text,b.anchor.x,b.anchor.y);ctx.fillStyle='#ffe4a4';ctx.fillText(b.text,b.anchor.x,b.anchor.y);ctx.restore();});
+    ctx.font='700 11px Segoe UI';ctx.textAlign='center';ctx.textBaseline='alphabetic';ctx.strokeStyle='#172c29';ctx.lineWidth=3;ctx.strokeText(b.text,b.anchor.x,b.anchor.y);ctx.fillStyle=String(state.selectedUnit)===String(code)?'#ffffff':'#ffe4a4';ctx.fillText(b.text,b.anchor.x,b.anchor.y);ctx.restore();});
   }
-  const api={composition,modelCount,formation,layout,draw,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];}};
+    let cycle=null,selectionContext=null;
+  function unitsAt(ref) {
+    const found=new Map();
+    for(const u of resultsTimeline.turn?.units||[])if(u.currentHex===ref)found.set(String(u.unitCode),{code:String(u.unitCode),snapshot:u});
+    if(state.planningVisible && state.planImport?.plan)for(const m of state.routeCache?.movements||[]){
+      const ps=m.route?.points||[];
+      if(ps[0]?.coordinate===ref || ps[ps.length-1]?.coordinate===ref){const code=String(m.unit);if(!found.has(code))found.set(code,{code,snapshot:null});}
+    }
+    return [...found.values()].sort((a,b)=>a.code.localeCompare(b.code,undefined,{numeric:true}));
+  }
+  function nextSelection(previous,key,codes) {
+    const signature=JSON.stringify([key,codes]);
+    const index=previous?.signature===signature?(previous.index+1)%(codes.length+1):0;
+    return {signature,index,code:codes[index]??null};
+  }
+  function clickHex(point) {
+    const ref=coordinateFor(point.globalCol,point.globalRow),units=unitsAt(ref);
+    const key=JSON.stringify([resultsTimeline.turn?.turnKey,state.planImport?.id,state.planImport?.turnKey,ref]);
+    cycle=nextSelection(cycle,key,units.map(u=>u.code));
+    if(cycle.code!==null){const entry=units.find(u=>u.code===cycle.code);showUnitLogistics(entry.code,entry.snapshot);draw();}
+    else{state.selectedUnit=null;$('unitEditor').classList.add('hidden');selectHex(point.globalCol,point.globalRow);}
+  }
+  const api={resetSelection:()=>{cycle=null;},nextSelection,unitsAt,composition,modelCount,formation,layout,draw,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];}};
   if(typeof module!=='undefined' && module.exports)module.exports=api;
   else {
     root.IsoUnits=api;
+    window.addEventListener('mouseup',e=>{
+      if(!IsoMapper.enabled || state.mode!=='detail' || !state.dragging || e.button!==0)return;
+      if(movementPlannerState.active){cycle=null;return;}
+      if(Math.hypot(e.clientX-state.dragStart.x,e.clientY-state.dragStart.y)>=5)return;
+      const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+      if(x<0 || y<0 || x>r.width || y>r.height)return;
+      const base=baseFromScreen(x,y),point=IsoMapper.pick(x,y)||nearestHex(base.x,base.y);
+      if(!point)return;
+      state.dragging=false;canvas.classList.remove('dragging');e.preventDefault();e.stopImmediatePropagation();clickHex(point);
+    },true);
     canvas.addEventListener('mousemove',e=>{
       if(!IsoMapper.enabled || state.dragging)return;
       const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
