@@ -322,13 +322,16 @@ function underlyingDirection(order) {
   const map = { NL:'N', NEL:'NE', NWL:'NW', SL:'S', SEL:'SE', SWL:'SW' }; return map[order] || null;
 }
 function isFollowDirective(order) { return /^(FO[LR]|FC[LR]|FL[LR]|FM[LR]|FR[LR]|FOLLOW)$/i.test(order); }
+function normalizeMovementOrder(value) {
+  return String(value ?? '').toUpperCase().replace(/\s+/g, '').trim();
+}
 function followCoastRoute(start, side, options = {}) {
   const points = [{ globalCol:start.globalCol, globalRow:start.globalRow, coordinate:start.coordinate, kind:'exact' }];
   const queue = [{ point:start, path:points }];
   const visited = new Set([start.coordinate]);
   const dirs = ['N','NE','SE','S','SW','NW'];
   const known = point => state.hexCache.get(point.coordinate);
-  const ocean = point => known(point)?.terrain === 'O';
+  const ocean = point => ['O','OCEAN'].includes(String(known(point)?.terrain ?? known(point)?.terrainCode ?? '').toUpperCase());
   const unexplored = point => { const data=known(point); return !data || data.terrain==='UNKNOWN' || data.knowledgeLevel==='observed' || data.knowledgeLevel==='attempted'; };
   while (queue.length && visited.size <= 90) {
     const current = queue.shift();
@@ -353,7 +356,7 @@ function routeFor(startHex, orders, options = {}) {
   const points = [{ globalCol: start.globalCol, globalRow: start.globalRow, coordinate: start.coordinate, kind: 'exact' }]; const warnings = [], unresolved = [];
   let current = points[0];
   for (const rawOrder of orders || []) {
-    const order = String(rawOrder || '').toUpperCase().trim();
+    const order = normalizeMovementOrder(rawOrder);
     if (!order || order === 'EMPTY' || order === 'STILL') continue;
     if (['N','NE','NW','S','SE','SW'].includes(order)) {
       const next = stepHex(current, order); if (!next) { warnings.push(`${options.label || 'Route'} reaches the world edge on ${order}.`); break; }
@@ -385,7 +388,7 @@ function routeFor(startHex, orders, options = {}) {
 function buildPlanRoutes(plan) {
   const movements = [], movementWarnings = [], ends = new Map();
   for (const m of plan.movements || []) {
-    const movementType = String(m.movementType || '').trim().toUpperCase();
+    const movementType = normalizeMovementOrder(m.movementType ?? m.MovementType);
     const orders = /^FO[LR]$/.test(movementType) && !(m.orders || []).some(order => /^FO[LR]$/i.test(order))
       ? [movementType, ...(m.orders || [])] : (m.orders || []);
     const route = routeFor(m.startHex, orders, { label: m.unit }); movements.push({ ...m, route }); movementWarnings.push(...route.warnings);

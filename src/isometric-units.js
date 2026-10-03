@@ -173,7 +173,7 @@
     const ref=coordinateFor(point.globalCol,point.globalRow),units=unitsAt(ref);
     const key=JSON.stringify([resultsTimeline.turn?.turnKey,state.planImport?.id,state.planImport?.turnKey,ref]);
     cycle=nextSelection(cycle,key,units.map(u=>u.code));
-    if(cycle.code!==null){const entry=units.find(u=>u.code===cycle.code);state.selectedUnitHex=ref;showUnitLogistics(entry.code,entry.snapshot);draw();}
+    if(cycle.code!==null){const entry=units.find(u=>u.code===cycle.code);state.selectedUnitHex=ref;state.selectedUnit=entry.code;draw();requestAnimationFrame(()=>showUnitLogistics(entry.code,entry.snapshot));}
     else{state.selectedUnit=null;state.selectedUnitHex=null;$('unitEditor').classList.add('hidden');selectHex(point.globalCol,point.globalRow);}
   }
   function drawSelectionHighlight() {
