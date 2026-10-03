@@ -15,6 +15,9 @@ const context = {
   Date,
   Intl,
   performance: { now: () => 0 },
+  requestAnimationFrame: () => 1,
+  cancelAnimationFrame: () => {},
+  draw: () => {},
   document: { getElementById: id => elements.get(id) || null },
   window: null,
   TurnLifecycleCore: {
@@ -29,6 +32,11 @@ const context = {
   })
 };
 context.window = context;
+context.resultsTimeline = { turn: {
+  turnKey: '1-02',
+  units: [{ unitCode: 'T1', previousHex: 'AA0101', currentHex: 'AA0202', deltas: { resources: {} } }],
+  events: []
+} };
 vm.runInNewContext(source, context, { filename: 'results-playback.js' });
 
 const events = context.resultsPlayback.buildEvents({
@@ -44,4 +52,11 @@ assert.ok(events.some(event => event.changes.some(change => change.name === 'Goa
 assert.ok(events.some(event => event.changes.some(change => change.name === 'Leather' && change.amount === -100)));
 assert.strictEqual(events.filter(event => event.phase === 'movement').length, 2);
 assert.strictEqual(events.filter(event => event.phase === 'scouting')[0].riders, 3);
-console.log('Results playback event and log-scale tests passed');
+
+(async () => {
+  const started = await context.startResultsPlayback();
+  assert.strictEqual(started, true, 'Play Turn should find the shared current results turn');
+  assert.strictEqual(context.resultsPlayback.active, true);
+  context.stopResultsPlayback();
+  console.log('Results playback event, start path and log-scale tests passed');
+})();

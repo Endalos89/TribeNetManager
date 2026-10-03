@@ -7,6 +7,10 @@ const resultsTimeline = {
   loadingArea: false,
   ready: false
 };
+// Results playback is loaded as a separate script after this module. Expose
+// the shared timeline explicitly because top-level `const` bindings are not
+// properties on `window`.
+window.resultsTimeline = resultsTimeline;
 
 const originalRequestVisibleData = requestVisibleData;
 const originalRefreshSummaries = refreshSummaries;
