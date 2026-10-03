@@ -228,7 +228,7 @@ const IsoMapper = (() => {
     updateCenterReadout();frameRect=null;
   }
   function setEnabled(value) {
-    enabled=value;interactive=false;clearTimeout(settleTimer);if(!value)state.scale=Math.min(68,state.scale);document.body.classList.toggle('isometric-mode',value);
+    enabled=value;IsoUnits.resetSelection();interactive=false;clearTimeout(settleTimer);if(!value)state.scale=Math.min(68,state.scale);document.body.classList.toggle('isometric-mode',value);
     $('isoViewControls').classList.toggle('hidden',!value);
     $('openMapperButton').querySelector('h2').textContent='Mapper';
     if(value && state.scale<43)state.scale=52;

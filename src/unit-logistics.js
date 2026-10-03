@@ -155,7 +155,7 @@ function renderLoadText(stats) {
   host.appendChild(capacityButton);
 }
 
-function showUnitLogistics(unit) {
+function showUnitLogistics(unit, snapshot = null) {
   const stats = logisticsStatsForUnit(unit);
   const unitRecord = (state.planImport?.plan?.units || []).find(row => String(row.unit) === String(unit));
   const movement = (state.planImport?.plan?.movements || []).find(row => String(row.unit) === String(unit));
@@ -178,6 +178,24 @@ function showUnitLogistics(unit) {
   const inventoryHost = $('unitInventoryList');
   warningsHost.innerHTML = '';
   inventoryHost.innerHTML = '';
+
+  if(snapshot){
+    $('selectedUnitType').textContent=snapshot.unitType || 'Unit';
+    $('selectedUnitName').textContent=snapshot.unitName || '';
+    $('unitTurnContext').textContent=`Turn ${snapshot.turnKey || resultsTimeline.turn?.turnKey || '—'} · reported state`;
+    const people=snapshot.people||{},counts=IsoUnits.composition(snapshot);
+    $('unitPeople').textContent=logisticsNumber(people.People ?? (counts.warriors+counts.actives+counts.inactives+Number(people.Slaves||0)+Number(people.Locals||0)));
+    for(const id of ['unitProvisions','unitProvisionTurns','unitEaters','unitLoadPercent'])$(id).textContent='—';
+    const reported=v=>v===null || v===undefined?'—':logisticsNumber(v)+' lb';
+    $('unitLoadText').textContent=`Reported weight: ${reported(snapshot.weight)} · Walking capacity: ${reported(snapshot.walkingCapacity)} · Mounted capacity: ${reported(snapshot.mountedCapacity)}`;
+    $('unitTransportText').textContent=`${counts.warriors} warriors · ${counts.actives} actives · ${counts.inactives} inactives · ${counts.horses} horses · ${counts.carts} carts/wagons${counts.mounted?' · Fully mounted':''}`;
+    $('unitCapacityFill').style.width='0%';$('unitCapacityFill').className='capacity-fill';warningSection.classList.add('hidden');
+    for(const [section,items] of Object.entries(snapshot.resources||{}))for(const [name,quantity] of Object.entries(items||{})){
+      if(!quantity)continue;const row=document.createElement('div');row.className='inventory-row';row.textContent=`${name} × ${logisticsNumber(quantity)} (${section})`;inventoryHost.appendChild(row);
+    }
+    if(!inventoryHost.children.length)inventoryHost.textContent='No inventory reported.';
+    $('unitCalculationBasis').textContent='Reported values for the selected turn; no movement-time estimate applied.';return;
+  }
 
   if (!stats) {
     $('unitProvisions').textContent = '—';
@@ -252,6 +270,7 @@ function showUnitLogistics(unit) {
 
 // Intercept a simple click on a drawn Tribe/Element label before the ordinary hex click handler runs.
 window.addEventListener('mouseup', event => {
+  if(typeof IsoMapper!=='undefined' && IsoMapper.enabled)return;
   if (!state.dragging || state.mode !== 'detail' || !state.planningVisible) return;
   const moved = state.dragStart ? Math.hypot(event.clientX - state.dragStart.x, event.clientY - state.dragStart.y) : Infinity;
   if (moved >= 5) return;
