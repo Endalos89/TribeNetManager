@@ -249,6 +249,10 @@ requestVisibleData = function requestVisibleDataForPlanningTurn() {
       state.hexCache.clear();
       for (const row of rows) state.hexCache.set(row.coordinate, row);
       state.loadedArea = b;
+      // Follow-ocean routes depend on the revealed terrain in this baseline.
+      // Rebuild them after the async area load, otherwise a route first drawn
+      // while the cache is empty remains stuck at its origin.
+      if (state.planImport?.plan) state.routeCache = null;
       draw();
     } finally {
       resultsTimeline.loadingArea = false;

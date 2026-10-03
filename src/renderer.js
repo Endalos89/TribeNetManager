@@ -331,8 +331,13 @@ function followCoastRoute(start, side, options = {}) {
   const visited = new Set([start.coordinate]);
   const dirs = ['N','NE','SE','S','SW','NW'];
   const known = point => state.hexCache.get(point.coordinate);
-  const ocean = point => ['O','OCEAN'].includes(String(known(point)?.terrain ?? known(point)?.terrainCode ?? '').toUpperCase());
-  const unexplored = point => { const data=known(point); return !data || data.terrain==='UNKNOWN' || data.knowledgeLevel==='observed' || data.knowledgeLevel==='attempted'; };
+  const terrainOf = data => String(data?.terrain ?? data?.terrainCode ?? '').trim().toUpperCase();
+  const ocean = point => ['O','OCEAN'].includes(terrainOf(known(point)));
+  const unexplored = point => {
+    const data=known(point); if(!data)return true;
+    const terrain=terrainOf(data), knowledge=String(data.knowledgeLevel ?? data.knowledge ?? '').trim().toLowerCase();
+    return !terrain || ['UNKNOWN','?','UNEXPLORED'].includes(terrain) || ['observed','attempted','unexplored','unknown'].includes(knowledge);
+  };
   while (queue.length && visited.size <= 90) {
     const current = queue.shift();
     const oceanIndexes = dirs.map((d,i)=>({i,p:stepHex(current.point,d)})).filter(x=>x.p&&ocean(x.p));
@@ -346,7 +351,7 @@ function followCoastRoute(start, side, options = {}) {
     }
     for(const candidate of preferred){
       if(unexplored(candidate))return {points:[...current.path,{...candidate,kind:'approx',order:options.order}],found:true};
-      if(known(candidate)?.terrain!=='O'&&!visited.has(candidate.coordinate)){visited.add(candidate.coordinate);queue.push({point:candidate,path:[...current.path,{...candidate,kind:'approx',order:options.order}]});}
+      if(!['O','OCEAN'].includes(terrainOf(known(candidate)))&&!visited.has(candidate.coordinate)){visited.add(candidate.coordinate);queue.push({point:candidate,path:[...current.path,{...candidate,kind:'approx',order:options.order}]});}
     }
   }
   return {points,found:false};
