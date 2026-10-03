@@ -52,7 +52,9 @@ const {chromium}=require('playwright');
    const mounted=IsoUnits.layout(parseCoordinate(coordinateFor(316,328)),'0485e1','Element');
    return {box,mounted};
  });
- assert.equal(markers.box.cells.length,5);assert.equal(markers.box.counts.mounted,false);assert.equal(markers.mounted.counts.mounted,true);
+ assert.equal(markers.box.models.length,11);assert.ok(markers.box.models.every(m=>Number.isFinite(m.z))); assert.equal(markers.box.counts.mounted,false);assert.equal(markers.mounted.counts.mounted,true);assert.equal(markers.mounted.models.length,7);
+ const hover=await page.evaluate(()=>{const b=IsoUnits.layout(parseCoordinate(coordinateFor(315,327)),'0485','Tribe',0,'',resultsTimeline.turn.units[0]),r=canvas.getBoundingClientRect();return {x:r.left+b.x+b.w/2,y:r.top+b.y+b.h/2};});
+ await page.mouse.move(hover.x,hover.y);assert.match(await page.getAttribute('#mapCanvas','title'),/50 warriors, 120 actives, 80 inactives/);
  if(process.env.ISO_SCREENSHOT)await page.screenshot({path:process.env.ISO_SCREENSHOT});
  const interaction=await page.evaluate(()=>{
    const builds=IsoMapper.sceneBuilds;
