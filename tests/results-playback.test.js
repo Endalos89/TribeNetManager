@@ -28,8 +28,9 @@ const context = {
   },
   buildPlanRoutes: () => ({
     movements: [{ unit: 'T1', route: { points: [{ globalCol: 0, globalRow: 0 }, { globalCol: 1, globalRow: 0 }, { globalCol: 1, globalRow: 1 }] } }],
-    scouts: [{ unit: 'T1', id: 1, noOfScouts: 284, route: { points: [{ globalCol: 0, globalRow: 0, coordinate: 'AA0101' }, { globalCol: 0, globalRow: 1, coordinate: 'AA0102' }] } }]
-  })
+    scouts: [{ unit: 'T1', id: 1, noOfScouts: 284, report: "N-N, Not enough M.P's to move to SE into UNKNOWN", route: { points: [{ globalCol: 0, globalRow: 0, coordinate: 'AA0101' }, { globalCol: 0, globalRow: 1, coordinate: 'AA0102' }] } }]
+  }),
+  stepHex: (point, direction) => ({ globalCol: point.globalCol + (direction === 'SE' ? 1 : 0), globalRow: point.globalRow, coordinate: 'AB0102' })
 };
 context.window = context;
 context.resultsTimeline = { turn: {
@@ -57,12 +58,19 @@ assert.ok(events.some(event => event.changes.some(change => change.name === 'Goa
 assert.ok(events.some(event => event.changes.some(change => change.name === 'Leather' && change.amount === -100)));
 assert.strictEqual(events.filter(event => event.phase === 'movement').length, 2);
 assert.strictEqual(events.filter(event => event.phase === 'scouting')[0].riders, 3);
+assert.ok(events.some(event => event.phase === 'scouting' && event.partial), 'Incomplete scouts should travel to a border tile');
 
 (async () => {
   const started = await context.startResultsPlayback();
   assert.strictEqual(started, true, 'Play Turn should find the shared current results turn');
   assert.strictEqual(context.resultsPlayback.active, true);
-  assert.strictEqual(context.resultsPlayback.revealTargets.size, 1, 'Scout destinations should be staged behind fog until reached');
+  assert.ok(context.resultsPlayback.revealTargets.size >= 1, 'Scout destinations should be staged behind fog until reached');
+  const pausedAt = context.resultsPlayback.progress;
+  assert.strictEqual(context.pauseResultsPlayback(), true);
+  assert.strictEqual(context.resultsPlayback.paused, true);
+  assert.strictEqual(context.resultsPlayback.progress, pausedAt);
+  assert.strictEqual(context.resumeResultsPlayback(), true);
+  assert.strictEqual(context.resultsPlayback.paused, false);
   context.stopResultsPlayback();
   console.log('Results playback event, start path and log-scale tests passed');
 })();

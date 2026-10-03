@@ -2,6 +2,7 @@
 (function(root) {
   const playback = root.resultsPlayback = {
     active: false,
+    paused: false,
     phase: 'idle',
     events: [],
     index: 0,
@@ -10,6 +11,7 @@
     targetTurnKey: null,
     targetUnitCodes: new Set(),
     revealed: new Set(),
+    revealedQuestions: new Set(),
     revealTargets: new Set(),
     raf: null,
     audioContext: null,
@@ -66,6 +68,21 @@
 
   function changeText(changes) {
     return (changes || []).map(change => `${change.amount > 0 ? '+' : ''}${change.amount.toLocaleString()} ${change.name}`).join(' · ');
+  }
+
+  const iconCache = new Map();
+  function iconKey(name) {
+    return String(name || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function itemIcon(name) {
+    const filename = root.TribeNetItemIconManifest?.[iconKey(name)];
+    if (!filename || typeof Image === 'undefined') return null;
+    let image = iconCache.get(filename);
+    if (!image) {
+      image = new Image(); image.src = `item-icons/${filename}`; image.decoding = 'async';
+      iconCache.set(filename, image);
+    }
+    return image.complete && image.naturalWidth > 0 ? image : null;
   }
 
   function activityChanges(clause, unit, isLastClause = false) {
@@ -165,6 +182,12 @@
       const riders = modelCount(scout.noOfScouts || sourceScout?.noOfScouts || 1);
       const mounted = Number(scout.noOfHorses || sourceScout?.noOfHorses || 0) > 0 || scout.mounted === true || sourceScout?.mounted === true;
       for (let i = 1; i < points.length; i += 1) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: points[i - 1], to: points[i], sound: mounted ? 'horse' : 'scout', duration: 440 });
+      const partial = String(scout.report || '').match(/not enough\s+m\.?p'?s?\s+to move to\s+(N|NE|SE|S|SW|NW)\b/i);
+      if (partial && points.length) {
+        const last = points[points.length - 1];
+        const attempted = typeof stepHex === 'function' ? stepHex(last, partial[1].toUpperCase()) : null;
+        if (attempted && attempted.coordinate !== last.coordinate) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: last, to: attempted, partial: true, sound: mounted ? 'horse' : 'scout', duration: 520 });
+      }
     }
     return events;
   }
@@ -172,8 +195,8 @@
   function setButton() {
     const button = document.getElementById('mapResultPlayTurn');
     if (!button) return;
-    button.textContent = playback.active ? 'Pause Turn' : 'Play Turn';
-    button.classList.toggle('accent', !playback.active);
+    button.textContent = playback.active ? (playback.paused ? 'Resume Turn' : 'Pause Turn') : 'Play Turn';
+    button.classList.toggle('accent', !playback.active || playback.paused);
   }
 
   function phaseText(phase) {
@@ -227,10 +250,23 @@
 
   function stopResultsPlayback() {
     cancelFrame();
-    playback.active = false; playback.phase = 'idle'; playback.events = []; playback.index = 0; playback.progress = 0;
-    playback.targetTurnKey = null; playback.targetUnitCodes = new Set(); playback.revealed = new Set(); playback.revealTargets = new Set();
+    playback.active = false; playback.paused = false; playback.phase = 'idle'; playback.events = []; playback.index = 0; playback.progress = 0;
+    playback.targetTurnKey = null; playback.targetUnitCodes = new Set(); playback.revealed = new Set(); playback.revealedQuestions = new Set(); playback.revealTargets = new Set();
     setButton();
     if (typeof draw === 'function') draw();
+  }
+
+  function pauseResultsPlayback() {
+    if (!playback.active || playback.paused) return false;
+    cancelFrame(); playback.paused = true; setButton(); if (typeof draw === 'function') draw(); return true;
+  }
+
+  function resumeResultsPlayback() {
+    if (!playback.active || !playback.paused) return false;
+    const event = playback.events[playback.index];
+    playback.paused = false;
+    playback.startedAt = now() - playback.progress * ((event?.duration || 1) / currentSpeed());
+    setButton(); if (typeof draw === 'function') draw(); requestFrame(tick); return true;
   }
 
   async function startResultsPlayback() {
@@ -239,7 +275,7 @@
     if (turn.isPlanningTurn && turn.baselineTurnKey && root.tribenet?.getResultTurn) turn = await root.tribenet.getResultTurn(turn.baselineTurnKey);
     const events = buildEvents(turn);
     stopResultsPlayback();
-    playback.events = events; playback.active = events.length > 0; playback.index = 0; playback.progress = 0;
+    playback.events = events; playback.active = events.length > 0; playback.paused = false; playback.index = 0; playback.progress = 0;
     playback.startedAt = now(); playback.targetTurnKey = turn.turnKey;
     playback.targetUnitCodes = new Set(events.map(event => event.unitCode).filter(Boolean));
     playback.revealTargets = new Set(events.filter(event => event.phase === 'scouting').map(event => event.to?.coordinate).filter(coordinate => {
@@ -256,14 +292,17 @@
   }
 
   function finishEvent(event) {
-    if (event?.phase === 'scouting' && event?.to?.coordinate) playback.revealed.add(event.to.coordinate);
+    if (event?.phase === 'scouting' && event?.to?.coordinate) {
+      playback.revealed.add(event.to.coordinate);
+      if (event.partial) playback.revealedQuestions.add(event.to.coordinate);
+    }
     playback.index += 1; playback.progress = 0;
     const next = playback.events[playback.index]; playback.phase = next?.phase || 'complete';
     if (next) playTone(next.sound || next.phase);
   }
 
   function tick(now) {
-    if (!playback.active) return;
+    if (!playback.active || playback.paused) return;
     const event = playback.events[playback.index];
     if (!event) { stopResultsPlayback(); return; }
     playback.phase = event.phase;
@@ -297,37 +336,57 @@
   function drawActivity(event) {
     const point = projectBase(pointFor(event.coordinate)); if (!point) return;
     const fadeIn = Math.min(1, playback.progress / .14), fadeOut = Math.min(1, (1 - playback.progress) / .16);
-    const lines = [event.title + (event.unitCode ? ` · ${event.unitCode}` : ''), event.text, event.changes?.length ? changeText(event.changes) : ''].filter(Boolean);
+    const lines = [event.title + (event.unitCode ? ` · ${event.unitCode}` : ''), event.text].filter(Boolean);
     ctx.save(); ctx.globalAlpha = Math.min(fadeIn, fadeOut); ctx.font = '700 12px Segoe UI';
-    const width = Math.min(360, Math.max(170, ...lines.map(line => ctx.measureText(line).width + 26))), height = 17 + lines.length * 16;
+    const changeWidth = event.changes?.length ? event.changes.reduce((sum, change) => sum + ctx.measureText(`${change.amount > 0 ? '+' : ''}${change.amount.toLocaleString()} `).width + 27 + ctx.measureText(change.name).width, 0) : 0;
+    const width = Math.min(360, Math.max(170, ...lines.map(line => ctx.measureText(line).width + 26), changeWidth + 18)), height = 17 + lines.length * 16 + (event.changes?.length ? 24 : 0);
     const x = Math.max(8, Math.min(canvas.clientWidth - width - 8, point.x - width / 2)), y = Math.max(8, point.y - height - state.scale * .55);
     ctx.restore(); ctx.save(); ctx.globalAlpha = Math.min(fadeIn, fadeOut); roundedPanel(x, y, width, height, '#e4bd62');
     ctx.font = '700 12px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    lines.forEach((line, index) => { ctx.fillStyle = index === 0 ? '#ffe4a4' : index === lines.length - 1 && event.changes?.length ? '#9fe0bd' : '#eef4f6'; ctx.fillText(line, x + width / 2, y + 14 + index * 16); });
+    lines.forEach((line, index) => { ctx.fillStyle = index === 0 ? '#ffe4a4' : '#eef4f6'; ctx.fillText(line, x + width / 2, y + 14 + index * 16); });
+    if (event.changes?.length) {
+      let cursor = x + width / 2 - changeWidth / 2;
+      const changeY = y + 14 + lines.length * 16;
+      for (const change of event.changes) {
+        const amount = `${change.amount > 0 ? '+' : ''}${change.amount.toLocaleString()}`;
+        ctx.fillStyle = change.amount > 0 ? '#9fe0bd' : '#f1a6a6'; ctx.textAlign = 'left'; ctx.fillText(`${amount} `, cursor, changeY);
+        cursor += ctx.measureText(`${amount} `).width;
+        const image = itemIcon(change.name);
+        if (image) { ctx.drawImage(image, cursor, changeY - 10, 18, 18); cursor += 22; }
+        else { ctx.fillStyle = '#eef4f6'; ctx.fillText(change.name, cursor, changeY); cursor += ctx.measureText(change.name).width; }
+        cursor += 7;
+      }
+    }
     ctx.restore();
   }
 
   function drawMovingMarker(event, scout = false) {
     const base = lerpPoint(event.from, event.to, playback.progress), point = projectBase(base); if (!point) return;
-    ctx.save(); ctx.strokeStyle = scout ? '#83d9ef' : '#f3bc68'; ctx.fillStyle = scout ? '#b6f1ff' : '#ffe1a0'; ctx.lineWidth = Math.max(2, state.scale * .06);
-    ctx.beginPath(); ctx.arc(point.x, point.y, Math.max(5, state.scale * (scout ? .12 : .16)), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    const count = scout ? Math.max(1, event.riders || 1) : 1;
-    for (let i = 0; i < count; i += 1) { const angle = (i / count) * Math.PI * 2; ctx.beginPath(); ctx.arc(point.x + Math.cos(angle) * state.scale * .16, point.y + Math.sin(angle) * state.scale * .09, Math.max(1.5, state.scale * .025), 0, Math.PI * 2); ctx.fill(); }
-    ctx.font = '700 11px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(scout ? `S${event.scoutId} ${event.unitCode}` : event.unitCode, point.x, point.y - state.scale * .22); ctx.restore();
+    const colour = scout ? (event.mounted ? '#d7a65e' : '#e0d39d') : '#ffe1a0';
+    ctx.save(); ctx.strokeStyle = scout ? '#4b3324' : '#8b5b2d'; ctx.fillStyle = colour; ctx.lineWidth = Math.max(1.5, state.scale * .045);
+    const count = scout ? Math.max(1, Math.min(5, event.riders || 1)) : 1;
+    for (let i = 0; i < count; i += 1) {
+      const spread = (i - (count - 1) / 2) * state.scale * .17, y = point.y + Math.abs(i - (count - 1) / 2) * state.scale * .025;
+      if (scout && event.mounted) { ctx.beginPath(); ctx.ellipse(point.x + spread, y + state.scale * .035, state.scale * .11, state.scale * .045, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+      ctx.beginPath(); ctx.arc(point.x + spread, y - state.scale * .045, Math.max(2.5, state.scale * .042), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(point.x + spread, y - state.scale * .01); ctx.lineTo(point.x + spread, y + state.scale * .105); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(point.x + spread, y + state.scale * .05); ctx.lineTo(point.x + spread - state.scale * .055, y + state.scale * .11); ctx.moveTo(point.x + spread, y + state.scale * .05); ctx.lineTo(point.x + spread + state.scale * .055, y + state.scale * .11); ctx.stroke();
+    }
+    ctx.font = '800 11px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillStyle = '#f5e5bd'; ctx.strokeStyle = '#17262b'; ctx.lineWidth = 3; ctx.strokeText(scout ? `Scout ${event.scoutId}` : event.unitCode, point.x, point.y - state.scale * .22); ctx.fillText(scout ? `Scout ${event.scoutId}` : event.unitCode, point.x, point.y - state.scale * .22); ctx.restore();
   }
 
   function drawScoutReveals() {
     if (!playback.revealed.size) return;
     ctx.save(); ctx.strokeStyle = '#83d9ef'; ctx.fillStyle = 'rgba(131,217,239,.11)'; ctx.lineWidth = Math.max(1.5, state.scale * .04);
-    for (const coordinate of playback.revealed) { const point = projectBase(pointFor(coordinate)); if (!point) continue; ctx.beginPath(); ctx.arc(point.x, point.y, Math.max(8, state.scale * .28), 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    for (const coordinate of playback.revealed) { const point = projectBase(pointFor(coordinate)); if (!point) continue; const question = playback.revealedQuestions.has(coordinate); ctx.beginPath(); ctx.arc(point.x, point.y, Math.max(8, state.scale * .28), 0, Math.PI * 2); ctx.fill(); ctx.stroke(); if (question) { ctx.fillStyle = '#f4e2a5'; ctx.font = `800 ${Math.max(12, state.scale * .42)}px Segoe UI`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('?', point.x, point.y); } }
     ctx.restore();
   }
 
   function drawRevealFog() {
     if (!playback.revealTargets.size) return;
-    const hidden = [...playback.revealTargets].filter(coordinate => !playback.revealed.has(coordinate));
+    const hidden = [...playback.revealTargets].filter(coordinate => !playback.revealed.has(coordinate) || playback.revealedQuestions.has(coordinate));
     if (!hidden.length) return;
-    ctx.save(); ctx.fillStyle = '#18242b'; ctx.strokeStyle = '#263842'; ctx.lineWidth = Math.max(1, state.scale * .055);
+    ctx.save(); ctx.lineWidth = Math.max(1, state.scale * .055);
     for (const coordinate of hidden) {
       const parsed = pointFor(coordinate); if (!parsed) continue;
       const center = baseCenter(parsed.globalCol, parsed.globalRow);
@@ -335,7 +394,9 @@
         const points = IsoGeometry.corners.map(point => IsoMapper.project({ x: center.x + point.x, y: center.y + point.y }));
         ctx.beginPath(); points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)); ctx.closePath(); ctx.fill(); ctx.stroke();
       } else {
-        const point = screenFromBase(center); hexPath(point.x, point.y, state.scale * .96); ctx.fill(); ctx.stroke();
+        const point = screenFromBase(center);
+        if (typeof drawFog === 'function') drawFog(point.x, point.y, state.scale * .96);
+        else { ctx.fillStyle = '#18242b'; ctx.strokeStyle = '#263842'; hexPath(point.x, point.y, state.scale * .96); ctx.fill(); ctx.stroke(); }
       }
     }
     ctx.restore();
@@ -362,6 +423,8 @@
 
   root.startResultsPlayback = startResultsPlayback;
   root.stopResultsPlayback = stopResultsPlayback;
+  root.pauseResultsPlayback = pauseResultsPlayback;
+  root.resumeResultsPlayback = resumeResultsPlayback;
   root.drawResultsPlaybackOverlay = drawResultsPlaybackOverlay;
   root.resultsPlaybackShouldHideUnit = resultsPlaybackShouldHideUnit;
   root.resultsPlaybackUnitPosition = playbackUnitPosition;
@@ -385,5 +448,5 @@
   bindSpeedSetting();
 
   const button = document.getElementById('mapResultPlayTurn');
-  if (button) button.addEventListener('click', () => { if (playback.active) stopResultsPlayback(); else startResultsPlayback(); });
+  if (button) button.addEventListener('click', () => { if (!playback.active) startResultsPlayback(); else if (playback.paused) resumeResultsPlayback(); else pauseResultsPlayback(); });
 })(typeof window !== 'undefined' ? window : globalThis);

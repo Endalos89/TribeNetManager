@@ -68,7 +68,8 @@
     const route=movementRoute?.points?.length>1 ? movementRoute : scoutRoute;
     const first=route?.points?.[0], next=route?.points?.[1];
     const heading=first?.coordinate===point.coordinate && next ? Math.atan2(baseCenter(next.globalCol,next.globalRow).y-baseCenter(first.globalCol,first.globalRow).y,baseCenter(next.globalCol,next.globalRow).x-baseCenter(first.globalCol,first.globalRow).x) : null;
-    const travellingFromStart=first?.coordinate===point.coordinate && next;
+    const interpolated=Number.isFinite(point.x)&&Number.isFinite(point.y);
+    const travellingFromStart=!interpolated && first?.coordinate===point.coordinate && next;
     const travelOffset=travellingFromStart ? {x:(baseCenter(next.globalCol,next.globalRow).x-center.x)*.5,y:(baseCenter(next.globalCol,next.globalRow).y-center.y)*.5} : {x:0,y:0};
     const models=formation(counts,`${point.coordinate||''}:${code}`).map(m=>{
       const x=center.x+shift.x+travelOffset.x+m.x*spread,y=center.y+shift.y+travelOffset.y+m.y*spread;
