@@ -378,7 +378,7 @@
   function drawScoutReveals() {
     if (!playback.revealed.size) return;
     ctx.save(); ctx.strokeStyle = '#83d9ef'; ctx.fillStyle = 'rgba(131,217,239,.11)'; ctx.lineWidth = Math.max(1.5, state.scale * .04);
-    for (const coordinate of playback.revealed) { const point = projectBase(pointFor(coordinate)); if (!point) continue; const question = playback.revealedQuestions.has(coordinate); ctx.beginPath(); ctx.arc(point.x, point.y, Math.max(8, state.scale * .28), 0, Math.PI * 2); ctx.fill(); ctx.stroke(); if (question) { ctx.fillStyle = '#f4e2a5'; ctx.font = `800 ${Math.max(12, state.scale * .42)}px Segoe UI`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('?', point.x, point.y); } }
+    for (const coordinate of playback.revealed) { const point = projectBase(pointFor(coordinate)); if (!point) continue; const question = playback.revealedQuestions.has(coordinate); ctx.fillStyle = 'rgba(131,217,239,.11)'; ctx.beginPath(); ctx.arc(point.x, point.y, Math.max(8, state.scale * .28), 0, Math.PI * 2); ctx.fill(); ctx.stroke(); if (question) { ctx.fillStyle = '#f4e2a5'; ctx.font = `800 ${Math.max(12, state.scale * .42)}px Segoe UI`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('?', point.x, point.y); } }
     ctx.restore();
   }
 
@@ -386,7 +386,7 @@
     if (!playback.revealTargets.size) return;
     const hidden = [...playback.revealTargets].filter(coordinate => !playback.revealed.has(coordinate) || playback.revealedQuestions.has(coordinate));
     if (!hidden.length) return;
-    ctx.save(); ctx.lineWidth = Math.max(1, state.scale * .055);
+    ctx.save(); ctx.fillStyle = '#253640'; ctx.strokeStyle = '#253640'; ctx.lineWidth = Math.max(1, state.scale * .055);
     for (const coordinate of hidden) {
       const parsed = pointFor(coordinate); if (!parsed) continue;
       const center = baseCenter(parsed.globalCol, parsed.globalRow);
