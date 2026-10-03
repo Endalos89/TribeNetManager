@@ -35,6 +35,41 @@ const {chromium}=require('playwright');
  await page.evaluate(()=>{centerOnHex(315,327);state.scale=62;draw();});await page.waitForTimeout(100);
 
  const zoom=await page.evaluate(()=>{setZoom(180);return state.scale;});assert.equal(zoom,180);
+ // Show both report-based foot groups and planner-based mounted groups.
+ await page.evaluate(()=>{
+   state.scale=110;centerOnHex(315,327);clearTimeout(areaRequestTimer);
+   for(const r of [325,326]){const ref=coordinateFor(315,r);window.fixtureRows.delete(ref);state.hexCache.delete(ref);}
+   state.planImport={turnKey:'906-04',plan:{movements:[],scouts:[],unitStats:[{unit:'0485e1',warrior:12,active:30,inactive:8,totalPeople:50,horseCount:50,wagonCount:0}]}};
+   resultsTimeline.turn={turnKey:'906-04',units:[
+     {unitCode:'0485',unitType:'Tribe',currentHex:coordinateFor(315,327),people:{Warriors:50,Actives:120,Inactives:80,People:250},resources:{Animals:{Horse:75},Goods:{Wagon:16}}},
+     {unitCode:'0485e1',unitType:'Element',currentHex:coordinateFor(316,328),people:{Warriors:12,Actives:30,Inactives:8,People:50},resources:{Animals:{Horse:50}}}
+   ]};
+   state.routeCache={movements:[],scouts:[],movementWarnings:[],scoutWarnings:[]};draw();
+ });
+ await page.waitForTimeout(200);
+ const markers=await page.evaluate(()=>{
+   const u=resultsTimeline.turn.units[0],point=parseCoordinate(u.currentHex),box=IsoUnits.layout(point,u.unitCode,u.unitType,0,'',u);
+   const mounted=IsoUnits.layout(parseCoordinate(coordinateFor(316,328)),'0485e1','Element');
+   return {box,mounted};
+ });
+ assert.equal(markers.box.cells.length,5);assert.equal(markers.box.counts.mounted,false);assert.equal(markers.mounted.counts.mounted,true);
+ if(process.env.ISO_SCREENSHOT)await page.screenshot({path:process.env.ISO_SCREENSHOT});
+ const interaction=await page.evaluate(()=>{
+   const builds=IsoMapper.sceneBuilds;
+   for(let i=0;i<6;i++){IsoMapper.interact();state.scale*=1.03;state.cameraX+=.05;draw();}
+   const t=resultsTimeline.turn.units[0],point=parseCoordinate(t.currentHex),p=screenFromBase(baseCenter(point.globalCol,point.globalRow));
+   return {builds,current:IsoMapper.sceneBuilds,pick:IsoMapper.pick(p.x,p.y),point};
+ });
+ assert.equal(interaction.current,interaction.builds,'reuse the terrain during a navigation gesture');
+ assert.equal(interaction.pick.globalCol,interaction.point.globalCol);assert.equal(interaction.pick.globalRow,interaction.point.globalRow);
+ await page.waitForTimeout(220);assert.ok(await page.evaluate(n=>IsoMapper.sceneBuilds>n,interaction.builds),'render a sharp landscape after navigation settles');
+ // Planner hitboxes include the entire illustration, and still open logistics.
+ const hit=await page.evaluate(()=>{
+   const point=parseCoordinate(coordinateFor(316,328));
+   state.routeCache.movements=[{unit:'0485e1',type:'Element',route:{points:[point],unresolved:[]}}];draw();
+   const b=plannerLabelHitboxes()[0];return {unit:plannerUnitLabelAt(b.x+b.w/2,b.y+b.h-4)?.unit};
+ });assert.equal(hit.unit,'0485e1');
+ await page.evaluate(()=>{resultsTimeline.turn=null;state.planImport=null;state.routeCache=null;draw();});
  const north=await page.evaluate(()=>{const a=IsoGeometry.project(0,0),b=IsoGeometry.project(0,-1);return {x:b.x-a.x,y:b.y-a.y};});assert.equal(north.x,0);assert.ok(north.y<0);
  await page.click('#backButton');await page.click('#openMapperButton');
  assert.equal(await page.evaluate(()=>IsoMapper.enabled),false);
@@ -44,5 +79,5 @@ const {chromium}=require('playwright');
  assert.equal(await page.locator('#riverEdgeEditor input[value=SW]').isChecked(),true);
  await page.evaluate(()=>{resultsTimeline.turn={turnKey:'906-04'};setHistoricalEditingState(true);});
  await page.waitForTimeout(30);assert.equal(await page.locator('#riverEdgeEditor input[value=N]').isDisabled(),true);
- assert.deepEqual(errors,[]);console.log('PASS: launcher, 3D rendering, selection, river editing/save, cursor zoom, drag pan, classic mapper, shared notes and historical read-only controls; no browser errors.');await browser.close();
+ assert.deepEqual(errors,[]);console.log('PASS: launcher, 3D rendering, selection, river editing/save, cursor zoom, drag pan, classic mapper, shared notes, historical controls, unit figures, marker hitboxes and navigation cache; no browser errors.');await browser.close();
 })();

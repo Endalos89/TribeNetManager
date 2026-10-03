@@ -4,6 +4,7 @@ const IsoMapper = (() => {
   const G=IsoGeometry, WATER='#337f98', FOG='#253640';
   let enabled=false, labels=true, grid=false;
   const detailCache=new Map(), surfaceCache=new Map(), groundCache=new Map();
+  let interactive=false, settleTimer=null, hitScale=1, sceneBuilds=0;
   let terrainSignature='', frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
   function sample(x,y) {
     // Quantisation gives the two owners of a shared edge exactly the same vertex.
@@ -14,7 +15,7 @@ const IsoMapper = (() => {
   }
   function prepareSurface() {
     const signature=Array.from(state.hexCache,([ref,data])=>`${ref}:${data.terrain}:${data.notes||''}`).join('|');
-    if(signature!==terrainSignature || surfaceCache.size>90000){terrainSignature=signature;surfaceCache.clear();groundCache.clear();landscape=null;}
+    if(signature!==terrainSignature){terrainSignature=signature;surfaceCache.clear();groundCache.clear();landscape=null;}
   }
   const isWater=t=>t==='O'||t==='L';
   const known=d=>d && d.terrain && d.terrain!=='UNKNOWN';
@@ -56,7 +57,8 @@ const IsoMapper = (() => {
     const steps=state.scale<28?2:state.scale<90?4:6,key=`${t.ref}:${steps}`;
     if(groundCache.has(key))return groundCache.get(key);
     const faces=[];
-    if(t.water){faces.push({points:G.corners.map(p=>offset(t.c,p,1,0)),color:WATER});}
+    if(!t.known){faces.push({points:G.corners.map(p=>({...offset(t.c,p),z:sample(t.c.x+p.x,t.c.y+p.y).z})),color:FOG});}
+    else if(t.water){faces.push({points:G.corners.map(p=>offset(t.c,p,1,0)),color:WATER});}
     else {
       const vertex=(a,b,u,v)=>sample(t.c.x+(a.x*u+b.x*v)/steps,t.c.y+(a.y*u+b.y*v)/steps);
       const add=points=>{
@@ -78,7 +80,7 @@ const IsoMapper = (() => {
     groundCache.set(key,faces);return faces;
   }
   function pick(x,y) {
-    x-=hitOffset.x;y-=hitOffset.y;
+    x=(x-hitOffset.x)/hitScale;y=(y-hitOffset.y)/hitScale;
     // Hit-test the elevated surface, rather than the flat plane underneath hills.
     for(let i=hitFaces.length-1;i>=0;i--){
       const f=hitFaces[i];let inside=false;
@@ -113,10 +115,14 @@ const IsoMapper = (() => {
     }
     if(volcanic)line([{...p,x:p.x-.06,z:peak.z-.09},peak,{...p,x:p.x+.08,z:peak.z-.11}],'#cb704d',2);
   }
+  function sceneryVisible(t,x,y) {
+    return G.sceneryVisible(x-t.c.x,y-t.c.y,t.n.map(known));
+  }
   function scenery(t,jobs) {
     if(!t.known)return;
     const terrain=t.data.terrain,items=details(t.ref),{c}=t;
     const plant=(x,y,size)=>{
+      if(!sceneryVisible(t,x,y))return;
       const p=sample(x,y);if(p.water)return;
       jobs.push({y:p.y,draw:()=>tree(p,size,terrain==='CH'||terrain==='LCM',terrain.startsWith('J')?'#3c8851':'#688e40')});
     };
@@ -126,7 +132,7 @@ const IsoMapper = (() => {
     }
     if(state.scale<22)return;
     if(/ALPS|HSM|L.M/.test(terrain))for(const a of items.slice(0,2)){
-      const p=sample(c.x+a.x*.7,c.y+a.y*.7);
+      const p=sample(c.x+a.x*.7,c.y+a.y*.7);if(!sceneryVisible(t,p.x,p.y))continue;
       jobs.push({y:p.y,draw:()=>mountain(p,a.size*(terrain==='ALPS'?1.1:.8),/ALPS|HSM|LSM/.test(terrain),terrain==='LVM')});
     }
     if(G.isForest(terrain)) {
@@ -142,7 +148,7 @@ const IsoMapper = (() => {
       }
     } else if(!G.isHill(terrain) && !/ALPS|HSM|L.M/.test(terrain)){
       for(const a of items.slice(0,5)){
-        const p=sample(c.x+a.x,c.y+a.y);
+        const p=sample(c.x+a.x,c.y+a.y);if(!sceneryVisible(t,p.x,p.y))continue;
         if(terrain==='SW')line([p,{...p,x:p.x+.22}],WATER,state.scale*.07);
         else if(terrain==='BR')jobs.push({y:p.y,draw:()=>tree(p,.35,false,'#7d9551')});
         else line([p,{...p,x:p.x+.05,z:p.z+.06},{...p,x:p.x+.11}],terrain==='DE'?'#b69958':'#6d8b4a',1);
@@ -165,8 +171,17 @@ const IsoMapper = (() => {
       }
     }
   }
+  function interact() {
+    if(!enabled)return;
+    interactive=true;clearTimeout(settleTimer);
+    settleTimer=setTimeout(()=>{
+      if(state.dragging){interact();return;}
+      interactive=false;
+      if(enabled && state.mode==='detail')draw();
+    },150);
+  }
   function drawScene() {
-    prepareSurface();const rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+    if(!interactive || !landscape)prepareSurface();const rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
     frameRect=rect;renderCtx=ctx;
     const b=bounds(),tiles=[],pad=Math.max(250,state.scale*1.7);
     for(let col=b.minCol;col<=b.maxCol;col++)for(let row=b.minRow;row<=b.maxRow;row++){
@@ -174,7 +189,9 @@ const IsoMapper = (() => {
     }
     const shift=landscape?G.project(landscape.cameraX-state.cameraX,landscape.cameraY-state.cameraY):{x:0,y:0};
     let dx=shift.x*state.scale,dy=shift.y*state.scale;
-    if(!landscape || landscape.scale!==state.scale || landscape.width!==rect.width || landscape.height!==rect.height || landscape.dpr!==dpr || Math.abs(dx)>160 || Math.abs(dy)>160){
+    const needsBuild=!landscape || landscape.scale!==state.scale || landscape.width!==rect.width || landscape.height!==rect.height || landscape.dpr!==dpr || Math.abs(dx)>160 || Math.abs(dy)>160;
+    if(needsBuild && (!interactive || !landscape)){
+      sceneBuilds++;
       const buffer=document.createElement('canvas'),padding=210;
       buffer.width=Math.ceil((rect.width+padding*2)*dpr);buffer.height=Math.ceil((rect.height+padding*2)*dpr);
       renderCtx=buffer.getContext('2d');renderCtx.setTransform(dpr,0,0,dpr,0,0);
@@ -185,15 +202,17 @@ const IsoMapper = (() => {
       faces.sort((a,b)=>a.depth-b.depth);
       for(const f of faces){const points=f.points.map(p=>project(p,p.z));polygon(points,f.color,f.color);hitFaces.push({points,col:f.col,row:f.row});}
       const jobs=[];
-      for(const t of tiles){edges(t);scenery(t,jobs);}
+      // Fog is ground cover. Visible trees and mountains are drawn above it.
+      for(const t of tiles){edges(t);edges(t,true);scenery(t,jobs);}
       jobs.sort((a,b)=>a.y-b.y);for(const job of jobs)job.draw();
-      for(const t of tiles)edges(t,true);
       landscape={canvas:buffer,cameraX:state.cameraX,cameraY:state.cameraY,scale:state.scale,width:rect.width,height:rect.height,dpr,padding};
       dx=0;dy=0;
     }
-    frameRect=rect;renderCtx=ctx;hitOffset={x:dx-landscape.padding,y:dy-landscape.padding};
-    renderCtx.clearRect(0,0,rect.width,rect.height);
-    renderCtx.drawImage(landscape.canvas,hitOffset.x,hitOffset.y,landscape.canvas.width/dpr,landscape.canvas.height/dpr);
+    frameRect=rect;renderCtx=ctx;hitScale=state.scale/landscape.scale;
+    hitOffset={x:rect.width/2+dx-(landscape.width/2+landscape.padding)*hitScale,y:rect.height/2+dy-(landscape.height/2+landscape.padding)*hitScale};
+    renderCtx.fillStyle=FOG;renderCtx.fillRect(0,0,rect.width,rect.height);
+    renderCtx.drawImage(landscape.canvas,hitOffset.x,hitOffset.y,landscape.canvas.width/landscape.dpr*hitScale,landscape.canvas.height/landscape.dpr*hitScale);
+    IsoUnits.beginFrame();
     for(const t of tiles){
       if(grid || state.selected?.coordinate===t.ref){
         const outline=G.corners.map(p=>{const q=offset(t.c,p,.98);return project(q,sample(q.x,q.y).z);});
@@ -207,7 +226,7 @@ const IsoMapper = (() => {
     updateCenterReadout();frameRect=null;
   }
   function setEnabled(value) {
-    enabled=value;if(!value)state.scale=Math.min(68,state.scale);document.body.classList.toggle('isometric-mode',value);
+    enabled=value;interactive=false;clearTimeout(settleTimer);if(!value)state.scale=Math.min(68,state.scale);document.body.classList.toggle('isometric-mode',value);
     $('isoViewControls').classList.toggle('hidden',!value);
     $('openMapperButton').querySelector('h2').textContent='Mapper';
     if(value && state.scale<43)state.scale=52;
@@ -228,6 +247,6 @@ const IsoMapper = (() => {
     new MutationObserver(sync).observe($('notesInput'),{attributes:true,attributeFilter:['disabled']});
     new MutationObserver(sync).observe($('selectedState'),{childList:true});
   }
-  return {get enabled(){return enabled;},project,inverse,bounds,pick,draw:drawScene,setEnabled,setup};
+  return {get enabled(){return enabled;},project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},draw:drawScene,setEnabled,setup};
 })();
 IsoMapper.setup();

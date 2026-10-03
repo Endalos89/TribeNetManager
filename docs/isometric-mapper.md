@@ -29,3 +29,13 @@ Edge annotations are stored in the existing notes field as `[Rivers: N, NE]`, pr
 - The full `npm test` run is blocked by the pre-existing assertion `skill groups should filter the current skill table` in `tests/feedback-review-fixes.test.js`, invoked by the feedback annotations suite. The same assertion fails on the unmodified base commit.
 
 Water is static in this first version. Windows/Electron installer testing remains separate from the browser verification.
+
+## Unit figures and navigation
+
+Unit cards show warriors (shield), actives (tool), inactives (hat), horses and carts/wagons, with exact counts from the selected report or the planner's movement-time inventory. Empty categories are omitted; unavailable composition is not invented. People ride only when horses cover the entire population (including other reported people) and there are no carts/wagons. Below zoom 35 the cards collapse to their unit label. Planner card hitboxes include their illustrations.
+
+Fog cover is drawn on the ground before scenery. Scenery bases in the concealed border are excluded, while visible tree crowns and mountains can project over the fog naturally.
+
+Pan/wheel input is coalesced to animation frames. During navigation the padded terrain image is translated/scaled and hit-testing uses the same transform. Detailed rendering resumes 150 ms after movement stops; distant ground outside the cached image is temporarily fog-coloured until that refresh. Unknown hexes use a single ground face instead of a subdivided mesh. Unit illustrations are cached with a bounded atlas.
+
+Validation: geometry/composition tests cover population and cart constraints; browser checks cover scaled terrain picking, deferred rebuild, marker hitboxes and original mapper interactions. A local 1500×1000 mixed forest/hill benchmark (16 pan+zoom redraws) measured median 556 ms before vs 3 ms during navigation after; machine-specific timings, not a guaranteed frame rate.

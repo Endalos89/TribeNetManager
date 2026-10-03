@@ -26,6 +26,10 @@ function plannerLabelHitboxes() {
 
   const add = (point, unit, type, offsetIndex = 0, extra = '') => {
     if (!point) return;
+    if(typeof IsoMapper!=='undefined' && IsoMapper.enabled){
+      const box=IsoUnits.layout(point,unit,type,offsetIndex,extra);
+      hits.push({...box,unit,type,point});return;
+    }
     const p = screenFromBase(baseCenter(point.globalCol, point.globalRow));
     const text = `${type === 'Element' ? 'E' : type === 'Tribe' ? 'T' : 'U'} ${unit}${extra ? ` ${extra}` : ''}`;
     ctx.save();
