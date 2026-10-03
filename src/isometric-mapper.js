@@ -5,7 +5,7 @@ const IsoMapper = (() => {
   let enabled=false, labels=true, grid=false;
   const detailCache=new Map(), surfaceCache=new Map(), groundCache=new Map();
   let interactive=false, settleTimer=null, hitScale=1, sceneBuilds=0;
-  let terrainSignature='', frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
+  let unitSignature='', terrainSignature='', frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
   function sample(x,y) {
     // Quantisation gives the two owners of a shared edge exactly the same vertex.
     x=Math.round(x*1e6)/1e6;y=Math.round(y*1e6)/1e6;
@@ -20,6 +20,7 @@ const IsoMapper = (() => {
   const isWater=t=>t==='O'||t==='L';
   const known=d=>d && d.terrain && d.terrain!=='UNKNOWN';
   const color=t=>terrainStyle[t]?.[0] || FOG;
+  function withProjection(fn) {const previous=frameRect;frameRect=canvas.getBoundingClientRect();try{return fn();}finally{frameRect=previous;}}
   function project(p,z=null) {
     const r=frameRect||canvas.getBoundingClientRect(), q=G.project(p.x-state.cameraX,p.y-state.cameraY,z??sample(p.x,p.y).z);
     return {x:r.width/2+q.x*state.scale,y:r.height/2+q.y*state.scale};
@@ -116,7 +117,7 @@ const IsoMapper = (() => {
     if(volcanic)line([{...p,x:p.x-.06,z:peak.z-.09},peak,{...p,x:p.x+.08,z:peak.z-.11}],'#cb704d',2);
   }
   function sceneryVisible(t,x,y) {
-    return G.sceneryVisible(x-t.c.x,y-t.c.y,t.n.map(known));
+    return !IsoUnits.occupies(t.ref,x-t.c.x,y-t.c.y) && G.sceneryVisible(x-t.c.x,y-t.c.y,t.n.map(known));
   }
   function scenery(t,jobs) {
     if(!t.known)return;
@@ -181,6 +182,7 @@ const IsoMapper = (() => {
     },150);
   }
   function drawScene() {
+    const units=IsoUnits.prepare();if(units!==unitSignature){unitSignature=units;landscape=null;}
     if(!interactive || !landscape)prepareSurface();const rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
     frameRect=rect;renderCtx=ctx;
     const b=bounds(),tiles=[],pad=Math.max(250,state.scale*1.7);
@@ -247,6 +249,6 @@ const IsoMapper = (() => {
     new MutationObserver(sync).observe($('notesInput'),{attributes:true,attributeFilter:['disabled']});
     new MutationObserver(sync).observe($('selectedState'),{childList:true});
   }
-  return {get enabled(){return enabled;},project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},draw:drawScene,setEnabled,setup};
+  return {get enabled(){return enabled;},surface:sample,withProjection,project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},draw:drawScene,setEnabled,setup};
 })();
 IsoMapper.setup();

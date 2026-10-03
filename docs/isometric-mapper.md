@@ -30,12 +30,14 @@ Edge annotations are stored in the existing notes field as `[Rivers: N, NE]`, pr
 
 Water is static in this first version. Windows/Electron installer testing remains separate from the browser verification.
 
-## Unit figures and navigation
+## Unit gatherings and navigation
 
-Unit cards show warriors (shield), actives (tool), inactives (hat), horses and carts/wagons, with exact counts from the selected report or the planner's movement-time inventory. Empty categories are omitted; unavailable composition is not invented. People ride only when horses cover the entire population (including other reported people) and there are no carts/wagons. Below zoom 35 the cards collapse to their unit label. Planner card hitboxes include their illustrations.
+Units appear as small low-poly models standing on the sampled terrain, with a compact unit label. Each category independently uses digit counts: zero models for zero quantity, one for 1–9, two for 10–99, three for 100–999, and so on. Warriors carry shields and spears, actives carry tools, civilians wear hats, and horses and carts/wagons have their own models. Hover over a gathering for exact inventory counts. Planner hitboxes include the models and continue to open logistics.
 
-Fog cover is drawn on the ground before scenery. Scenery bases in the concealed border are excluded, while visible tree crowns and mountains can project over the fog naturally.
+The models use reported snapshots or planner movement-time inventory. People ride only when horses cover the entire population (including other reported people) and no carts/wagons are present. No composition is invented when data is missing. The position of each figure is seeded by its hex and unit code; each follows its ground height. Multiple units sharing a hex receive distinct group centres. Small clearings keep nearby trees out of gatherings.
 
-Pan/wheel input is coalesced to animation frames. During navigation the padded terrain image is translated/scaled and hit-testing uses the same transform. Detailed rendering resumes 150 ms after movement stops; distant ground outside the cached image is temporarily fog-coloured until that refresh. Unknown hexes use a single ground face instead of a subdivided mesh. Unit illustrations are cached with a bounded atlas.
+Fog cover is drawn on the ground before scenery. Scenery bases in the concealed border are excluded, while visible crowns can project over fog naturally.
 
-Validation: geometry/composition tests cover population and cart constraints; browser checks cover scaled terrain picking, deferred rebuild, marker hitboxes and original mapper interactions. A local 1500×1000 mixed forest/hill benchmark (16 pan+zoom redraws) measured median 556 ms before vs 3 ms during navigation after; machine-specific timings, not a guaranteed frame rate.
+Pan/wheel input is coalesced to animation frames. During navigation the padded terrain image is translated/scaled and hit-testing uses the same transform. Detailed rendering resumes 150 ms after movement stops. Models are drawn with the current projection; no terrain rebuild is needed for their animation-free figures. Clearings are invalidated when unit locations change.
+
+Validation covers logarithmic count boundaries, deterministic formations, mounted eligibility, ground elevations, exact-count hover, planner hitboxes, deferred landscape rebuild and existing mapper navigation/editing.

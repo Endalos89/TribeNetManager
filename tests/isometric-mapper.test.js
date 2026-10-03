@@ -55,3 +55,14 @@ assert.equal(composition({warrior:10,active:20,inactive:5,totalPeople:35,horseCo
 assert.equal(composition({people:{},resources:{Animals:{Horses:10}}}).mounted,false);
 assert.equal(composition(null),null);
 console.log('Fog scenery and reported/planned unit composition checks passed');
+
+const U=require('../src/isometric-units');
+for(const [n,count] of [[0,0],[1,1],[9,1],[10,2],[99,2],[100,3],[999,3],[1000,4],[9999,4],[10000,5]])assert.equal(U.modelCount(n),count);
+const crowd=U.formation({warriors:150,actives:450,inactives:80,horses:0,carts:0,mounted:false},'PK1613:0485');
+assert.equal(crowd.length,8);assert.equal(crowd.filter(m=>m.kind==='warriors').length,3);assert.equal(crowd.filter(m=>m.kind==='actives').length,3);assert.equal(crowd.filter(m=>m.kind==='inactives').length,2);
+assert.deepEqual(crowd,U.formation({warriors:150,actives:450,inactives:80,horses:0,carts:0,mounted:false},'PK1613:0485'));
+assert.ok(crowd.every(m=>Math.hypot(m.x,m.y)<.47));
+assert.equal(U.formation(null,'unknown').length,0);
+const mountedGroup=U.formation({warriors:10,actives:10,inactives:1,horses:21,carts:0,mounted:true},'mounted');
+assert.ok(mountedGroup.filter(m=>m.kind!=='horses').every(m=>m.mounted));
+console.log('Logarithmic miniature counts, seeded formation and mounted model checks passed');
