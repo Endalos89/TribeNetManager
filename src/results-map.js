@@ -178,6 +178,7 @@ function drawHistoricalUnits() {
   const seen = new Set();
   for (const unit of resultsTimeline.turn.units) {
     const unitCode = String(unit.unitCode);
+    if (typeof resultsPlaybackShouldHideUnit === 'function' && resultsPlaybackShouldHideUnit(unitCode)) continue;
     if (seen.has(unitCode)) continue;
     seen.add(unitCode);
     const point = parseCoordinate(unit.currentHex);
@@ -284,6 +285,8 @@ function updateMapTimelineUI() {
   $('mapResultPrev').disabled = resultsTimeline.turns.length < 2;
   $('mapResultNext').disabled = resultsTimeline.turns.length < 2;
   $('mapResultPlay').disabled = resultsTimeline.turns.length < 2;
+  const playTurn = $('mapResultPlayTurn');
+  if (playTurn) playTurn.disabled = !resultsTimeline.turn;
   if (!hasTurns) {
     $('mapResultTurnLabel').textContent = 'No results imported';
     $('mapResultStatus').textContent = 'Import a Word results report to populate history.';
@@ -350,6 +353,7 @@ async function importMapResultsReport() {
       return;
     }
     await refreshResultTurns(result.turn.turnKey);
+    if (typeof startResultsPlayback === 'function') await startResultsPlayback({ auto: true });
     $('mapResultStatus').textContent = `${result.turn.sourceFile} · Turn ${result.turn.turnKey} imported/rebuilt`;
     const firstUnit = result.turn.units?.find(unit => parseCoordinate(unit.currentHex));
     if (firstUnit) {

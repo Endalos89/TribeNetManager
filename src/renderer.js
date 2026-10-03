@@ -184,6 +184,7 @@ function draw() {
   drawSubmapLabels(bounds); drawWorldBorder();
   if (state.planningVisible && state.planImport?.plan) drawPlanOverlay();
   drawSelectedUnitHighlight();
+  if (typeof drawResultsPlaybackOverlay === 'function') drawResultsPlaybackOverlay();
   updateCenterReadout();
 }
 function drawSubmapLabels(bounds) {
