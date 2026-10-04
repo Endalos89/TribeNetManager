@@ -35,9 +35,18 @@ const context = {
 context.window = context;
 context.resultsTimeline = { turn: {
   turnKey: '1-02',
+  turnSort: 2,
   units: [{ unitCode: 'T1', previousHex: 'AA0101', currentHex: 'AA0202', deltas: { resources: {} } }],
   events: []
-} };
+}, turns: [{ turnKey: '1-01', turnSort: 1 }, { turnKey: '1-02', turnSort: 2 }] };
+context.state = { mode: 'detail', hexCache: new Map([
+  ['AA0101', { coordinate: 'AA0101', terrain: 'PR', discoveredTurn: '1-01' }],
+  ['AA0102', { coordinate: 'AA0102', terrain: 'GH', discoveredTurn: '1-02' }]
+]) };
+context.visibleBounds = () => ({ minCol: 0, maxCol: 4, minRow: 0, maxRow: 4 });
+context.tribenet = { getResultHexesInArea: async (_bounds, turnKey) => turnKey === '1-01'
+  ? [{ coordinate: 'AA0101', terrain: 'PR', discoveredTurn: '1-01', globalCol: 0, globalRow: 0 }]
+  : [...context.state.hexCache.values()] };
 vm.runInNewContext(source, context, { filename: 'results-playback.js' });
 
 const events = context.resultsPlayback.buildEvents({
@@ -58,12 +67,17 @@ assert.ok(events.some(event => event.changes.some(change => change.name === 'Goa
 assert.ok(events.some(event => event.changes.some(change => change.name === 'Leather' && change.amount === -100)));
 assert.strictEqual(events.filter(event => event.phase === 'movement').length, 2);
 assert.strictEqual(events.filter(event => event.phase === 'scouting')[0].riders, 3);
-assert.ok(events.some(event => event.phase === 'scouting' && event.partial), 'Incomplete scouts should travel to a border tile');
+const partialScout = events.find(event => event.phase === 'scouting' && event.partial);
+assert.ok(partialScout, 'Incomplete scouts should travel to a border tile');
+assert.ok(partialScout.borderPoint && partialScout.borderPoint.x !== partialScout.to.globalCol, 'Incomplete scouts should stop before the attempted tile centre');
 
 (async () => {
   const started = await context.startResultsPlayback();
   assert.strictEqual(started, true, 'Play Turn should find the shared current results turn');
   assert.strictEqual(context.resultsPlayback.active, true);
+  assert.strictEqual(context.resultsPlayback.baselineTurnKey, '1-01');
+  assert.strictEqual(context.resultsPlayback.baselineHexes.get('AA0101').terrain, 'PR');
+  assert.strictEqual(context.resultsPlaybackMapData('AA0101', { coordinate: 'AA0101', terrain: 'GH' }).terrain, 'PR');
   assert.ok(context.resultsPlayback.revealTargets.size >= 1, 'Scout destinations should be staged behind fog until reached');
   const pausedAt = context.resultsPlayback.progress;
   assert.strictEqual(context.pauseResultsPlayback(), true);

@@ -123,6 +123,9 @@
       }
       const nextTurn = planningTurnKey(result.turn);
       await refreshPlanningTurn(nextTurn);
+      if (typeof playImportedResultsTransition === 'function') {
+        await playImportedResultsTransition(result.turn.turnKey);
+      }
       window.dispatchEvent(new CustomEvent('tribenet-import-complete'));
       if (status) status.textContent = `Turn ${canonicalTurnKey(result.turn.turnKey)} Results imported. Planning Turn ${nextTurn} is ready.`;
     } finally {

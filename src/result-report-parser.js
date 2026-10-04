@@ -154,6 +154,19 @@ function parseSkills(line) {
   return skills;
 }
 
+function parseScoutTransport(text) {
+  const value = String(text || '');
+  const numberAfter = pattern => {
+    const match = value.match(pattern);
+    return match ? parseNumber(match[1]) : 0;
+  };
+  return {
+    noOfScouts: numberAfter(/([\d,]+)\s+(?:scouts?|riders?)/i),
+    noOfHorses: numberAfter(/([\d,]+)\s+horses?/i),
+    noOfCarts: numberAfter(/([\d,]+)\s+(?:carts?|wagons?)/i)
+  };
+}
+
 function addKnowledge(knowledgeMap, entry) {
   if (!entry?.coordinate) return;
   const existing = knowledgeMap.get(entry.coordinate);
@@ -338,7 +351,8 @@ function parseUnitSection(lines, startIndex, reportTurn, knowledgeMap) {
     }
     const scoutMatch = line.match(/^Scout\s+(\d+):\s*(.+)$/i);
     if (scoutMatch) {
-      const scout = { id: Number(scoutMatch[1]), report: scoutMatch[2].trim(), raw: line };
+      const report = scoutMatch[2].trim();
+      const scout = { id: Number(scoutMatch[1]), report, raw: line, ...parseScoutTransport(report) };
       unit.scouts.push(scout);
       events.push({ unitCode, eventType: 'scout', message: line, details: { scoutId: scout.id } });
       i += 1;

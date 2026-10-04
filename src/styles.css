@@ -71,7 +71,13 @@ input:focus, select:focus, textarea:focus { border-color: #6fa775; box-shadow: 0
 #mapCanvas { width: 100%; height: 100%; display: block; cursor: grab; }
 #mapCanvas.dragging { cursor: grabbing; }
 .map-hint { position: absolute; left: 14px; bottom: 12px; font-size: 11px; color: #8fa0aa; background: rgba(4,9,12,.78); padding: 6px 9px; border: 1px solid rgba(80,103,116,.5); border-radius: 7px; pointer-events: none; }
-.planner-overlay-card { position: absolute; right: 14px; bottom: 12px; width: min(390px, calc(100% - 40px)); max-height: 185px; overflow: auto; background: rgba(8,15,20,.92); border: 1px solid #755d37; border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.25); pointer-events: none; }
+.planner-overlay-card { position: absolute; right: 14px; top: 14px; width: min(390px, calc(100% - 40px)); max-height: min(310px, calc(100% - 28px)); overflow: auto; background: rgba(8,15,20,.94); border: 1px solid #755d37; border-radius: 10px; padding: 8px 10px; box-shadow: 0 8px 30px rgba(0,0,0,.25); pointer-events: auto; }
+.planner-overlay-card.collapsed { width: auto; max-height: none; }
+.planning-panel-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 18px; border: 0; background: transparent; color: #f1d69a; padding: 2px 1px; cursor: pointer; font: 800 11px Segoe UI; text-align: left; }
+.planning-panel-toggle:hover { color: #ffe5ad; }
+.planning-panel-toggle span:last-child { color: #8ea1ad; font-size: 16px; line-height: 1; }
+.planning-panel-content { padding-top: 7px; }
+.planning-panel-hint { margin-top: 9px; color: #81949f; font-size: 10px; line-height: 1.4; }
 .planner-overlay-title { display: flex; gap: 8px; justify-content: space-between; align-items: center; font-size: 11px; color: #f1d69a; margin-bottom: 6px; }
 .planner-overlay-title span { color: #8ea1ad; max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .planner-warnings { display: grid; gap: 4px; }

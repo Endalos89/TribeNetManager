@@ -6,15 +6,22 @@ const IsoMapper = (() => {
   const detailCache=new Map(), surfaceCache=new Map(), groundCache=new Map();
   let interactive=false, settleTimer=null, hitScale=1, sceneBuilds=0;
   let unitSignature='', terrainSignature='', frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
+  function mapData(ref) {
+    const target=state.hexCache.get(ref);
+    return typeof resultsPlaybackMapData==='function' ? resultsPlaybackMapData(ref,target) : target;
+  }
   function sample(x,y) {
     // Quantisation gives the two owners of a shared edge exactly the same vertex.
     x=Math.round(x*1e6)/1e6;y=Math.round(y*1e6)/1e6;
     const key=`${x}:${y}`;
-    if(!surfaceCache.has(key))surfaceCache.set(key,G.surface(x,y,(col,row)=>col<0||row<0||col>=TOTAL_COLS||row>=TOTAL_ROWS?null:state.hexCache.get(coordinateFor(col,row)),color));
+    if(!surfaceCache.has(key))surfaceCache.set(key,G.surface(x,y,(col,row)=>col<0||row<0||col>=TOTAL_COLS||row>=TOTAL_ROWS?null:mapData(coordinateFor(col,row)),color));
     return surfaceCache.get(key);
   }
   function prepareSurface() {
-    const signature=Array.from(state.hexCache,([ref,data])=>`${ref}:${data.terrain}:${data.notes||''}`).join('|');
+    const playbackState=typeof resultsPlayback!=='undefined' ? resultsPlayback : null;
+    const playbackSignature=typeof resultsPlaybackMapData==='function' && playbackState?.active
+      ? `:playback:${playbackState.baselineTurnKey||'baseline'}` : '';
+    const signature=Array.from(state.hexCache,([ref,data])=>`${ref}:${data.terrain}:${data.notes||''}`).join('|')+playbackSignature;
     if(signature!==terrainSignature){terrainSignature=signature;surfaceCache.clear();groundCache.clear();landscape=null;}
   }
   const isWater=t=>t==='O'||t==='L';
@@ -49,9 +56,9 @@ const IsoMapper = (() => {
     const rand=G.random(ref),items=Array.from({length:9},()=>({x:(rand()-.5)*.96,y:(rand()-.5)*.96,size:.7+rand()*.6,variant:rand()}));
     if(detailCache.size>6000) detailCache.clear();detailCache.set(ref,items);return items;
   }
-  function adjacent(col,row) {return G.directions.map(d=>{const n=stepHex({globalCol:col,globalRow:row},d);return n?state.hexCache.get(n.coordinate):null;});}
+  function adjacent(col,row) {return G.directions.map(d=>{const n=stepHex({globalCol:col,globalRow:row},d);return n?mapData(n.coordinate):null;});}
   function tile(col,row) {
-    const ref=coordinateFor(col,row),data=state.hexCache.get(ref),c=baseCenter(col,row),n=adjacent(col,row);
+    const ref=coordinateFor(col,row),data=mapData(ref),c=baseCenter(col,row),n=adjacent(col,row);
     return {ref,data,c,n,col,row,known:known(data),water:isWater(data?.terrain),p:project(c)};
   }
   function groundFaces(t) {

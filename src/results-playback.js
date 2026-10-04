@@ -13,6 +13,11 @@
     revealed: new Set(),
     revealedQuestions: new Set(),
     revealTargets: new Set(),
+    baselineHexes: new Map(),
+    baselineLoaded: false,
+    baselineTurnKey: null,
+    autoHandoff: false,
+    onComplete: null,
     raf: null,
     audioContext: null,
     audioByPhase: new Map(),
@@ -66,6 +71,30 @@
     return changes;
   }
 
+  function previousActualTurnKey(turn) {
+    if (turn?.baselineTurnKey) return String(turn.baselineTurnKey);
+    const currentSort = Number(turn?.turnSort);
+    const candidates = (root.resultsTimeline?.turns || [])
+      .filter(row => row && !row.isPlanningTurn && row.turnKey && String(row.turnKey) !== String(turn?.turnKey))
+      .filter(row => !Number.isFinite(currentSort) || Number(row.turnSort || 0) < currentSort)
+      .sort((a, b) => Number(b.turnSort || 0) - Number(a.turnSort || 0));
+    return candidates[0]?.turnKey || null;
+  }
+
+  function playbackMapData(coordinate, targetData) {
+    if (!playback.active || !playback.baselineLoaded) return targetData;
+    if (playback.revealed.has(coordinate) && !playback.revealedQuestions.has(coordinate)) return targetData;
+    const baseline = playback.baselineHexes.get(coordinate);
+    return baseline && baseline.terrain !== 'UNKNOWN' ? baseline : null;
+  }
+
+  function hexCenter(point) {
+    if (!point) return null;
+    if (typeof baseCenter === 'function') return baseCenter(point.globalCol, point.globalRow);
+    const col = Number(point.globalCol || 0), row = Number(point.globalRow || 0);
+    return { x: 1 + col * 1.5, y: Math.sqrt(3) / 2 + Math.sqrt(3) * (row + (col % 2 ? .5 : 0)) };
+  }
+
   function changeText(changes) {
     return (changes || []).map(change => `${change.amount > 0 ? '+' : ''}${change.amount.toLocaleString()} ${change.name}`).join(' · ');
   }
@@ -80,6 +109,7 @@
     let image = iconCache.get(filename);
     if (!image) {
       image = new Image(); image.src = `item-icons/${filename}`; image.decoding = 'async';
+      image.onload = () => { if (playback.active && typeof draw === 'function') draw(); };
       iconCache.set(filename, image);
     }
     return image.complete && image.naturalWidth > 0 ? image : null;
@@ -88,7 +118,13 @@
   function activityChanges(clause, unit, isLastClause = false) {
     const text = String(clause || ''), changes = [];
     const add = (name, amount) => { if (name && amount) changes.push({ name: String(name).replace(/[.,;:]+$/, ''), amount }); };
-    for (const match of text.matchAll(/using\s+([\d,]+)\s+([A-Za-z][\w/-]*)/gi)) add(match[2], -number(match[1].replace(/,/g, '')));
+    // Reports put several consumed resources in one parenthetical clause,
+    // e.g. "using 100 Leather, 40 Bark". Keep every pair instead of only the
+    // first one, without mistaking the next activity after the parenthesis for
+    // another consumed resource.
+    for (const section of text.matchAll(/using\s+([^)]*)/gi)) {
+      for (const match of section[1].matchAll(/([\d,]+)\s+([A-Za-z][\w/-]*)/g)) add(match[2], -number(match[1].replace(/,/g, '')));
+    }
     for (const match of text.matchAll(/(?:made|produced|crafted)\s+([\d,]+)\s+([A-Za-z][\w/-]*)/gi)) add(match[2], number(match[1].replace(/,/g, '')));
     const bred = text.match(/\bbred\s*\(([^)]+)\)/i);
     if (bred) for (const match of bred[1].matchAll(/([A-Za-z][\w/-]*)\s+([\d,]+)/g)) add(match[1], number(match[2].replace(/,/g, '')));
@@ -133,7 +169,7 @@
     if (!events.length) return fallback;
     const current = playback.events[playback.index];
     if (current?.phase === 'movement' && String(current.unitCode) === String(unitCode)) {
-      const from = baseCenter(current.from.globalCol, current.from.globalRow), to = baseCenter(current.to.globalCol, current.to.globalRow);
+      const from = hexCenter(current.from), to = hexCenter(current.to);
       const eased = playback.progress * playback.progress * (3 - 2 * playback.progress);
       return { ...current.from, x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased, coordinate: current.from.coordinate || fallback?.coordinate };
     }
@@ -146,6 +182,84 @@
     const plan = actualPlan(turn);
     if (typeof buildPlanRoutes === 'function') return buildPlanRoutes(plan);
     return { movements: [], scouts: [] };
+  }
+
+  function borderPoint(from, to) {
+    if (!from || !to) return null;
+    const a = hexCenter(from);
+    const b = hexCenter(to);
+    // Stop just inside the attempted hex edge. The destination remains fogged
+    // and receives the question marker, so a failed scout never appears to
+    // have entered the tile.
+    return { x: a.x + (b.x - a.x) * .48, y: a.y + (b.y - a.y) * .48 };
+  }
+
+  function normalisePartialReport(value) {
+    return String(value || '').replace(/[’]/g, "'");
+  }
+
+  function attachRevealCoordinates(events, turn) {
+    const targetRows = [];
+    const targetTurn = String(turn?.turnKey || '');
+    const rows = (typeof state !== 'undefined' && state.hexCache instanceof Map)
+      ? [...state.hexCache.values()]
+      : [];
+    for (const row of rows) {
+      if (!row?.coordinate || String(row.discoveredTurn || '') !== targetTurn) continue;
+      const baseline = playback.baselineHexes.get(row.coordinate);
+      if (baseline && baseline.terrain && baseline.terrain !== 'UNKNOWN') continue;
+      targetRows.push(row);
+    }
+
+    const remaining = new Set(targetRows.map(row => row.coordinate));
+    for (const event of events) event.reveals = [];
+    const add = (event, row) => {
+      if (!event || !row?.coordinate || !remaining.has(row.coordinate)) return;
+      event.reveals.push(row.coordinate);
+      remaining.delete(row.coordinate);
+    };
+
+    // Movement reveals the hex as the unit arrives. Scout routes reveal their
+    // entered hex one segment at a time; adjacent observations are revealed at
+    // the end of the corresponding scouting run.
+    for (const event of events) {
+      if (!event.to?.coordinate) continue;
+      for (const row of targetRows) {
+        if (row.coordinate === event.to.coordinate) add(event, row);
+      }
+      if (event.phase === 'movement') {
+        for (const row of targetRows) {
+          if (String(row.sourceUnit || '') === String(event.unitCode || '') && row.knowledgeLevel === 'visited') add(event, row);
+        }
+      }
+    }
+
+    const scoutRuns = new Map();
+    for (const event of events) {
+      if (event.phase !== 'scouting') continue;
+      const key = `${event.unitCode}:${event.scoutId}`;
+      const run = scoutRuns.get(key) || [];
+      run.push(event); scoutRuns.set(key, run);
+      for (const row of targetRows) {
+        if (String(row.sourceUnit || '') !== String(event.unitCode || '') || Number(row.scoutId || 0) !== Number(event.scoutId || 0)) continue;
+        if (row.coordinate === event.to?.coordinate) add(event, row);
+      }
+    }
+    for (const run of scoutRuns.values()) {
+      const last = run[run.length - 1];
+      for (const row of targetRows) {
+        if (String(row.sourceUnit || '') !== String(last.unitCode || '') || Number(row.scoutId || 0) !== Number(last.scoutId || 0)) continue;
+        add(last, row);
+      }
+    }
+
+    // A report can contain a current-hex visit or an observation without a
+    // source row that matches a route segment. Do not let it appear at import;
+    // reveal it with the first movement/scouting/activity event instead.
+    const fallback = events.find(event => event.phase === 'movement')
+      || events.find(event => event.phase === 'scouting')
+      || events.find(event => event.phase === 'activities');
+    if (fallback) for (const coordinate of remaining) { fallback.reveals.push(coordinate); remaining.delete(coordinate); }
   }
 
   function buildEvents(turn) {
@@ -179,16 +293,20 @@
       const points = scout.route?.points || [];
       const source = (turn?.units || []).find(unit => String(unit.unitCode) === String(scout.unit));
       const sourceScout = source?.scouts?.find(row => Number(row.id) === Number(scout.id));
-      const riders = modelCount(scout.noOfScouts || sourceScout?.noOfScouts || 1);
-      const mounted = Number(scout.noOfHorses || sourceScout?.noOfHorses || 0) > 0 || scout.mounted === true || sourceScout?.mounted === true;
+      const scoutCount = Number(scout.noOfScouts || sourceScout?.noOfScouts || 0);
+      const horseCount = Number(scout.noOfHorses || sourceScout?.noOfHorses || 0);
+      const cartCount = Number(scout.noOfCarts || sourceScout?.noOfCarts || sourceScout?.carts || 0);
+      const riders = modelCount(scoutCount || 1);
+      const mounted = scoutCount > 0 && horseCount >= scoutCount && cartCount <= 0;
       for (let i = 1; i < points.length; i += 1) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: points[i - 1], to: points[i], sound: mounted ? 'horse' : 'scout', duration: 440 });
-      const partial = String(scout.report || '').match(/not enough\s+m\.?p'?s?\s+to move to\s+(N|NE|SE|S|SW|NW)\b/i);
+      const partial = normalisePartialReport(scout.report).match(/not enough\s+m\.?p'?s?\s+to move to\s+(N|NE|SE|S|SW|NW)\b/i);
       if (partial && points.length) {
         const last = points[points.length - 1];
         const attempted = typeof stepHex === 'function' ? stepHex(last, partial[1].toUpperCase()) : null;
-        if (attempted && attempted.coordinate !== last.coordinate) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: last, to: attempted, partial: true, sound: mounted ? 'horse' : 'scout', duration: 520 });
+        if (attempted && attempted.coordinate !== last.coordinate) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: last, to: attempted, borderPoint: borderPoint(last, attempted), partial: true, sound: mounted ? 'horse' : 'scout', duration: 520 });
       }
     }
+    attachRevealCoordinates(events, turn);
     return events;
   }
 
@@ -248,12 +366,14 @@
     playback.raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(callback) : setTimeout(() => callback(Date.now()), 40);
   }
 
-  function stopResultsPlayback() {
+  function stopResultsPlayback(options = {}) {
     cancelFrame();
     playback.active = false; playback.paused = false; playback.phase = 'idle'; playback.events = []; playback.index = 0; playback.progress = 0;
     playback.targetTurnKey = null; playback.targetUnitCodes = new Set(); playback.revealed = new Set(); playback.revealedQuestions = new Set(); playback.revealTargets = new Set();
+    playback.baselineHexes = new Map(); playback.baselineLoaded = false; playback.baselineTurnKey = null;
+    playback.autoHandoff = false; playback.onComplete = null;
     setButton();
-    if (typeof draw === 'function') draw();
+    if (options.draw !== false && typeof draw === 'function') draw();
   }
 
   function pauseResultsPlayback() {
@@ -269,7 +389,71 @@
     setButton(); if (typeof draw === 'function') draw(); requestFrame(tick); return true;
   }
 
-  async function startResultsPlayback() {
+  async function loadPlaybackBaseline(turn) {
+    playback.baselineHexes = new Map();
+    playback.baselineLoaded = false;
+    playback.baselineTurnKey = previousActualTurnKey(turn);
+    const canFetch = root.tribenet?.getResultHexesInArea
+      && typeof visibleBounds === 'function'
+      && typeof state !== 'undefined'
+      && state.mode === 'detail';
+    if (canFetch) {
+      const bounds = visibleBounds();
+      const baselineRows = playback.baselineTurnKey
+        ? await root.tribenet.getResultHexesInArea(bounds, playback.baselineTurnKey)
+        : [];
+      for (const row of baselineRows || []) if (row?.coordinate) playback.baselineHexes.set(row.coordinate, row);
+      // Preserve older local knowledge already loaded in the map as well. A
+      // manually mapped hex can predate the Results database and should not
+      // disappear merely because playback is starting.
+      for (const row of state.hexCache.values()) {
+        if (row?.coordinate && String(row.discoveredTurn || '') !== String(turn.turnKey || '') && !playback.baselineHexes.has(row.coordinate)) playback.baselineHexes.set(row.coordinate, row);
+      }
+    }
+    playback.baselineLoaded = true;
+  }
+
+  async function extendPlaybackBaseline(bounds) {
+    if (!playback.active || !playback.baselineTurnKey || !root.tribenet?.getResultHexesInArea || !bounds) return;
+    const rows = await root.tribenet.getResultHexesInArea(bounds, playback.baselineTurnKey);
+    for (const row of rows || []) if (row?.coordinate) playback.baselineHexes.set(row.coordinate, row);
+  }
+
+  function collectRevealTargets(turn) {
+    const rows = (typeof state !== 'undefined' && state.hexCache instanceof Map)
+      ? [...state.hexCache.values()]
+      : [];
+    const targetTurn = String(turn?.turnKey || '');
+    for (const row of rows) {
+      if (row?.coordinate && String(row.discoveredTurn || '') === targetTurn) {
+        const baseline = playback.baselineHexes.get(row.coordinate);
+        if (!baseline || !baseline.terrain || baseline.terrain === 'UNKNOWN') playback.revealTargets.add(row.coordinate);
+      }
+    }
+    for (const event of playback.events) {
+      for (const coordinate of event.reveals || []) playback.revealTargets.add(coordinate);
+      if (event.phase === 'scouting' && event.to?.coordinate) {
+        const row = typeof state !== 'undefined' && state.hexCache?.get(event.to.coordinate);
+        const baseline = playback.baselineHexes.get(event.to.coordinate);
+        if ((!row || String(row.discoveredTurn || '') === targetTurn) && (!baseline || !baseline.terrain || baseline.terrain === 'UNKNOWN')) playback.revealTargets.add(event.to.coordinate);
+      }
+      if (event.partial && event.to?.coordinate) playback.revealTargets.add(event.to.coordinate);
+    }
+  }
+
+  function completeResultsPlayback() {
+    const targetTurnKey = playback.targetTurnKey;
+    const callback = playback.onComplete;
+    const handoff = playback.autoHandoff;
+    stopResultsPlayback({ draw: false });
+    if (typeof callback === 'function') {
+      Promise.resolve(callback(targetTurnKey)).catch(error => console.error('Results playback completion failed', error));
+    } else if (handoff && typeof root.openPlanningAfterResults === 'function') {
+      Promise.resolve(root.openPlanningAfterResults(targetTurnKey)).catch(error => console.error('Planning handoff failed', error));
+    } else if (typeof draw === 'function') draw();
+  }
+
+  async function startResultsPlayback(options = {}) {
     let turn = root.resultsTimeline?.turn;
     if (!turn) return false;
     if (turn.isPlanningTurn && turn.baselineTurnKey && root.tribenet?.getResultTurn) turn = await root.tribenet.getResultTurn(turn.baselineTurnKey);
@@ -278,13 +462,17 @@
     playback.events = events; playback.active = events.length > 0; playback.paused = false; playback.index = 0; playback.progress = 0;
     playback.startedAt = now(); playback.targetTurnKey = turn.turnKey;
     playback.targetUnitCodes = new Set(events.map(event => event.unitCode).filter(Boolean));
-    playback.revealTargets = new Set(events.filter(event => event.phase === 'scouting').map(event => event.to?.coordinate).filter(coordinate => {
-      const row = typeof state !== 'undefined' && state.hexCache?.get(coordinate);
-      return !row || String(row.discoveredTurn || '') === String(turn.turnKey);
-    }));
+    playback.autoHandoff = Boolean(options.handoff || options.autoHandoff);
+    playback.onComplete = typeof options.onComplete === 'function' ? options.onComplete : null;
+    await loadPlaybackBaseline(turn);
+    attachRevealCoordinates(playback.events, turn);
+    collectRevealTargets(turn);
     playback.phase = events[0]?.phase || 'idle';
     setButton();
-    if (!playback.active) return false;
+    if (!playback.active) {
+      if (typeof draw === 'function') draw();
+      return false;
+    }
     playTone(events[0]?.sound || playback.phase);
     if (typeof draw === 'function') draw();
     requestFrame(tick);
@@ -292,6 +480,7 @@
   }
 
   function finishEvent(event) {
+    for (const coordinate of event?.reveals || []) playback.revealed.add(coordinate);
     if (event?.phase === 'scouting' && event?.to?.coordinate) {
       playback.revealed.add(event.to.coordinate);
       if (event.partial) playback.revealedQuestions.add(event.to.coordinate);
@@ -304,12 +493,12 @@
   function tick(now) {
     if (!playback.active || playback.paused) return;
     const event = playback.events[playback.index];
-    if (!event) { stopResultsPlayback(); return; }
+    if (!event) { completeResultsPlayback(); return; }
     playback.phase = event.phase;
     playback.progress = Math.min(1, Math.max(0, (now - playback.startedAt) / (event.duration / currentSpeed())));
     if (playback.progress >= 1) {
       finishEvent(event); playback.startedAt = now;
-      if (!playback.events[playback.index]) { stopResultsPlayback(); return; }
+      if (!playback.events[playback.index]) { completeResultsPlayback(); return; }
     }
     if (typeof draw === 'function') draw();
     requestFrame(tick);
@@ -321,9 +510,9 @@
     return typeof IsoMapper !== 'undefined' && IsoMapper.enabled ? IsoMapper.project(base) : screenFromBase(base);
   }
 
-  function lerpPoint(from, to, progress) {
+  function lerpPoint(from, to, progress, edge = null) {
     const eased = progress * progress * (3 - 2 * progress);
-    const a = baseCenter(from.globalCol, from.globalRow), b = baseCenter(to.globalCol, to.globalRow);
+    const a = hexCenter(from), b = edge || to?.borderPoint || hexCenter(to);
     return { x: a.x + (b.x - a.x) * eased, y: a.y + (b.y - a.y) * eased };
   }
 
@@ -361,7 +550,7 @@
   }
 
   function drawMovingMarker(event, scout = false) {
-    const base = lerpPoint(event.from, event.to, playback.progress), point = projectBase(base); if (!point) return;
+    const base = lerpPoint(event.from, event.to, playback.progress, event.borderPoint), point = projectBase(base); if (!point) return;
     const colour = scout ? (event.mounted ? '#d7a65e' : '#e0d39d') : '#ffe1a0';
     ctx.save(); ctx.strokeStyle = scout ? '#4b3324' : '#8b5b2d'; ctx.fillStyle = colour; ctx.lineWidth = Math.max(1.5, state.scale * .045);
     const count = scout ? Math.max(1, Math.min(5, event.riders || 1)) : 1;
@@ -428,6 +617,8 @@
   root.drawResultsPlaybackOverlay = drawResultsPlaybackOverlay;
   root.resultsPlaybackShouldHideUnit = resultsPlaybackShouldHideUnit;
   root.resultsPlaybackUnitPosition = playbackUnitPosition;
+  root.resultsPlaybackMapData = playbackMapData;
+  root.resultsPlaybackEnsureBaseline = extendPlaybackBaseline;
   root.resultsPlayback.buildEvents = buildEvents;
   root.resultsPlayback.modelCount = modelCount;
   root.resultsPlayback.activitySound = activitySound;
