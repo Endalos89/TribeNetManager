@@ -33,7 +33,7 @@ const terrainStyle = {
 const state = {
   mode: 'overview', cameraX: 0, cameraY: 0, scale: 29, selected: null,
   hexCache: new Map(), loadedArea: null, dragging: false, dragStart: null, summaries: new Map(),
-  planningVisible: true, scoutingVisible: true, planImport: null, planHistory: [], routeCache: null,
+  planningVisible: true, scoutingVisible: true, planningPanelCollapsed: true, planImport: null, planHistory: [], routeCache: null,
   selectedUnitHex: null
 };
 
@@ -105,6 +105,11 @@ function buildWorldGrid() {
 }
 function showLauncher() { $('launcherView').classList.remove('hidden'); $('mapperView').classList.add('hidden'); }
 function showMapper(options = {}) {
+  // The terrain view is the default mapper experience. Keep the classic
+  // renderer available through the switch, but do not make a new user opt in.
+  if (typeof IsoMapper !== 'undefined' && !IsoMapper.enabled && $('mapperViewToggle')?.checked) {
+    IsoMapper.setEnabled(true, { overview: false });
+  }
   $('launcherView').classList.add('hidden'); $('mapperView').classList.remove('hidden');
   if (options.overview !== false) showOverview();
   else if (state.mode === 'detail') { resizeCanvas(); requestVisibleData(); draw(); }
@@ -156,7 +161,9 @@ function hexPath(cx, cy, radius) {
   ctx.closePath();
 }
 function drawFog(cx, cy, radius) {
-  ctx.fillStyle = '#18242b'; ctx.fill(); ctx.save(); hexPath(cx, cy, radius); ctx.clip(); ctx.strokeStyle = '#263842'; ctx.lineWidth = Math.max(1, radius * .055);
+  // Always establish the hex path before filling. Playback can draw fog as an
+  // overlay after the terrain pass, when no current path is guaranteed.
+  hexPath(cx, cy, radius); ctx.fillStyle = '#18242b'; ctx.fill(); ctx.save(); hexPath(cx, cy, radius); ctx.clip(); ctx.strokeStyle = '#263842'; ctx.lineWidth = Math.max(1, radius * .055);
   for (let d = -radius * 2; d < radius * 2; d += Math.max(7, radius * .32)) { ctx.beginPath(); ctx.moveTo(cx - radius, cy + d); ctx.lineTo(cx + radius, cy + d + radius * .75); ctx.stroke(); }
   ctx.restore(); if (radius > 18) { ctx.fillStyle = '#78909b'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `700 ${Math.max(11, radius * .52)}px Segoe UI`; ctx.fillText('?', cx, cy + 1); }
 }
@@ -174,7 +181,8 @@ function draw() {
     for (let row = bounds.minRow; row <= bounds.maxRow; row++) {
       const p = screenFromBase(baseCenter(col, row));
       if (p.x < -radius * 2 || p.x > rect.width + radius * 2 || p.y < -radius * 2 || p.y > rect.height + radius * 2) continue;
-      hexPath(p.x, p.y, radius); const coord = coordinateFor(col, row), data = state.hexCache.get(coord);
+      hexPath(p.x, p.y, radius); const coord = coordinateFor(col, row), targetData = state.hexCache.get(coord);
+      const data = typeof resultsPlaybackMapData === 'function' ? resultsPlaybackMapData(coord, targetData) : targetData;
       if (data) drawTerrain(p.x, p.y, radius, data.terrain); else drawFog(p.x, p.y, radius);
       ctx.strokeStyle = '#071116'; ctx.lineWidth = Math.max(1, state.scale * .055); ctx.stroke();
       if (state.selected && state.selected.coordinate === coord) { hexPath(p.x, p.y, radius * .91); ctx.strokeStyle = '#f4df72'; ctx.lineWidth = Math.max(2, state.scale * .12); ctx.stroke(); }
@@ -295,8 +303,22 @@ async function importOrdersWorkbook() {
 function updatePlanUI() {
   const active = Boolean(state.planImport?.plan); $('planningToggle').disabled = !active; $('scoutingToggle').disabled = !active || !state.planningVisible;
   $('planStatus').textContent = active ? `Turn ${state.planImport.turnKey}` : 'Import an orders workbook to plan on the map.';
-  const card = $('plannerOverlayCard'); card.classList.toggle('hidden', !active || !state.planningVisible || state.mode !== 'detail');
-  if (!active) return;
+  const planningContext = typeof resultsTimeline !== 'undefined' && resultsTimeline.turn?.isPlanningTurn;
+  const card = $('plannerOverlayCard'); card.classList.toggle('hidden', !(active || planningContext) || !state.planningVisible || state.mode !== 'detail');
+  if (card) {
+    card.classList.toggle('collapsed', state.planningPanelCollapsed);
+    const content = $('planningPanelContent'); if (content) content.hidden = state.planningPanelCollapsed;
+    const toggle = $('planningPanelToggle'); if (toggle) toggle.setAttribute('aria-expanded', String(!state.planningPanelCollapsed));
+    const chevron = $('planningPanelChevron'); if (chevron) chevron.textContent = state.planningPanelCollapsed ? '＋' : '−';
+  }
+  if (!active) {
+    if (planningContext) {
+      $('plannerTurnTitle').textContent = `Planning Turn ${resultsTimeline.turn.turnKey}`;
+      $('plannerSourceLabel').textContent = 'Draft from Results baseline';
+      $('plannerWarnings').innerHTML = '<div class="planning-panel-hint">Select a unit on the map to choose a movement origin. Routes are planned against the revealed baseline.</div>';
+    }
+    return;
+  }
   $('plannerTurnTitle').textContent = `Turn ${state.planImport.turnKey}`; $('plannerSourceLabel').textContent = state.planImport.sourceFile;
   renderPlanWarnings();
 }
@@ -404,7 +426,7 @@ function buildPlanRoutes(plan) {
   for (const s of plan.scouts || []) {
     const origin = ends.get(s.unit) || (() => { const m = (plan.movements || []).find(x => x.unit === s.unit); return m ? parseCoordinate(m.startHex) : null; })();
     if (!origin) { scoutWarnings.push(`Scout ${s.id} (${s.unit}) has no known starting hex.`); continue; }
-    const startHex = coordinateFor(origin.globalCol, origin.globalRow), mounted = s.noOfHorses >= s.noOfScouts && s.noOfScouts > 0;
+    const startHex = coordinateFor(origin.globalCol, origin.globalRow), carts = Number(s.noOfCarts || s.carts || 0), mounted = s.noOfHorses >= s.noOfScouts && s.noOfScouts > 0 && carts <= 0;
     const route = routeFor(startHex, s.orders, { label: `Scout ${s.id} ${s.unit}`, limitSteps: mounted ? 6 : 4 }); scouts.push({ ...s, startHex, mounted, route }); scoutWarnings.push(...route.warnings);
   }
   return { movements, scouts, movementWarnings, scoutWarnings, ends };
@@ -419,9 +441,38 @@ function drawArrowSegment(a, b, style = {}) {
 function drawRoute(points, style = {}) {
   if (!points || points.length < 2) return; for (let i = 1; i < points.length; i++) drawArrowSegment(points[i-1], points[i], { ...style, dashed: style.dashed || points[i].kind === 'approx' });
 }
+function drawClassicUnitModels(point, unit, snapshot) {
+  if (typeof IsoUnits === 'undefined' || !IsoUnits.composition || !IsoUnits.formation) return;
+  const counts = IsoUnits.composition(snapshot);
+  if (!counts) return;
+  const models = IsoUnits.formation(counts, `${point.coordinate || ''}:${unit}`);
+  if (!models.length) return;
+  const center = Number.isFinite(point.x) && Number.isFinite(point.y)
+    ? { x: point.x, y: point.y }
+    : baseCenter(point.globalCol, point.globalRow);
+  for (const model of models) {
+    const p = screenFromBase({ x: center.x + model.x * .82, y: center.y + model.y * .82 });
+    const size = Math.max(2.2, Math.min(5.5, state.scale * .085));
+    ctx.save();
+    if (model.kind === 'carts') {
+      ctx.fillStyle = '#a97945'; ctx.strokeStyle = '#e0bd83'; ctx.lineWidth = 1;
+      ctx.fillRect(p.x - size * 1.35, p.y - size * .55, size * 2.7, size * 1.1); ctx.strokeRect(p.x - size * 1.35, p.y - size * .55, size * 2.7, size * 1.1);
+      ctx.fillStyle = '#46392c'; ctx.beginPath(); ctx.arc(p.x - size, p.y + size * .75, size * .42, 0, Math.PI * 2); ctx.arc(p.x + size, p.y + size * .75, size * .42, 0, Math.PI * 2); ctx.fill();
+    } else if (model.kind === 'horses' || model.mounted) {
+      ctx.fillStyle = '#9b7046'; ctx.strokeStyle = '#e0bd83'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(p.x, p.y + size * .25, size * 1.25, size * .52, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      if (model.mounted) { ctx.fillStyle = '#e2bd92'; ctx.beginPath(); ctx.arc(p.x, p.y - size * .65, size * .42, 0, Math.PI * 2); ctx.fill(); }
+    } else {
+      ctx.fillStyle = model.kind === 'warriors' ? '#b7614e' : model.kind === 'actives' ? '#4c9f95' : '#d4b86c';
+      ctx.beginPath(); ctx.arc(p.x, p.y - size * .55, size * .42, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(p.x - size * .28, p.y, size * .56, size * .82);
+    }
+    ctx.restore();
+  }
+}
 function drawUnitLabel(point, unit, type, offsetIndex = 0, extra = '', snapshot = null) {
   if(typeof IsoMapper!=='undefined' && IsoMapper.enabled){IsoUnits.draw(point,unit,type,offsetIndex,extra,snapshot);return;}
   if (!point) return; const p = screenFromBase(Number.isFinite(point.x) && Number.isFinite(point.y) ? point : baseCenter(point.globalCol, point.globalRow));
+  drawClassicUnitModels(point, unit, snapshot);
   const text = `${type === 'Element' ? 'E' : type === 'Tribe' ? 'T' : 'U'} ${unit}${extra ? ` ${extra}` : ''}`; ctx.save();
   ctx.font = `700 ${Math.max(9, Math.min(12, state.scale * .32))}px Segoe UI`; const w = ctx.measureText(text).width + 12, h = 19;
   const x = p.x - w / 2, y = p.y - state.scale * .78 - offsetIndex * (h + 3); ctx.fillStyle = 'rgba(15,24,31,.94)'; ctx.strokeStyle = '#d7a754'; ctx.lineWidth = 1.2;
@@ -481,6 +532,7 @@ function bindEvents() {
   $('goCoordinateButton').addEventListener('click', goToCoordinate); $('coordinateInput').addEventListener('keydown', e => { if (e.key === 'Enter') goToCoordinate(); }); $('zoomInButton').addEventListener('click', () => setZoom(state.scale * 1.18)); $('zoomOutButton').addEventListener('click', () => setZoom(state.scale / 1.18));
   $('saveHexButton').addEventListener('click', saveSelectedHex); $('fogHexButton').addEventListener('click', clearSelectedHex); $('importOrdersButton').addEventListener('click', importOrdersWorkbook);
   $('planningToggle').addEventListener('change', e => { state.planningVisible = e.target.checked; $('scoutingToggle').disabled = !state.planningVisible || !state.planImport; updatePlanUI(); draw(); });
+  $('planningPanelToggle')?.addEventListener('click', () => { state.planningPanelCollapsed = !state.planningPanelCollapsed; updatePlanUI(); });
   $('scoutingToggle').addEventListener('change', e => { state.scoutingVisible = e.target.checked; renderPlanWarnings(); draw(); });
   $('mapperViewToggle').addEventListener('change', e => {
     const use3d = e.target.checked;
@@ -493,7 +545,7 @@ function bindEvents() {
   window.addEventListener('resize', () => { if (state.mode === 'detail') { resizeCanvas(); draw(); requestVisibleData(); } });
   canvas.addEventListener('mousedown', e => { state.dragging = true; state.dragStart = { x:e.clientX,y:e.clientY,cameraX:state.cameraX,cameraY:state.cameraY }; canvas.classList.add('dragging'); });
   window.addEventListener('mousemove', e => { if (!state.dragging) return; const dx=(e.clientX-state.dragStart.x)/state.scale, dy=(e.clientY-state.dragStart.y)/state.scale; const delta=typeof IsoMapper!=="undefined" && IsoMapper.enabled ? IsoGeometry.unproject(dx,dy) : {x:dx,y:dy}; state.cameraX = state.dragStart.cameraX-delta.x; state.cameraY = state.dragStart.cameraY-delta.y; if(typeof IsoMapper!=='undefined' && IsoMapper.enabled)IsoMapper.interact(); scheduleMapDraw(); requestVisibleData(); });
-  window.addEventListener('mouseup', e => { if (!state.dragging) return; const moved=Math.hypot(e.clientX-state.dragStart.x,e.clientY-state.dragStart.y); state.dragging=false; canvas.classList.remove('dragging'); if (moved<5 && state.mode==='detail') { const rect=canvas.getBoundingClientRect(),base=baseFromScreen(e.clientX-rect.left,e.clientY-rect.top),hex=typeof IsoMapper!=='undefined' && IsoMapper.enabled ? IsoMapper.pick(e.clientX-rect.left,e.clientY-rect.top) || nearestHex(base.x,base.y) : nearestHex(base.x,base.y); if(hex) selectHex(hex.globalCol,hex.globalRow); } });
+  window.addEventListener('mouseup', e => { if (!state.dragging) return; const moved=Math.hypot(e.clientX-state.dragStart.x,e.clientY-state.dragStart.y); state.dragging=false; canvas.classList.remove('dragging'); if (moved<5 && state.mode==='detail') { const rect=canvas.getBoundingClientRect(),base=baseFromScreen(e.clientX-rect.left,e.clientY-rect.top),hex=typeof IsoMapper!=='undefined' && IsoMapper.enabled ? IsoMapper.pick(e.clientX-rect.left,e.clientY-rect.top) || nearestHex(base.x,base.y) : nearestHex(base.x,base.y); if(hex) { const isClassic=typeof IsoMapper==='undefined' || !IsoMapper.enabled; const ref=coordinateFor(hex.globalCol,hex.globalRow); const hasUnits=isClassic && typeof IsoUnits!=='undefined' && typeof resultsTimeline!=='undefined' && resultsTimeline.turn && IsoUnits.unitsAt(ref).length; if(hasUnits) IsoUnits.clickHex(hex); else selectHex(hex.globalCol,hex.globalRow); } } });
   canvas.addEventListener('wheel', e => { e.preventDefault(); const rect=canvas.getBoundingClientRect(); setZoom(state.scale*(e.deltaY<0?1.12:1/1.12),e.clientX-rect.left,e.clientY-rect.top); }, {passive:false});
 }
 function updateUpdateUI(payload) { $('updateMessage').textContent = payload.message || ''; $('installUpdateButton').classList.toggle('hidden', payload.state !== 'ready'); $('updateButton').disabled = payload.state === 'checking' || payload.state === 'downloading'; }

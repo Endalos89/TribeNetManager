@@ -65,7 +65,7 @@ const TurnLifecycleCore = (() => {
 
       for (const scout of unit.scouts || []) {
         const orders = actualDirections(scout.raw || scout.report);
-        scouts.push({ id: Number(scout.id || scouts.length + 1), unit: unitCode, unitName: unit.unitName || null, noOfScouts: Number(scout.noOfScouts || 0), noOfHorses: Number(scout.noOfHorses || 0), mission: scout.mission || 'ACTUAL', orders, actualResult: true, report: scout.report || scout.raw || '' });
+        scouts.push({ id: Number(scout.id || scouts.length + 1), unit: unitCode, unitName: unit.unitName || null, noOfScouts: Number(scout.noOfScouts || 0), noOfHorses: Number(scout.noOfHorses || 0), noOfCarts: Number(scout.noOfCarts || 0), mission: scout.mission || 'ACTUAL', orders, actualResult: true, report: scout.report || scout.raw || '' });
         if (orders.length || scout.report || scout.raw) hasActualRoutes = true;
       }
     }

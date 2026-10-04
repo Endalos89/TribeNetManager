@@ -73,7 +73,7 @@
           <span id="planStatus" class="toolbar-readout"></span>
         </div>
         <div id="isoViewControls" class="hidden"><span class="toolbar-readout" title="North is always up">↑ N</span><label class="toggle-control"><input id="isoLabels" type="checkbox" checked />Labels</label><label class="toggle-control"><input id="isoGrid" type="checkbox" />Hex grid</label><span class="toolbar-readout" title="Terrain miniatures: warriors (shield), actives (tool), inactives (hat), horses and carts/wagons. Each category: 1–9 = 1 model, 10–99 = 2, 100–999 = 3, and so on. Hover a gathering for exact counts. Click a hex repeatedly to select each unit, then the land. People ride with enough horses for everyone and no carts/wagons.">Unit figures (i)</span></div>
-        <label class="mapper-view-switch"><input id="mapperViewToggle" type="checkbox" aria-label="Use 3D terrain view" /> 3D terrain</label>
+        <label class="mapper-view-switch"><input id="mapperViewToggle" type="checkbox" checked aria-label="Use 3D terrain view" /> 3D terrain</label>
         <div id="detailControls" class="detail-controls hidden">
           <button id="detailOverviewButton" class="button">Overview</button>
           <button id="movementPlannerButton" class="button" disabled>Plan Movement</button>
@@ -119,9 +119,15 @@
             <div id="movementPlannerDirections"></div>
             <div id="movementPlannerNote"></div>
           </div>
-          <div id="plannerOverlayCard" class="planner-overlay-card hidden">
-            <div class="planner-overlay-title"><strong id="plannerTurnTitle">Completed orders</strong><span id="plannerSourceLabel"></span></div>
-            <div id="plannerWarnings" class="planner-warnings"></div>
+          <div id="plannerOverlayCard" class="planner-overlay-card collapsed hidden">
+            <button id="planningPanelToggle" class="planning-panel-toggle" type="button" aria-expanded="false">
+              <span>Planning panel</span><span id="planningPanelChevron">＋</span>
+            </button>
+            <div id="planningPanelContent" class="planning-panel-content" hidden>
+              <div class="planner-overlay-title"><strong id="plannerTurnTitle">Completed orders</strong><span id="plannerSourceLabel"></span></div>
+              <div id="plannerWarnings" class="planner-warnings"></div>
+              <div class="planning-panel-hint">Select a unit, then use Plan Movement to choose a destination. Shift-click appends one adjacent move.</div>
+            </div>
           </div>
         </div>
         <aside class="hex-editor">

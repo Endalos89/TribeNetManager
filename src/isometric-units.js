@@ -167,7 +167,13 @@
     let cycle=null,selectionContext=null;
   function unitsAt(ref) {
     const found=new Map();
-    for(const u of resultsTimeline.turn?.units||[])if(u.currentHex===ref)found.set(String(u.unitCode),{code:String(u.unitCode),snapshot:u});
+    for(const u of resultsTimeline.turn?.units||[]) {
+      const code=String(u.unitCode);
+      const position=typeof resultsPlaybackUnitPosition==='function'
+        ? resultsPlaybackUnitPosition(code,u.currentHex)
+        : {coordinate:u.currentHex};
+      if(position?.coordinate===ref)found.set(code,{code,snapshot:u});
+    }
     const historicalResults=typeof resultsTimeline!=='undefined' && resultsTimeline.turn && !resultsTimeline.turn.isPlanningTurn;
     if(state.planningVisible && state.planImport?.plan && !historicalResults)for(const m of state.routeCache?.movements||[]){
       const ps=m.route?.points||[];
@@ -186,6 +192,7 @@
     cycle=nextSelection(cycle,key,units.map(u=>u.code));
     if(cycle.code!==null){const entry=units.find(u=>u.code===cycle.code);state.selectedUnitHex=ref;state.selectedUnit=entry.code;if(typeof root.draw==='function')root.draw();requestAnimationFrame(()=>showUnitLogistics(entry.code,entry.snapshot));}
     else{state.selectedUnit=null;state.selectedUnitHex=null;$('unitEditor').classList.add('hidden');selectHex(point.globalCol,point.globalRow);}
+    return units.length > 0;
   }
   function drawSelectionHighlight() {
     if(!state.selectedUnit || !state.selectedUnitHex || !IsoMapper.enabled)return;

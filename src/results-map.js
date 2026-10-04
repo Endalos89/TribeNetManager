@@ -136,6 +136,9 @@ requestVisibleData = function requestVisibleDataWithResults() {
       const rows = await window.tribenet.getResultHexesInArea(b, resultsTimeline.turn.turnKey);
       state.hexCache.clear();
       for (const row of rows) state.hexCache.set(row.coordinate, row);
+      if (window.resultsPlayback?.active && typeof window.resultsPlaybackEnsureBaseline === 'function') {
+        await window.resultsPlaybackEnsureBaseline(b);
+      }
       state.loadedArea = b;
       if (state.planImport?.plan) state.routeCache = null;
       draw();
@@ -308,6 +311,7 @@ function updateMapTimelineUI() {
 async function applyResultTurn(turnKey, options = {}) {
   const { persist = true, preservePlayback = false } = options;
   if (!preservePlayback) stopMapResultPlayback();
+  if (!preservePlayback && typeof stopResultsPlayback === 'function') stopResultsPlayback({ draw: false });
   const detail = await window.tribenet.getResultTurn(turnKey);
   if (!detail) return;
   resultsTimeline.turn = detail;
@@ -326,6 +330,42 @@ async function applyResultTurn(turnKey, options = {}) {
   }
   if (state.selected) await selectHex(state.selected.globalCol, state.selected.globalRow);
   draw();
+}
+
+async function openPlanningAfterResults(actualTurnKey = null) {
+  const planning = resultsTimeline.turns.find(row => row?.isPlanningTurn
+    && (!actualTurnKey || String(row.baselineTurnKey || row.metadata?.baselineTurn) === String(actualTurnKey)));
+  state.planningVisible = true;
+  const toggle = $('planningToggle');
+  if (toggle) toggle.checked = true;
+  if (planning) await applyResultTurn(planning.turnKey, { persist: true });
+  if (state.mode !== 'detail') showDetail();
+  if (planning && typeof lifecycleDecoratePlanningUI === 'function') lifecycleDecoratePlanningUI(resultsTimeline.turn);
+  else updatePlanUI();
+  draw();
+  return planning || null;
+}
+
+async function playImportedResultsTransition(actualTurnKey) {
+  if (!actualTurnKey || !window.tribenet?.getResultTurn) return false;
+  const actual = await window.tribenet.getResultTurn(actualTurnKey);
+  if (!actual) return false;
+  await applyResultTurn(actual.turnKey, { persist: true });
+  const firstUnit = actual.units?.find(unit => parseCoordinate(unit.currentHex || unit.previousHex));
+  showMapper({ overview: false });
+  showDetail();
+  if (firstUnit) {
+    const point = parseCoordinate(firstUnit.currentHex || firstUnit.previousHex);
+    centerOnHex(point.globalCol, point.globalRow);
+  }
+  // requestVisibleData is debounced; give the target snapshot one turn of the
+  // event loop to arrive before playback captures its previous-turn baseline.
+  await new Promise(resolve => setTimeout(resolve, 120));
+  const started = typeof startResultsPlayback === 'function'
+    ? await startResultsPlayback({ handoff: true })
+    : false;
+  if (!started) await openPlanningAfterResults(actual.turnKey);
+  return started;
 }
 
 async function refreshResultTurns(preferredTurnKey = null) {
@@ -358,7 +398,7 @@ async function importMapResultsReport() {
       return;
     }
     await refreshResultTurns(result.turn.turnKey);
-    if (typeof startResultsPlayback === 'function') await startResultsPlayback({ auto: true });
+    await playImportedResultsTransition(result.turn.turnKey);
     $('mapResultStatus').textContent = `${result.turn.sourceFile} · Turn ${result.turn.turnKey} imported/rebuilt`;
     const firstUnit = result.turn.units?.find(unit => parseCoordinate(unit.currentHex));
     if (firstUnit) {
@@ -415,7 +455,7 @@ function bindResultsMapEvents() {
     const selected = resultsTimeline.turns[Number(event.target.value)];
     if (selected) applyResultTurn(selected.turnKey);
   });
-  window.addEventListener('storage', event => {
+window.addEventListener('storage', event => {
     if (event.key === RESULT_TURN_STORAGE_KEY && event.newValue && event.newValue !== resultsTimeline.turn?.turnKey) {
       refreshResultTurns(event.newValue);
     }
