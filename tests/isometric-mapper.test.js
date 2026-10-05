@@ -65,6 +65,7 @@ assert.ok(crowd.every(m=>Math.hypot(m.x,m.y)<.47));
 assert.equal(U.formation(null,'unknown').length,0);
 const mountedGroup=U.formation({warriors:10,actives:10,inactives:1,horses:21,carts:0,mounted:true},'mounted');
 assert.ok(mountedGroup.filter(m=>m.kind!=='horses').every(m=>m.mounted));
+assert.equal(typeof U.drawScout,'function');
 console.log('Logarithmic miniature counts, seeded formation and mounted model checks passed');
 
 let selection=null;
@@ -86,6 +87,7 @@ global.state={
 };
 U.prepare();
 assert.equal(U.occupies('PK1711',0,0),true);
+assert.equal(U.occupies('PK1711',.3,0),false);
 assert.equal(U.occupies('PK1810',0,0),false);
 console.log('Planned unit models remain on origin hex checks passed');
 

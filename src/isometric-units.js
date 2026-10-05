@@ -57,7 +57,10 @@
     }
     clearings=refs;return [...refs].sort().join('|');
   }
-  function occupies(ref,x,y){return clearings.has(ref) && Math.hypot(x,y)<.70;}
+  // Only suppress scenery directly under a miniature.  The old .70 radius
+  // cleared nearly the whole hex whenever a unit entered it, making trees and
+  // terrain details disappear during movement/playback.
+  function occupies(ref,x,y){return clearings.has(ref) && Math.hypot(x,y)<.18;}
   function layout(point,code,type,offset=0,extra='',snapshot=null) {
     const counts=composition(record(code,snapshot)),center=Number.isFinite(point.x)&&Number.isFinite(point.y)?{x:point.x,y:point.y}:baseCenter(point.globalCol,point.globalRow);
     const group=[...(occupants.get(point.coordinate)||[])].sort(),slot=Math.max(0,group.indexOf(String(code))),multiple=group.length>1;
@@ -143,6 +146,21 @@
     bed(.20,0,.09,.16,.014,.014,'#cbae74');
     for(const x of [-.075,.075])wheel(x,.086);
   }
+  function drawScout(point,code,modelCountValue,seed,options={}) {
+    if(!point || typeof IsoMapper==='undefined' || !IsoMapper.enabled || typeof ctx==='undefined')return false;
+    const count=Math.max(1,Math.min(5,Math.floor(Number(modelCountValue)||1)));
+    const quantity=Math.pow(10,count-1);
+    const models=formation({warriors:0,actives:quantity,inactives:0,horses:0,carts:0,mounted:true},seed||code)
+      .map(m=>({...m,x:point.x+m.x,y:point.y+m.y,z:IsoMapper.surface(point.x+m.x,point.y+m.y).z,heading:options.heading}))
+      .sort((a,b)=>a.y-b.y);
+    if(!models.length)return false;
+    const scale=typeof state!=='undefined'&&Number.isFinite(state.scale)?state.scale:50;
+    for(const m of models){
+      const p=IsoMapper.project(m,m.z);ctx.beginPath();ctx.ellipse(p.x,p.y,scale*.14,scale*.026,0,0,Math.PI*2);ctx.fillStyle='#142b2944';ctx.fill();
+      if(m.kind==='horses')horse(m);else if(m.kind==='carts')cart(m);else person(m);
+    }
+    return true;
+  }
   function tooltip(b) {
     if(!b.counts)return `${b.text} — composition unavailable`;
     return `${b.text} — ${kinds.map(k=>`${b.counts[k].toLocaleString()} ${k}`).join(', ')}${b.counts.mounted?' · Mounted':''}. Models: 1–9 = 1, 10–99 = 2, 100–999 = 3, etc.`;
@@ -205,7 +223,7 @@
       ctx.strokeStyle='#ffe18a';ctx.lineWidth=Math.max(1.5,state.scale*.04);ctx.stroke();ctx.restore();
     });
   }
-  const api={resetSelection:()=>{cycle=null;},nextSelection,unitsAt,composition,modelCount,formation,layout,draw,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];},clickHex,drawSelectionHighlight};
+  const api={resetSelection:()=>{cycle=null;},nextSelection,unitsAt,composition,modelCount,formation,layout,draw,drawScout,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];},clickHex,drawSelectionHighlight};
   if(typeof module!=='undefined' && module.exports)module.exports=api;
   else {
     root.IsoUnits=api;

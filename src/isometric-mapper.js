@@ -244,7 +244,7 @@ const IsoMapper = (() => {
         if(state.selected?.coordinate===t.ref)polygon(outline,null,'#ffe093');
       }
       if(labels && state.scale>=43){const p=project({...t.c,y:t.c.y+.5});renderCtx.font=`${Math.min(14,Math.max(10,state.scale*.09))}px Segoe UI`;renderCtx.textAlign='center';renderCtx.lineWidth=3;renderCtx.strokeStyle='#20302bea';renderCtx.strokeText(t.ref,p.x,p.y);renderCtx.fillStyle='#f0f2dc';renderCtx.fillText(t.ref,p.x,p.y);}
-      const partialQuestion=playbackState?.active && playbackState.revealedQuestions?.has(t.ref);
+      const partialQuestion=playbackState?.active && (playbackState.revealedQuestions?.has(t.ref) || playbackState.partialPreviews?.has(t.ref));
       if(!t.known && state.scale>=35 && !partialQuestion){renderCtx.fillStyle='#71838b';renderCtx.textAlign='center';renderCtx.font='12px Segoe UI';renderCtx.fillText('?',t.p.x,t.p.y);}
     }
     if(state.planningVisible && state.planImport?.plan)drawPlanOverlay();

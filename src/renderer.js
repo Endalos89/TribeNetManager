@@ -188,7 +188,7 @@ function draw() {
         // Keep the same fog treatment as the start-state map.  Only a
         // completed partial attempt suppresses the ordinary fog question;
         // future target rows must not change the map before their event.
-        const partialQuestion = window.resultsPlayback?.active && window.resultsPlayback.revealedQuestions?.has(coord);
+        const partialQuestion = window.resultsPlayback?.active && (window.resultsPlayback.revealedQuestions?.has(coord) || window.resultsPlayback.partialPreviews?.has(coord));
         drawFog(p.x, p.y, radius, !partialQuestion);
       }
       ctx.strokeStyle = '#071116'; ctx.lineWidth = Math.max(1, state.scale * .055); ctx.stroke();

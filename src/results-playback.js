@@ -14,6 +14,9 @@
     targetUnitCodes: new Set(),
     revealed: new Set(),
     revealedQuestions: new Set(),
+    // Partial scout attempts keep their question marker, but the report's
+    // terrain becomes visible as soon as that border segment completes.
+    partialPreviews: new Set(),
     revealTargets: new Set(),
     // Bumped whenever the baseline/reveal state changes. The 3D renderer uses
     // this to invalidate its cached terrain surface during playback.
@@ -90,7 +93,7 @@
 
   function playbackMapData(coordinate, targetData) {
     if (!playback.active || !playback.baselineLoaded) return targetData;
-    if (playback.revealed.has(coordinate) && !playback.revealedQuestions.has(coordinate)) {
+    if (playback.revealed.has(coordinate) || playback.partialPreviews.has(coordinate)) {
       return playback.targetHexes.get(coordinate) || targetData;
     }
     const baseline = playback.baselineHexes.get(coordinate);
@@ -321,12 +324,15 @@
       const cartCount = Number(scout.noOfCarts || sourceScout?.noOfCarts || sourceScout?.carts || 0);
       const riders = modelCount(scoutCount || 1);
       const mounted = scoutCount > 0 && horseCount >= scoutCount && cartCount <= 0;
-      for (let i = 1; i < points.length; i += 1) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: points[i - 1], to: points[i], sound: mounted ? 'horse' : 'scout', duration: 440 });
+      // Scouts use the mounted miniature and the gallop cue consistently in
+      // playback.  Whether the report supplied enough horses still remains
+      // available as metadata for callers that need it.
+      for (let i = 1; i < points.length; i += 1) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: points[i - 1], to: points[i], sound: 'horse', duration: 440 });
       const direction = partialDirection(scout.report || scout.raw || sourceScout?.report || sourceScout?.raw);
       if (direction && points.length) {
         const last = points[points.length - 1];
         const attempted = typeof stepHex === 'function' ? routePoint(stepHex(last, direction)) : null;
-        if (attempted && attempted.coordinate !== last.coordinate) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: last, to: attempted, borderPoint: borderPoint(last, attempted), partial: true, sound: mounted ? 'horse' : 'scout', duration: 520 });
+        if (attempted && attempted.coordinate !== last.coordinate) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: last, to: attempted, borderPoint: borderPoint(last, attempted), partial: true, sound: 'horse', duration: 520 });
       }
     }
     attachRevealCoordinates(events, turn);
@@ -388,7 +394,7 @@
   function stopResultsPlayback(options = {}) {
     cancelFrame();
     playback.active = false; playback.paused = false; playback.phase = 'idle'; playback.events = []; playback.index = 0; playback.progress = 0;
-    playback.startTurnKey = null; playback.eventTurnKey = null; playback.targetTurnKey = null; playback.targetUnitCodes = new Set(); playback.revealed = new Set(); playback.revealedQuestions = new Set(); playback.revealTargets = new Set();
+    playback.startTurnKey = null; playback.eventTurnKey = null; playback.targetTurnKey = null; playback.targetUnitCodes = new Set(); playback.revealed = new Set(); playback.revealedQuestions = new Set(); playback.partialPreviews = new Set(); playback.revealTargets = new Set();
     playback.renderRevision += 1;
     playback.baselineHexes = new Map(); playback.targetHexes = new Map(); playback.baselineLoaded = false; playback.baselineTurnKey = null;
     playback.autoHandoff = false; playback.onComplete = null;
@@ -547,7 +553,13 @@
     for (const coordinate of event?.reveals || []) playback.revealed.add(coordinate);
     if (event?.phase === 'scouting' && event?.to?.coordinate) {
       playback.revealed.add(event.to.coordinate);
-      if (event.partial) playback.revealedQuestions.add(event.to.coordinate);
+      if (event.partial) {
+        // A failed scout reaches the attempted hex's border.  Keep the
+        // question marker, while swapping in the report terrain at the same
+        // moment the segment ends so the next frame is the hand-off state.
+        playback.partialPreviews.add(event.to.coordinate);
+        playback.revealedQuestions.add(event.to.coordinate);
+      }
     }
     playback.renderRevision += 1;
     playback.index += 1; playback.progress = 0;
@@ -616,23 +628,33 @@
 
   function drawMovingMarker(event, scout = false, progress = playback.progress) {
     const base = lerpPoint(event.from, event.to, progress, event.borderPoint), point = projectBase(base); if (!point) return;
-    const colour = scout ? (event.mounted ? '#d7a65e' : '#e0d39d') : '#ffe1a0';
-    ctx.save(); ctx.strokeStyle = scout ? '#4b3324' : '#8b5b2d'; ctx.fillStyle = colour; ctx.lineWidth = Math.max(1.5, state.scale * .045);
-    const count = scout ? Math.max(1, Math.min(5, event.riders || 1)) : 1;
-    for (let i = 0; i < count; i += 1) {
-      const spread = (i - (count - 1) / 2) * state.scale * .17, y = point.y + Math.abs(i - (count - 1) / 2) * state.scale * .025;
-      if (scout && event.mounted) { ctx.beginPath(); ctx.ellipse(point.x + spread, y + state.scale * .035, state.scale * .11, state.scale * .045, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
-      ctx.beginPath(); ctx.arc(point.x + spread, y - state.scale * .045, Math.max(2.5, state.scale * .042), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(point.x + spread, y - state.scale * .01); ctx.lineTo(point.x + spread, y + state.scale * .105); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(point.x + spread, y + state.scale * .05); ctx.lineTo(point.x + spread - state.scale * .055, y + state.scale * .11); ctx.moveTo(point.x + spread, y + state.scale * .05); ctx.lineTo(point.x + spread + state.scale * .055, y + state.scale * .11); ctx.stroke();
+    let drewMountedMiniature = false;
+    if (scout && root.IsoUnits?.drawScout && typeof IsoMapper !== 'undefined' && IsoMapper.enabled) {
+      const from = hexCenter(event.from), to = hexCenter(event.to);
+      const heading = from && to ? Math.atan2(to.y - from.y, to.x - from.x) : null;
+      drewMountedMiniature = root.IsoUnits.drawScout(base, `scout:${event.unitCode}:${event.scoutId}`, event.riders || 1, `${event.unitCode}:${event.scoutId}:${event.from?.coordinate || ''}:${event.to?.coordinate || ''}`, { heading });
     }
-    ctx.font = '800 11px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillStyle = '#f5e5bd'; ctx.strokeStyle = '#17262b'; ctx.lineWidth = 3; ctx.strokeText(scout ? `Scout ${event.scoutId}` : event.unitCode, point.x, point.y - state.scale * .22); ctx.fillText(scout ? `Scout ${event.scoutId}` : event.unitCode, point.x, point.y - state.scale * .22); ctx.restore();
+    if (!drewMountedMiniature) {
+      const colour = scout ? '#d7a65e' : '#ffe1a0';
+      ctx.save(); ctx.strokeStyle = scout ? '#4b3324' : '#8b5b2d'; ctx.fillStyle = colour; ctx.lineWidth = Math.max(1.5, state.scale * .045);
+      const count = scout ? Math.max(1, Math.min(5, event.riders || 1)) : 1;
+      for (let i = 0; i < count; i += 1) {
+        const spread = (i - (count - 1) / 2) * state.scale * .17, y = point.y + Math.abs(i - (count - 1) / 2) * state.scale * .025;
+        if (scout) { ctx.beginPath(); ctx.ellipse(point.x + spread, y + state.scale * .035, state.scale * .11, state.scale * .045, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+        ctx.beginPath(); ctx.arc(point.x + spread, y - state.scale * .045, Math.max(2.5, state.scale * .042), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(point.x + spread, y - state.scale * .01); ctx.lineTo(point.x + spread, y + state.scale * .105); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(point.x + spread, y + state.scale * .05); ctx.lineTo(point.x + spread - state.scale * .055, y + state.scale * .11); ctx.moveTo(point.x + spread, y + state.scale * .05); ctx.lineTo(point.x + spread + state.scale * .055, y + state.scale * .11); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.save(); ctx.font = '800 11px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillStyle = '#f5e5bd'; ctx.strokeStyle = '#17262b'; ctx.lineWidth = 3; ctx.strokeText(scout ? `Scout ${event.scoutId}` : event.unitCode, point.x, point.y - state.scale * .22); ctx.fillText(scout ? `Scout ${event.scoutId}` : event.unitCode, point.x, point.y - state.scale * .22); ctx.restore();
   }
 
   function drawScoutReveals() {
-    if (!playback.revealed.size) return;
+    const coordinates = new Set([...playback.revealed, ...playback.partialPreviews]);
+    if (!coordinates.size) return;
     ctx.save(); ctx.strokeStyle = '#83d9ef'; ctx.fillStyle = 'rgba(131,217,239,.11)'; ctx.lineWidth = Math.max(1.5, state.scale * .04);
-    for (const coordinate of playback.revealed) { const point = projectBase(pointFor(coordinate)); if (!point) continue; const question = playback.revealedQuestions.has(coordinate); ctx.fillStyle = 'rgba(131,217,239,.11)'; ctx.beginPath(); ctx.arc(point.x, point.y, Math.max(8, state.scale * .28), 0, Math.PI * 2); ctx.fill(); ctx.stroke(); if (question) { ctx.fillStyle = '#f4e2a5'; ctx.font = `800 ${Math.max(12, state.scale * .42)}px Segoe UI`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('?', point.x, point.y); } }
+    for (const coordinate of coordinates) { const point = projectBase(pointFor(coordinate)); if (!point) continue; const question = playback.revealedQuestions.has(coordinate); ctx.fillStyle = 'rgba(131,217,239,.11)'; ctx.beginPath(); ctx.arc(point.x, point.y, Math.max(8, state.scale * .28), 0, Math.PI * 2); ctx.fill(); ctx.stroke(); if (question) { ctx.fillStyle = '#f4e2a5'; ctx.font = `800 ${Math.max(12, state.scale * .42)}px Segoe UI`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('?', point.x, point.y); } }
     ctx.restore();
   }
 
@@ -693,7 +715,9 @@
     craft: 'assets/results-sounds/crafting.ogg',
     unknown: 'assets/results-sounds/dum.ogg',
     movement: 'assets/results-sounds/footstep.ogg',
-    scout: 'assets/results-sounds/scouting.ogg',
+    // Keep the legacy key for saved callers, but make it the same gallop
+    // clip used by the playback events.
+    scout: 'assets/results-sounds/horse-gallop.ogg',
     horse: 'assets/results-sounds/horse-gallop.ogg'
   });
 
