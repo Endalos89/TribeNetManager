@@ -7,7 +7,7 @@ movementPlannerLoadKnowledge = async function movementPlannerLoadPlanningBaselin
     return planningTurnMovementOriginalLoadKnowledge();
   }
 
-  const baselineTurnKey = resultsTimeline.turn.baselineTurnKey;
+  const baselineTurnKey = resultsTimeline.turn.knowledgeTurnKey || resultsTimeline.turn.baselineTurnKey;
   const planningTurnKey = resultsTimeline.turn.turnKey;
   const key = `planning:${planningTurnKey}:baseline:${baselineTurnKey}`;
   if (movementPlannerState.knownHexes && movementPlannerState.knowledgeKey === key) {
@@ -17,7 +17,7 @@ movementPlannerLoadKnowledge = async function movementPlannerLoadPlanningBaselin
   const bounds = { minCol: 0, maxCol: TOTAL_COLS - 1, minRow: 0, maxRow: TOTAL_ROWS - 1 };
   const rows = baselineTurnKey
     ? await window.tribenet.getResultHexesInArea(bounds, baselineTurnKey)
-    : [];
+    : (resultsTimeline.turn.startHexKnowledge || []);
 
   movementPlannerState.knownHexes = MovementPlannerCore.buildKnownHexMap(rows);
   movementPlannerState.knowledgeKey = key;

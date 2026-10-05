@@ -28,6 +28,9 @@ jobs:
       - name: Run regression tests
         run: |
           npm test
+          node tests/results-playback.test.js
+          node tests/results-transition.test.js
+          node tests/results-start-state.test.js
           node tests/feedback-round5.test.js
           node tests/skill-overhaul-category-c1.test.js
           node tests/skill-overhaul-category-c2.test.js

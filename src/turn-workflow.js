@@ -9,7 +9,7 @@ function rootTribe(unitCode) {
 
 function planningTurnKeyFromResult(resultTurn) {
   const explicit = String(resultTurn?.metadata?.nextTurn || '').trim();
-  if (explicit) return explicit;
+  if (/^\d+[-_]\d+$/.test(explicit)) return explicit;
   const current = String(resultTurn?.turnKey || '').trim();
   const match = current.match(/^(\d+)([-_])(\d+)$/);
   if (!match) return current || null;

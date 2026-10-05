@@ -8,6 +8,8 @@
     index: 0,
     progress: 0,
     startedAt: 0,
+    startTurnKey: null,
+    eventTurnKey: null,
     targetTurnKey: null,
     targetUnitCodes: new Set(),
     revealed: new Set(),
@@ -17,6 +19,7 @@
     // this to invalidate its cached terrain surface during playback.
     renderRevision: 0,
     baselineHexes: new Map(),
+    targetHexes: new Map(),
     baselineLoaded: false,
     baselineTurnKey: null,
     autoHandoff: false,
@@ -74,19 +77,11 @@
     return changes;
   }
 
-  function previousActualTurnKey(turn) {
-    if (turn?.baselineTurnKey) return String(turn.baselineTurnKey);
-    const currentSort = Number(turn?.turnSort);
-    const candidates = (root.resultsTimeline?.turns || [])
-      .filter(row => row && !row.isPlanningTurn && row.turnKey && String(row.turnKey) !== String(turn?.turnKey))
-      .filter(row => !Number.isFinite(currentSort) || Number(row.turnSort || 0) < currentSort)
-      .sort((a, b) => Number(b.turnSort || 0) - Number(a.turnSort || 0));
-    return candidates[0]?.turnKey || null;
-  }
-
   function playbackMapData(coordinate, targetData) {
     if (!playback.active || !playback.baselineLoaded) return targetData;
-    if (playback.revealed.has(coordinate) && !playback.revealedQuestions.has(coordinate)) return targetData;
+    if (playback.revealed.has(coordinate) && !playback.revealedQuestions.has(coordinate)) {
+      return playback.targetHexes.get(coordinate) || targetData;
+    }
     const baseline = playback.baselineHexes.get(coordinate);
     return baseline && baseline.terrain !== 'UNKNOWN' ? baseline : null;
   }
@@ -208,12 +203,8 @@
 
   function attachRevealCoordinates(events, turn) {
     const targetRows = [];
-    const targetTurn = String(turn?.turnKey || '');
-    const rows = (typeof state !== 'undefined' && state.hexCache instanceof Map)
-      ? [...state.hexCache.values()]
-      : [];
-    for (const row of rows) {
-      if (!row?.coordinate || String(row.discoveredTurn || '') !== targetTurn) continue;
+    for (const row of playback.targetHexes.values()) {
+      if (!row?.coordinate) continue;
       const baseline = playback.baselineHexes.get(row.coordinate);
       if (baseline && baseline.terrain && baseline.terrain !== 'UNKNOWN') continue;
       targetRows.push(row);
@@ -377,9 +368,9 @@
   function stopResultsPlayback(options = {}) {
     cancelFrame();
     playback.active = false; playback.paused = false; playback.phase = 'idle'; playback.events = []; playback.index = 0; playback.progress = 0;
-    playback.targetTurnKey = null; playback.targetUnitCodes = new Set(); playback.revealed = new Set(); playback.revealedQuestions = new Set(); playback.revealTargets = new Set();
+    playback.startTurnKey = null; playback.eventTurnKey = null; playback.targetTurnKey = null; playback.targetUnitCodes = new Set(); playback.revealed = new Set(); playback.revealedQuestions = new Set(); playback.revealTargets = new Set();
     playback.renderRevision += 1;
-    playback.baselineHexes = new Map(); playback.baselineLoaded = false; playback.baselineTurnKey = null;
+    playback.baselineHexes = new Map(); playback.targetHexes = new Map(); playback.baselineLoaded = false; playback.baselineTurnKey = null;
     playback.autoHandoff = false; playback.onComplete = null;
     setButton();
     if (options.draw !== false && typeof draw === 'function') draw();
@@ -401,7 +392,7 @@
   async function loadPlaybackBaseline(turn) {
     playback.baselineHexes = new Map();
     playback.baselineLoaded = false;
-    playback.baselineTurnKey = previousActualTurnKey(turn);
+    playback.baselineTurnKey = turn?.knowledgeTurnKey || turn?.baselineTurnKey || null;
     const canFetch = root.tribenet?.getResultHexesInArea
       && typeof visibleBounds === 'function'
       && typeof state !== 'undefined'
@@ -410,7 +401,7 @@
       const bounds = visibleBounds();
       const baselineRows = playback.baselineTurnKey
         ? await root.tribenet.getResultHexesInArea(bounds, playback.baselineTurnKey)
-        : [];
+        : (turn?.startHexKnowledge || []);
       for (const row of baselineRows || []) if (row?.coordinate) playback.baselineHexes.set(row.coordinate, row);
       // Preserve older local knowledge already loaded in the map as well. A
       // manually mapped hex can predate the Results database and should not
@@ -422,25 +413,38 @@
     playback.baselineLoaded = true;
   }
 
+  async function loadPlaybackTarget(turnKey) {
+    playback.targetHexes = new Map();
+    if (!turnKey || !root.tribenet?.getResultHexesInArea || typeof visibleBounds !== 'function' || typeof state === 'undefined' || state.mode !== 'detail') return;
+    const rows = await root.tribenet.getResultHexesInArea(visibleBounds(), turnKey);
+    for (const row of rows || []) if (row?.coordinate) playback.targetHexes.set(row.coordinate, row);
+  }
+
   async function extendPlaybackBaseline(bounds) {
-    if (!playback.active || !playback.baselineTurnKey || !root.tribenet?.getResultHexesInArea || !bounds) return;
-    const rows = await root.tribenet.getResultHexesInArea(bounds, playback.baselineTurnKey);
+    if (!playback.active || !root.tribenet?.getResultHexesInArea || !bounds) return;
+    const baselineRows = playback.baselineTurnKey
+      ? await root.tribenet.getResultHexesInArea(bounds, playback.baselineTurnKey)
+      : [];
+    const targetRows = playback.eventTurnKey
+      ? await root.tribenet.getResultHexesInArea(bounds, playback.eventTurnKey)
+      : [];
     let changed = false;
-    for (const row of rows || []) {
+    for (const row of baselineRows || []) {
       if (!row?.coordinate || playback.baselineHexes.has(row.coordinate)) continue;
       playback.baselineHexes.set(row.coordinate, row);
+      changed = true;
+    }
+    for (const row of targetRows || []) {
+      if (!row?.coordinate || playback.targetHexes.has(row.coordinate)) continue;
+      playback.targetHexes.set(row.coordinate, row);
       changed = true;
     }
     if (changed) playback.renderRevision += 1;
   }
 
   function collectRevealTargets(turn) {
-    const rows = (typeof state !== 'undefined' && state.hexCache instanceof Map)
-      ? [...state.hexCache.values()]
-      : [];
-    const targetTurn = String(turn?.turnKey || '');
-    for (const row of rows) {
-      if (row?.coordinate && String(row.discoveredTurn || '') === targetTurn) {
+    for (const row of playback.targetHexes.values()) {
+      if (row?.coordinate) {
         const baseline = playback.baselineHexes.get(row.coordinate);
         if (!baseline || !baseline.terrain || baseline.terrain === 'UNKNOWN') playback.revealTargets.add(row.coordinate);
       }
@@ -448,9 +452,9 @@
     for (const event of playback.events) {
       for (const coordinate of event.reveals || []) playback.revealTargets.add(coordinate);
       if (event.phase === 'scouting' && event.to?.coordinate) {
-        const row = typeof state !== 'undefined' && state.hexCache?.get(event.to.coordinate);
+        const row = playback.targetHexes.get(event.to.coordinate);
         const baseline = playback.baselineHexes.get(event.to.coordinate);
-        if ((!row || String(row.discoveredTurn || '') === targetTurn) && (!baseline || !baseline.terrain || baseline.terrain === 'UNKNOWN')) playback.revealTargets.add(event.to.coordinate);
+        if ((!row || !baseline || !baseline.terrain || baseline.terrain === 'UNKNOWN')) playback.revealTargets.add(event.to.coordinate);
       }
       if (event.partial && event.to?.coordinate) playback.revealTargets.add(event.to.coordinate);
     }
@@ -463,25 +467,33 @@
     stopResultsPlayback({ draw: false });
     if (typeof callback === 'function') {
       Promise.resolve(callback(targetTurnKey)).catch(error => console.error('Results playback completion failed', error));
-    } else if (handoff && typeof root.openPlanningAfterResults === 'function') {
-      Promise.resolve(root.openPlanningAfterResults(targetTurnKey)).catch(error => console.error('Planning handoff failed', error));
+    } else if (handoff && typeof root.advanceToNextStartState === 'function') {
+      Promise.resolve(root.advanceToNextStartState(targetTurnKey)).catch(error => console.error('Planning handoff failed', error));
     } else if (typeof draw === 'function') draw();
   }
 
   async function startResultsPlayback(options = {}) {
-    let turn = root.resultsTimeline?.turn;
-    if (!turn) return false;
-    if (turn.isPlanningTurn && turn.baselineTurnKey && root.tribenet?.getResultTurn) turn = await root.tribenet.getResultTurn(turn.baselineTurnKey);
-    const events = buildEvents(turn);
+    const startState = root.resultsTimeline?.turn;
+    if (!startState) return false;
+    const eventTurnKey = options.eventTurnKey || startState.eventTurnKey || (!startState.isStartState ? startState.turnKey : null);
+    const eventTurn = eventTurnKey && root.tribenet?.getResultTurn
+      ? await root.tribenet.getResultTurn(eventTurnKey)
+      : (!startState.isStartState ? startState : null);
+    if (!eventTurn) return false;
+    const events = buildEvents(eventTurn);
     stopResultsPlayback();
     playback.events = events; playback.active = events.length > 0; playback.paused = false; playback.index = 0; playback.progress = 0;
-    playback.startedAt = now(); playback.targetTurnKey = turn.turnKey;
+    playback.startedAt = now(); playback.startTurnKey = startState.turnKey; playback.eventTurnKey = eventTurn.turnKey; playback.targetTurnKey = eventTurn.turnKey;
     playback.targetUnitCodes = new Set(events.map(event => event.unitCode).filter(Boolean));
-    playback.autoHandoff = Boolean(options.handoff || options.autoHandoff);
+    // A completed report always resolves into the next turn's start state.
+    // `handoff` remains accepted for older callers, but is no longer required
+    // for the automatic transition.
+    playback.autoHandoff = Boolean(options.handoff || options.autoHandoff || eventTurnKey);
     playback.onComplete = typeof options.onComplete === 'function' ? options.onComplete : null;
-    await loadPlaybackBaseline(turn);
-    attachRevealCoordinates(playback.events, turn);
-    collectRevealTargets(turn);
+    await loadPlaybackBaseline(startState);
+    await loadPlaybackTarget(eventTurn.turnKey);
+    attachRevealCoordinates(playback.events, eventTurn);
+    collectRevealTargets(eventTurn);
     playback.phase = events[0]?.phase || 'idle';
     setButton();
     if (!playback.active) {

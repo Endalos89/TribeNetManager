@@ -12,8 +12,11 @@ const movementPlannerOriginalDraw = draw;
 const movementPlannerOriginalSelectHex = selectHex;
 
 function movementPlannerTurnKey() {
-  return (typeof resultsTimeline !== 'undefined' && resultsTimeline.turn?.turnKey)
-    ? `results:${resultsTimeline.turn.turnKey}`
+  const knowledgeKey = typeof resultsTimeline !== 'undefined'
+    ? (resultsTimeline.turn?.knowledgeTurnKey || resultsTimeline.turn?.baselineTurnKey || resultsTimeline.turn?.turnKey)
+    : null;
+  return knowledgeKey
+    ? `results:${knowledgeKey}`
     : 'current-map';
 }
 
@@ -114,8 +117,11 @@ async function movementPlannerLoadKnowledge() {
   }
 
   const bounds = { minCol: 0, maxCol: TOTAL_COLS - 1, minRow: 0, maxRow: TOTAL_ROWS - 1 };
-  const rows = (typeof resultsTimeline !== 'undefined' && resultsTimeline.turn?.turnKey)
-    ? await window.tribenet.getResultHexesInArea(bounds, resultsTimeline.turn.turnKey)
+  const knowledgeKey = typeof resultsTimeline !== 'undefined'
+    ? (resultsTimeline.turn?.knowledgeTurnKey || resultsTimeline.turn?.baselineTurnKey || resultsTimeline.turn?.turnKey)
+    : null;
+  const rows = knowledgeKey
+    ? await window.tribenet.getResultHexesInArea(bounds, knowledgeKey)
     : await window.tribenet.getHexesInArea(bounds);
 
   movementPlannerState.knownHexes = MovementPlannerCore.buildKnownHexMap(rows);

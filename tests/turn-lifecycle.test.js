@@ -4,6 +4,7 @@ const { planningTurnKey, planningTimelineEntry, actualDirections, actualPlanFrom
 (function nextTurnComesFromResultsMetadata() {
   assert.strictEqual(planningTurnKey({ turnKey:'906-03', metadata:{ nextTurn:'906-04' } }), '906-04');
   assert.strictEqual(planningTurnKey({ turnKey:'906-03', metadata:{} }), '906-04');
+  assert.strictEqual(planningTurnKey({ turnKey:'906-02', metadata:{ nextTurn:'now' } }), '906-03');
 })();
 
 (function latestResultCreatesVisiblePlanningTimelineEntry() {

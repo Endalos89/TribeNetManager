@@ -129,6 +129,17 @@ syncPlannerOverlayToResultTurn = async function syncPlannerOverlayWithActualResu
   // local draft routes/activities are cleared by the backend and the workbook is
   // selected by default for verification.
   if (resultTurn.isPlanningTurn) {
+    if (resultTurn.isStartState && resultTurn.eventTurnKey) {
+      lifecycleSetPlanRecord(null, 'draft', false);
+      const status = document.getElementById('planStatus');
+      const title = document.getElementById('plannerTurnTitle');
+      const source = document.getElementById('plannerSourceLabel');
+      if (status) status.textContent = `Start of Turn ${turnKey} · Play report ${resultTurn.eventTurnKey} to advance.`;
+      if (title) title.textContent = `Start of Turn ${turnKey}`;
+      if (source) source.textContent = resultTurn.sourceFile || 'Results report';
+      if (redraw) draw();
+      return null;
+    }
     const imports = await window.tribenet.getPlannerImports(turnKey);
     state.planHistory = imports;
     const select = document.getElementById('turnSelect');
@@ -231,7 +242,9 @@ function lifecyclePlanningEntry() {
 }
 
 function lifecycleKnowledgeTurnKey() {
-  return resultsTimeline?.turn?.baselineTurnKey || resultsTimeline?.turn?.turnKey || null;
+  return resultsTimeline?.turn?.knowledgeTurnKey
+    || resultsTimeline?.turn?.baselineTurnKey
+    || null;
 }
 
 // Planning Turn 906-04 uses the map knowledge as-of actual Turn 906-03.
@@ -245,7 +258,10 @@ requestVisibleData = function requestVisibleDataForPlanningTurn() {
     resultsTimeline.loadingArea = true;
     try {
       const b = visibleBounds();
-      const rows = await window.tribenet.getResultHexesInArea(b, lifecycleKnowledgeTurnKey());
+      const knowledgeKey = lifecycleKnowledgeTurnKey();
+      const rows = knowledgeKey
+        ? await window.tribenet.getResultHexesInArea(b, knowledgeKey)
+        : (resultsTimeline.turn.startHexKnowledge || []).filter(row => row.globalCol >= b.minCol && row.globalCol <= b.maxCol && row.globalRow >= b.minRow && row.globalRow <= b.maxRow);
       state.hexCache.clear();
       for (const row of rows) state.hexCache.set(row.coordinate, row);
       state.loadedArea = b;
@@ -263,7 +279,14 @@ requestVisibleData = function requestVisibleDataForPlanningTurn() {
 const lifecycleOriginalRefreshSummaries = refreshSummaries;
 refreshSummaries = async function refreshSummariesForPlanningTurn() {
   if (!resultsTimeline?.turn?.isPlanningTurn) return lifecycleOriginalRefreshSummaries();
-  const rows = await window.tribenet.getResultSubmapSummaries(lifecycleKnowledgeTurnKey());
+  const knowledgeKey = lifecycleKnowledgeTurnKey();
+  const rows = knowledgeKey
+    ? await window.tribenet.getResultSubmapSummaries(knowledgeKey)
+    : [...(resultsTimeline.turn.startHexKnowledge || [])].map(row => ({
+      mapRow: row.mapRow ?? Math.floor(Number(row.globalRow || 0) / 21),
+      mapCol: row.mapCol ?? Math.floor(Number(row.globalCol || 0) / 30),
+      mapped: 1
+    }));
   state.summaries.clear();
   for (const row of rows) state.summaries.set(`${row.mapRow}:${row.mapCol}`, Number(row.mapped));
 };
@@ -274,10 +297,11 @@ historicalHexAt = async function historicalHexAtPlanningBaseline(globalCol, glob
   const coordinate = coordinateFor(globalCol, globalRow);
   const cached = state.hexCache.get(coordinate);
   if (cached) return cached;
-  const rows = await window.tribenet.getResultHexesInArea(
-    { minCol: globalCol, maxCol: globalCol, minRow: globalRow, maxRow: globalRow },
-    lifecycleKnowledgeTurnKey()
-  );
+  const knowledgeKey = lifecycleKnowledgeTurnKey();
+  const rows = knowledgeKey
+    ? await window.tribenet.getResultHexesInArea(
+      { minCol: globalCol, maxCol: globalCol, minRow: globalRow, maxRow: globalRow }, knowledgeKey)
+    : (resultsTimeline.turn.startHexKnowledge || []).filter(row => row.coordinate === coordinate);
   const found = rows.find(row => row.coordinate === coordinate) || null;
   if (found) state.hexCache.set(coordinate, found);
   return found;
@@ -305,10 +329,16 @@ applyResultTurn = async function applyActualOrPlanningTurn(turnKey, options = {}
     turnSort: Number(planningEntry.baselineTurnSort ?? baseline.turnSort),
     sourceFile: `Planning baseline from ${baseline.sourceFile || `Turn ${baseline.turnKey} Results`}`,
     metadata: { ...(baseline.metadata || {}), baselineTurn: baseline.turnKey, planningTurn: planningEntry.turnKey, nextTurn: planningEntry.turnKey },
+    events: [],
     isPlanningTurn: true,
+    isStartState: true,
+    eventTurnKey: null,
+    knowledgeTurnKey: baseline.turnKey,
     baselineTurnKey: baseline.turnKey,
     baselineTurnSort: Number(baseline.turnSort || 0),
-    baselineSourceFile: baseline.sourceFile || null
+    baselineSourceFile: baseline.sourceFile || null,
+    knowledgeTurnSort: Number(baseline.turnSort || 0),
+    startHexKnowledge: []
   };
   if (persist) localStorage.setItem(RESULT_TURN_STORAGE_KEY, planningEntry.turnKey);
   state.hexCache.clear();
@@ -388,5 +418,5 @@ savedMovementRefresh = async function savedMovementRefreshForNextTurn() {
 // synthetic next planning turn appears without needing another Results import.
 setTimeout(async () => {
   await refreshResultTurns();
-  if (resultsTimeline?.turn?.isPlanningTurn) lifecycleDecoratePlanningUI(resultsTimeline.turn);
+  if (resultsTimeline?.turn?.isPlanningTurn && !resultsTimeline.turn.eventTurnKey) lifecycleDecoratePlanningUI(resultsTimeline.turn);
 }, 450);

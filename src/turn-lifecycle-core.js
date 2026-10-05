@@ -1,9 +1,15 @@
 const TurnLifecycleCore = (() => {
   const DIRECTIONS = new Set(['N', 'NE', 'SE', 'S', 'SW', 'NW']);
 
+  function isTurnKey(value) {
+    return /^\d+[-_]\d+$/.test(String(value || '').trim());
+  }
+
   function planningTurnKey(resultTurn) {
     const explicit = String(resultTurn?.metadata?.nextTurn || '').trim();
-    if (explicit) return explicit;
+    // Some reports say “Next Turn now”.  That is a report-time phrase, not a
+    // usable timeline key; infer the next key from the current report instead.
+    if (isTurnKey(explicit)) return explicit;
     const current = String(resultTurn?.turnKey || '').trim();
     const match = current.match(/^(\d+)([-_])(\d+)$/);
     if (!match) return current || null;
@@ -24,8 +30,11 @@ const TurnLifecycleCore = (() => {
       turnSort: Number(latest.turnSort || 0) + 0.5,
       sourceFile: `Planning baseline from Turn ${latest.turnKey}`,
       importedAt: latest.importedAt || null,
-      metadata: { ...(latest.metadata || {}), baselineTurn: latest.turnKey, planningTurn: nextTurn },
+      metadata: { ...(latest.metadata || {}), baselineTurn: latest.turnKey, planningTurn: nextTurn, nextTurn },
       isPlanningTurn: true,
+      isStartState: true,
+      eventTurnKey: null,
+      knowledgeTurnKey: latest.turnKey,
       baselineTurnKey: latest.turnKey,
       baselineTurnSort: Number(latest.turnSort || 0),
       baselineSourceFile: latest.sourceFile || null

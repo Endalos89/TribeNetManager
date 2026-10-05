@@ -36,17 +36,30 @@ context.window = context;
 context.resultsTimeline = { turn: {
   turnKey: '1-02',
   turnSort: 2,
-  units: [{ unitCode: 'T1', previousHex: 'AA0101', currentHex: 'AA0202', deltas: { resources: {} } }],
-  events: []
+  isPlanningTurn: true,
+  isStartState: true,
+  eventTurnKey: '1-02',
+  knowledgeTurnKey: '1-01',
+  units: [{ unitCode: 'T1', currentHex: 'AA0101', deltas: { resources: {} } }],
+  events: [],
+  startHexKnowledge: []
 }, turns: [{ turnKey: '1-01', turnSort: 1 }, { turnKey: '1-02', turnSort: 2 }] };
 context.state = { mode: 'detail', hexCache: new Map([
   ['AA0101', { coordinate: 'AA0101', terrain: 'PR', discoveredTurn: '1-01' }],
   ['AA0102', { coordinate: 'AA0102', terrain: 'GH', discoveredTurn: '1-02' }]
 ]) };
 context.visibleBounds = () => ({ minCol: 0, maxCol: 4, minRow: 0, maxRow: 4 });
-context.tribenet = { getResultHexesInArea: async (_bounds, turnKey) => turnKey === '1-01'
-  ? [{ coordinate: 'AA0101', terrain: 'PR', discoveredTurn: '1-01', globalCol: 0, globalRow: 0 }]
-  : [...context.state.hexCache.values()] };
+context.tribenet = {
+  getResultTurn: async () => ({
+    turnKey: '1-02',
+    turnSort: 2,
+    units: [{ unitCode: 'T1', previousHex: 'AA0101', currentHex: 'AA0202', deltas: { resources: { food: { Goat: -60 } } } }],
+    events: [{ unitCode: 'T1', eventType: 'activities', message: 'Tribe Activities, Skin\\gut\\bone 60 Goat' }]
+  }),
+  getResultHexesInArea: async (_bounds, turnKey) => turnKey === '1-01'
+    ? [{ coordinate: 'AA0101', terrain: 'PR', discoveredTurn: '1-01', globalCol: 0, globalRow: 0 }]
+    : [...context.state.hexCache.values()]
+};
 vm.runInNewContext(source, context, { filename: 'results-playback.js' });
 
 const events = context.resultsPlayback.buildEvents({

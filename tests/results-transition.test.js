@@ -68,6 +68,7 @@ const context = {
   startResultsPlayback: async () => {
     startedWithStaging = context.resultsTimeline.transitionStaging;
     context.draw();
+    await context.advanceToNextStartState('1-02');
     return true;
   },
   tribenet: {
@@ -88,6 +89,8 @@ vm.runInNewContext(`${source}\n;globalThis.__test={playImportedResultsTransition
   assert.strictEqual(startedWithStaging, false, 'Playback should start only after staging draws are released');
   assert.ok(drawCalls > 0, 'Playback handoff should leave a drawable map state');
   assert.strictEqual(context.resultsTimeline.transitionStaging, false, 'Staging guard must always be released');
-  assert.strictEqual(context.resultsTimeline.turn.turnKey, '1-02');
+  assert.strictEqual(context.resultsTimeline.turn.turnKey, '1-03');
+  assert.strictEqual(context.resultsTimeline.turn.isStartState, true);
+  assert.strictEqual(context.resultsTimeline.turn.knowledgeTurnKey, '1-02');
   console.log('Results upload staging and playback handoff regression tests passed');
 })();

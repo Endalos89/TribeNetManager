@@ -44,8 +44,9 @@
 
   function planningTurnKey(resultTurn) {
     if (typeof TurnLifecycleCore !== 'undefined' && TurnLifecycleCore?.planningTurnKey) return canonicalTurnKey(TurnLifecycleCore.planningTurnKey(resultTurn));
-    const current = String(resultTurn?.metadata?.nextTurn || resultTurn?.turnKey || '').trim();
-    if (resultTurn?.metadata?.nextTurn) return canonicalTurnKey(current);
+    const explicit = String(resultTurn?.metadata?.nextTurn || '').trim();
+    if (/^\d+[-_]\d+$/.test(explicit)) return canonicalTurnKey(explicit);
+    const current = String(resultTurn?.turnKey || '').trim();
     const match = current.match(/^(\d+)([-_])(\d+)$/);
     if (!match) return canonicalTurnKey(current);
     const year = Number(match[1]);

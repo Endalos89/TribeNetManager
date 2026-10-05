@@ -2,6 +2,10 @@ const RESULT_TURN_STORAGE_KEY = 'tribenet:selectedResultTurn';
 
 const resultsTimeline = {
   turns: [],
+  // `turns` is the visible timeline (actual reports plus the optional draft
+  // planning row).  `resultTurns` stays limited to imported reports so a
+  // start-state can always find the report that supplies its event payload.
+  resultTurns: [],
   turn: null,
   playTimer: null,
   loadingArea: false,
@@ -16,6 +20,141 @@ const resultsTimeline = {
 // properties on `window`.
 window.resultsTimeline = resultsTimeline;
 
+function resultActualRows() {
+  const rows = resultsTimeline.resultTurns?.length
+    ? resultsTimeline.resultTurns
+    : resultsTimeline.turns.filter(row => row && !row.isPlanningTurn);
+  return [...rows].filter(row => row?.turnKey && !row.isPlanningTurn)
+    .sort((a, b) => Number(a.turnSort || 0) - Number(b.turnSort || 0));
+}
+
+function resultSummaryFor(turnKey) {
+  return resultActualRows().find(row => String(row.turnKey) === String(turnKey)) || null;
+}
+
+function incrementResultTurnKey(turnKey) {
+  const current = String(turnKey || '').trim();
+  const match = current.match(/^(\d+)([-_])(\d+)$/);
+  if (!match) return current || null;
+  return `${match[1]}${match[2]}${String(Number(match[3]) + 1).padStart(match[3].length, '0')}`;
+}
+
+function resultKnowledgeTurnKey(turn = resultsTimeline.turn) {
+  return turn?.knowledgeTurnKey || turn?.baselineTurnKey || null;
+}
+
+function resultStartUnit(unit, usePreviousHex = false) {
+  if (!unit) return null;
+  const startHex = usePreviousHex ? (unit.previousHex || unit.currentHex) : unit.currentHex;
+  return {
+    ...unit,
+    currentHex: startHex || null,
+    previousHex: null,
+    previousTurnKey: null,
+    previous: null,
+    movement: null,
+    scouts: []
+  };
+}
+
+function resultStartHexRow(row) {
+  if (!row?.coordinate) return null;
+  return {
+    ...row,
+    discoveredTurn: 'prestart',
+    knowledgeLevel: row.knowledgeLevel || 'visited',
+    reason: 'Starting hex',
+    sourceUnit: null,
+    scoutId: null,
+    observedUnits: [],
+    evidence: []
+  };
+}
+
+async function resultInitialKnowledge(eventTurn, units) {
+  const rows = [];
+  const seen = new Set();
+  for (const unit of units || []) {
+    const coordinate = unit?.currentHex;
+    if (!coordinate || seen.has(coordinate)) continue;
+    seen.add(coordinate);
+    const parsed = typeof parseCoordinate === 'function' ? parseCoordinate(coordinate) : null;
+    let found = [];
+    if (parsed && window.tribenet?.getResultHexesInArea && eventTurn?.turnKey) {
+      found = await window.tribenet.getResultHexesInArea({
+        minCol: parsed.globalCol, maxCol: parsed.globalCol,
+        minRow: parsed.globalRow, maxRow: parsed.globalRow
+      }, eventTurn.turnKey);
+    }
+    const row = found.find(item => item.coordinate === coordinate)
+      || (parsed ? { coordinate, terrain: 'UNKNOWN', knowledgeLevel: 'visited', ...parsed } : { coordinate, terrain: 'UNKNOWN', knowledgeLevel: 'visited' });
+    rows.push(resultStartHexRow({ ...row, ...(parsed || {}) }));
+  }
+  return rows;
+}
+
+async function buildResultStartState(turnKey) {
+  const visibleEntry = resultsTimeline.turns.find(row => String(row?.turnKey) === String(turnKey)) || null;
+  const summary = resultSummaryFor(turnKey) || (!visibleEntry?.isPlanningTurn ? visibleEntry : null);
+  const eventTurn = summary && window.tribenet?.getResultTurn
+    ? await window.tribenet.getResultTurn(summary.turnKey)
+    : null;
+  const baselineKey = visibleEntry?.isPlanningTurn
+    ? (visibleEntry.baselineTurnKey || null)
+    : (() => {
+      const currentSort = Number(summary?.turnSort || 0);
+      return resultActualRows()
+        .filter(row => Number(row.turnSort || 0) < currentSort)
+        .sort((a, b) => Number(b.turnSort || 0) - Number(a.turnSort || 0))[0]?.turnKey || null;
+    })();
+  const baseline = baselineKey && window.tribenet?.getResultTurn
+    ? await window.tribenet.getResultTurn(baselineKey)
+    : null;
+  const sourceUnits = baseline?.units?.length
+    ? baseline.units.map(unit => resultStartUnit(unit))
+    : [];
+  // A report may mention a unit that was not emitted by the previous report
+  // (for example a split/element that is about to move).  Keep it in the
+  // starting snapshot at its reported previous hex so playback never makes a
+  // unit pop into existence at its destination.
+  const knownUnitCodes = new Set(sourceUnits.map(unit => String(unit.unitCode)));
+  for (const unit of eventTurn?.units || []) {
+    if (!knownUnitCodes.has(String(unit.unitCode))) {
+      sourceUnits.push(resultStartUnit(unit, true));
+      knownUnitCodes.add(String(unit.unitCode));
+    }
+  }
+  const startHexKnowledge = baselineKey
+    ? []
+    : await resultInitialKnowledge(eventTurn, sourceUnits);
+  const nextTurnKey = eventTurn && typeof TurnLifecycleCore !== 'undefined' && TurnLifecycleCore.planningTurnKey
+    ? TurnLifecycleCore.planningTurnKey(eventTurn)
+    : incrementResultTurnKey(turnKey);
+  return {
+    ...(eventTurn || visibleEntry || {}),
+    turnKey: String(turnKey),
+    turnSort: Number(visibleEntry?.turnSort ?? summary?.turnSort ?? eventTurn?.turnSort ?? 0),
+    sourceFile: eventTurn?.sourceFile || visibleEntry?.sourceFile || `Turn ${turnKey}`,
+    metadata: {
+      ...(eventTurn?.metadata || visibleEntry?.metadata || {}),
+      baselineTurn: baselineKey,
+      eventTurn: summary?.turnKey || null,
+      nextTurn: nextTurnKey
+    },
+    units: sourceUnits,
+    events: [],
+    isPlanningTurn: true,
+    isStartState: true,
+    eventTurnKey: summary?.turnKey || null,
+    knowledgeTurnKey: baselineKey,
+    baselineTurnKey: baselineKey,
+    baselineTurnSort: Number(baseline?.turnSort ?? visibleEntry?.baselineTurnSort ?? 0),
+    baselineSourceFile: baseline?.sourceFile || visibleEntry?.baselineSourceFile || null,
+    knowledgeTurnSort: Number(baseline?.turnSort ?? visibleEntry?.baselineTurnSort ?? 0),
+    startHexKnowledge
+  };
+}
+
 const originalRequestVisibleData = requestVisibleData;
 const originalRefreshSummaries = refreshSummaries;
 const originalDraw = draw;
@@ -27,6 +166,21 @@ async function syncPlannerOverlayToResultTurn(turnKey, preferredId = null, optio
   const { redraw = true } = options;
   if (!turnKey) {
     return originalRefreshPlannerHistoryForResults(preferredId);
+  }
+
+  // An imported report is a playback payload, not a planning overlay.  Keep
+  // the starting map clean even when an older order workbook exists for the
+  // same key; planning resumes only on the next start state (or a synthetic
+  // planning row with no event payload).
+  if (resultsTimeline.turn?.isStartState
+    && resultsTimeline.turn.eventTurnKey
+    && String(resultsTimeline.turn.turnKey) === String(turnKey)) {
+    state.planHistory = [];
+    state.planImport = null;
+    state.routeCache = null;
+    updatePlanUI();
+    if (redraw) draw();
+    return null;
   }
 
   const imports = await window.tribenet.getPlannerImports(turnKey);
@@ -137,7 +291,10 @@ requestVisibleData = function requestVisibleDataWithResults() {
     resultsTimeline.loadingArea = true;
     try {
       const b = visibleBounds();
-      const rows = await window.tribenet.getResultHexesInArea(b, resultsTimeline.turn.turnKey);
+      const knowledgeKey = resultKnowledgeTurnKey();
+      const rows = knowledgeKey
+        ? await window.tribenet.getResultHexesInArea(b, knowledgeKey)
+        : (resultsTimeline.turn.startHexKnowledge || []).filter(row => row.globalCol >= b.minCol && row.globalCol <= b.maxCol && row.globalRow >= b.minRow && row.globalRow <= b.maxRow);
       state.hexCache.clear();
       for (const row of rows) state.hexCache.set(row.coordinate, row);
       if (window.resultsPlayback?.active && typeof window.resultsPlaybackEnsureBaseline === 'function') {
@@ -154,7 +311,14 @@ requestVisibleData = function requestVisibleDataWithResults() {
 
 refreshSummaries = async function refreshHistoricalSummaries() {
   if (!resultsTimeline.turn) return originalRefreshSummaries();
-  const rows = await window.tribenet.getResultSubmapSummaries(resultsTimeline.turn.turnKey);
+  const knowledgeKey = resultKnowledgeTurnKey();
+  const rows = knowledgeKey
+    ? await window.tribenet.getResultSubmapSummaries(knowledgeKey)
+    : [...(resultsTimeline.turn.startHexKnowledge || [])].map(row => ({
+      mapRow: row.mapRow ?? Math.floor(Number(row.globalRow || 0) / 21),
+      mapCol: row.mapCol ?? Math.floor(Number(row.globalCol || 0) / 30),
+      mapped: 1
+    }));
   state.summaries.clear();
   for (const row of rows) state.summaries.set(`${row.mapRow}:${row.mapCol}`, Number(row.mapped));
 };
@@ -237,7 +401,10 @@ async function historicalHexAt(globalCol, globalRow) {
   const coordinate = coordinateFor(globalCol, globalRow);
   const cached = state.hexCache.get(coordinate);
   if (cached) return cached;
-  const rows = await window.tribenet.getResultHexesInArea({ minCol: globalCol, maxCol: globalCol, minRow: globalRow, maxRow: globalRow }, resultsTimeline.turn.turnKey);
+  const knowledgeKey = resultKnowledgeTurnKey();
+  const rows = knowledgeKey
+    ? await window.tribenet.getResultHexesInArea({ minCol: globalCol, maxCol: globalCol, minRow: globalRow, maxRow: globalRow }, knowledgeKey)
+    : (resultsTimeline.turn.startHexKnowledge || []).filter(row => row.coordinate === coordinate);
   const found = rows.find(row => row.coordinate === coordinate) || null;
   if (found) state.hexCache.set(coordinate, found);
   return found;
@@ -271,10 +438,13 @@ loadHexHistory = async function loadHistoricalHexHistory(coordinate) {
     return originalLoadHexHistory(coordinate);
   }
   const rows = await window.tribenet.getResultHexHistory(coordinate);
-  const visibleRows = rows.filter(row => Number(row.turnSort) <= Number(resultsTimeline.turn.turnSort));
+  const cutoff = resultKnowledgeTurnKey()
+    ? Number(resultsTimeline.turn.knowledgeTurnSort ?? resultsTimeline.turn.turnSort)
+    : -Infinity;
+  const visibleRows = rows.filter(row => Number(row.turnSort) <= cutoff);
   const host = $('hexHistoryList');
   host.innerHTML = '';
-  $('historyTurnContext').textContent = `Knowledge as of Turn ${resultsTimeline.turn.turnKey}`;
+  $('historyTurnContext').textContent = `Knowledge at start of Turn ${resultsTimeline.turn.turnKey}`;
   if (!visibleRows.length) {
     host.innerHTML = '<div class="history-empty">Still unknown at this point in the timeline.</div>';
     return;
@@ -312,7 +482,7 @@ function updateMapTimelineUI() {
   $('mapResultNext').disabled = resultsTimeline.turns.length < 2;
   $('mapResultPlay').disabled = resultsTimeline.turns.length < 2;
   const playTurn = $('mapResultPlayTurn');
-  if (playTurn) playTurn.disabled = !resultsTimeline.turn;
+  if (playTurn) playTurn.disabled = !resultsTimeline.turn?.eventTurnKey;
   if (!hasTurns) {
     $('mapResultTurnLabel').textContent = 'No results imported';
     $('mapResultStatus').textContent = 'Import a Word results report to populate history.';
@@ -320,9 +490,11 @@ function updateMapTimelineUI() {
   }
   const idx = Math.max(0, resultsTimeline.turns.findIndex(row => row.turnKey === resultsTimeline.turn?.turnKey));
   slider.value = String(idx);
-  $('mapResultTurnLabel').textContent = `Turn ${resultsTimeline.turn?.turnKey || resultsTimeline.turns[idx].turnKey}`;
+  $('mapResultTurnLabel').textContent = resultsTimeline.turn
+    ? `Turn ${resultsTimeline.turn.turnKey} · START`
+    : `Turn ${resultsTimeline.turns[idx].turnKey}`;
   $('mapResultStatus').textContent = resultsTimeline.turn
-    ? `${resultsTimeline.turn.sourceFile} · ${idx + 1}/${resultsTimeline.turns.length}`
+    ? `${resultsTimeline.turn.sourceFile} · report ${resultsTimeline.turn.eventTurnKey || 'not imported'} · ${idx + 1}/${resultsTimeline.turns.length}`
     : `${idx + 1}/${resultsTimeline.turns.length}`;
 }
 
@@ -330,9 +502,9 @@ async function applyResultTurn(turnKey, options = {}) {
   const { persist = true, preservePlayback = false } = options;
   if (!preservePlayback) stopMapResultPlayback();
   if (!preservePlayback && typeof stopResultsPlayback === 'function') stopResultsPlayback({ draw: false });
-  const detail = await window.tribenet.getResultTurn(turnKey);
-  if (!detail) return;
-  resultsTimeline.turn = detail;
+  const startState = await buildResultStartState(turnKey);
+  if (!startState || !startState.turnKey) return null;
+  resultsTimeline.turn = startState;
   if (persist) localStorage.setItem(RESULT_TURN_STORAGE_KEY, turnKey);
   state.hexCache.clear();
   state.loadedArea = null;
@@ -348,21 +520,46 @@ async function applyResultTurn(turnKey, options = {}) {
   }
   if (state.selected) await selectHex(state.selected.globalCol, state.selected.globalRow);
   draw();
+  return startState;
 }
 
-async function openPlanningAfterResults(actualTurnKey = null) {
-  const planning = resultsTimeline.turns.find(row => row?.isPlanningTurn
-    && (!actualTurnKey || String(row.baselineTurnKey || row.metadata?.baselineTurn) === String(actualTurnKey)));
+async function advanceToNextStartState(actualTurnKey = null) {
+  const actual = actualTurnKey && window.tribenet?.getResultTurn
+    ? await window.tribenet.getResultTurn(actualTurnKey)
+    : null;
+  const nextTurnKey = actual && typeof TurnLifecycleCore !== 'undefined' && TurnLifecycleCore.planningTurnKey
+    ? TurnLifecycleCore.planningTurnKey(actual)
+    : incrementResultTurnKey(actualTurnKey);
+  let planning = resultsTimeline.turns.find(row => String(row?.turnKey) === String(nextTurnKey)) || null;
+  if (!planning && nextTurnKey) {
+    planning = {
+      turnKey: nextTurnKey,
+      turnSort: Number(actual?.turnSort || 0) + 0.5,
+      sourceFile: `Start of Turn ${nextTurnKey}`,
+      metadata: { baselineTurn: actualTurnKey, planningTurn: nextTurnKey },
+      isPlanningTurn: true,
+      isStartState: true,
+      baselineTurnKey: actualTurnKey,
+      knowledgeTurnKey: actualTurnKey
+    };
+    resultsTimeline.turns = [...resultsTimeline.turns, planning].sort((a, b) => Number(a.turnSort || 0) - Number(b.turnSort || 0));
+  }
   state.planningVisible = true;
   const toggle = $('planningToggle');
   if (toggle) toggle.checked = true;
   if (planning) await applyResultTurn(planning.turnKey, { persist: true });
   if (state.mode !== 'detail') showDetail();
-  if (planning && typeof lifecycleDecoratePlanningUI === 'function') lifecycleDecoratePlanningUI(resultsTimeline.turn);
+  if (planning && typeof lifecycleDecoratePlanningUI === 'function' && !resultsTimeline.turn?.eventTurnKey) lifecycleDecoratePlanningUI(resultsTimeline.turn);
   else updatePlanUI();
   draw();
   return planning || null;
 }
+
+// Backwards-compatible name used by older playback handoff code and external
+// integrations.  The operation now advances to the next *start* state.
+const openPlanningAfterResults = advanceToNextStartState;
+window.advanceToNextStartState = advanceToNextStartState;
+window.openPlanningAfterResults = advanceToNextStartState;
 
 async function playImportedResultsTransition(actualTurnKey) {
   if (!actualTurnKey || !window.tribenet?.getResultTurn) return false;
@@ -371,28 +568,28 @@ async function playImportedResultsTransition(actualTurnKey) {
   resultsTimeline.transitionStaging = true;
   try {
     await applyResultTurn(actual.turnKey, { persist: true });
-    const firstUnit = actual.units?.find(unit => parseCoordinate(unit.currentHex || unit.previousHex));
+    const firstUnit = resultsTimeline.turn?.units?.find(unit => parseCoordinate(unit.currentHex));
     showMapper({ overview: false });
     showDetail();
     if (firstUnit) {
-      const point = parseCoordinate(firstUnit.currentHex || firstUnit.previousHex);
+      const point = parseCoordinate(firstUnit.currentHex);
       centerOnHex(point.globalCol, point.globalRow);
     }
-    // requestVisibleData is debounced; give the target snapshot one turn of
-    // the event loop to arrive before playback captures its previous-turn baseline.
+    // Let the starting snapshot settle before playback captures its baseline.
     await new Promise(resolve => setTimeout(resolve, 120));
   } finally {
     resultsTimeline.transitionStaging = false;
   }
   const started = typeof startResultsPlayback === 'function'
-    ? await startResultsPlayback({ handoff: true })
+    ? await startResultsPlayback({ handoff: true, eventTurnKey: actual.turnKey })
     : false;
-  if (!started) await openPlanningAfterResults(actual.turnKey);
+  if (!started) await advanceToNextStartState(actual.turnKey);
   return started;
 }
 
 async function refreshResultTurns(preferredTurnKey = null) {
-  resultsTimeline.turns = await window.tribenet.listResultTurns();
+  resultsTimeline.resultTurns = await window.tribenet.listResultTurns();
+  resultsTimeline.turns = [...resultsTimeline.resultTurns];
   resultsTimeline.ready = true;
   if (!resultsTimeline.turns.length) {
     resultsTimeline.turn = null;
