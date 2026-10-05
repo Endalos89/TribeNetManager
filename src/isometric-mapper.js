@@ -170,8 +170,19 @@ const IsoMapper = (() => {
       const a=G.corners[i],b=G.corners[(i+1)%6],neighbour=t.n[i];
       const edgePoint=(u,r=1)=>sample(t.c.x+(a.x*(1-u)+b.x*u)*r,t.c.y+(a.y*(1-u)+b.y*u)*r);
       if(!known(neighbour) && fogOnly){
-        // Follow the same sampled surface as the ground so the fog has no gaps.
-        for(let k=0;k<6;k++)mesh([edgePoint(k/6,.67),edgePoint((k+1)/6,.67),edgePoint((k+1)/6,1),edgePoint(k/6,1)],FOG);
+        // A filled, relief-sampled strip becomes non-convex at a steep
+        // coastline and produces the dark triangular spikes seen during
+        // playback.  A single shared-edge stroke gives the fog a clean seam
+        // without painting a second polygon over the terrain.
+        const points=Array.from({length:9},(_,k)=>edgePoint(k/8));
+        line(points,FOG,Math.max(2,state.scale*.055));
+      } else if(!fogOnly && known(neighbour) && t.water!==isWater(neighbour.terrain)) {
+        // Land and water use different relief planes.  Draw their shared
+        // coastline explicitly so the transition remains a deliberate shore
+        // instead of exposing small gaps/triangles between the two meshes.
+        const points=Array.from({length:9},(_,k)=>edgePoint(k/8));
+        line(points,'#1f3940',Math.max(2,state.scale*.085));
+        line(points,t.water?'#5fa5b6':'#87a85b',Math.max(1,state.scale*.035));
       } else if(!fogOnly && known(neighbour) && (local.has(G.directions[i]) || G.rivers(neighbour).has(G.directions[(i+3)%6]))) {
         if(t.water)continue;
         const points=Array.from({length:9},(_,k)=>edgePoint(k/8));
@@ -233,8 +244,8 @@ const IsoMapper = (() => {
         if(state.selected?.coordinate===t.ref)polygon(outline,null,'#ffe093');
       }
       if(labels && state.scale>=43){const p=project({...t.c,y:t.c.y+.5});renderCtx.font=`${Math.min(14,Math.max(10,state.scale*.09))}px Segoe UI`;renderCtx.textAlign='center';renderCtx.lineWidth=3;renderCtx.strokeStyle='#20302bea';renderCtx.strokeText(t.ref,p.x,p.y);renderCtx.fillStyle='#f0f2dc';renderCtx.fillText(t.ref,p.x,p.y);}
-      const stagedReveal=playbackState?.active && playbackState.revealTargets?.has(t.ref);
-      if(!t.known && state.scale>=35 && !stagedReveal){renderCtx.fillStyle='#71838b';renderCtx.textAlign='center';renderCtx.font='12px Segoe UI';renderCtx.fillText('?',t.p.x,t.p.y);}
+      const partialQuestion=playbackState?.active && playbackState.revealedQuestions?.has(t.ref);
+      if(!t.known && state.scale>=35 && !partialQuestion){renderCtx.fillStyle='#71838b';renderCtx.textAlign='center';renderCtx.font='12px Segoe UI';renderCtx.fillText('?',t.p.x,t.p.y);}
     }
     if(state.planningVisible && state.planImport?.plan)drawPlanOverlay();
     IsoUnits.drawSelectionHighlight();

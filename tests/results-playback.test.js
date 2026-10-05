@@ -30,6 +30,7 @@ const context = {
     movements: [{ unit: 'T1', route: { points: [{ globalCol: 0, globalRow: 0 }, { globalCol: 1, globalRow: 0 }, { globalCol: 1, globalRow: 1 }] } }],
     scouts: [{ unit: 'T1', id: 1, noOfScouts: 284, report: "N-N, Not enough M.P's to move to SE into UNKNOWN", route: { points: [{ globalCol: 0, globalRow: 0, coordinate: 'AA0101' }, { globalCol: 0, globalRow: 1, coordinate: 'AA0102' }] } }]
   }),
+  parseCoordinate: value => ({ coordinate: String(value), globalCol: String(value) === 'AA0102' ? 0 : 0, globalRow: String(value) === 'AA0102' ? 1 : 0 }),
   stepHex: (point, direction) => ({ globalCol: point.globalCol + (direction === 'SE' ? 1 : 0), globalRow: point.globalRow, coordinate: 'AB0102' })
 };
 context.window = context;
@@ -85,6 +86,21 @@ const partialScout = events.find(event => event.phase === 'scouting' && event.pa
 assert.ok(partialScout, 'Incomplete scouts should travel to a border tile');
 assert.ok(partialScout.borderPoint && partialScout.borderPoint.x !== partialScout.to.globalCol, 'Incomplete scouts should stop before the attempted tile centre');
 
+// Curly apostrophes and coordinate-only route points are both present in
+// copied Word reports.  The failed entry must still be a separate segment.
+const savedRouteBuilder = context.buildPlanRoutes;
+context.buildPlanRoutes = () => ({
+  movements: [],
+  scouts: [{
+    unit: 'T1', id: 2, noOfScouts: 10, report: "N-GH, Not enough M.P’s to move to SE into UNKNOWN",
+    route: { points: [{ coordinate: 'AA0101' }, { coordinate: 'AA0102' }] }
+  }]
+});
+const curlyEvents = context.resultsPlayback.buildEvents({ units: [{ unitCode: 'T1', currentHex: 'AA0101' }], events: [] });
+assert.strictEqual(curlyEvents.filter(event => event.phase === 'scouting').length, 2, 'Partial scouting should remain its own animated segment');
+assert.ok(curlyEvents.some(event => event.partial && event.to.coordinate === 'AB0102'), 'Partial segment should target the attempted adjacent hex');
+context.buildPlanRoutes = savedRouteBuilder;
+
 (async () => {
   const started = await context.startResultsPlayback();
   assert.strictEqual(started, true, 'Play Turn should find the shared current results turn');
@@ -94,6 +110,7 @@ assert.ok(partialScout.borderPoint && partialScout.borderPoint.x !== partialScou
   assert.strictEqual(context.resultsPlayback.baselineHexes.get('AA0101').terrain, 'PR');
   assert.strictEqual(context.resultsPlaybackMapData('AA0101', { coordinate: 'AA0101', terrain: 'GH' }).terrain, 'PR');
   assert.ok(context.resultsPlayback.revealTargets.size >= 1, 'Scout destinations should be staged behind fog until reached');
+  assert.strictEqual(context.resultsPlaybackMapData('AA0102', { coordinate: 'AA0102', terrain: 'GH' }), null, 'Future target terrain must stay hidden before its scout segment');
   assert.notStrictEqual(context.resultsPlayback.soundSources.movement, context.resultsPlayback.soundSources.scout, 'Movement and scouting should not share a sound cue');
   assert.notStrictEqual(context.resultsPlayback.soundSources.scout, context.resultsPlayback.soundSources.unknown, 'Unknown activities should retain their placeholder cue');
   assert.notStrictEqual(context.resultsPlayback.soundSources.hunt, context.resultsPlayback.soundSources.movement, 'Hunting should have its own cue');

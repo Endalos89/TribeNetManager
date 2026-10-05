@@ -44,6 +44,17 @@
     return parsed ? { ...parsed, coordinate: parsed.coordinate || coordinate } : null;
   }
 
+  // Route builders normally return parsed coordinate objects, but imported
+  // reports and older saved plans can leave only a coordinate string on the
+  // last point.  Keep the playback path fully drawable in both cases.
+  function routePoint(value) {
+    if (!value) return null;
+    if (Number.isFinite(Number(value.globalCol)) && Number.isFinite(Number(value.globalRow))) {
+      return { ...value, coordinate: value.coordinate || (typeof coordinateFor === 'function' ? coordinateFor(Number(value.globalCol), Number(value.globalRow)) : undefined) };
+    }
+    return pointFor(value.coordinate || value);
+  }
+
   function splitTopLevel(text) {
     const output = [], source = String(text || '').trim();
     let depth = 0, start = 0;
@@ -196,6 +207,14 @@
     return String(value || '').replace(/[’]/g, "'");
   }
 
+  function partialDirection(value) {
+    const text = normalisePartialReport(value);
+    // Reports have appeared as M.P's, M.Ps, M.P’s and MP's.  They all mean
+    // the same exhausted-movement result; keep the direction that follows
+    // "to move to" so it can be animated as its own border segment.
+    return text.match(/not enough\s+m\.?\s*p\.?\s*'?s?\b[\s\S]*?\bto\s+move\s+to\s+(N|NE|SE|S|SW|NW)\b/i)?.[1]?.toUpperCase() || null;
+  }
+
   function coordinateIsAdjacent(point, coordinate) {
     if (!point || !coordinate || typeof stepHex !== 'function') return false;
     return ['N', 'NE', 'SE', 'S', 'SW', 'NW'].some(direction => stepHex(point, direction)?.coordinate === coordinate);
@@ -288,12 +307,13 @@
 
     const routes = routesFor(turn);
     for (const movement of routes.movements || []) {
-      const points = movement.route?.points || [];
+      const points = (movement.route?.points || []).map(routePoint).filter(Boolean);
       for (let i = 1; i < points.length; i += 1) events.push({ phase: 'movement', unitCode: String(movement.unit), from: points[i - 1], to: points[i], sound: 'movement', duration: 420 });
     }
 
     for (const scout of routes.scouts || []) {
-      const points = scout.route?.points || [];
+      const rawPoints = scout.route?.points || [];
+      const points = rawPoints.map(routePoint).filter(Boolean);
       const source = (turn?.units || []).find(unit => String(unit.unitCode) === String(scout.unit));
       const sourceScout = source?.scouts?.find(row => Number(row.id) === Number(scout.id));
       const scoutCount = Number(scout.noOfScouts || sourceScout?.noOfScouts || 0);
@@ -302,10 +322,10 @@
       const riders = modelCount(scoutCount || 1);
       const mounted = scoutCount > 0 && horseCount >= scoutCount && cartCount <= 0;
       for (let i = 1; i < points.length; i += 1) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: points[i - 1], to: points[i], sound: mounted ? 'horse' : 'scout', duration: 440 });
-      const partial = normalisePartialReport(scout.report).match(/not enough\s+m\.?p'?s?\s+to move to\s+(N|NE|SE|S|SW|NW)\b/i);
-      if (partial && points.length) {
+      const direction = partialDirection(scout.report || scout.raw || sourceScout?.report || sourceScout?.raw);
+      if (direction && points.length) {
         const last = points[points.length - 1];
-        const attempted = typeof stepHex === 'function' ? stepHex(last, partial[1].toUpperCase()) : null;
+        const attempted = typeof stepHex === 'function' ? routePoint(stepHex(last, direction)) : null;
         if (attempted && attempted.coordinate !== last.coordinate) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: last, to: attempted, borderPoint: borderPoint(last, attempted), partial: true, sound: mounted ? 'horse' : 'scout', duration: 520 });
       }
     }
@@ -403,10 +423,11 @@
         ? await root.tribenet.getResultHexesInArea(bounds, playback.baselineTurnKey)
         : (turn?.startHexKnowledge || []);
       for (const row of baselineRows || []) if (row?.coordinate) playback.baselineHexes.set(row.coordinate, row);
-      // Preserve older local knowledge already loaded in the map as well. A
-      // manually mapped hex can predate the Results database and should not
-      // disappear merely because playback is starting.
-      for (const row of state.hexCache.values()) {
+      // Preserve older local knowledge only when a real historical baseline
+      // exists.  The first imported report intentionally starts with its
+      // report-derived starting hexes and must not inherit the live mapper's
+      // broader cache.
+      if (playback.baselineTurnKey) for (const row of state.hexCache.values()) {
         if (row?.coordinate && String(row.discoveredTurn || '') !== String(turn.turnKey || '') && !playback.baselineHexes.has(row.coordinate)) playback.baselineHexes.set(row.coordinate, row);
       }
     }
@@ -460,16 +481,32 @@
     }
   }
 
-  function completeResultsPlayback() {
+  async function completeResultsPlayback() {
     const targetTurnKey = playback.targetTurnKey;
     const callback = playback.onComplete;
     const handoff = playback.autoHandoff;
-    stopResultsPlayback({ draw: false });
     if (typeof callback === 'function') {
+      stopResultsPlayback({ draw: false });
       Promise.resolve(callback(targetTurnKey)).catch(error => console.error('Results playback completion failed', error));
     } else if (handoff && typeof root.advanceToNextStartState === 'function') {
-      Promise.resolve(root.advanceToNextStartState(targetTurnKey)).catch(error => console.error('Planning handoff failed', error));
-    } else if (typeof draw === 'function') draw();
+      // Keep the target frame on screen while the next start-state snapshot
+      // loads.  applyResultTurn() performs several async reads; allowing a
+      // draw between those reads briefly exposes a reset/future-state frame.
+      const timeline = root.resultsTimeline;
+      if (timeline) timeline.transitionStaging = true;
+      stopResultsPlayback({ draw: false });
+      try {
+        await root.advanceToNextStartState(targetTurnKey);
+      } catch (error) {
+        console.error('Planning handoff failed', error);
+      } finally {
+        if (timeline) timeline.transitionStaging = false;
+        if (typeof draw === 'function') draw();
+      }
+    } else {
+      stopResultsPlayback({ draw: false });
+      if (typeof draw === 'function') draw();
+    }
   }
 
   async function startResultsPlayback(options = {}) {
@@ -577,8 +614,8 @@
     ctx.restore();
   }
 
-  function drawMovingMarker(event, scout = false) {
-    const base = lerpPoint(event.from, event.to, playback.progress, event.borderPoint), point = projectBase(base); if (!point) return;
+  function drawMovingMarker(event, scout = false, progress = playback.progress) {
+    const base = lerpPoint(event.from, event.to, progress, event.borderPoint), point = projectBase(base); if (!point) return;
     const colour = scout ? (event.mounted ? '#d7a65e' : '#e0d39d') : '#ffe1a0';
     ctx.save(); ctx.strokeStyle = scout ? '#4b3324' : '#8b5b2d'; ctx.fillStyle = colour; ctx.lineWidth = Math.max(1.5, state.scale * .045);
     const count = scout ? Math.max(1, Math.min(5, event.riders || 1)) : 1;
@@ -599,32 +636,27 @@
     ctx.restore();
   }
 
-  function drawRevealFog() {
-    if (!playback.revealTargets.size) return;
-    const hidden = [...playback.revealTargets].filter(coordinate => !playback.revealed.has(coordinate) || playback.revealedQuestions.has(coordinate));
-    if (!hidden.length) return;
-    ctx.save(); ctx.fillStyle = '#253640'; ctx.strokeStyle = '#253640'; ctx.lineWidth = Math.max(1, state.scale * .055);
-    for (const coordinate of hidden) {
-      const parsed = pointFor(coordinate); if (!parsed) continue;
-      const center = baseCenter(parsed.globalCol, parsed.globalRow);
-      if (typeof IsoMapper !== 'undefined' && IsoMapper.enabled && typeof IsoGeometry !== 'undefined') {
-        const points = IsoGeometry.corners.map(point => IsoMapper.project({ x: center.x + point.x, y: center.y + point.y }));
-        ctx.beginPath(); points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)); ctx.closePath(); ctx.fill(); ctx.stroke();
-      } else {
-        const point = screenFromBase(center);
-        if (typeof drawFog === 'function') drawFog(point.x, point.y, state.scale * .96, false);
-        else { ctx.fillStyle = '#18242b'; ctx.strokeStyle = '#263842'; hexPath(point.x, point.y, state.scale * .96); ctx.fill(); ctx.stroke(); }
-      }
+  function drawCompletedScoutMarkers(currentEvent) {
+    const currentKey = currentEvent?.phase === 'scouting'
+      ? `${currentEvent.unitCode}:${currentEvent.scoutId}`
+      : null;
+    const latest = new Map();
+    for (let index = 0; index < playback.index; index += 1) {
+      const event = playback.events[index];
+      if (event?.phase !== 'scouting') continue;
+      const key = `${event.unitCode}:${event.scoutId}`;
+      if (key === currentKey) continue;
+      latest.set(key, event);
     }
-    ctx.restore();
+    for (const event of latest.values()) drawMovingMarker(event, true, 1);
   }
 
   function drawResultsPlaybackOverlay() {
     if (!playback.active) return;
     const drawOverlay = () => {
-      drawRevealFog();
       drawScoutReveals();
       const event = playback.events[playback.index]; if (!event) return;
+      drawCompletedScoutMarkers(event);
       if (event.phase === 'activities') drawActivity(event);
       else drawMovingMarker(event, event.phase === 'scouting');
       ctx.save(); ctx.fillStyle = '#f0f2dc'; ctx.font = '800 11px Segoe UI'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(`${phaseText(event.phase)} · ${playback.index + 1}/${playback.events.length}`, 12, 12); ctx.restore();

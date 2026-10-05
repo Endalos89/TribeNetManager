@@ -42,7 +42,7 @@ const TurnLifecycleCore = (() => {
   }
 
   function actualDirections(rawText) {
-    const text = String(rawText || '').split(/Not enough M\.P'?s/i)[0];
+    const text = String(rawText || '').replace(/[’]/g, "'").split(/Not enough M\.P'?s/i)[0];
     const directions = [];
     const re = /(?:^|[,\\\s])(?:Move\s+)?(N|NE|SE|S|SW|NW)-[A-Za-z]+/gi;
     let match;

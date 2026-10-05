@@ -33,6 +33,7 @@ const { planningTurnKey, planningTimelineEntry, actualDirections, actualPlanFrom
     actualDirections('Movement: N-PR, NE-D, SE-GH, Not enough M.P\'s to move to S into SWAMP'),
     ['N', 'NE', 'SE']
   );
+  assert.deepStrictEqual(actualDirections("Scout 1: N-PR, Not enough M.P’s to move to N into BRUSH"), ['N']);
   assert.deepStrictEqual(actualDirections('Scout 1: Move N-PR\\NE-D\\SW-BR'), ['N', 'NE', 'SW']);
 })();
 

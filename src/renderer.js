@@ -185,11 +185,11 @@ function draw() {
       const data = typeof resultsPlaybackMapData === 'function' ? resultsPlaybackMapData(coord, targetData) : targetData;
       if (data) drawTerrain(p.x, p.y, radius, data.terrain);
       else {
-        // Playback owns the reveal question marker. Keep staged destinations
-        // as clean fog until the scout reaches them, then let the overlay draw
-        // the single centred '?' for a partial attempt.
-        const staged = window.resultsPlayback?.active && window.resultsPlayback.revealTargets?.has(coord);
-        drawFog(p.x, p.y, radius, !staged);
+        // Keep the same fog treatment as the start-state map.  Only a
+        // completed partial attempt suppresses the ordinary fog question;
+        // future target rows must not change the map before their event.
+        const partialQuestion = window.resultsPlayback?.active && window.resultsPlayback.revealedQuestions?.has(coord);
+        drawFog(p.x, p.y, radius, !partialQuestion);
       }
       ctx.strokeStyle = '#071116'; ctx.lineWidth = Math.max(1, state.scale * .055); ctx.stroke();
       if (state.selected && state.selected.coordinate === coord) { hexPath(p.x, p.y, radius * .91); ctx.strokeStyle = '#f4df72'; ctx.lineWidth = Math.max(2, state.scale * .12); ctx.stroke(); }
