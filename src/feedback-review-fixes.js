@@ -244,7 +244,9 @@
         if (!group) return;
         const replacement = button.cloneNode(true);
         replacement.removeAttribute('data-group');
-        replacement.dataset.skillFilter = group;
+        // Keep the filter discoverable as a stable DOM attribute so feedback
+        // selectors and automated checks can target the current skill table.
+        replacement.setAttribute('data-skill-filter', group);
         replacement.classList.toggle('active', skillGroupFilter === group);
         replacement.addEventListener('click', event => {
           event.preventDefault();

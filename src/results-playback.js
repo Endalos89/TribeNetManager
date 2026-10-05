@@ -13,6 +13,9 @@
     revealed: new Set(),
     revealedQuestions: new Set(),
     revealTargets: new Set(),
+    // Bumped whenever the baseline/reveal state changes. The 3D renderer uses
+    // this to invalidate its cached terrain surface during playback.
+    renderRevision: 0,
     baselineHexes: new Map(),
     baselineLoaded: false,
     baselineTurnKey: null,
@@ -143,10 +146,10 @@
   function activitySound(text) {
     const value = String(text || '').toLowerCase();
     if (/skin|gut|bone|slaughter|butcher/.test(value)) return 'butcher';
-    if (/wood|log|axe|b\/axe|carv|made .*sling|crafted|craft/.test(value)) return 'wood';
     if (/hunt|hunted/.test(value)) return 'hunt';
     if (/herd|herder|bred|breed/.test(value)) return 'herd';
-    if (/cured|tanned|tan/.test(value)) return 'craft';
+    if (/cured|tanned|tan|crafted|craft|made\s+\d+\s+\w+/.test(value)) return 'craft';
+    if (/wood|log|axe|b\/axe|carv/.test(value)) return 'wood';
     return 'unknown';
   }
 
@@ -198,6 +201,11 @@
     return String(value || '').replace(/[’]/g, "'");
   }
 
+  function coordinateIsAdjacent(point, coordinate) {
+    if (!point || !coordinate || typeof stepHex !== 'function') return false;
+    return ['N', 'NE', 'SE', 'S', 'SW', 'NW'].some(direction => stepHex(point, direction)?.coordinate === coordinate);
+  }
+
   function attachRevealCoordinates(events, turn) {
     const targetRows = [];
     const targetTurn = String(turn?.turnKey || '');
@@ -242,7 +250,11 @@
       run.push(event); scoutRuns.set(key, run);
       for (const row of targetRows) {
         if (String(row.sourceUnit || '') !== String(event.unitCode || '') || Number(row.scoutId || 0) !== Number(event.scoutId || 0)) continue;
-        if (row.coordinate === event.to?.coordinate) add(event, row);
+        // A scout reports both the hex it entered and observations from its
+        // current hex. Attach an adjacent observation to the segment where it
+        // was made instead of deferring every observation to the final segment.
+        if (row.coordinate === event.to?.coordinate
+          || (row.knowledgeLevel === 'observed' && coordinateIsAdjacent(event.to, row.coordinate))) add(event, row);
       }
     }
     for (const run of scoutRuns.values()) {
@@ -326,11 +338,7 @@
     // for installations where the browser blocks local audio or a file is
     // unavailable; it is deliberately only a tiny UI cue.
     try {
-      const sources = {
-        butcher: 'assets/results-sounds/butcher.ogg', wood: 'assets/results-sounds/woodcutting.ogg', hunt: 'assets/results-sounds/dum.ogg',
-        herd: 'assets/results-sounds/chimes.ogg', craft: 'assets/results-sounds/click_1.ogg', unknown: 'assets/results-sounds/dum.ogg',
-        movement: 'assets/results-sounds/footstep.ogg', scout: 'assets/results-sounds/footstep.ogg', horse: 'assets/results-sounds/horse-gallop.ogg'
-      };
+      const sources = playback.soundSources;
       const Audio = root.Audio;
       const sound = sources[phase] ? phase : 'unknown';
       if (Audio && sources[sound]) {
@@ -370,6 +378,7 @@
     cancelFrame();
     playback.active = false; playback.paused = false; playback.phase = 'idle'; playback.events = []; playback.index = 0; playback.progress = 0;
     playback.targetTurnKey = null; playback.targetUnitCodes = new Set(); playback.revealed = new Set(); playback.revealedQuestions = new Set(); playback.revealTargets = new Set();
+    playback.renderRevision += 1;
     playback.baselineHexes = new Map(); playback.baselineLoaded = false; playback.baselineTurnKey = null;
     playback.autoHandoff = false; playback.onComplete = null;
     setButton();
@@ -416,7 +425,13 @@
   async function extendPlaybackBaseline(bounds) {
     if (!playback.active || !playback.baselineTurnKey || !root.tribenet?.getResultHexesInArea || !bounds) return;
     const rows = await root.tribenet.getResultHexesInArea(bounds, playback.baselineTurnKey);
-    for (const row of rows || []) if (row?.coordinate) playback.baselineHexes.set(row.coordinate, row);
+    let changed = false;
+    for (const row of rows || []) {
+      if (!row?.coordinate || playback.baselineHexes.has(row.coordinate)) continue;
+      playback.baselineHexes.set(row.coordinate, row);
+      changed = true;
+    }
+    if (changed) playback.renderRevision += 1;
   }
 
   function collectRevealTargets(turn) {
@@ -485,6 +500,7 @@
       playback.revealed.add(event.to.coordinate);
       if (event.partial) playback.revealedQuestions.add(event.to.coordinate);
     }
+    playback.renderRevision += 1;
     playback.index += 1; playback.progress = 0;
     const next = playback.events[playback.index]; playback.phase = next?.phase || 'complete';
     if (next) playTone(next.sound || next.phase);
@@ -584,7 +600,7 @@
         ctx.beginPath(); points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)); ctx.closePath(); ctx.fill(); ctx.stroke();
       } else {
         const point = screenFromBase(center);
-        if (typeof drawFog === 'function') drawFog(point.x, point.y, state.scale * .96);
+        if (typeof drawFog === 'function') drawFog(point.x, point.y, state.scale * .96, false);
         else { ctx.fillStyle = '#18242b'; ctx.strokeStyle = '#263842'; hexPath(point.x, point.y, state.scale * .96); ctx.fill(); ctx.stroke(); }
       }
     }
@@ -622,6 +638,20 @@
   root.resultsPlayback.buildEvents = buildEvents;
   root.resultsPlayback.modelCount = modelCount;
   root.resultsPlayback.activitySound = activitySound;
+
+  // Keep the sound registry inspectable for tests and future sound packs. The
+  // files are short CC0/public-domain clips already shipped with the app.
+  playback.soundSources = Object.freeze({
+    butcher: 'assets/results-sounds/butcher.ogg',
+    wood: 'assets/results-sounds/woodcutting.ogg',
+    hunt: 'assets/results-sounds/hunting.ogg',
+    herd: 'assets/results-sounds/click_1.ogg',
+    craft: 'assets/results-sounds/crafting.ogg',
+    unknown: 'assets/results-sounds/dum.ogg',
+    movement: 'assets/results-sounds/footstep.ogg',
+    scout: 'assets/results-sounds/scouting.ogg',
+    horse: 'assets/results-sounds/horse-gallop.ogg'
+  });
 
   function bindSpeedSetting() {
     const select = document.getElementById('mapResultPlaybackSpeed');

@@ -203,7 +203,9 @@ function parseRouteKnowledge(rawLine, startCoordinate, knowledgeMap, options = {
   const sourceUnit = options.sourceUnit || null;
   const scoutId = options.scoutId || null;
   const movementLevel = options.movementLevel || 'scouted';
-  let routeText = String(rawLine);
+  // Word reports sometimes use a curly apostrophe in “M.P’s”. Normalize it
+  // before applying the route/failure grammar so partial scouts are retained.
+  let routeText = String(rawLine).replace(/[’]/g, "'");
   routeText = routeText.replace(/^.*?:\s*(?:Scout\s*)?/i, '');
   routeText = routeText.replace(/^Move\s+/i, '');
   const failMatch = routeText.match(/Not enough M\.P'?s to move to\s+(N|NE|SE|S|SW|NW)\s+into\s+([^,]+)/i);

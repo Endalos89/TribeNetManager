@@ -5,7 +5,11 @@ const resultsTimeline = {
   turn: null,
   playTimer: null,
   loadingArea: false,
-  ready: false
+  ready: false,
+  // Import staging loads the target snapshot before playback can establish
+  // the previous-turn baseline. Suppress intermediate draws so the user never
+  // sees the end state flash before the transition begins.
+  transitionStaging: false
 };
 // Results playback is loaded as a separate script after this module. Expose
 // the shared timeline explicitly because top-level `const` bindings are not
@@ -156,6 +160,10 @@ refreshSummaries = async function refreshHistoricalSummaries() {
 };
 
 function drawResultPartialMarker(point, radius, data) {
+  // Playback owns the reveal animation (including the border question mark).
+  // Drawing the historical marker as well creates a duplicate '?' and can
+  // make a tile look revealed before its scout reaches it.
+  if (window.resultsPlayback?.active) return;
   const blocked = resultHasBlockedEvidence(data);
   const markerRadius = Math.max(8, Math.min(13, radius * .30));
   // In the isometric view the projected centre is already the correct visual
@@ -181,10 +189,19 @@ function drawResultPartialMarker(point, radius, data) {
 
 function drawHistoricalUnits() {
   if (!resultsTimeline.turn?.units?.length) return;
+  const planning = Boolean(resultsTimeline.turn.isPlanningTurn);
+  const plannedCodes = planning
+    ? new Set((state.routeCache?.movements || state.planImport?.plan?.movements || [])
+      .map(row => String(row?.unit || row?.unitCode || '')).filter(Boolean))
+    : new Set();
   const slots = new Map();
   const seen = new Set();
   for (const unit of resultsTimeline.turn.units) {
     const unitCode = String(unit.unitCode);
+    // Planned movement units are drawn by drawPlanOverlay at their origin.
+    // Keep only units without a planned route in this historical pass, so the
+    // planning baseline does not show the same unit twice.
+    if (plannedCodes.has(unitCode)) continue;
     if (seen.has(unitCode)) continue;
     seen.add(unitCode);
     const point = typeof resultsPlaybackUnitPosition === 'function'
@@ -199,6 +216,7 @@ function drawHistoricalUnits() {
 }
 
 draw = function drawWithHistoricalResults() {
+  if (resultsTimeline.transitionStaging) return;
   originalDraw();
   if (!resultsTimeline.turn || state.mode !== 'detail') return;
   const bounds = visibleBounds();
@@ -350,17 +368,22 @@ async function playImportedResultsTransition(actualTurnKey) {
   if (!actualTurnKey || !window.tribenet?.getResultTurn) return false;
   const actual = await window.tribenet.getResultTurn(actualTurnKey);
   if (!actual) return false;
-  await applyResultTurn(actual.turnKey, { persist: true });
-  const firstUnit = actual.units?.find(unit => parseCoordinate(unit.currentHex || unit.previousHex));
-  showMapper({ overview: false });
-  showDetail();
-  if (firstUnit) {
-    const point = parseCoordinate(firstUnit.currentHex || firstUnit.previousHex);
-    centerOnHex(point.globalCol, point.globalRow);
+  resultsTimeline.transitionStaging = true;
+  try {
+    await applyResultTurn(actual.turnKey, { persist: true });
+    const firstUnit = actual.units?.find(unit => parseCoordinate(unit.currentHex || unit.previousHex));
+    showMapper({ overview: false });
+    showDetail();
+    if (firstUnit) {
+      const point = parseCoordinate(firstUnit.currentHex || firstUnit.previousHex);
+      centerOnHex(point.globalCol, point.globalRow);
+    }
+    // requestVisibleData is debounced; give the target snapshot one turn of
+    // the event loop to arrive before playback captures its previous-turn baseline.
+    await new Promise(resolve => setTimeout(resolve, 120));
+  } finally {
+    resultsTimeline.transitionStaging = false;
   }
-  // requestVisibleData is debounced; give the target snapshot one turn of the
-  // event loop to arrive before playback captures its previous-turn baseline.
-  await new Promise(resolve => setTimeout(resolve, 120));
   const started = typeof startResultsPlayback === 'function'
     ? await startResultsPlayback({ handoff: true })
     : false;
@@ -387,6 +410,7 @@ async function refreshResultTurns(preferredTurnKey = null) {
 async function importMapResultsReport() {
   $('mapImportResultsButton').disabled = true;
   $('mapResultStatus').textContent = 'Importing Word results report…';
+  resultsTimeline.transitionStaging = true;
   try {
     const result = await window.tribenet.importResultsReport();
     if (result?.canceled) {
@@ -407,6 +431,7 @@ async function importMapResultsReport() {
       centerOnHex(point.globalCol, point.globalRow);
     }
   } finally {
+    resultsTimeline.transitionStaging = false;
     $('mapImportResultsButton').disabled = false;
   }
 }
@@ -455,7 +480,7 @@ function bindResultsMapEvents() {
     const selected = resultsTimeline.turns[Number(event.target.value)];
     if (selected) applyResultTurn(selected.turnKey);
   });
-window.addEventListener('storage', event => {
+  window.addEventListener('storage', event => {
     if (event.key === RESULT_TURN_STORAGE_KEY && event.newValue && event.newValue !== resultsTimeline.turn?.turnKey) {
       refreshResultTurns(event.newValue);
     }

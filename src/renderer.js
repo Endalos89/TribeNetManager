@@ -160,12 +160,12 @@ function hexPath(cx, cy, radius) {
   for (let i = 0; i < 6; i++) { const angle = Math.PI / 180 * (60 * i); const x = cx + radius * Math.cos(angle), y = cy + radius * Math.sin(angle); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
   ctx.closePath();
 }
-function drawFog(cx, cy, radius) {
+function drawFog(cx, cy, radius, showQuestion = true) {
   // Always establish the hex path before filling. Playback can draw fog as an
   // overlay after the terrain pass, when no current path is guaranteed.
   hexPath(cx, cy, radius); ctx.fillStyle = '#18242b'; ctx.fill(); ctx.save(); hexPath(cx, cy, radius); ctx.clip(); ctx.strokeStyle = '#263842'; ctx.lineWidth = Math.max(1, radius * .055);
   for (let d = -radius * 2; d < radius * 2; d += Math.max(7, radius * .32)) { ctx.beginPath(); ctx.moveTo(cx - radius, cy + d); ctx.lineTo(cx + radius, cy + d + radius * .75); ctx.stroke(); }
-  ctx.restore(); if (radius > 18) { ctx.fillStyle = '#78909b'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `700 ${Math.max(11, radius * .52)}px Segoe UI`; ctx.fillText('?', cx, cy + 1); }
+  ctx.restore(); if (showQuestion && radius > 18) { ctx.fillStyle = '#78909b'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `700 ${Math.max(11, radius * .52)}px Segoe UI`; ctx.fillText('?', cx, cy + 1); }
 }
 function drawTerrain(cx, cy, radius, terrain) {
   const style = terrainStyle[terrain] || terrainStyle.UNKNOWN; ctx.fillStyle = style[0]; ctx.fill();
@@ -183,7 +183,14 @@ function draw() {
       if (p.x < -radius * 2 || p.x > rect.width + radius * 2 || p.y < -radius * 2 || p.y > rect.height + radius * 2) continue;
       hexPath(p.x, p.y, radius); const coord = coordinateFor(col, row), targetData = state.hexCache.get(coord);
       const data = typeof resultsPlaybackMapData === 'function' ? resultsPlaybackMapData(coord, targetData) : targetData;
-      if (data) drawTerrain(p.x, p.y, radius, data.terrain); else drawFog(p.x, p.y, radius);
+      if (data) drawTerrain(p.x, p.y, radius, data.terrain);
+      else {
+        // Playback owns the reveal question marker. Keep staged destinations
+        // as clean fog until the scout reaches them, then let the overlay draw
+        // the single centred '?' for a partial attempt.
+        const staged = window.resultsPlayback?.active && window.resultsPlayback.revealTargets?.has(coord);
+        drawFog(p.x, p.y, radius, !staged);
+      }
       ctx.strokeStyle = '#071116'; ctx.lineWidth = Math.max(1, state.scale * .055); ctx.stroke();
       if (state.selected && state.selected.coordinate === coord) { hexPath(p.x, p.y, radius * .91); ctx.strokeStyle = '#f4df72'; ctx.lineWidth = Math.max(2, state.scale * .12); ctx.stroke(); }
       if (state.scale >= 39) { ctx.fillStyle = 'rgba(235,244,248,.62)'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = `${Math.max(8, state.scale * .20)}px Segoe UI`; ctx.fillText(coord, p.x, p.y + radius * .72); }

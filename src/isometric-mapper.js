@@ -20,7 +20,7 @@ const IsoMapper = (() => {
   function prepareSurface() {
     const playbackState=typeof resultsPlayback!=='undefined' ? resultsPlayback : null;
     const playbackSignature=typeof resultsPlaybackMapData==='function' && playbackState?.active
-      ? `:playback:${playbackState.baselineTurnKey||'baseline'}` : '';
+      ? `:playback:${playbackState.baselineTurnKey||'baseline'}:${playbackState.renderRevision||0}` : '';
     const signature=Array.from(state.hexCache,([ref,data])=>`${ref}:${data.terrain}:${data.notes||''}`).join('|')+playbackSignature;
     if(signature!==terrainSignature){terrainSignature=signature;surfaceCache.clear();groundCache.clear();landscape=null;}
   }
@@ -190,7 +190,11 @@ const IsoMapper = (() => {
   }
   function drawScene() {
     const units=IsoUnits.prepare();if(units!==unitSignature){unitSignature=units;landscape=null;}
-    if(!interactive || !landscape)prepareSurface();const rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+    const playbackState=typeof resultsPlayback!=='undefined' ? resultsPlayback : null;
+    // Playback reveals can change terrain while the pointer is moving. Do not
+    // defer the cache check until the drag settles or the newly revealed tile
+    // would remain fogged in the 3D buffer for the rest of that event.
+    if(!interactive || !landscape || playbackState?.active)prepareSurface();const rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
     frameRect=rect;renderCtx=ctx;
     const b=bounds(),tiles=[],pad=Math.max(250,state.scale*1.7);
     for(let col=b.minCol;col<=b.maxCol;col++)for(let row=b.minRow;row<=b.maxRow;row++){
@@ -229,7 +233,8 @@ const IsoMapper = (() => {
         if(state.selected?.coordinate===t.ref)polygon(outline,null,'#ffe093');
       }
       if(labels && state.scale>=43){const p=project({...t.c,y:t.c.y+.5});renderCtx.font=`${Math.min(14,Math.max(10,state.scale*.09))}px Segoe UI`;renderCtx.textAlign='center';renderCtx.lineWidth=3;renderCtx.strokeStyle='#20302bea';renderCtx.strokeText(t.ref,p.x,p.y);renderCtx.fillStyle='#f0f2dc';renderCtx.fillText(t.ref,p.x,p.y);}
-      if(!t.known && state.scale>=35){renderCtx.fillStyle='#71838b';renderCtx.textAlign='center';renderCtx.font='12px Segoe UI';renderCtx.fillText('?',t.p.x,t.p.y);}
+      const stagedReveal=playbackState?.active && playbackState.revealTargets?.has(t.ref);
+      if(!t.known && state.scale>=35 && !stagedReveal){renderCtx.fillStyle='#71838b';renderCtx.textAlign='center';renderCtx.font='12px Segoe UI';renderCtx.fillText('?',t.p.x,t.p.y);}
     }
     if(state.planningVisible && state.planImport?.plan)drawPlanOverlay();
     IsoUnits.drawSelectionHighlight();
