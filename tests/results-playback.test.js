@@ -85,6 +85,8 @@ assert.strictEqual(events.filter(event => event.phase === 'scouting')[0].riders,
 const partialScout = events.find(event => event.phase === 'scouting' && event.partial);
 assert.ok(partialScout, 'Incomplete scouts should travel to a border tile');
 assert.ok(partialScout.borderPoint && partialScout.borderPoint.x !== partialScout.to.globalCol, 'Incomplete scouts should stop before the attempted tile centre');
+assert.ok(partialScout.segments.length >= 2, 'A scout route should retain per-hex reveal segments');
+assert.equal(partialScout.sound, 'horse');
 
 // Curly apostrophes and coordinate-only route points are both present in
 // copied Word reports.  The failed entry must still be a separate segment.
@@ -97,8 +99,9 @@ context.buildPlanRoutes = () => ({
   }]
 });
 const curlyEvents = context.resultsPlayback.buildEvents({ units: [{ unitCode: 'T1', currentHex: 'AA0101' }], events: [] });
-assert.strictEqual(curlyEvents.filter(event => event.phase === 'scouting').length, 2, 'Partial scouting should remain its own animated segment');
+assert.strictEqual(curlyEvents.filter(event => event.phase === 'scouting').length, 1, 'A scout route should play as one continuous event');
 assert.ok(curlyEvents.some(event => event.partial && event.to.coordinate === 'AB0102'), 'Partial segment should target the attempted adjacent hex');
+assert.strictEqual(curlyEvents[0].segments.length, 2, 'Continuous scout playback should retain the normal and partial segments');
 context.buildPlanRoutes = savedRouteBuilder;
 
 (async () => {
@@ -111,6 +114,8 @@ context.buildPlanRoutes = savedRouteBuilder;
   assert.strictEqual(context.resultsPlaybackMapData('AA0101', { coordinate: 'AA0101', terrain: 'GH' }).terrain, 'PR');
   assert.ok(context.resultsPlayback.revealTargets.size >= 1, 'Scout destinations should be staged behind fog until reached');
   assert.strictEqual(context.resultsPlaybackMapData('AA0102', { coordinate: 'AA0102', terrain: 'GH' }), null, 'Future target terrain must stay hidden before its scout segment');
+  const activeScout = context.resultsPlayback.events.find(event => event.phase === 'scouting');
+  assert.ok(activeScout?.segments?.[0]?.reveals?.includes('AA0102'), 'Scout reveals should remain attached to the matching continuous segment');
   assert.notStrictEqual(context.resultsPlayback.soundSources.movement, context.resultsPlayback.soundSources.scout, 'Movement and scouting should not share a sound cue');
   assert.strictEqual(context.resultsPlayback.soundSources.scout, context.resultsPlayback.soundSources.horse, 'Scouting should use the horse gallop cue');
   assert.notStrictEqual(context.resultsPlayback.soundSources.scout, context.resultsPlayback.soundSources.unknown, 'Unknown activities should retain their placeholder cue');

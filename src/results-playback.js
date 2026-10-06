@@ -223,6 +223,72 @@
     return ['N', 'NE', 'SE', 'S', 'SW', 'NW'].some(direction => stepHex(point, direction)?.coordinate === coordinate);
   }
 
+  function scoutSegments(event) {
+    if (!event || event.phase !== 'scouting') return [];
+    return Array.isArray(event.segments) && event.segments.length ? event.segments : [event];
+  }
+
+  function scoutPathPosition(event, progress) {
+    const segments = scoutSegments(event);
+    if (!segments.length) return { base: lerpPoint(event.from, event.to, progress, event.borderPoint, false), segment: event, local: progress };
+    const total = Number(event.duration) > 0
+      ? Number(event.duration)
+      : segments.reduce((sum, segment) => sum + (Number(segment.duration) > 0 ? Number(segment.duration) : 440), 0);
+    let elapsed = Math.min(total, Math.max(0, Number(progress) || 0) * total);
+    let offset = 0;
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      const duration = Number(segment.duration) > 0 ? Number(segment.duration) : 440;
+      const end = offset + duration;
+      if (elapsed <= end || index === segments.length - 1) {
+        const local = Math.min(1, Math.max(0, (elapsed - offset) / duration));
+        // Keep velocity continuous across normal hex boundaries. A
+        // smoothstep on every segment would visibly brake at each hex.
+        return { base: lerpPoint(segment.from, segment.to, local, segment.borderPoint, false), segment, local };
+      }
+      offset = end;
+    }
+    const last = segments[segments.length - 1];
+    return { base: lerpPoint(last.from, last.to, 1, last.borderPoint, false), segment: last, local: 1 };
+  }
+
+  function applyScoutSegment(event, segment) {
+    if (!segment) return;
+    for (const coordinate of segment.reveals || []) playback.revealed.add(coordinate);
+    if (segment.to?.coordinate) {
+      playback.revealed.add(segment.to.coordinate);
+      if (segment.partial) {
+        // The question is tied to the attempted border segment, while the
+        // report terrain becomes visible as soon as that segment completes.
+        playback.partialPreviews.add(segment.to.coordinate);
+        playback.revealedQuestions.add(segment.to.coordinate);
+      }
+    }
+  }
+
+  function revealCompletedScoutSegments(event, progress) {
+    const segments = scoutSegments(event);
+    if (!segments.length) return;
+    const total = Number(event.duration) > 0
+      ? Number(event.duration)
+      : segments.reduce((sum, segment) => sum + (Number(segment.duration) > 0 ? Number(segment.duration) : 440), 0);
+    const elapsed = Math.min(total, Math.max(0, Number(progress) || 0) * total);
+    const completed = Number.isInteger(event.revealedSegments) ? event.revealedSegments : 0;
+    let next = completed;
+    let offset = segments.slice(0, next).reduce((sum, segment) => sum + (Number(segment.duration) > 0 ? Number(segment.duration) : 440), 0);
+    while (next < segments.length) {
+      const duration = Number(segments[next].duration) > 0 ? Number(segments[next].duration) : 440;
+      if (offset + duration > elapsed + 0.0001) break;
+      offset += duration;
+      applyScoutSegment(event, segments[next]);
+      next += 1;
+    }
+    if (next !== completed) {
+      event.revealedSegments = next;
+      playback.renderRevision += 1;
+    }
+  }
+
   function attachRevealCoordinates(events, turn) {
     const targetRows = [];
     for (const row of playback.targetHexes.values()) {
@@ -233,24 +299,31 @@
     }
 
     const remaining = new Set(targetRows.map(row => row.coordinate));
-    for (const event of events) event.reveals = [];
-    const add = (event, row) => {
-      if (!event || !row?.coordinate || !remaining.has(row.coordinate)) return;
-      event.reveals.push(row.coordinate);
+    for (const event of events) {
+      event.reveals = [];
+      for (const segment of scoutSegments(event)) if (segment !== event) segment.reveals = [];
+    }
+    const add = (target, row, owner = target) => {
+      if (!target || !row?.coordinate || !remaining.has(row.coordinate)) return;
+      target.reveals.push(row.coordinate);
+      if (owner !== target) owner.reveals.push(row.coordinate);
       remaining.delete(row.coordinate);
     };
 
     // Movement reveals the hex as the unit arrives. Scout routes reveal their
-    // entered hex one segment at a time; adjacent observations are revealed at
-    // the end of the corresponding scouting run.
+    // entered hex one segment at a time; the route itself remains one
+    // continuous playback event so the rider does not stop between hexes.
     for (const event of events) {
-      if (!event.to?.coordinate) continue;
-      for (const row of targetRows) {
-        if (row.coordinate === event.to.coordinate) add(event, row);
-      }
-      if (event.phase === 'movement') {
+      const targets = event.phase === 'scouting' ? scoutSegments(event) : [event];
+      for (const target of targets) {
+        if (!target.to?.coordinate) continue;
         for (const row of targetRows) {
-          if (String(row.sourceUnit || '') === String(event.unitCode || '') && row.knowledgeLevel === 'visited') add(event, row);
+          if (row.coordinate === target.to.coordinate) add(target, row, event);
+        }
+        if (event.phase === 'movement') {
+          for (const row of targetRows) {
+            if (String(row.sourceUnit || '') === String(event.unitCode || '') && row.knowledgeLevel === 'visited') add(target, row, event);
+          }
         }
       }
     }
@@ -261,20 +334,25 @@
       const key = `${event.unitCode}:${event.scoutId}`;
       const run = scoutRuns.get(key) || [];
       run.push(event); scoutRuns.set(key, run);
-      for (const row of targetRows) {
-        if (String(row.sourceUnit || '') !== String(event.unitCode || '') || Number(row.scoutId || 0) !== Number(event.scoutId || 0)) continue;
-        // A scout reports both the hex it entered and observations from its
-        // current hex. Attach an adjacent observation to the segment where it
-        // was made instead of deferring every observation to the final segment.
-        if (row.coordinate === event.to?.coordinate
-          || (row.knowledgeLevel === 'observed' && coordinateIsAdjacent(event.to, row.coordinate))) add(event, row);
+      for (const segment of scoutSegments(event)) {
+        for (const row of targetRows) {
+          if (String(row.sourceUnit || '') !== String(event.unitCode || '') || Number(row.scoutId || 0) !== Number(event.scoutId || 0)) continue;
+          // A scout reports both the hex it entered and observations from its
+          // current hex. Attach an adjacent observation to the segment where
+          // it was made instead of deferring every observation to the final
+          // frame of the continuous run.
+          if (row.coordinate === segment.to?.coordinate
+            || (row.knowledgeLevel === 'observed' && coordinateIsAdjacent(segment.to, row.coordinate))) add(segment, row, event);
+        }
       }
     }
     for (const run of scoutRuns.values()) {
       const last = run[run.length - 1];
+      const segments = scoutSegments(last);
+      const finalSegment = segments[segments.length - 1];
       for (const row of targetRows) {
         if (String(row.sourceUnit || '') !== String(last.unitCode || '') || Number(row.scoutId || 0) !== Number(last.scoutId || 0)) continue;
-        add(last, row);
+        add(finalSegment, row, last);
       }
     }
 
@@ -284,7 +362,14 @@
     const fallback = events.find(event => event.phase === 'movement')
       || events.find(event => event.phase === 'scouting')
       || events.find(event => event.phase === 'activities');
-    if (fallback) for (const coordinate of remaining) { fallback.reveals.push(coordinate); remaining.delete(coordinate); }
+    if (fallback) {
+      const target = fallback.phase === 'scouting' ? scoutSegments(fallback).at(-1) : fallback;
+      for (const coordinate of remaining) {
+        target.reveals.push(coordinate);
+        if (target !== fallback) fallback.reveals.push(coordinate);
+        remaining.delete(coordinate);
+      }
+    }
   }
 
   function buildEvents(turn) {
@@ -327,12 +412,22 @@
       // Scouts use the mounted miniature and the gallop cue consistently in
       // playback.  Whether the report supplied enough horses still remains
       // available as metadata for callers that need it.
-      for (let i = 1; i < points.length; i += 1) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: points[i - 1], to: points[i], sound: 'horse', duration: 440 });
+      const segments = [];
+      for (let i = 1; i < points.length; i += 1) segments.push({ from: points[i - 1], to: points[i], sound: 'horse', duration: 440, reveals: [] });
       const direction = partialDirection(scout.report || scout.raw || sourceScout?.report || sourceScout?.raw);
       if (direction && points.length) {
         const last = points[points.length - 1];
         const attempted = typeof stepHex === 'function' ? routePoint(stepHex(last, direction)) : null;
-        if (attempted && attempted.coordinate !== last.coordinate) events.push({ phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted, from: last, to: attempted, borderPoint: borderPoint(last, attempted), partial: true, sound: 'horse', duration: 520 });
+        if (attempted && attempted.coordinate !== last.coordinate) segments.push({ from: last, to: attempted, borderPoint: borderPoint(last, attempted), partial: true, sound: 'horse', duration: 520, reveals: [] });
+      }
+      if (segments.length) {
+        const first = segments[0], last = segments[segments.length - 1];
+        events.push({
+          phase: 'scouting', unitCode: String(scout.unit), scoutId: Number(scout.id), riders, mounted,
+          from: first.from, to: last.to, borderPoint: last.borderPoint, partial: Boolean(last.partial),
+          segments, revealedSegments: 0, sound: 'horse',
+          duration: segments.reduce((sum, segment) => sum + segment.duration, 0), reveals: []
+        });
       }
     }
     attachRevealCoordinates(events, turn);
@@ -550,16 +645,22 @@
   }
 
   function finishEvent(event) {
-    for (const coordinate of event?.reveals || []) playback.revealed.add(coordinate);
-    if (event?.phase === 'scouting' && event?.to?.coordinate) {
-      playback.revealed.add(event.to.coordinate);
-      if (event.partial) {
-        // A failed scout reaches the attempted hex's border.  Keep the
-        // question marker, while swapping in the report terrain at the same
-        // moment the segment ends so the next frame is the hand-off state.
-        playback.partialPreviews.add(event.to.coordinate);
-        playback.revealedQuestions.add(event.to.coordinate);
+    if (event?.phase === 'scouting') {
+      revealCompletedScoutSegments(event, 1);
+      // Keep compatibility with any legacy event without an explicit
+      // segments array.
+      if (!event.segments?.length) {
+        for (const coordinate of event?.reveals || []) playback.revealed.add(coordinate);
+        if (event?.to?.coordinate) {
+          playback.revealed.add(event.to.coordinate);
+          if (event.partial) {
+            playback.partialPreviews.add(event.to.coordinate);
+            playback.revealedQuestions.add(event.to.coordinate);
+          }
+        }
       }
+    } else {
+      for (const coordinate of event?.reveals || []) playback.revealed.add(coordinate);
     }
     playback.renderRevision += 1;
     playback.index += 1; playback.progress = 0;
@@ -573,6 +674,7 @@
     if (!event) { completeResultsPlayback(); return; }
     playback.phase = event.phase;
     playback.progress = Math.min(1, Math.max(0, (now - playback.startedAt) / (event.duration / currentSpeed())));
+    if (event.phase === 'scouting') revealCompletedScoutSegments(event, playback.progress);
     if (playback.progress >= 1) {
       finishEvent(event); playback.startedAt = now;
       if (!playback.events[playback.index]) { completeResultsPlayback(); return; }
@@ -587,8 +689,8 @@
     return typeof IsoMapper !== 'undefined' && IsoMapper.enabled ? IsoMapper.project(base) : screenFromBase(base);
   }
 
-  function lerpPoint(from, to, progress, edge = null) {
-    const eased = progress * progress * (3 - 2 * progress);
+  function lerpPoint(from, to, progress, edge = null, ease = true) {
+    const eased = ease ? progress * progress * (3 - 2 * progress) : progress;
     const a = hexCenter(from), b = edge || to?.borderPoint || hexCenter(to);
     return { x: a.x + (b.x - a.x) * eased, y: a.y + (b.y - a.y) * eased };
   }
@@ -627,12 +729,14 @@
   }
 
   function drawMovingMarker(event, scout = false, progress = playback.progress) {
-    const base = lerpPoint(event.from, event.to, progress, event.borderPoint), point = projectBase(base); if (!point) return;
+    const motion = scout ? scoutPathPosition(event, progress) : { base: lerpPoint(event.from, event.to, progress, event.borderPoint), segment: event };
+    const base = motion.base, point = projectBase(base); if (!point) return;
     let drewMountedMiniature = false;
     if (scout && root.IsoUnits?.drawScout && typeof IsoMapper !== 'undefined' && IsoMapper.enabled) {
-      const from = hexCenter(event.from), to = hexCenter(event.to);
+      const movement = motion.segment || event;
+      const from = hexCenter(movement.from), to = hexCenter(movement.to);
       const heading = from && to ? Math.atan2(to.y - from.y, to.x - from.x) : null;
-      drewMountedMiniature = root.IsoUnits.drawScout(base, `scout:${event.unitCode}:${event.scoutId}`, event.riders || 1, `${event.unitCode}:${event.scoutId}:${event.from?.coordinate || ''}:${event.to?.coordinate || ''}`, { heading });
+      drewMountedMiniature = root.IsoUnits.drawScout(base, `scout:${event.unitCode}:${event.scoutId}`, event.riders || 1, `${event.unitCode}:${event.scoutId}:${movement.from?.coordinate || ''}:${movement.to?.coordinate || ''}`, { heading });
     }
     if (!drewMountedMiniature) {
       const colour = scout ? '#d7a65e' : '#ffe1a0';
