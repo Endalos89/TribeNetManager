@@ -68,11 +68,15 @@
     const shift=multiple?{x:Math.cos(angle)*.33,y:Math.sin(angle)*.33}:{x:0,y:0};
     const movementRoute=state.routeCache?.movements?.find(row=>String(row.unit)===String(code))?.route;
     const scoutRoute=state.scoutingVisible ? state.routeCache?.scouts?.find(row=>String(row.unit)===String(code))?.route : null;
-    const route=movementRoute?.points?.length>1 ? movementRoute : scoutRoute;
-    const first=route?.points?.[0], next=route?.points?.[1];
+    // Scouting is an activity performed from the unit's current hex; it is
+    // not movement. A scout route may still provide the facing direction,
+    // but only a real movement route may put the miniature on a shared edge.
+    const hasMovementRoute=Boolean(movementRoute?.points?.length>1);
+    const routeForHeading=hasMovementRoute ? movementRoute : scoutRoute;
+    const first=routeForHeading?.points?.[0], next=routeForHeading?.points?.[1];
     const heading=first?.coordinate===point.coordinate && next ? Math.atan2(baseCenter(next.globalCol,next.globalRow).y-baseCenter(first.globalCol,first.globalRow).y,baseCenter(next.globalCol,next.globalRow).x-baseCenter(first.globalCol,first.globalRow).x) : null;
     const interpolated=Number.isFinite(point.x)&&Number.isFinite(point.y);
-    const travellingFromStart=!interpolated && first?.coordinate===point.coordinate && next;
+    const travellingFromStart=!interpolated && hasMovementRoute && first?.coordinate===point.coordinate && next;
     const travelOffset=travellingFromStart ? {x:(baseCenter(next.globalCol,next.globalRow).x-center.x)*.5,y:(baseCenter(next.globalCol,next.globalRow).y-center.y)*.5} : {x:0,y:0};
     const models=formation(counts,`${point.coordinate||''}:${code}`).map(m=>{
       const x=center.x+shift.x+travelOffset.x+m.x*spread,y=center.y+shift.y+travelOffset.y+m.y*spread;

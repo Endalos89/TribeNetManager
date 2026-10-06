@@ -113,4 +113,10 @@ global.state.routeCache={movements:[]};
 const still=U.layout({coordinate:'AA0101',globalCol:0,globalRow:0},'0485','Tribe');
 assert.equal(moving.models[0].x-still.models[0].x,.75);
 assert.equal(still.models[0].x,1.313764635128913);
-console.log('Moving edge midpoint and stationary centre checks passed');
+// A scouting route does not move the parent unit to the edge; it remains
+// centred while the scout activity is shown by its own route overlay.
+global.state.routeCache={movements:[],scouts:[{unit:'0485',route:{points:[{coordinate:'AA0101',globalCol:0,globalRow:0},{coordinate:'AA0201',globalCol:1,globalRow:0}]}}]};
+const scoutingOnly=U.layout({coordinate:'AA0101',globalCol:0,globalRow:0},'0485','Tribe');
+assert.equal(scoutingOnly.models[0].x,still.models[0].x);
+assert.equal(scoutingOnly.models[0].y,still.models[0].y);
+console.log('Moving edge midpoint, scouting-centre and stationary centre checks passed');

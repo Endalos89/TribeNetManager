@@ -192,13 +192,14 @@ function draw() {
         drawFog(p.x, p.y, radius, !partialQuestion);
       }
       ctx.strokeStyle = '#071116'; ctx.lineWidth = Math.max(1, state.scale * .055); ctx.stroke();
-      if (state.selected && state.selected.coordinate === coord) { hexPath(p.x, p.y, radius * .91); ctx.strokeStyle = '#f4df72'; ctx.lineWidth = Math.max(2, state.scale * .12); ctx.stroke(); }
+      // A selected unit already has its own miniature-sized ring. Do not add
+      // a second ring around the containing hex in that case.
+      if (state.selected && state.selected.coordinate === coord && !state.selectedUnit) { hexPath(p.x, p.y, radius * .91); ctx.strokeStyle = '#f4df72'; ctx.lineWidth = Math.max(2, state.scale * .12); ctx.stroke(); }
       if (state.scale >= 39) { ctx.fillStyle = 'rgba(235,244,248,.62)'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = `${Math.max(8, state.scale * .20)}px Segoe UI`; ctx.fillText(coord, p.x, p.y + radius * .72); }
     }
   }
   drawSubmapLabels(bounds); drawWorldBorder();
   if (state.planningVisible && state.planImport?.plan) drawPlanOverlay();
-  drawSelectedUnitHighlight();
   if (typeof drawResultsPlaybackOverlay === 'function') drawResultsPlaybackOverlay();
   updateCenterReadout();
 }
@@ -448,6 +449,13 @@ function drawArrowSegment(a, b, style = {}) {
 function drawRoute(points, style = {}) {
   if (!points || points.length < 2) return; for (let i = 1; i < points.length; i++) drawArrowSegment(points[i-1], points[i], { ...style, dashed: style.dashed || points[i].kind === 'approx' });
 }
+function routeStyle(unit, style = {}) {
+  if (!state.selectedUnit) return style;
+  const selected = String(state.selectedUnit) === String(unit);
+  // Keep the selected unit's movement and scouting routes at full strength;
+  // reduce unrelated routes without making them disappear from the plan.
+  return { ...style, alpha: (style.alpha ?? 1) * (selected ? 1 : .28) };
+}
 function drawClassicUnitModels(point, unit, snapshot) {
   if (typeof IsoUnits === 'undefined' || !IsoUnits.composition || !IsoUnits.formation) return;
   const counts = IsoUnits.composition(snapshot);
@@ -502,19 +510,19 @@ function drawSelectedUnitHighlight() {
 function roundedRect(context, x, y, w, h, r) {
   const rr = Math.min(r, w/2, h/2); context.beginPath(); context.moveTo(x+rr,y); context.arcTo(x+w,y,x+w,y+h,rr); context.arcTo(x+w,y+h,x,y+h,rr); context.arcTo(x,y+h,x,y,rr); context.arcTo(x,y,x+w,y,rr); context.closePath();
 }
-function drawConditionalMarker(point, text, color) {
-  const p = screenFromBase(baseCenter(point.globalCol, point.globalRow)); ctx.save(); ctx.strokeStyle = color; ctx.fillStyle = 'rgba(7,13,18,.92)'; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]); ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(11, state.scale * .48), 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = color; ctx.font = `800 ${Math.max(8, state.scale*.26)}px Segoe UI`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text, p.x, p.y); ctx.restore();
+function drawConditionalMarker(point, text, color, alpha = 1) {
+  const p = screenFromBase(baseCenter(point.globalCol, point.globalRow)); ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.fillStyle = 'rgba(7,13,18,.92)'; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]); ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(11, state.scale * .48), 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = color; ctx.font = `800 ${Math.max(8, state.scale*.26)}px Segoe UI`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text, p.x, p.y); ctx.restore();
 }
 function drawPlanOverlay() {
   if (!state.routeCache) state.routeCache = buildPlanRoutes(state.planImport.plan); const plan = state.planImport.plan;
   const historicalResults = typeof resultsTimeline !== 'undefined' && resultsTimeline.turn && !resultsTimeline.turn.isPlanningTurn;
   const labelSlots = new Map();
   for (const m of state.routeCache.movements) {
-    drawRoute(m.route.points, { color:'#f0b45e', width:Math.max(2.2,state.scale*.11), alpha:.94 });
+    drawRoute(m.route.points, routeStyle(m.unit, { color:'#f0b45e', width:Math.max(2.2,state.scale*.11), alpha:.94 }));
     const start = m.route.points[0], end = m.route.points[m.route.points.length - 1]; if (!start) continue;
     const key = start.coordinate, slot = labelSlots.get(key) || 0;
     if (!historicalResults) { drawUnitLabel(start, m.unit, m.type, slot, 'start'); labelSlots.set(key, slot+1); }
-    if (m.route.unresolved.length) drawConditionalMarker(end || start, m.route.unresolved[0], '#f0b45e');
+    if (m.route.unresolved.length) drawConditionalMarker(end || start, m.route.unresolved[0], '#f0b45e', routeStyle(m.unit, { alpha:.94 }).alpha);
   }
   for (const creation of plan.unitCreations || []) {
     const child = state.routeCache.movements.find(m => m.unit === creation.unit), parent = state.routeCache.movements.find(m => m.unit === creation.parentUnit);
@@ -523,9 +531,10 @@ function drawPlanOverlay() {
   }
   if (state.scoutingVisible) {
     for (const s of state.routeCache.scouts) {
-      drawRoute(s.route.points, { color:'#78c9e6', width:Math.max(1.7,state.scale*.075), alpha:.76, dashed:true });
-      const start=s.route.points[0], end=s.route.points[s.route.points.length-1]; if (start) drawScoutLabel(start, s.id, s.unit); if (s.route.unresolved.length && end) drawConditionalMarker(end, s.route.unresolved[0], '#78c9e6');
-      if (s.route.points.length > 1 && !s.route.unresolved.length) drawArrowSegment(end, start, { color:'#78c9e6', width:Math.max(1,state.scale*.05), alpha:.32, dashed:true });
+      const emphasis=routeStyle(s.unit, { alpha:.76 });
+      drawRoute(s.route.points, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1.7,state.scale*.075), alpha:.76, dashed:true }));
+      const start=s.route.points[0], end=s.route.points[s.route.points.length-1]; if (start) drawScoutLabel(start, s.id, s.unit); if (s.route.unresolved.length && end) drawConditionalMarker(end, s.route.unresolved[0], '#78c9e6', emphasis.alpha);
+      if (s.route.points.length > 1 && !s.route.unresolved.length) drawArrowSegment(end, start, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1,state.scale*.05), alpha:.32, dashed:true }));
     }
   }
 }
