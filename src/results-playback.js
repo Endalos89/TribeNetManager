@@ -322,7 +322,9 @@
         }
         if (event.phase === 'movement') {
           for (const row of targetRows) {
-            if (String(row.sourceUnit || '') === String(event.unitCode || '') && row.knowledgeLevel === 'visited') add(target, row, event);
+            if (String(row.sourceUnit || '') !== String(event.unitCode || '')) continue;
+            if (row.knowledgeLevel === 'visited'
+              || (row.knowledgeLevel === 'observed' && coordinateIsAdjacent(event.to, row.coordinate))) add(target, row, event);
           }
         }
       }
