@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
-const CURRENT_SCHEMA = 2;
+const CURRENT_SCHEMA = 3;
 
 function deepDelta(current, previous) {
   const delta = {};
@@ -155,6 +155,12 @@ class ResultsDatabase {
         INSERT INTO schema_migrations(version, applied_at) VALUES (2, datetime('now'));
       `);
     }
+    if (current < 3) {
+      this.db.exec(`
+        ALTER TABLE result_hex_knowledge ADD COLUMN resources_json TEXT NOT NULL DEFAULT '[]';
+        INSERT INTO schema_migrations(version, applied_at) VALUES (3, datetime('now'));
+      `);
+    }
   }
 
   archiveSource(turnKey, filePath, originalFileName = null) {
@@ -228,8 +234,8 @@ class ResultsDatabase {
 
       const hexInsert = this.db.prepare(`
         INSERT INTO result_hex_knowledge(
-          turn_key, coordinate, terrain, knowledge_level, reason, source_unit, scout_id, observed_units_json, evidence_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          turn_key, coordinate, terrain, knowledge_level, reason, source_unit, scout_id, observed_units_json, evidence_json, resources_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const hex of report.hexKnowledge || []) {
         hexInsert.run(
@@ -241,7 +247,8 @@ class ResultsDatabase {
           hex.sourceUnit || null,
           hex.scoutId ?? null,
           JSON.stringify(hex.observedUnits || []),
-          JSON.stringify(hex.evidence || [])
+          JSON.stringify(hex.evidence || []),
+          JSON.stringify(hex.resources || [])
         );
       }
 
@@ -335,7 +342,7 @@ class ResultsDatabase {
         WHERE rt.turn_sort <= ?
       )
       SELECT coordinate, terrain, knowledge_level AS knowledgeLevel, reason, source_unit AS sourceUnit, scout_id AS scoutId,
-             observed_units_json AS observedUnitsJson, evidence_json AS evidenceJson, turn_key AS discoveredTurn
+             observed_units_json AS observedUnitsJson, evidence_json AS evidenceJson, resources_json AS resourcesJson, turn_key AS discoveredTurn
       FROM ranked
       WHERE rn = 1
     `).all(Number(turn.turnSort)).map(row => {
@@ -349,6 +356,7 @@ class ResultsDatabase {
         scoutId: row.scoutId,
         observedUnits: JSON.parse(row.observedUnitsJson || '[]'),
         evidence: JSON.parse(row.evidenceJson || '[]'),
+        resources: JSON.parse(row.resourcesJson || '[]'),
         discoveredTurn: row.discoveredTurn,
         ...parsed
       };
@@ -359,7 +367,7 @@ class ResultsDatabase {
     return this.db.prepare(`
       SELECT hk.turn_key AS turnKey, rt.turn_sort AS turnSort, hk.terrain, hk.knowledge_level AS knowledgeLevel,
              hk.reason, hk.source_unit AS sourceUnit, hk.scout_id AS scoutId,
-             hk.observed_units_json AS observedUnitsJson, hk.evidence_json AS evidenceJson
+             hk.observed_units_json AS observedUnitsJson, hk.evidence_json AS evidenceJson, hk.resources_json AS resourcesJson
       FROM result_hex_knowledge hk
       JOIN result_turns rt ON rt.turn_key = hk.turn_key
       WHERE hk.coordinate = ?
@@ -373,7 +381,8 @@ class ResultsDatabase {
       sourceUnit: row.sourceUnit,
       scoutId: row.scoutId,
       observedUnits: JSON.parse(row.observedUnitsJson || '[]'),
-      evidence: JSON.parse(row.evidenceJson || '[]')
+      evidence: JSON.parse(row.evidenceJson || '[]'),
+      resources: JSON.parse(row.resourcesJson || '[]')
     }));
   }
 

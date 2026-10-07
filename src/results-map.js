@@ -262,7 +262,7 @@ function historicalStateLabel(data) {
   if (data.knowledgeLevel === 'scouted') return `Scouted · known by ${data.discoveredTurn || resultsTimeline.turn?.turnKey || 'this turn'}`;
   if (data.knowledgeLevel === 'observed') return 'Observed · not entered';
   if (data.knowledgeLevel === 'attempted') return 'Attempted · not entered';
-  return 'Known';
+  return data.resources?.length ? `Known · ${data.resources.join(', ')}` : 'Known';
 }
 
 function historicalHexNotes(data) {
@@ -271,6 +271,7 @@ function historicalHexNotes(data) {
   if (data.reason) lines.push(data.reason);
   if (data.sourceUnit) lines.push(`Source unit: ${data.sourceUnit}${data.scoutId ? ` · Scout ${data.scoutId}` : ''}`);
   if (data.observedUnits?.length) lines.push(`Units observed: ${data.observedUnits.join(', ')}`);
+  if (data.resources?.length) lines.push(`Resources found: ${data.resources.join(', ')}`);
   if (data.evidence?.length) lines.push(`Report evidence: ${data.evidence.join(' · ')}`);
   return lines.join('\n');
 }

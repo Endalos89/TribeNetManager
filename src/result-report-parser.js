@@ -2,6 +2,15 @@ const path = require('path');
 
 const DIRECTIONS = new Set(['N', 'NE', 'SE', 'S', 'SW', 'NW']);
 const KNOWLEDGE_RANK = { attempted: 1, observed: 2, scouted: 3, visited: 4 };
+const RESOURCE_ALIASES = new Map([
+  ['COAL', 'Coal'], ['COPPER', 'Copper'], ['COPPER ORE', 'Copper Ore'],
+  ['DIAMOND', 'Diamond'], ['GOLD', 'Gold'], ['IRON', 'Iron'], ['IRON ORE', 'Iron Ore'],
+  ['JADE', 'Jade'], ['KAOLIN', 'Kaolin'], ['LEAD', 'Lead'], ['LEAD ORE', 'Lead Ore'],
+  ['LIMESTONE', 'Limestone'], ['NICKEL', 'Nickel'], ['NICKEL ORE', 'Nickel Ore'],
+  ['RUBIES', 'Rubies'], ['SALT', 'Salt'], ['SILVER', 'Silver'], ['SULPHUR', 'Sulphur'],
+  ['TIN', 'Tin'], ['TIN ORE', 'Tin Ore'], ['VANADIUM', 'Vanadium'], ['VANADIUM ORE', 'Vanadium Ore'],
+  ['ZINC', 'Zinc'], ['ZINC ORE', 'Zinc Ore']
+]);
 
 const TERRAIN_ALIASES = new Map([
   ['UNKNOWN', 'UNKNOWN'],
@@ -43,6 +52,26 @@ function normalizeTerrain(value) {
   if (!value) return 'UNKNOWN';
   const key = String(value).trim().replace(/\s+/g, ' ').toUpperCase();
   return TERRAIN_ALIASES.get(key) || key;
+}
+
+function normalizeResource(value) {
+  if (!value) return null;
+  const key = String(value).trim().replace(/\s+/g, ' ').toUpperCase();
+  return RESOURCE_ALIASES.get(key) || null;
+}
+
+function resourcesFromText(value) {
+  const text = String(value || '');
+  const resources = [];
+  for (const match of text.matchAll(/\b(?:find|found)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,2})/gi)) {
+    const resource = normalizeResource(match[1]);
+    if (resource) resources.push(resource);
+  }
+  for (const [key, resource] of RESOURCE_ALIASES) {
+    const pattern = new RegExp(`(?:^|[,;])\\s*${key.replace(/ /g, '\\s+')}\\s*(?=[,;]|$)`, 'i');
+    if (pattern.test(text)) resources.push(resource);
+  }
+  return [...new Set(resources)];
 }
 
 function normalizeCoordinate(value) {
@@ -178,6 +207,7 @@ function addKnowledge(knowledgeMap, entry) {
     sourceUnit: entry.sourceUnit || null,
     scoutId: entry.scoutId || null,
     observedUnits: Array.from(new Set(entry.observedUnits || [])),
+    resources: Array.from(new Set(entry.resources || [])),
     evidence: entry.evidence ? [entry.evidence] : []
   };
   if (!existing) {
@@ -185,13 +215,15 @@ function addKnowledge(knowledgeMap, entry) {
     return;
   }
   const mergedUnits = new Set([...(existing.observedUnits || []), ...(incoming.observedUnits || [])]);
+  const mergedResources = new Set([...(existing.resources || []), ...(incoming.resources || [])]);
   const mergedEvidence = [...(existing.evidence || []), ...(incoming.evidence || [])];
   const oldRank = KNOWLEDGE_RANK[existing.knowledgeLevel] || 0;
   const newRank = KNOWLEDGE_RANK[incoming.knowledgeLevel] || 0;
   if (newRank > oldRank) {
-    knowledgeMap.set(entry.coordinate, { ...incoming, observedUnits: [...mergedUnits], evidence: mergedEvidence });
+    knowledgeMap.set(entry.coordinate, { ...incoming, observedUnits: [...mergedUnits], resources: [...mergedResources], evidence: mergedEvidence });
   } else {
     existing.observedUnits = [...mergedUnits];
+    existing.resources = [...mergedResources];
     existing.evidence = mergedEvidence;
     if ((!existing.terrain || existing.terrain === 'UNKNOWN') && incoming.terrain !== 'UNKNOWN') existing.terrain = incoming.terrain;
     if (!existing.reason && incoming.reason) existing.reason = incoming.reason;
@@ -210,10 +242,11 @@ function parseRouteKnowledge(rawLine, startCoordinate, knowledgeMap, options = {
   routeText = routeText.replace(/^Move\s+/i, '');
   const failMatch = routeText.match(/Not enough M\.P'?s to move to\s+(N|NE|SE|S|SW|NW)\s+into\s+([^,]+)/i);
   const patrolledMatch = routeText.match(/Patrolled and found\s+([A-Za-z0-9]+)/i);
-  const beforeFailure = routeText.split(/Not enough M\.P'?s/i)[0];
+  const beforeFailure = routeText.split(/(?:Not enough M\.P'?s|Can't Move on Ocean)/i)[0];
   const normalized = beforeFailure.replace(/\\/g, ',');
   const tokens = normalized.split(',').map(x => x.trim()).filter(Boolean);
   let current = startCoordinate;
+  let observationTerrain = null;
   for (const token of tokens) {
     let match = token.match(/^(N|NE|SE|S|SW|NW)-([A-Za-z]+)$/i);
     if (match) {
@@ -221,6 +254,7 @@ function parseRouteKnowledge(rawLine, startCoordinate, knowledgeMap, options = {
       const next = stepCoordinate(current, direction);
       if (next) {
         current = next;
+        observationTerrain = null;
         addKnowledge(knowledgeMap, {
           coordinate: current,
           terrain: match[2],
@@ -248,9 +282,39 @@ function parseRouteKnowledge(rawLine, startCoordinate, knowledgeMap, options = {
             reason: 'Observed from an adjacent hex',
             evidence: token
           });
+          observationTerrain = terrain;
         }
         continue;
       }
+    }
+    match = token.match(/^(N|NE|SE|S|SW|NW)$/i);
+    if (match && observationTerrain) {
+      const observed = stepCoordinate(current, match[1].toUpperCase());
+      if (observed) addKnowledge(knowledgeMap, {
+        coordinate: observed,
+        terrain: observationTerrain,
+        knowledgeLevel: 'observed',
+        sourceUnit,
+        scoutId,
+        reason: 'Observed from an adjacent hex',
+        evidence: `${observationTerrain} ${match[1].toUpperCase()}`
+      });
+      continue;
+    }
+    const resourceMatch = token.match(/^find\s+(.+)$/i);
+    if (resourceMatch) {
+      const resource = normalizeResource(resourceMatch[1]);
+      if (resource) addKnowledge(knowledgeMap, {
+        coordinate: current,
+        terrain: 'UNKNOWN',
+        knowledgeLevel: movementLevel,
+        sourceUnit,
+        scoutId,
+        resources: [resource],
+        reason: `Found ${resource}`,
+        evidence: token
+      });
+      continue;
     }
     match = token.match(/^see\s+([A-Za-z0-9]+)/i);
     if (match) {
@@ -416,6 +480,16 @@ function parseUnitSection(lines, startIndex, reportTurn, knowledgeMap) {
       sourceUnit: unitCode,
       reason: `${unitType} ${unitCode} occupied this hex`,
       evidence: `${unitCode} Status: ${unit.statusTerrain}`
+    });
+    const statusResources = resourcesFromText(unit.statusNotes);
+    if (statusResources.length) addKnowledge(knowledgeMap, {
+      coordinate: currentHex,
+      terrain: unit.statusTerrain,
+      knowledgeLevel: 'visited',
+      sourceUnit: unitCode,
+      resources: statusResources,
+      reason: `${unitType} ${unitCode} reported resources here`,
+      evidence: unit.statusNotes
     });
   }
   if (unit.movement) {

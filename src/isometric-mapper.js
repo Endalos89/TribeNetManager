@@ -3,7 +3,7 @@
 const IsoMapper = (() => {
   const G=IsoGeometry, WATER='#337f98', FOG='#253640';
   let enabled=false, labels=true, grid=false;
-  const detailCache=new Map(), surfaceCache=new Map(), groundCache=new Map();
+  const detailCache=new Map(), surfaceCache=new Map(), groundCache=new Map(), resourceIconCache=new Map();
   let interactive=false, settleTimer=null, hitScale=1, sceneBuilds=0;
   let unitSignature='', terrainSignature='', frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
   function mapData(ref) {
@@ -55,6 +55,30 @@ const IsoMapper = (() => {
     if(detailCache.has(ref))return detailCache.get(ref);
     const rand=G.random(ref),items=Array.from({length:9},()=>({x:(rand()-.5)*.96,y:(rand()-.5)*.96,size:.7+rand()*.6,variant:rand()}));
     if(detailCache.size>6000) detailCache.clear();detailCache.set(ref,items);return items;
+  }
+  function iconKey(name) { return String(name || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function resourceIcon(name) {
+    const filename=window.TribeNetItemIconManifest?.[iconKey(name)];
+    if(!filename || typeof Image==='undefined')return null;
+    let image=resourceIconCache.get(filename);
+    if(!image){image=new Image();image.src=`item-icons/${filename}`;image.decoding='async';image.onload=()=>{if(typeof draw==='function')draw();};resourceIconCache.set(filename,image);}
+    return image.complete&&image.naturalWidth>0?image:null;
+  }
+  function drawResourceIcons(t) {
+    if(!t.known || !t.data?.resources?.length)return;
+    const icons=t.data.resources.map(name=>({name,image:resourceIcon(name)})).filter(row=>row.image);
+    if(!icons.length)return;
+    const size=Math.max(15,Math.min(29,state.scale*.42));
+    const spacing=size*.78, center=project({x:t.c.x,y:t.c.y-.42,z:sample(t.c.x,t.c.y).z+.28});
+    icons.forEach((row,index)=>{
+      const x=center.x+(index-(icons.length-1)/2)*spacing;
+      renderCtx.save();
+      renderCtx.fillStyle='rgba(8,17,23,.88)';renderCtx.strokeStyle='#e4bd62';renderCtx.lineWidth=Math.max(1,state.scale*.025);
+      renderCtx.beginPath();renderCtx.arc(x,center.y,size*.48,0,Math.PI*2);renderCtx.fill();renderCtx.stroke();
+      renderCtx.imageSmoothingEnabled=false;renderCtx.drawImage(row.image,x-size*.42,center.y-size*.42,size*.84,size*.84);
+      if(labels&&state.scale>=60){renderCtx.font='700 9px Segoe UI';renderCtx.textAlign='center';renderCtx.textBaseline='top';renderCtx.fillStyle='#f0f2dc';renderCtx.strokeStyle='#17262b';renderCtx.lineWidth=3;renderCtx.strokeText(row.name,x,center.y+size*.55);renderCtx.fillText(row.name,x,center.y+size*.55);}
+      renderCtx.restore();
+    });
   }
   function adjacent(col,row) {return G.directions.map(d=>{const n=stepHex({globalCol:col,globalRow:row},d);return n?mapData(n.coordinate):null;});}
   function tile(col,row) {
@@ -245,6 +269,7 @@ const IsoMapper = (() => {
         if(selectedHex)polygon(outline,null,'#ffe093');
       }
       if(labels && state.scale>=43){const p=project({...t.c,y:t.c.y+.5});renderCtx.font=`${Math.min(14,Math.max(10,state.scale*.09))}px Segoe UI`;renderCtx.textAlign='center';renderCtx.lineWidth=3;renderCtx.strokeStyle='#20302bea';renderCtx.strokeText(t.ref,p.x,p.y);renderCtx.fillStyle='#f0f2dc';renderCtx.fillText(t.ref,p.x,p.y);}
+      drawResourceIcons(t);
       const partialQuestion=playbackState?.active && (playbackState.revealedQuestions?.has(t.ref) || playbackState.partialPreviews?.has(t.ref));
       if(!t.known && state.scale>=35 && !partialQuestion){renderCtx.fillStyle='#71838b';renderCtx.textAlign='center';renderCtx.font='12px Segoe UI';renderCtx.fillText('?',t.p.x,t.p.y);}
     }

@@ -171,6 +171,31 @@ function drawTerrain(cx, cy, radius, terrain) {
   const style = terrainStyle[terrain] || terrainStyle.UNKNOWN; ctx.fillStyle = style[0]; ctx.fill();
   if (radius > 12) { ctx.fillStyle = style[1]; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `700 ${Math.min(15, Math.max(8, radius * .38))}px Segoe UI`; ctx.fillText(terrain === 'UNKNOWN' ? '?' : terrain, cx, cy + 1); }
 }
+const mapResourceIconCache = new Map();
+function mapResourceIcon(name) {
+  const key = String(name || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const filename = window.TribeNetItemIconManifest?.[key];
+  if (!filename || typeof Image === 'undefined') return null;
+  let image = mapResourceIconCache.get(filename);
+  if (!image) { image = new Image(); image.src = `item-icons/${filename}`; image.decoding = 'async'; image.onload = () => draw(); mapResourceIconCache.set(filename, image); }
+  return image.complete && image.naturalWidth > 0 ? image : null;
+}
+function drawMapResourceIcons(point, radius, data) {
+  if (!data?.resources?.length) return;
+  const icons = data.resources.map(name => ({ name, image: mapResourceIcon(name) })).filter(row => row.image);
+  if (!icons.length) return;
+  const size = Math.max(14, Math.min(27, radius * .48));
+  const spacing = size * .78;
+  icons.forEach((row, index) => {
+    const x = point.x + (index - (icons.length - 1) / 2) * spacing;
+    const y = point.y - radius * .42;
+    ctx.save(); ctx.fillStyle = 'rgba(8,17,23,.88)'; ctx.strokeStyle = '#e4bd62'; ctx.lineWidth = Math.max(1, radius * .025);
+    ctx.beginPath(); ctx.arc(x, y, size * .48, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.imageSmoothingEnabled = false; ctx.drawImage(row.image, x - size * .42, y - size * .42, size * .84, size * .84);
+    if (state.scale >= 60) { ctx.font = '700 9px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = '#f0f2dc'; ctx.strokeStyle = '#17262b'; ctx.lineWidth = 3; ctx.strokeText(row.name, x, y + size * .55); ctx.fillText(row.name, x, y + size * .55); }
+    ctx.restore();
+  });
+}
 
 function draw() {
   if (state.mode !== 'detail') return;
@@ -191,6 +216,7 @@ function draw() {
         const partialQuestion = window.resultsPlayback?.active && (window.resultsPlayback.revealedQuestions?.has(coord) || window.resultsPlayback.partialPreviews?.has(coord));
         drawFog(p.x, p.y, radius, !partialQuestion);
       }
+      if (data) drawMapResourceIcons(p, radius, data);
       ctx.strokeStyle = '#071116'; ctx.lineWidth = Math.max(1, state.scale * .055); ctx.stroke();
       // A selected unit already has its own miniature-sized ring. Do not add
       // a second ring around the containing hex in that case.
