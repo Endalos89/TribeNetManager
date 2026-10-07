@@ -4,7 +4,7 @@ Item pages show acquisition and usage tables built from the Mandate recipe index
 
 Artwork uses a tribal/Viking inventory theme, preserving actual materials and species, with transparent 64×64 PNGs. The manifest contains only available files, so unfinished artwork does not cause broken image links. Canonical aliases share the same icon (for example Log/Logs); named material and research variants remain distinct.
 
-126 of 569 icons are currently available. The remainder could not be generated after the image-generation service reached its daily usage limit. `src/item-icons/pending.json` records the remaining entries. Run `node scripts/item-catalogue.js` after adding more artwork to refresh the manifest and pending list.
+176 of 569 icons are currently available, with 393 remaining in the pending queue. `src/item-icons/pending.json` records the remaining entries. Run `node scripts/item-catalogue.js` after adding more artwork to refresh the manifest and pending list.
 
 Validation: the full project suite, item knowledge lookups (including alternative ingredients and research recipes), rendered DOM checks across ordinary/research/ship item pages, and all available icons' dimensions and alpha channels.
 
