@@ -80,7 +80,11 @@
         route: jsonClone(movementPlannerState.route),
         selectedUnitCode: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.selectedUnitCode || '' : '',
         routeType: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.routeType || 'unit' : 'unit',
-        scoutOriginMode: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.scoutOriginMode || 'current' : 'current'
+        smartScoutCount: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.smartScoutCount || 1 : 1,
+        smartScoutPeople: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.smartScoutPeople || 2 : 2,
+        smartScoutHorses: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.smartScoutHorses || 2 : 2,
+        smartScoutMission: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.smartScoutMission || 'PATROL' : 'PATROL',
+        smartScoutDrafts: typeof savedMovementPlansState !== 'undefined' ? jsonClone(savedMovementPlansState.smartScoutDrafts || []) : []
       };
     }
     return snapshot;
@@ -230,8 +234,12 @@
     const planner = snapshot.movementPlanner;
     if (planner && typeof savedMovementPlansState !== 'undefined') {
       savedMovementPlansState.selectedUnitCode = planner.selectedUnitCode || '';
-      savedMovementPlansState.routeType = planner.routeType === 'scout' ? 'scout' : 'unit';
-      savedMovementPlansState.scoutOriginMode = planner.scoutOriginMode === 'after-unit' ? 'after-unit' : 'current';
+      savedMovementPlansState.routeType = ['scout', 'smart-scout'].includes(planner.routeType) ? planner.routeType : 'unit';
+      savedMovementPlansState.smartScoutCount = Math.max(1, Math.min(8, Number(planner.smartScoutCount || 1)));
+      savedMovementPlansState.smartScoutPeople = Math.max(1, Number(planner.smartScoutPeople || 2));
+      savedMovementPlansState.smartScoutHorses = Math.max(0, Number(planner.smartScoutHorses || 2));
+      savedMovementPlansState.smartScoutMission = String(planner.smartScoutMission || 'PATROL').toUpperCase();
+      savedMovementPlansState.smartScoutDrafts = jsonClone(planner.smartScoutDrafts || []);
       savedMovementPopulateUnits();
       savedMovementRenderSaveControls();
     }

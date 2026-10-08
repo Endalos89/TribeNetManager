@@ -2,12 +2,17 @@ const savedMovementPlansState = {
   routes: [],
   selectedUnitCode: '',
   routeType: 'unit',
-  scoutOriginMode: 'current',
   turnKey: null,
   ready: false,
-  scoutCount: 1,
-  scoutHorses: 0,
-  scoutMission: 'PATROL'
+  scoutCount: 2,
+  scoutHorses: 2,
+  scoutMission: 'PATROL',
+  smartScoutCount: 1,
+  smartScoutPeople: 2,
+  smartScoutHorses: 2,
+  smartScoutMission: 'PATROL',
+  smartScoutDrafts: [],
+  smartScoutEditingIndex: null
 };
 
 function savedMovementEscape(value) {
@@ -144,12 +149,11 @@ function savedMovementUnitMove(unitCode) {
 
 function savedMovementOriginFor(
   unitCode = savedMovementPlansState.selectedUnitCode,
-  routeType = savedMovementPlansState.routeType,
-  scoutOriginMode = savedMovementPlansState.scoutOriginMode
+  routeType = savedMovementPlansState.routeType
 ) {
   const unit = savedMovementUnits().find(row => String(row.unitCode) === String(unitCode));
   if (!unit) return null;
-  if (routeType === 'scout' && scoutOriginMode === 'after-unit') {
+  if (routeType === 'scout' || routeType === 'smart-scout') {
     const unitMove = savedMovementUnitMove(unitCode);
     if (unitMove?.destinationHex) return unitMove.destinationHex;
   }
@@ -157,7 +161,8 @@ function savedMovementOriginFor(
 }
 
 function savedMovementScoutUsesUnitMove() {
-  return savedMovementPlansState.routeType === 'scout' && savedMovementPlansState.scoutOriginMode === 'after-unit';
+  return (savedMovementPlansState.routeType === 'scout' || savedMovementPlansState.routeType === 'smart-scout')
+    && Boolean(savedMovementUnitMove(savedMovementPlansState.selectedUnitCode)?.destinationHex);
 }
 
 function savedMovementEnsureCardControls() {
@@ -179,25 +184,36 @@ function savedMovementEnsureCardControls() {
         <select id="movementPlannerRouteType" aria-label="Movement type">
           <option value="unit">Movement</option>
           <option value="scout">Scouting</option>
-        </select>
-      </label>
-      <label id="movementPlannerScoutOriginField" class="movement-planner-field hidden">
-        <span>Scout starts from</span>
-        <select id="movementPlannerScoutOrigin" aria-label="Scout origin">
-          <option value="current">Current unit location</option>
-          <option value="after-unit">After saved Unit Move</option>
+          <option value="smart-scout">Smart Scout</option>
         </select>
       </label>
       <label id="movementPlannerScoutCountField" class="movement-planner-field hidden">
-        <span>Scouts</span><input id="movementPlannerScoutCount" type="number" min="1" max="99" value="1" />
+        <span>People</span><input id="movementPlannerScoutCount" type="number" min="1" max="99" value="2" />
       </label>
       <label id="movementPlannerScoutHorsesField" class="movement-planner-field hidden">
-        <span>Horses</span><input id="movementPlannerScoutHorses" type="number" min="0" max="99" value="0" />
+        <span>Horses</span><input id="movementPlannerScoutHorses" type="number" min="0" max="99" value="2" />
       </label>
       <label id="movementPlannerScoutMissionField" class="movement-planner-field hidden">
         <span>Mission</span>
         <select id="movementPlannerScoutMission"><option>LOCATE</option><option selected>PATROL</option><option>RAID</option><option>SPY</option></select>
       </label>
+      <label id="movementPlannerSmartScoutCountField" class="movement-planner-field hidden">
+        <span>Scout rows</span><input id="movementPlannerSmartScoutCount" type="number" min="1" max="8" value="1" />
+      </label>
+      <label id="movementPlannerSmartScoutPeopleField" class="movement-planner-field hidden">
+        <span>People per row</span><input id="movementPlannerSmartScoutPeople" type="number" min="1" max="99" value="2" />
+      </label>
+      <label id="movementPlannerSmartScoutHorsesField" class="movement-planner-field hidden">
+        <span>Horses per row</span><input id="movementPlannerSmartScoutHorses" type="number" min="0" max="99" value="2" />
+      </label>
+      <label id="movementPlannerSmartScoutMissionField" class="movement-planner-field hidden">
+        <span>Smart mission</span>
+        <select id="movementPlannerSmartScoutMission"><option>LOCATE</option><option selected>PATROL</option><option>RAID</option><option>SPY</option></select>
+      </label>
+    </div>
+    <div id="movementPlannerSmartScoutActions" class="movement-planner-smart-actions hidden">
+      <button id="movementPlannerSmartScoutGenerate" class="button">Generate Smart Scout</button>
+      <span>Scouting always starts after this unit’s saved Movement route, when one exists.</span>
     </div>
     <div class="movement-planner-create-row">
       <button id="movementPlannerNewUnit" class="button">Create unit</button>
@@ -221,19 +237,25 @@ function savedMovementEnsureCardControls() {
       <span id="movementPlannerSaveStatus"></span>
     </div>
     <div id="movementPlannerScoutLimit" class="movement-planner-scout-limit"></div>
+    <div id="movementPlannerSmartScoutDrafts" class="movement-planner-smart-drafts"></div>
     <div id="movementPlannerSavedList" class="movement-planner-saved-list"></div>
   `;
   note.insertAdjacentElement('afterend', panel);
 
   const unitSelect = document.getElementById('movementPlannerUnitSelect');
   const typeSelect = document.getElementById('movementPlannerRouteType');
-  const scoutOriginSelect = document.getElementById('movementPlannerScoutOrigin');
   const scoutCount = document.getElementById('movementPlannerScoutCount');
   const scoutHorses = document.getElementById('movementPlannerScoutHorses');
   const scoutMission = document.getElementById('movementPlannerScoutMission');
+  const smartScoutCount = document.getElementById('movementPlannerSmartScoutCount');
+  const smartScoutPeople = document.getElementById('movementPlannerSmartScoutPeople');
+  const smartScoutHorses = document.getElementById('movementPlannerSmartScoutHorses');
+  const smartScoutMission = document.getElementById('movementPlannerSmartScoutMission');
 
   unitSelect.addEventListener('change', async () => {
     savedMovementPlansState.selectedUnitCode = unitSelect.value;
+    savedMovementPlansState.smartScoutDrafts = [];
+    savedMovementPlansState.smartScoutEditingIndex = null;
     savedMovementPopulateUnits();
     await savedMovementApplySelectedOrigin(true);
     savedMovementRenderSaveControls();
@@ -241,25 +263,33 @@ function savedMovementEnsureCardControls() {
   });
 
   typeSelect.addEventListener('change', async () => {
-    savedMovementPlansState.routeType = typeSelect.value === 'scout' ? 'scout' : 'unit';
-    if (savedMovementPlansState.routeType !== 'scout') savedMovementPlansState.scoutOriginMode = 'current';
+    savedMovementPlansState.routeType = ['scout', 'smart-scout'].includes(typeSelect.value) ? typeSelect.value : 'unit';
+    savedMovementPlansState.smartScoutEditingIndex = null;
+    if (savedMovementPlansState.routeType === 'smart-scout') {
+      movementPlannerReset({ keepCard: true });
+      savedMovementPopulateUnits();
+      savedMovementRenderSetupPrompt();
+      savedMovementRenderSaveControls();
+      return;
+    }
     savedMovementPopulateUnits();
     await savedMovementApplySelectedOrigin(true);
     savedMovementRenderSaveControls();
     movementPlannerUpdateButton();
   });
 
-  scoutOriginSelect.addEventListener('change', async () => {
-    savedMovementPlansState.scoutOriginMode = scoutOriginSelect.value === 'after-unit' ? 'after-unit' : 'current';
-    await savedMovementApplySelectedOrigin(true);
+  for (const input of [scoutCount, scoutHorses, scoutMission]) input?.addEventListener('change', () => {
+    savedMovementPlansState.scoutCount = Math.max(1, Number(scoutCount?.value || 2));
+    savedMovementPlansState.scoutHorses = Math.max(0, Number(scoutHorses?.value || 2));
+    savedMovementPlansState.scoutMission = String(scoutMission?.value || 'PATROL').toUpperCase();
     savedMovementRenderSaveControls();
-    movementPlannerUpdateButton();
   });
 
-  for (const input of [scoutCount, scoutHorses, scoutMission]) input?.addEventListener('change', () => {
-    savedMovementPlansState.scoutCount = Math.max(1, Number(scoutCount?.value || 1));
-    savedMovementPlansState.scoutHorses = Math.max(0, Number(scoutHorses?.value || 0));
-    savedMovementPlansState.scoutMission = String(scoutMission?.value || 'PATROL').toUpperCase();
+  for (const input of [smartScoutCount, smartScoutPeople, smartScoutHorses, smartScoutMission]) input?.addEventListener('change', () => {
+    savedMovementPlansState.smartScoutCount = Math.max(1, Math.min(8, Number(smartScoutCount?.value || 1)));
+    savedMovementPlansState.smartScoutPeople = Math.max(1, Number(smartScoutPeople?.value || 2));
+    savedMovementPlansState.smartScoutHorses = Math.max(0, Number(smartScoutHorses?.value || 2));
+    savedMovementPlansState.smartScoutMission = String(smartScoutMission?.value || 'PATROL').toUpperCase();
     savedMovementRenderSaveControls();
   });
 
@@ -279,8 +309,22 @@ function savedMovementEnsureCardControls() {
   document.getElementById('movementPlannerResetAll')?.addEventListener('click', savedMovementResetAllMovement);
   document.getElementById('movementPlannerResetAllUnitChanges')?.addEventListener('click', savedMovementResetAllUnitChanges);
 
+  document.getElementById('movementPlannerSmartScoutGenerate')?.addEventListener('click', savedMovementGenerateSmartScout);
   document.getElementById('movementPlannerSaveRoute').addEventListener('click', savedMovementSaveCurrentRoute);
   panel.addEventListener('click', async event => {
+    const editSmart = event.target.closest('[data-edit-smart-scout]');
+    if (editSmart) {
+      savedMovementEditSmartScoutDraft(Number(editSmart.dataset.editSmartScout));
+      return;
+    }
+    const removeSmart = event.target.closest('[data-remove-smart-scout]');
+    if (removeSmart) {
+      savedMovementPlansState.smartScoutDrafts.splice(Number(removeSmart.dataset.removeSmartScout), 1);
+      savedMovementPlansState.smartScoutEditingIndex = null;
+      movementPlannerReset({ keepCard: true });
+      savedMovementRenderSaveControls();
+      return;
+    }
     const button = event.target.closest('[data-remove-planned-route]');
     if (!button) return;
     await window.tribenet.removePlannedRoute(Number(button.dataset.removePlannedRoute));
@@ -294,10 +338,8 @@ function savedMovementPopulateUnits() {
   savedMovementEnsureCardControls();
   const select = document.getElementById('movementPlannerUnitSelect');
   const typeSelect = document.getElementById('movementPlannerRouteType');
-  const scoutOriginSelect = document.getElementById('movementPlannerScoutOrigin');
-  const scoutOriginField = document.getElementById('movementPlannerScoutOriginField');
   const hint = document.getElementById('movementPlannerOriginHint');
-  if (!select || !typeSelect || !scoutOriginSelect || !scoutOriginField) return;
+  if (!select || !typeSelect) return;
 
   const units = savedMovementSelectableUnits();
   const previous = savedMovementPlansState.selectedUnitCode;
@@ -315,28 +357,36 @@ function savedMovementPopulateUnits() {
   typeSelect.value = savedMovementPlansState.routeType;
   const selectedUnit = savedMovementSelectedUnit();
   const unitMove = selectedUnit ? savedMovementUnitMove(selectedUnit.unitCode) : null;
-  const afterOption = scoutOriginSelect.querySelector('option[value="after-unit"]');
-  if (afterOption) {
-    afterOption.disabled = !unitMove?.destinationHex;
-    afterOption.textContent = unitMove?.destinationHex
-      ? `After saved Unit Move (${unitMove.destinationHex})`
-      : 'After saved Unit Move (none saved)';
-  }
-  if (savedMovementPlansState.scoutOriginMode === 'after-unit' && !unitMove?.destinationHex) {
-    savedMovementPlansState.scoutOriginMode = 'current';
-  }
-  scoutOriginSelect.value = savedMovementPlansState.scoutOriginMode;
-  scoutOriginField.classList.toggle('hidden', savedMovementPlansState.routeType !== 'scout');
   const scoutFields = [
     document.getElementById('movementPlannerScoutCountField'),
     document.getElementById('movementPlannerScoutHorsesField'),
     document.getElementById('movementPlannerScoutMissionField')
   ];
-  for (const field of scoutFields) field?.classList.toggle('hidden', savedMovementPlansState.routeType !== 'scout');
+  for (const field of scoutFields) field?.classList.toggle('hidden', savedMovementPlansState.routeType !== 'scout' || savedMovementPlansState.smartScoutEditingIndex != null);
+  const smartFields = [
+    document.getElementById('movementPlannerSmartScoutCountField'),
+    document.getElementById('movementPlannerSmartScoutPeopleField'),
+    document.getElementById('movementPlannerSmartScoutHorsesField'),
+    document.getElementById('movementPlannerSmartScoutMissionField'),
+    document.getElementById('movementPlannerSmartScoutActions')
+  ];
+  for (const field of smartFields) field?.classList.toggle('hidden', savedMovementPlansState.routeType !== 'smart-scout');
+  const values = {
+    movementPlannerScoutCount: savedMovementPlansState.scoutCount,
+    movementPlannerScoutHorses: savedMovementPlansState.scoutHorses,
+    movementPlannerScoutMission: savedMovementPlansState.scoutMission,
+    movementPlannerSmartScoutCount: savedMovementPlansState.smartScoutCount,
+    movementPlannerSmartScoutPeople: savedMovementPlansState.smartScoutPeople,
+    movementPlannerSmartScoutHorses: savedMovementPlansState.smartScoutHorses,
+    movementPlannerSmartScoutMission: savedMovementPlansState.smartScoutMission
+  };
+  for (const [id, value] of Object.entries(values)) {
+    const field = document.getElementById(id);
+    if (field && document.activeElement !== field) field.value = value;
+  }
 
   select.disabled = !units.length;
   typeSelect.disabled = !units.length;
-  scoutOriginSelect.disabled = !selectedUnit || !unitMove?.destinationHex;
 
   if (hint) {
     if (!units.length) {
@@ -345,8 +395,9 @@ function savedMovementPopulateUnits() {
       hint.textContent = 'Select a unit. Its known location becomes the movement origin.';
     } else {
       const origin = savedMovementOriginFor();
-      const source = savedMovementScoutUsesUnitMove() ? 'saved Unit Move destination' : 'current unit location';
-      hint.textContent = `${selectedUnit.unitCode} · ${savedMovementPlansState.routeType === 'scout' ? 'Scout Move' : 'Unit Move'} · origin ${origin || 'unknown'} (${source})`;
+      const scout = savedMovementPlansState.routeType !== 'unit';
+      const source = scout && savedMovementScoutUsesUnitMove() ? 'saved Movement destination' : 'current unit location';
+      hint.textContent = `${selectedUnit.unitCode} · ${savedMovementPlansState.routeType === 'smart-scout' ? 'Smart Scout' : savedMovementPlansState.routeType === 'scout' ? 'Scouting' : 'Movement'} · origin ${origin || 'unknown'}${scout ? ` (${source})` : ''}`;
     }
   }
 }
@@ -361,6 +412,170 @@ async function savedMovementRefresh() {
   savedMovementPlansState.ready = true;
   movementPlannerUpdateButton();
   draw();
+}
+
+function savedMovementSmartDraftDestination(draft) {
+  return draft?.destinationHex || draft?.targetCoordinate || draft?.path?.[draft.path.length - 1]?.coordinate || null;
+}
+
+function savedMovementRenderSmartDrafts() {
+  const host = document.getElementById('movementPlannerSmartScoutDrafts');
+  if (!host) return;
+  const drafts = savedMovementPlansState.smartScoutDrafts || [];
+  if (savedMovementPlansState.routeType !== 'smart-scout' && savedMovementPlansState.smartScoutEditingIndex == null) {
+    host.innerHTML = '';
+    return;
+  }
+  if (!drafts.length) {
+    host.innerHTML = '<div class="movement-planner-smart-empty">No Smart Scout draft routes yet. Generate routes to review them before saving.</div>';
+    return;
+  }
+  host.innerHTML = `<div class="movement-planner-smart-heading"><strong>Smart Scout draft routes</strong><span>${drafts.length}/8 rows · edit before saving</span></div>${drafts.map((draft, index) => {
+    const scenario = draft.scenarioMp || {};
+    const coverage = Number(draft.coverageCount || draft.coverage?.length || 0);
+    const routeLabel = draft.specialOrder ? ` · ${draft.specialOrder} considered` : '';
+    return `<div class="movement-planner-smart-draft">
+      <div><strong>Row ${index + 1}</strong><span>${savedMovementEscape(draft.originHex || draft.origin || '—')} → ${savedMovementEscape(savedMovementSmartDraftDestination(draft) || '—')}</span></div>
+      <small>${savedMovementEscape((draft.directions || []).join(' → '))}</small>
+      <small>${coverage} unique reveal${coverage === 1 ? '' : 's'}${routeLabel} · ${Number(draft.knownMp || 0)} MP · bad weather ${Number(draft.badWeatherMp || draft.knownMp || 0)} MP · unknown what-if ${Number(scenario.low || draft.estimatedMp || 0)}–${Number(scenario.high || draft.worstCaseMp || 0)} MP</small>
+      <div class="movement-planner-smart-draft-actions"><button class="button" data-edit-smart-scout="${index}">Edit route</button><button class="button danger" data-remove-smart-scout="${index}">Remove</button></div>
+    </div>`;
+  }).join('')}`;
+}
+
+async function savedMovementGenerateSmartScout() {
+  const status = document.getElementById('movementPlannerSaveStatus');
+  const unit = savedMovementSelectedUnit();
+  const origin = unit ? savedMovementOriginFor(unit.unitCode, 'smart-scout') : null;
+  if (!unit || !origin) {
+    if (status) status.textContent = 'Select a unit with a known Movement/scouting origin first.';
+    return;
+  }
+  if (typeof SmartScoutCore === 'undefined') {
+    if (status) status.textContent = 'Smart Scout is not available until the mapper finishes loading.';
+    return;
+  }
+  try {
+    const known = await movementPlannerLoadKnowledge();
+    const result = SmartScoutCore.generate([...known.values()], origin, {
+      unitCode: unit.unitCode,
+      scoutCount: savedMovementPlansState.smartScoutCount,
+      noOfScouts: savedMovementPlansState.smartScoutPeople,
+      noOfHorses: savedMovementPlansState.smartScoutHorses,
+      mission: savedMovementPlansState.smartScoutMission,
+      maxCommands: 9
+    });
+    savedMovementPlansState.smartScoutDrafts = result.routes.map(route => ({
+      ...route,
+      unitCode: unit.unitCode,
+      originHex: origin,
+      destinationHex: savedMovementSmartDraftDestination(route)
+    }));
+    savedMovementPlansState.smartScoutEditingIndex = null;
+    movementPlannerReset({ keepCard: true });
+    savedMovementRenderSaveControls();
+    savedMovementRenderSetupPrompt();
+    if (status) status.textContent = `${result.routes.length} Smart Scout route${result.routes.length === 1 ? '' : 's'} generated for review${result.warnings.length ? `. ${result.warnings.join(' ')}` : '.'}`;
+  } catch (error) {
+    if (status) status.textContent = error.message || String(error);
+  }
+}
+
+function savedMovementEditSmartScoutDraft(index) {
+  const draft = savedMovementPlansState.smartScoutDrafts?.[index];
+  const point = parseCoordinate(draft?.originHex || draft?.origin);
+  if (!draft || !point) return;
+  savedMovementPlansState.selectedUnitCode = draft.unitCode || savedMovementPlansState.selectedUnitCode;
+  savedMovementPlansState.routeType = 'scout';
+  savedMovementPlansState.smartScoutEditingIndex = index;
+  savedMovementPlansState.scoutCount = Math.max(1, Number(draft.noOfScouts || 2));
+  savedMovementPlansState.scoutHorses = Math.max(0, Number(draft.noOfHorses || 2));
+  savedMovementPlansState.scoutMission = String(draft.mission || 'PATROL').toUpperCase();
+  movementPlannerState.active = true;
+  movementPlannerState.origin = { coordinate: point.coordinate, globalCol: point.globalCol, globalRow: point.globalRow };
+  movementPlannerState.route = { ...draft, status: 'ok', origin: point.coordinate, requestedTarget: savedMovementSmartDraftDestination(draft), actualTarget: savedMovementSmartDraftDestination(draft) };
+  savedMovementPopulateUnits();
+  movementPlannerUpdateButton();
+  movementPlannerRenderCard(movementPlannerState.route);
+  movementPlannerSetStatus(`Editing Smart Scout row ${index + 1} · click a destination or Shift-click to append`);
+  savedMovementRenderSaveControls();
+  draw();
+}
+
+async function savedMovementSaveSmartScout() {
+  const status = document.getElementById('movementPlannerSaveStatus');
+  const unit = savedMovementSelectedUnit();
+  const turnKey = savedMovementCurrentTurnKey();
+  const drafts = savedMovementPlansState.smartScoutDrafts || [];
+  if (!unit || !turnKey || !drafts.length) return;
+  const invalid = drafts.find(draft => !draft.directions?.length || draft.directions.length > 9 || draft.directions.some(order => order === 'GOTO' || !SmartScoutCore.VALID_SCOUT_ORDERS.has(order)));
+  if (invalid) {
+    if (status) status.textContent = 'A Smart Scout draft contains an invalid or empty scouting order. Edit or remove it before saving.';
+    return;
+  }
+  const existing = savedMovementPlansState.routes.filter(route => route.routeType === 'scout' && String(route.unitCode).toLowerCase() === String(unit.unitCode).toLowerCase());
+  const group = savedMovementScoutGroupStatus();
+  const otherGroupRoutes = Math.max(0, Number(group?.count || 0) - existing.length);
+  if (otherGroupRoutes + drafts.length > 8) {
+    if (status) status.textContent = `The Tribe scout limit is 8 rows; this replacement would require ${otherGroupRoutes + drafts.length}.`;
+    return;
+  }
+  if (existing.length && !window.confirm(`Replace ${existing.length} existing scouting route${existing.length === 1 ? '' : 's'} for ${unit.unitCode} with these ${drafts.length} Smart Scout route${drafts.length === 1 ? '' : 's'}?`)) return;
+  try {
+    if (existing.length) await window.tribenet.removeAllScoutRoutesForUnit(turnKey, unit.unitCode);
+    for (const draft of drafts) {
+      await window.tribenet.savePlannedRoute({
+        turnKey,
+        tribeCode: savedMovementRootTribe(unit.unitCode),
+        unitCode: unit.unitCode,
+        routeType: 'scout',
+        originHex: draft.originHex || draft.origin,
+        destinationHex: savedMovementSmartDraftDestination(draft),
+        directions: draft.directions,
+        path: draft.path,
+        knownMp: Number(draft.knownMp || 0),
+        badWeatherMp: Number(draft.badWeatherMp || draft.knownMp || 0),
+        noOfScouts: Math.max(1, Number(draft.noOfScouts || 2)),
+        noOfHorses: Math.max(0, Number(draft.noOfHorses || 2)),
+        mission: String(draft.mission || 'PATROL').toUpperCase(),
+        unknownEntryCount: Number(draft.unknownEntryCount || 0)
+      });
+    }
+    savedMovementPlansState.smartScoutDrafts = [];
+    savedMovementPlansState.smartScoutEditingIndex = null;
+    movementPlannerReset({ keepCard: true });
+    await savedMovementRefresh();
+    savedMovementRenderSetupPrompt();
+    if (status) status.textContent = `${drafts.length} Smart Scout route${drafts.length === 1 ? '' : 's'} saved for ${unit.unitCode}.`;
+  } catch (error) {
+    if (status) status.textContent = error.message || String(error);
+  }
+}
+
+function savedMovementUpdateSmartScoutDraft() {
+  const index = savedMovementPlansState.smartScoutEditingIndex;
+  const draft = savedMovementPlansState.smartScoutDrafts?.[index];
+  const route = movementPlannerState.route;
+  if (index == null || !draft || route?.status !== 'ok' || !route.directions?.length) return false;
+  savedMovementPlansState.smartScoutDrafts[index] = {
+    ...draft,
+    ...route,
+    unitCode: draft.unitCode || savedMovementPlansState.selectedUnitCode,
+    originHex: movementPlannerState.origin?.coordinate || draft.originHex,
+    destinationHex: route.actualTarget || route.path?.[route.path.length - 1]?.coordinate,
+    noOfScouts: savedMovementPlansState.scoutCount,
+    noOfHorses: savedMovementPlansState.scoutHorses,
+    mission: savedMovementPlansState.scoutMission,
+    coverage: draft.coverage || [],
+    coverageCount: draft.coverageCount || 0
+  };
+  savedMovementPlansState.smartScoutEditingIndex = null;
+  savedMovementPlansState.routeType = 'smart-scout';
+  movementPlannerReset({ keepCard: true });
+  savedMovementPopulateUnits();
+  savedMovementRenderSetupPrompt();
+  savedMovementRenderSaveControls();
+  return true;
 }
 
 function savedMovementScoutGroupStatus() {
@@ -386,23 +601,28 @@ function savedMovementRenderSaveControls() {
   const unit = savedMovementSelectedUnit();
   const route = movementPlannerState.route;
   const type = savedMovementPlansState.routeType;
+  const smart = type === 'smart-scout';
+  const editingSmart = savedMovementPlansState.smartScoutEditingIndex != null;
   const scoutStatus = savedMovementScoutGroupStatus();
   const stationary = String(unit?.unitType || unit?.type || '') === 'Garrison' && type === 'unit';
   const scoutCount = Math.max(1, Number(document.getElementById('movementPlannerScoutCount')?.value || savedMovementPlansState.scoutCount || 1));
   const scoutHorses = Math.max(0, Number(document.getElementById('movementPlannerScoutHorses')?.value || savedMovementPlansState.scoutHorses || 0));
   const canSave = Boolean(
-    unit && !stationary && savedMovementCurrentTurnKey() && route?.status === 'ok' && route.directions?.length
-    && (type !== 'scout' || (scoutStatus && scoutStatus.count < 8 && scoutHorses <= scoutCount))
+    unit && !stationary && savedMovementCurrentTurnKey()
+    && (smart
+      ? savedMovementPlansState.smartScoutDrafts?.length > 0
+      : route?.status === 'ok' && route.directions?.length
+        && (type !== 'scout' || editingSmart || (scoutStatus && scoutStatus.count < 8 && scoutHorses <= scoutCount)))
   );
 
-  saveButton.textContent = type === 'scout' ? 'Save Scout Move' : 'Save Unit Move';
+  saveButton.textContent = smart ? 'Save Smart Scout' : editingSmart ? 'Update Smart Scout row' : type === 'scout' ? 'Save Scout Move' : 'Save Unit Move';
   saveButton.disabled = !canSave;
   saveButton.title = !unit
     ? 'Select a unit first.'
     : stationary
       ? 'Garrisons are stationary and use Still.'
       : !route?.directions?.length
-        ? 'Plan at least one movement command first.'
+        ? smart ? 'Generate Smart Scout routes first.' : 'Plan at least one movement command first.'
       : type === 'scout' && scoutStatus?.count >= 8
         ? `Tribe ${scoutStatus.tribeCode} has already used all 8 scout moves this turn.`
         : type === 'scout' && scoutHorses > scoutCount
@@ -423,7 +643,11 @@ function savedMovementRenderSaveControls() {
       : 'No units created for this turn.';
   }
 
-  if (type === 'scout') {
+  if (smart) {
+    limit.textContent = unit
+      ? `Smart Scout creates ${savedMovementPlansState.smartScoutDrafts?.length || 0}/${savedMovementPlansState.smartScoutCount} draft row${savedMovementPlansState.smartScoutCount === 1 ? '' : 's'} · ${savedMovementPlansState.smartScoutPeople}/${savedMovementPlansState.smartScoutHorses} people/horses per row · replaces existing scouting only when saved`
+      : 'Select a unit to generate Smart Scout routes.';
+  } else if (type === 'scout') {
     limit.textContent = scoutStatus
       ? `Tribe ${scoutStatus.tribeCode} scout moves: ${scoutStatus.count}/8 · shared by the Tribe and linked Elements`
       : 'Select a unit to see its Tribe scout allowance.';
@@ -434,6 +658,8 @@ function savedMovementRenderSaveControls() {
         : 'Unit Move is independent of scouting. Saving again replaces this unit’s saved move for the turn.'
       : 'Select a unit to record movement for this turn.';
   }
+
+  savedMovementRenderSmartDrafts();
 
   if (!unit) {
     list.innerHTML = '<div class="movement-planner-saved-empty">Select a unit to view saved movement for this turn.</div>';
@@ -519,18 +745,18 @@ function savedMovementRenderSetupPrompt() {
   const unit = savedMovementSelectedUnit();
   const origin = savedMovementOriginFor();
   if (title) title.textContent = unit
-    ? `${savedMovementPlansState.routeType === 'scout' ? 'Scout' : 'Movement'} from ${origin || '—'}`
+    ? `${savedMovementPlansState.routeType === 'smart-scout' ? 'Smart Scout' : savedMovementPlansState.routeType === 'scout' ? 'Scouting' : 'Movement'} from ${origin || '—'}`
     : 'Movement';
   if (summary) summary.textContent = unit
-    ? 'Click Movement, then choose a destination.'
-    : 'Select a unit below, choose Movement or Scouting, then choose the route.';
+    ? savedMovementPlansState.routeType === 'smart-scout' ? 'Generate Smart Scout routes, review/edit the drafts, then save them.' : 'Click Movement, then choose a destination.'
+    : 'Select a unit below, choose Movement, Scouting, or Smart Scout, then choose the route.';
   movementPlannerRenderAllowances(null);
   if (routeText) routeText.textContent = '';
   if (note) {
-    note.textContent = savedMovementPlansState.routeType === 'scout'
+    note.textContent = savedMovementPlansState.routeType === 'scout' || savedMovementPlansState.routeType === 'smart-scout'
       ? (savedMovementScoutUsesUnitMove()
-        ? 'This scout starts after the saved Unit Move. Choose Current unit location instead if the unit should stay put before scouting.'
-        : 'This scout starts from the unit’s current location. A saved Unit Move is not required.')
+        ? 'Scouting always starts after the saved Movement route. The saved Movement destination is the scouting origin.'
+        : 'Scouting always happens after movement. With no saved Movement route, the current unit location is used.')
       : 'Unit movement and scouting are saved separately for the selected turn.';
   }
   savedMovementPopulateUnits();
@@ -571,7 +797,7 @@ async function savedMovementApplySelectedOrigin(center = false) {
 
   if (wasActive) {
     movementPlannerUpdateButton();
-    movementPlannerSetStatus(`${savedMovementPlansState.routeType === 'scout' ? 'Scout' : 'Unit'} origin ${point.coordinate} · click a destination`);
+    movementPlannerSetStatus(`${savedMovementPlansState.routeType === 'scout' || savedMovementPlansState.routeType === 'smart-scout' ? 'Scout' : 'Unit'} origin ${point.coordinate} · click a destination`);
   }
   savedMovementRenderSetupPrompt();
   draw();
@@ -617,7 +843,15 @@ async function savedMovementSaveCurrentRoute() {
   const route = movementPlannerState.route;
   const turnKey = savedMovementCurrentTurnKey();
   const status = document.getElementById('movementPlannerSaveStatus');
+  if (savedMovementPlansState.routeType === 'smart-scout') {
+    await savedMovementSaveSmartScout();
+    return;
+  }
   if (!unit || !turnKey || route?.status !== 'ok' || !route.directions?.length) return;
+  if (savedMovementPlansState.smartScoutEditingIndex != null) {
+    if (savedMovementUpdateSmartScoutDraft() && status) status.textContent = 'Smart Scout draft updated. Review it before saving the rows.';
+    return;
+  }
   if (savedMovementPlansState.routeType === 'unit' && String(unit.unitType || unit.type || '').toLowerCase() === 'garrison') {
     savedMovementSetStationaryStatus();
     return;
@@ -751,6 +985,13 @@ if (savedMovementPlannerButton) {
         savedMovementRenderSetupPrompt();
         movementPlannerSetStatus('Select a unit in the planner card.');
       }
+      return;
+    }
+
+    if (savedMovementPlansState.routeType === 'smart-scout') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      await savedMovementGenerateSmartScout();
       return;
     }
 

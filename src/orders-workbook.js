@@ -5,7 +5,8 @@ const JSZip = require('jszip');
 
 const MOVEMENT_COLUMNS = Array.from({ length: 40 }, (_, index) => `MOVEMENT_${index + 1}`);
 const SCOUT_COLUMNS = Array.from({ length: 9 }, (_, index) => `Movement${index + 1}`);
-const VALID_DIRECTIONS = new Set(['EMPTY', 'FCL', 'FCR', 'FOL', 'FOR', 'GOTO', 'N', 'NE', 'NEL', 'NL', 'NW', 'NWL', 'S', 'SE', 'SEL', 'SL', 'Still', 'SW', 'SWL']);
+const VALID_DIRECTIONS = new Set(['EMPTY', 'FCL', 'FCR', 'FLL', 'FLR', 'FML', 'FMR', 'FOL', 'FOR', 'FOLLOW', 'FRL', 'FRR', 'GOTO', 'N', 'NE', 'NEL', 'NL', 'NW', 'NWL', 'S', 'SE', 'SEL', 'SL', 'Still', 'SW', 'SWL']);
+const VALID_SCOUT_DIRECTIONS = new Set([...VALID_DIRECTIONS].filter(value => value !== 'GOTO'));
 const VALID_MISSIONS = new Set(['LOCATE', 'PATROL', 'RAID', 'SPY']);
 
 function xmlEscape(value) {
@@ -123,12 +124,12 @@ function skillTransferText(skill, parentUnit, targetUnit) {
   return `Skill ${name} ${level} should be moved from Tribe ${sourceTribe} to Tribe ${targetUnit}`;
 }
 
-function normalizeDirections(directions, max, label) {
+function normalizeDirections(directions, max, label, allowed = VALID_DIRECTIONS) {
   const values = (directions || []).map(value => String(value || '').trim()).filter(Boolean);
   if (values.length > max) throw new Error(`${label} has ${values.length} commands, but the workbook allows only ${max}.`);
   for (const value of values) {
     const candidate = value.toLowerCase() === 'still' ? 'Still' : value.toUpperCase();
-    if (!VALID_DIRECTIONS.has(candidate)) throw new Error(`${label} contains invalid movement value “${value}”.`);
+    if (!allowed.has(candidate)) throw new Error(`${label} contains invalid movement value “${value}”.`);
   }
   return values.map(value => value.toLowerCase() === 'still' ? 'Still' : value.toUpperCase());
 }
@@ -181,7 +182,7 @@ function normalizeScoutRows(rows, maxRows) {
   const sorted = [...(rows || [])].filter(row => row?.unitCode).sort((a, b) => compareUnitCodes(a.unitCode, b.unitCode) || Number(a.scoutNumber || 0) - Number(b.scoutNumber || 0));
   if (sorted.length > maxRows) throw new Error(`The blank workbook has room for ${maxRows} scouting rows, but ${sorted.length} are planned.`);
   return sorted.map((row, index) => {
-    const directions = normalizeDirections(row.directions, 9, `Scouting row ${index + 1}`);
+    const directions = normalizeDirections(row.directions, 9, `Scouting row ${index + 1}`, VALID_SCOUT_DIRECTIONS);
     const scouts = Number(row.noOfScouts ?? row.scoutCount ?? 0);
     const horses = Number(row.noOfHorses ?? row.horseCount ?? 0);
     const mission = String(row.mission || 'PATROL').trim().toUpperCase();
@@ -374,6 +375,7 @@ module.exports = {
   MOVEMENT_COLUMNS,
   SCOUT_COLUMNS,
   VALID_DIRECTIONS,
+  VALID_SCOUT_DIRECTIONS,
   VALID_MISSIONS,
   inferTurnKey,
   rootTribe,

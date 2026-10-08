@@ -28,6 +28,7 @@ jobs:
       - name: Run regression tests
         run: |
           npm test
+          node tests/smart-scout.test.js
           node tests/results-playback.test.js
           node tests/results-transition.test.js
           node tests/results-start-state.test.js

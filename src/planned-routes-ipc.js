@@ -18,6 +18,7 @@ ipcMain.handle('planned-routes:list', (_event, turnKey) => routesDb().list(turnK
 ipcMain.handle('planned-routes:save', (_event, route) => routesDb().save(route));
 ipcMain.handle('planned-routes:remove', (_event, id) => routesDb().remove(id));
 ipcMain.handle('planned-routes:remove-all-unit', (_event, turnKey) => routesDb().removeAllUnitRoutes(turnKey));
+ipcMain.handle('planned-routes:remove-all-scout-unit', (_event, turnKey, unitCode) => routesDb().removeAllScoutRoutesForUnit(turnKey, unitCode));
 
 app.on('before-quit', () => {
   if (plannedRoutesDatabase) plannedRoutesDatabase.close();

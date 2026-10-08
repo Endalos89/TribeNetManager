@@ -128,6 +128,7 @@ contextBridge.exposeInMainWorld('tribenet', {
   savePlannedRoute: route => ipcRenderer.invoke('planned-routes:save', route),
   removePlannedRoute: id => ipcRenderer.invoke('planned-routes:remove', id),
   removeAllUnitRoutes: turnKey => ipcRenderer.invoke('planned-routes:remove-all-unit', turnKey),
+  removeAllScoutRoutesForUnit: (turnKey, unitCode) => ipcRenderer.invoke('planned-routes:remove-all-scout-unit', turnKey, unitCode),
   scanTurnFiles: () => ipcRenderer.invoke('turn-files:scan'),
   getTurnFilesInfo: () => ipcRenderer.invoke('turn-files:info'),
   openTurnFilesFolder: () => ipcRenderer.invoke('turn-files:open'),

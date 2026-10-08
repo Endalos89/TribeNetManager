@@ -107,16 +107,19 @@ assert.strictEqual(
 );
 assert.strictEqual(
   vm.runInContext(`savedMovementOriginFor('0485', 'scout', 'current')`, context),
-  'AA0101',
-  'Scout Move should default to the unit current location even when a Unit Move is saved.'
+  'AC0303',
+  'Scouting should always start after a saved Unit Move.'
 );
 assert.strictEqual(
   vm.runInContext(`savedMovementOriginFor('0485', 'scout', 'after-unit')`, context),
   'AC0303',
-  'Scout Move should use the Unit Move destination only when explicitly requested.'
+  'The old optional scout-origin argument should not change the automatic after-movement origin.'
 );
 
-assert.ok(source.includes('movement-planner-setup-grid'), 'Unit/type/scout-origin controls should be rendered inside the planner card.');
+assert.ok(source.includes('movement-planner-setup-grid'), 'Unit/type/scouting controls should be rendered inside the planner card.');
+assert.ok(source.includes('value="smart-scout"'), 'Movement controls should expose Smart Scout mode.');
+assert.ok(!source.includes('movementPlannerScoutOrigin'), 'Scouting should not expose a before/after movement option.');
+assert.ok(source.includes('savedMovementSaveSmartScout'), 'Smart Scout drafts should be saved as a replaceable scouting set.');
 assert.ok(source.includes('movementPlannerReset({ keepCard: true })'), 'Saving or resetting changes should leave the Movement controls available for the next unit.');
 assert.ok(source.includes('movementPlannerResetAllUnitChanges'), 'Movement controls should expose a reset-all unit changes action.');
 assert.ok(indexHtml.includes('<script src="saved-movement-plans.js"></script>'), 'Saved movement planner should load deterministically with the mapper.');
