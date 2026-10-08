@@ -228,6 +228,77 @@
       .slice(0, 320);
   }
 
+  function optimisticUnknownRoute(known, originCoordinate, targetCoordinate, options = {}) {
+    const target = core().parseCoordinate(targetCoordinate);
+    if (!target) return null;
+    const maxCommands = Math.max(1, Number(options.maxCommands || 9));
+    const queue = [{ point: target, path: [target] }];
+    const visited = new Set([target.coordinate]);
+    const approaches = [];
+    while (queue.length && visited.size <= 240) {
+      const current = queue.shift();
+      if (current.path.length - 1 >= maxCommands) continue;
+      for (const adjacent of core().adjacentHexes(current.point)) {
+        if (visited.has(adjacent.coordinate)) continue;
+        visited.add(adjacent.coordinate);
+        const row = known.get(adjacent.coordinate);
+        const path = [adjacent, ...current.path];
+        if (isPassable(row)) {
+          approaches.push({ coordinate: adjacent.coordinate, path });
+          continue;
+        }
+        if (!row || isUnknownEntry(row)) queue.push({ point: adjacent, path });
+      }
+    }
+
+    let best = null;
+    for (const approach of approaches) {
+      const route = core().findFastestRoute(known, originCoordinate, approach.coordinate);
+      if (route.status !== 'ok') continue;
+      const unknownSteps = approach.path.length - 1;
+      const optimisticMp = Number(route.totalMp || 0) + unknownSteps * OPTIMISTIC_UNKNOWN_COST;
+      const steps = Number(route.steps || route.directions?.length || 0) + unknownSteps;
+      if (optimisticMp > Number(options.movementAllowance ?? Infinity) || steps > maxCommands) continue;
+      const score = optimisticMp * 100 + steps;
+      if (!best || score < best.score) best = { route, path: approach.path, score };
+    }
+    if (!best) return null;
+
+    const path = [
+      ...(best.route.path || []).map(point => ({ ...point })),
+      ...best.path.slice(1).map(point => {
+        const row = known.get(point.coordinate);
+        return {
+          ...point,
+          terrain: terrainOf(row),
+          entryMp: null,
+          baseEntryMp: null,
+          weatherPenalty: null,
+          cumulativeMp: null,
+          knownCumulativeMp: Number(best.route.totalMp || 0),
+          kind: 'approx'
+        };
+      })
+    ];
+    const directions = [...(best.route.directions || [])];
+    for (let index = 1; index < best.path.length; index += 1) {
+      const direction = directionBetween(best.path[index - 1].coordinate, best.path[index].coordinate);
+      if (!direction) return null;
+      directions.push(direction);
+    }
+    return {
+      ...best.route,
+      status: 'ok',
+      requestedTarget: target.coordinate,
+      actualTarget: best.route.actualTarget || best.path[0].coordinate,
+      targetIsUnknown: true,
+      path,
+      directions,
+      steps: path.length - 1,
+      targetIncluded: true
+    };
+  }
+
   function routeWithUnknownTarget(known, originCoordinate, targetCoordinate, options = {}) {
     const working = new Map(known);
     const origin = core().parseCoordinate(originCoordinate);
@@ -246,8 +317,13 @@
       });
       syntheticOrigin = true;
     }
-    const result = core().findFastestRoute(working, origin.coordinate, targetCoordinate);
-    if (result.status !== 'ok') return result;
+    let result = core().findFastestRoute(working, origin.coordinate, targetCoordinate);
+    if (result.status !== 'ok') {
+      const requestedRow = known.get(targetCoordinate);
+      if (requestedRow && !isUnknownEntry(requestedRow)) return result;
+      result = optimisticUnknownRoute(known, origin.coordinate, targetCoordinate, options);
+      if (!result) return result || { status: 'no-route' };
+    }
 
     const path = (result.path || []).map(point => ({ ...point }));
     if (syntheticOrigin && path[0]) {
@@ -260,7 +336,7 @@
     const targetRow = known.get(targetCoordinate);
     const targetIsFog = isFogOrQuestion(targetRow);
     let targetIsUnknown = Boolean(result.targetIsUnknown);
-    if (targetIsUnknown && actual && requested && actual.coordinate !== requested.coordinate) {
+    if (targetIsUnknown && actual && requested && actual.coordinate !== requested.coordinate && !result.targetIncluded) {
       const direction = directionBetween(actual.coordinate, requested.coordinate);
       if (!direction) return { status: 'no-revealed-adjacent', requestedTarget: targetCoordinate };
       const entry = {
@@ -320,7 +396,8 @@
         }, 0);
         return score(right) - score(left) || left.direction.localeCompare(right.direction);
       });
-      const next = nextOptions[0];
+      const branch = Math.max(0, Math.floor(Number(options.extensionVariant || 0)));
+      const next = nextOptions[Math.min(branch, nextOptions.length - 1)];
       path.push({
         ...next,
         terrain: terrainOf(next.row),
@@ -414,6 +491,108 @@
     return specialOrderContextFor(known, path, targetCoordinate)?.order || null;
   }
 
+  function directionIndex(direction) {
+    return (core().DIRECTIONS || ['N', 'NE', 'SE', 'S', 'SW', 'NW']).indexOf(direction);
+  }
+
+  function sideForFeature(moveDirection, featureDirection) {
+    const moveIndex = directionIndex(moveDirection);
+    const featureIndex = directionIndex(featureDirection);
+    if (moveIndex < 0 || featureIndex < 0) return null;
+    const delta = (featureIndex - moveIndex + 6) % 6;
+    return delta === 1 || delta === 2 ? 'right'
+      : delta === 4 || delta === 5 ? 'left' : null;
+  }
+
+  function firstCoastalUnknown(known, endpoint, side) {
+    const directions = core().DIRECTIONS || ['N', 'NE', 'SE', 'S', 'SW', 'NW'];
+    const queue = [{ point: endpoint, visited: new Set([endpoint.coordinate]) }];
+    const delta = side === 'right' ? -1 : 1;
+
+    while (queue.length && queue[0].visited.size <= 90) {
+      const current = queue.shift();
+      const oceanIndexes = directions
+        .map((direction, index) => ({ index, point: core().step(current.point, direction) }))
+        .filter(item => item.point && isOcean(known.get(item.point.coordinate)));
+      const preferred = [];
+      for (const edge of oceanIndexes) {
+        for (const offset of [delta, delta * 2, -delta, -delta * 2, 0]) {
+          const candidate = core().step(current.point, directions[(edge.index + offset + 6) % 6]);
+          if (candidate && !preferred.some(point => point.coordinate === candidate.coordinate)) preferred.push(candidate);
+        }
+      }
+      for (const candidate of preferred) {
+        const row = known.get(candidate.coordinate);
+        if (!row || isUnknownEntry(row)) return candidate;
+        if (!isOcean(row) && !current.visited.has(candidate.coordinate)) {
+          const visited = new Set(current.visited);
+          visited.add(candidate.coordinate);
+          queue.push({ point: candidate, visited });
+        }
+      }
+    }
+    return null;
+  }
+
+  function coastalRouteCandidates(known, originCoordinate, allowance, maxCommands) {
+    const origin = core().parseCoordinate(originCoordinate);
+    if (!origin) return [];
+    const candidates = [];
+    const seen = new Set();
+
+    for (const row of known.values()) {
+      if (!isPassable(row) || row.coordinate === origin.coordinate) continue;
+      const endpoint = core().parseCoordinate(row.coordinate);
+      const route = core().findFastestRoute(known, origin.coordinate, row.coordinate);
+      if (!endpoint || route.status !== 'ok' || !route.directions?.length) continue;
+      const knownMp = Number(route.totalMp || 0);
+      if (knownMp + OPTIMISTIC_UNKNOWN_COST > allowance || route.directions.length >= maxCommands) continue;
+      const moveDirection = route.directions[route.directions.length - 1];
+
+      for (const ocean of core().adjacentHexes(endpoint)) {
+        if (!isOcean(known.get(ocean.coordinate))) continue;
+        const side = sideForFeature(moveDirection, ocean.direction);
+        if (!side) continue;
+        const order = side === 'right' ? 'FOR' : 'FOL';
+        const destination = firstCoastalUnknown(known, endpoint, side);
+        if (!destination) continue;
+        const signature = `${[...route.directions, order].join('>')}|${[...route.path, destination].map(point => point.coordinate).join('>')}`;
+        if (seen.has(signature)) continue;
+        seen.add(signature);
+        const destinationRow = known.get(destination.coordinate);
+        const path = [
+          ...(route.path || []).map(point => ({ ...point })),
+          {
+            ...destination,
+            terrain: terrainOf(destinationRow),
+            entryMp: null,
+            baseEntryMp: null,
+            weatherPenalty: null,
+            cumulativeMp: null,
+            knownCumulativeMp: knownMp,
+            unknownCumulativeCount: 1,
+            kind: 'approx'
+          }
+        ];
+        candidates.push({
+          ...route,
+          path,
+          directions: [...route.directions, order],
+          targetIsUnknown: true,
+          targetCoordinate: destination.coordinate,
+          destinationCoordinate: destination.coordinate,
+          knownMp,
+          totalMp: knownMp,
+          steps: path.length - 1,
+          unknownEntryCount: 1,
+          badWeatherMp: Number(route.badWeatherMp || knownMp),
+          specialOrder: order
+        });
+      }
+    }
+    return candidates;
+  }
+
   function addCoverage(coverage, known, route) {
     const points = route.path || [];
     for (const point of points) {
@@ -457,6 +636,43 @@
       - (repeatedSignature ? 500 : 0);
   }
 
+  function candidateFromRoute(known, route, options = {}) {
+    const effectiveRoute = options.effectiveRoute || route;
+    const directions = [...(options.directions || route.directions || [])];
+    const coverage = addCoverage(new Set(), known, effectiveRoute);
+    if (!coverage.size) return null;
+    if (directions.some(order => !VALID_SCOUT_ORDERS.has(order) || order === 'GOTO')) return null;
+    const effectiveUnknownEntryCount = (effectiveRoute.path || []).slice(1)
+      .filter(point => isUnknownEntry(known.get(point.coordinate))).length;
+    const knownMp = Number(route.knownMp ?? route.totalMp ?? 0);
+    const effectiveScenario = UNKNOWN_COST_SCENARIOS.map(cost => knownMp + effectiveUnknownEntryCount * cost);
+    const coverageWeights = routeCoverageWeights(known, { ...effectiveRoute, targetCoordinate: route.targetCoordinate });
+    return {
+      ...route,
+      path: effectiveRoute.path,
+      directions,
+      unknownEntryCount: effectiveUnknownEntryCount,
+      estimatedMp: effectiveScenario[1],
+      worstCaseMp: effectiveScenario[2],
+      scenarioMp: { low: effectiveScenario[0], expected: effectiveScenario[1], high: effectiveScenario[2] },
+      optimisticMp: effectiveScenario[0],
+      unitCode: options.unitCode || '',
+      routeType: 'scout',
+      noOfScouts: options.people,
+      noOfHorses: options.horses,
+      mission: options.mission,
+      specialOrder: options.specialOrder || route.specialOrder || null,
+      coverage: [...coverage],
+      coverageWeights,
+      coverageCount: coverage.size,
+      expectedCoverage: Object.values(coverageWeights).reduce((total, value) => total + Number(value || 0), 0),
+      signature: `${directions.join('>')}|${effectiveRoute.path.map(point => point.coordinate).join('>')}`,
+      destinationHex: options.destinationHex || route.destinationCoordinate,
+      movementAllowance: options.allowance,
+      mounted: options.mounted
+    };
+  }
+
   function generate(rows, originCoordinate, options = {}) {
     const known = mapRows(rows);
     const origin = core().parseCoordinate(originCoordinate);
@@ -473,59 +689,68 @@
 
     const targets = candidateTargets(known, origin.coordinate, Math.min(maxCommands, mounted ? 6 : 4));
     const candidates = [];
+    const candidateSignatures = new Set();
+    const candidateOptions = {
+      unitCode: options.unitCode || '',
+      people,
+      horses,
+      mission,
+      allowance,
+      mounted
+    };
+    const addRouteCandidate = candidate => {
+      if (!candidate || candidateSignatures.has(candidate.signature)) return;
+      candidateSignatures.add(candidate.signature);
+      candidates.push(candidate);
+    };
+
+    // Build coastline routes independently of target ranking. This guarantees
+    // that a reachable known coastline gets a dedicated FOL/FOR candidate even
+    // when the best fog target is somewhere else.
+    for (const route of coastalRouteCandidates(known, origin.coordinate, allowance, maxCommands)) {
+      addRouteCandidate(candidateFromRoute(known, route, {
+        ...candidateOptions,
+        effectiveRoute: route,
+        directions: route.directions,
+        specialOrder: route.specialOrder,
+        destinationHex: route.destinationCoordinate
+      }));
+    }
+
     for (const target of targets) {
-      const route = routeWithUnknownTarget(known, origin.coordinate, target.coordinate, {
-        maxCommands,
-        movementAllowance: allowance
-      });
-      if (!route || route.status !== 'ok' || !route.directions?.length || route.optimisticMp > allowance) continue;
-      const specialContext = specialOrderContextFor(known, route.path, target.coordinate);
-      const specialOrder = specialContext?.order || null;
-      let effectiveRoute = route;
-      let directions = [...route.directions];
-      let destinationHex = route.destinationCoordinate;
-      if (specialContext && specialContext.edgeIndex > 0) {
-        // FOL/FOR must be the final order and must start from the last known
-        // land hex. Do not leave ordinary unknown-terrain commands after it.
-        const firstUnknownIndex = specialContext.edgeIndex + 1;
-        const coastalPath = route.path.slice(0, Math.min(route.path.length, firstUnknownIndex + 1));
-        effectiveRoute = { ...route, path: coastalPath };
-        directions = [...route.directions.slice(0, specialContext.edgeIndex), specialOrder];
-        destinationHex = route.path[firstUnknownIndex]?.coordinate || route.destinationCoordinate;
+      // A target can have several equally plausible unknown continuations.
+      // Keep a small branch set so the selection pass has real alternatives
+      // instead of filling every requested row with one greedy route.
+      const variantCount = Math.min(4, Math.max(1, scoutRows));
+      for (let extensionVariant = 0; extensionVariant < variantCount; extensionVariant += 1) {
+        const route = routeWithUnknownTarget(known, origin.coordinate, target.coordinate, {
+          maxCommands,
+          movementAllowance: allowance,
+          extensionVariant
+        });
+        if (!route || route.status !== 'ok' || !route.directions?.length || route.optimisticMp > allowance) continue;
+        const specialContext = specialOrderContextFor(known, route.path, target.coordinate);
+        const specialOrder = specialContext?.order || null;
+        let effectiveRoute = route;
+        let directions = [...route.directions];
+        let destinationHex = route.destinationCoordinate;
+        if (specialContext && specialContext.edgeIndex > 0) {
+          // FOL/FOR must be the final order and must start from the last known
+          // land hex. Do not leave ordinary unknown-terrain commands after it.
+          const firstUnknownIndex = specialContext.edgeIndex + 1;
+          const coastalPath = route.path.slice(0, Math.min(route.path.length, firstUnknownIndex + 1));
+          effectiveRoute = { ...route, path: coastalPath };
+          directions = [...route.directions.slice(0, specialContext.edgeIndex), specialOrder];
+          destinationHex = route.path[firstUnknownIndex]?.coordinate || route.destinationCoordinate;
+        }
+        addRouteCandidate(candidateFromRoute(known, route, {
+          ...candidateOptions,
+          effectiveRoute,
+          directions,
+          specialOrder,
+          destinationHex
+        }));
       }
-      const coverage = addCoverage(new Set(), known, effectiveRoute);
-      if (!coverage.size) continue;
-      if (directions.some(order => !VALID_SCOUT_ORDERS.has(order) || order === 'GOTO')) continue;
-      const effectiveUnknownEntryCount = effectiveRoute.path.slice(1)
-        .filter(point => isUnknownEntry(known.get(point.coordinate))).length;
-      const effectiveScenario = UNKNOWN_COST_SCENARIOS.map(cost => route.knownMp + effectiveUnknownEntryCount * cost);
-      const coverageWeights = routeCoverageWeights(known, effectiveRoute);
-      candidates.push({
-        ...route,
-        path: effectiveRoute.path,
-        directions,
-        unknownEntryCount: effectiveUnknownEntryCount,
-        estimatedMp: effectiveScenario[1],
-        worstCaseMp: effectiveScenario[2],
-        scenarioMp: { low: effectiveScenario[0], expected: effectiveScenario[1], high: effectiveScenario[2] },
-        optimisticMp: effectiveScenario[0],
-        unitCode: options.unitCode || '',
-        routeType: 'scout',
-        noOfScouts: people,
-        noOfHorses: horses,
-        mission,
-        specialOrder,
-        coverage: [...coverage],
-        coverageWeights,
-        coverageCount: coverage.size,
-        expectedCoverage: Object.values(coverageWeights).reduce((total, value) => total + Number(value || 0), 0),
-        // Include the path as well as its orders. Two routes can legitimately
-        // use the same order sequence while reaching different branches.
-        signature: `${directions.join('>')}|${route.path.map(point => point.coordinate).join('>')}`,
-        destinationHex,
-        movementAllowance: allowance,
-        mounted
-      });
     }
 
     const selected = [];
@@ -556,9 +781,11 @@
       if (!candidates.length) break;
       const unusedSignatures = new Set(candidates.map(route => route.signature));
       for (const previous of selected) unusedSignatures.delete(previous.signature);
-      const pool = unusedSignatures.size
-        ? candidates.filter(route => unusedSignatures.has(route.signature))
-        : candidates;
+      // Do not save the same exact route repeatedly just to fill the requested
+      // row count. A short warning is safer than producing duplicate orders
+      // that give the player false coverage.
+      if (!unusedSignatures.size) break;
+      const pool = candidates.filter(route => unusedSignatures.has(route.signature));
       const ranked = pool.map(route => ({ route, score: routeScore(route, coveredWeights, selected) }))
         .sort((left, right) => right.score - left.score || left.route.worstCaseMp - right.route.worstCaseMp || left.route.signature.localeCompare(right.route.signature));
       const best = ranked[0]?.route;

@@ -18,7 +18,12 @@ const result = SmartScoutCore.generate(rows, 'AA0101', {
   mission: 'PATROL'
 });
 
-assert.equal(result.routes.length, 4, 'four selected scouts should become four scouting rows');
+assert.ok(result.routes.length >= 3, 'Smart Scout should produce every feasible scouting row');
+assert.equal(
+  new Set(result.routes.map(route => route.signature)).size,
+  result.routes.length,
+  'Smart Scout should not duplicate an exact route when selecting multiple scouts'
+);
 assert.ok(result.mounted, '2 people and 2 horses should use mounted scouting allowance');
 assert.ok(result.totalCoverage > 0, 'Smart Scout should score unique fog/question-mark coverage');
 for (const route of result.routes) {
@@ -70,6 +75,28 @@ assert.strictEqual(
   'FOL',
   'an ocean one counter-clockwise step from the movement heading is on the left'
 );
+
+const rightCoast = SmartScoutCore.generate([
+  { coordinate: 'AA0201', terrain: 'PR', knowledgeLevel: 'visited' },
+  { coordinate: 'AA0202', terrain: 'PR', knowledgeLevel: 'visited' },
+  { coordinate: 'AA0103', terrain: 'O', knowledgeLevel: 'observed' },
+  { coordinate: 'AA0303', terrain: 'PR', knowledgeLevel: 'visited' },
+  { coordinate: 'AA0304', terrain: 'PR', knowledgeLevel: 'visited' }
+], 'AA0201', { scoutCount: 4, noOfScouts: 2, noOfHorses: 2 });
+assert.strictEqual(rightCoast.routes[0]?.specialOrder, 'FOR', 'a reachable right-hand coastline should reserve a FOR scout route');
+assert.equal(new Set(rightCoast.routes.map(route => route.signature)).size, rightCoast.routes.length, 'coastline selection should still keep scout routes distinct');
+
+const leftCoast = SmartScoutCore.generate([
+  { coordinate: 'AA0201', terrain: 'PR', knowledgeLevel: 'visited' },
+  { coordinate: 'AA0202', terrain: 'PR', knowledgeLevel: 'visited' },
+  { coordinate: 'AA0303', terrain: 'O', knowledgeLevel: 'observed' },
+  { coordinate: 'AA0103', terrain: 'PR', knowledgeLevel: 'visited' },
+  { coordinate: 'AA0104', terrain: 'PR', knowledgeLevel: 'visited' }
+], 'AA0201', { scoutCount: 4, noOfScouts: 2, noOfHorses: 2 });
+assert.strictEqual(leftCoast.routes[0]?.specialOrder, 'FOL', 'a reachable left-hand coastline should reserve a FOL scout route');
+
+const obstacleSafe = SmartScoutCore.generate(rows, 'AA0101', { scoutCount: 4, noOfScouts: 2, noOfHorses: 2 });
+assert.ok(obstacleSafe.routes.every(route => !route.path.some(point => point.coordinate === 'AA0202')), 'Smart Scout must not route through known mountain hexes while extending unknown paths');
 
 const nearOcean = MovementPlannerCore.step(endpoint, 'N');
 const nearLand = MovementPlannerCore.step(endpoint, 'S');
