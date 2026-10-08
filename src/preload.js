@@ -105,6 +105,7 @@ contextBridge.exposeInMainWorld('tribenet', {
   addPlannedUnitSplit: (turnKey, split) => ipcRenderer.invoke('turn-manager:add-unit-split', turnKey, split),
   listPlannedUnitSplits: turnKey => ipcRenderer.invoke('turn-manager:list-unit-splits', turnKey),
   deletePlannedUnitSplit: id => ipcRenderer.invoke('turn-manager:delete-unit-split', id),
+  deleteAllPlannedUnitSplits: turnKey => ipcRenderer.invoke('turn-manager:delete-all-unit-splits', turnKey),
   saveTurnContext: (turnKey, notes) => ipcRenderer.invoke('turn-manager:save-context', turnKey, notes),
   getActivityCatalog: () => ipcRenderer.invoke('turn-manager:catalog'),
   backupTurnManager: () => ipcRenderer.invoke('turn-manager:backup'),

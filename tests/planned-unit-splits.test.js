@@ -94,6 +94,11 @@ try {
   assert.equal(removed.unitCode, '0485e1');
   assert.equal(turns.listUnitSplits('048-12').length, 1);
 
+  const removedAll = turns.deleteAllUnitSplits('048-12');
+  assert.equal(removedAll.length, 1);
+  assert.equal(removedAll[0].unitCode, '1485');
+  assert.equal(turns.listUnitSplits('048-12').length, 0);
+
   console.log('planned unit split tests passed');
 } finally {
   routes.close();

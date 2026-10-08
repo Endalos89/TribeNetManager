@@ -14,6 +14,7 @@ assert.match(preload, /ipcRenderer\.invoke\(['"]planned-routes:remove-all-unit['
 assert.match(preload, /ipcRenderer\.invoke\(['"]turn-manager:add-unit-split['"]/, 'planned split creation should go through IPC');
 assert.match(preload, /ipcRenderer\.invoke\(['"]turn-manager:list-unit-splits['"]/, 'planned splits should be readable through IPC');
 assert.match(preload, /ipcRenderer\.invoke\(['"]turn-manager:delete-unit-split['"]/, 'planned split removal should go through IPC');
+assert.match(preload, /ipcRenderer\.invoke\(['"]turn-manager:delete-all-unit-splits['"]/, 'reset-all unit changes should go through IPC');
 assert.match(preload, /scripts\.push\(['"]session-snapshot\.js['"]\)/, 'preload should load the renderer session snapshot client');
 assert.match(preload, /planned-unit-splits-map\.js/, 'preload should load the Mapper planned split layer');
 assert.match(preload, /planned-unit-splits-turn\.js/, 'preload should load the Turn Manager planned split layer');

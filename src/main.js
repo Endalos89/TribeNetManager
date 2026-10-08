@@ -496,6 +496,11 @@ ipcMain.handle('turn-manager:delete-unit-split', (_event, id) => {
   if (removed) removeRoutesForUnit(removed.turnKey, removed.unitCode);
   return removed;
 });
+ipcMain.handle('turn-manager:delete-all-unit-splits', (_event, turnKey) => {
+  const removed = turnManagerDatabase.deleteAllUnitSplits(turnKey);
+  for (const split of removed) removeRoutesForUnit(split.turnKey, split.unitCode);
+  return removed;
+});
 ipcMain.handle('turn-manager:save-context', (_event, turnKey, notes) => turnManagerDatabase.saveContext(turnKey, notes));
 ipcMain.handle('turn-manager:catalog', () => ACTIVITY_CATALOG);
 ipcMain.handle('turn-manager:backup', () => turnManagerDatabase.createBackup());

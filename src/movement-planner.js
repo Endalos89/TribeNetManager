@@ -95,6 +95,7 @@ function movementPlannerRenderAllowances(route = null) {
 
 function movementPlannerReset(options = {}) {
   const keepActive = Boolean(options.keepActive);
+  const keepCard = Boolean(options.keepCard);
   movementPlannerState.route = null;
   movementPlannerState.knownHexes = null;
   movementPlannerState.knowledgeKey = null;
@@ -104,7 +105,7 @@ function movementPlannerReset(options = {}) {
     movementPlannerState.active = false;
     movementPlannerState.origin = null;
   }
-  movementPlannerHideCard();
+  if (!keepCard) movementPlannerHideCard();
   movementPlannerSetStatus('');
   movementPlannerUpdateButton();
   draw();

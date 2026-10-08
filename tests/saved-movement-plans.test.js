@@ -117,6 +117,8 @@ assert.strictEqual(
 );
 
 assert.ok(source.includes('movement-planner-setup-grid'), 'Unit/type/scout-origin controls should be rendered inside the planner card.');
+assert.ok(source.includes('movementPlannerReset({ keepCard: true })'), 'Saving or resetting changes should leave the Movement controls available for the next unit.');
+assert.ok(source.includes('movementPlannerResetAllUnitChanges'), 'Movement controls should expose a reset-all unit changes action.');
 assert.ok(indexHtml.includes('<script src="saved-movement-plans.js"></script>'), 'Saved movement planner should load deterministically with the mapper.');
 assert.ok(!preload.includes("savedPlansScript.src = 'saved-movement-plans.js'"), 'Preload should not inject the saved movement planner asynchronously.');
 

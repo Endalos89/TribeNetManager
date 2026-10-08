@@ -308,6 +308,14 @@ class TurnManagerDatabase {
     return row;
   }
 
+  deleteAllUnitSplits(turnKey) {
+    if (!turnKey) return [];
+    const rows = this.listUnitSplits(turnKey);
+    if (!rows.length) return [];
+    this.db.prepare('DELETE FROM planned_unit_splits WHERE turn_key=?').run(turnKey);
+    return rows;
+  }
+
   getContext(turnKey) {
     return this.db.prepare('SELECT turn_key AS turnKey, notes, updated_at AS updatedAt FROM turn_context WHERE turn_key=?').get(turnKey) || { turnKey, notes: '', updatedAt: null };
   }

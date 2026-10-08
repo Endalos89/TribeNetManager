@@ -201,7 +201,9 @@ function savedMovementEnsureCardControls() {
     </div>
     <div class="movement-planner-create-row">
       <button id="movementPlannerNewUnit" class="button">Create unit</button>
+      <button id="movementPlannerResetAllUnitChanges" class="button danger" disabled>Reset all unit changes</button>
       <span>Creation timing is inferred automatically: save a Movement route for the new unit to create it before movement; leave it without a route to create it after movement.</span>
+      <span id="movementPlannerUnitChangesStatus"></span>
     </div>
     <div id="movementPlannerCreateForm" class="movement-planner-create-form hidden">
       <label class="movement-planner-field"><span>Source Tribe</span><select id="movementPlannerCreateParent"></select></label>
@@ -275,6 +277,7 @@ function savedMovementEnsureCardControls() {
   });
   document.getElementById('movementPlannerCreateSubmit')?.addEventListener('click', savedMovementCreateUnit);
   document.getElementById('movementPlannerResetAll')?.addEventListener('click', savedMovementResetAllMovement);
+  document.getElementById('movementPlannerResetAllUnitChanges')?.addEventListener('click', savedMovementResetAllUnitChanges);
 
   document.getElementById('movementPlannerSaveRoute').addEventListener('click', savedMovementSaveCurrentRoute);
   panel.addEventListener('click', async event => {
@@ -375,6 +378,7 @@ function savedMovementRenderSaveControls() {
   savedMovementEnsureCardControls();
   const saveButton = document.getElementById('movementPlannerSaveRoute');
   const resetButton = document.getElementById('movementPlannerResetAll');
+  const resetUnitChangesButton = document.getElementById('movementPlannerResetAllUnitChanges');
   const limit = document.getElementById('movementPlannerScoutLimit');
   const list = document.getElementById('movementPlannerSavedList');
   if (!saveButton || !limit || !list) return;
@@ -409,6 +413,14 @@ function savedMovementRenderSaveControls() {
   if (resetButton) {
     resetButton.disabled = !savedMovementCurrentTurnKey() || unitRouteCount === 0;
     resetButton.title = unitRouteCount ? `Remove all ${unitRouteCount} saved Movement route${unitRouteCount === 1 ? '' : 's'} for this turn. Scouting routes will be kept.` : 'No saved Movement routes for this turn.';
+  }
+
+  const unitChangeCount = (savedMovementPlansState.unitSplits || []).length;
+  if (resetUnitChangesButton) {
+    resetUnitChangesButton.disabled = !savedMovementCurrentTurnKey() || unitChangeCount === 0;
+    resetUnitChangesButton.title = unitChangeCount
+      ? `Remove all ${unitChangeCount} unit${unitChangeCount === 1 ? '' : 's'} created for this turn, including their saved routes.`
+      : 'No units created for this turn.';
   }
 
   if (type === 'scout') {
@@ -466,6 +478,31 @@ async function savedMovementResetAllMovement() {
     if (movementPlannerState.active) movementPlannerReset();
     await savedMovementRefresh();
     if (status) status.textContent = `${removed} Movement route${removed === 1 ? '' : 's'} reset. Scouting routes were kept.`;
+  } catch (error) {
+    if (status) status.textContent = error.message || String(error);
+  }
+}
+
+async function savedMovementResetAllUnitChanges() {
+  const turnKey = savedMovementCurrentTurnKey();
+  const status = document.getElementById('movementPlannerUnitChangesStatus');
+  const count = (savedMovementPlansState.unitSplits || []).length;
+  if (!turnKey) {
+    if (status) status.textContent = 'Select or import a planning turn first.';
+    return;
+  }
+  if (!count) {
+    if (status) status.textContent = 'No created units to reset.';
+    return;
+  }
+  if (!window.confirm(`Reset all ${count} unit change${count === 1 ? '' : 's'} for Turn ${turnKey}? Their saved routes will also be removed.`)) return;
+  try {
+    if (movementPlannerState.active) movementPlannerReset({ keepCard: true });
+    const removed = await window.tribenet.deleteAllPlannedUnitSplits(turnKey);
+    savedMovementPlansState.selectedUnitCode = '';
+    await savedMovementRefresh();
+    savedMovementRenderSetupPrompt();
+    if (status) status.textContent = `${removed.length} created unit${removed.length === 1 ? '' : 's'} reset. Their saved routes were removed.`;
   } catch (error) {
     if (status) status.textContent = error.message || String(error);
   }
@@ -605,7 +642,9 @@ async function savedMovementSaveCurrentRoute() {
 
   try {
     const saved = await window.tribenet.savePlannedRoute(payload);
+    if (movementPlannerState.active) movementPlannerReset({ keepCard: true });
     await savedMovementRefresh();
+    savedMovementRenderSetupPrompt();
     if (status) status.textContent = saved.routeType === 'scout'
       ? `Scout ${saved.scoutNumber} saved for ${saved.unitCode}.`
       : `Unit Move saved for ${saved.unitCode}.`;
