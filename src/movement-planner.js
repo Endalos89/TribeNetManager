@@ -30,9 +30,9 @@ function movementPlannerUpdateButton() {
   if (!button) return;
   button.disabled = !movementPlannerState.active && !state.selected;
   button.classList.toggle('active', movementPlannerState.active);
-  button.textContent = movementPlannerState.active ? 'Stop Movement Planner' : 'Plan Movement';
+  button.textContent = movementPlannerState.active ? 'Stop Movement' : 'Movement';
   button.title = movementPlannerState.active
-    ? `Planning from ${movementPlannerState.origin?.coordinate || 'selected origin'} · Shift-click appends one move`
+    ? `Movement from ${movementPlannerState.origin?.coordinate || 'selected origin'} · Shift-click appends one move`
     : 'Use the currently selected hex as the movement origin';
 }
 
@@ -142,6 +142,7 @@ function movementPlannerPrepareRoute(result) {
     path: (result.path || []).map(point => ({ ...point })),
     directions: [...(result.directions || [])],
     knownMp: Number(result.totalMp || 0),
+    badWeatherMp: Number(result.badWeatherMp || result.totalMp || 0),
     unknownEntryCount: 0
   };
 
@@ -156,6 +157,7 @@ function movementPlannerPrepareRoute(result) {
   prepared.steps += 1;
   prepared.unknownEntryCount = 1;
   prepared.totalMp = null;
+  prepared.badWeatherMp = Number(prepared.badWeatherMp || 0);
   prepared.path.push({
     coordinate: target.coordinate,
     globalCol: target.globalCol,
@@ -189,8 +191,10 @@ function movementPlannerResultMessage(result) {
 function movementPlannerRouteMpText(result) {
   const knownMp = Number(result?.knownMp ?? result?.totalMp ?? 0);
   const unknownEntries = Number(result?.unknownEntryCount || 0);
-  if (!unknownEntries) return `${knownMp} MP`;
-  return `${knownMp} known MP + ${movementPlannerUnknownMpLabel(unknownEntries)} unknown`;
+  const badWeather = Number(result?.badWeatherMp ?? knownMp);
+  const weatherText = `bad weather ${badWeather}${unknownEntries ? '+?' : ''}`;
+  if (!unknownEntries) return `${knownMp} MP · ${weatherText} MP`;
+  return `${knownMp} known MP + ${movementPlannerUnknownMpLabel(unknownEntries)} unknown · ${weatherText} MP`;
 }
 
 function movementPlannerRenderCard(result) {
@@ -221,7 +225,7 @@ function movementPlannerRenderCard(result) {
     : 'Movement commands: none — already at the destination.';
   note.textContent = result.unknownEntryCount > 0
     ? `Fog moves are included in the commands, but their terrain MP cannot be known until revealed. Hold Shift and click an adjacent hex to append another move, including fog → fog.`
-    : 'Hold Shift and click an adjacent hex to append one move. Scouts use the same terrain costs but have 8 MP on foot or 15 MP mounted. Weather and river/ford/pass modifiers are not yet applied.';
+    : 'Hold Shift and click an adjacent hex to append one move. Scouts use the same terrain costs but have 8 MP on foot or 15 MP mounted. The second total is a conservative bad-weather warning; the selected route still uses normal MP.';
 }
 
 async function movementPlannerPlanTo(targetCoordinate) {
@@ -300,6 +304,7 @@ async function movementPlannerAppendMove(targetCoordinate) {
     directions: [...route.directions, direction],
     steps: Number(route.steps || 0) + 1,
     knownMp,
+      badWeatherMp: Number(route.badWeatherMp || 0) + (entryMp == null ? 0 : entryMp + MovementPlannerCore.BAD_WEATHER_ENTRY_PENALTY),
     unknownEntryCount,
     totalMp: unknownEntryCount ? null : knownMp,
     appended: true

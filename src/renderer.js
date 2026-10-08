@@ -349,7 +349,7 @@ function updatePlanUI() {
     if (planningContext) {
       $('plannerTurnTitle').textContent = `Planning Turn ${resultsTimeline.turn.turnKey}`;
       $('plannerSourceLabel').textContent = 'Draft from Results baseline';
-      $('plannerWarnings').innerHTML = '<div class="planning-panel-hint">Select a unit on the map to choose a movement origin. Routes are planned against the revealed baseline.</div>';
+      $('plannerWarnings').innerHTML = '<div class="planning-panel-hint">Select a unit on the map to choose a movement origin. Routes use the revealed baseline.</div>';
     }
     return;
   }

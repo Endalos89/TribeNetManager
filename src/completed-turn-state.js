@@ -40,14 +40,19 @@ function resolvePlanMovementStarts(plan, resultTurn) {
   if (!plan) return plan;
   const resolved = clone(plan);
   const starts = new Map((resultTurn?.units || []).filter(u => u.currentHex).map(u => [String(u.unitCode), u.currentHex]));
+  const movementByUnit = new Map((resolved.movements || []).map(row => [String(row.unit), row]));
   const pending = [...(resolved.unitCreations || [])];
   let changed = true;
   while (pending.length && changed) {
     changed = false;
     for (let i = pending.length - 1; i >= 0; i--) {
       const creation = pending[i];
-      const parentStart = starts.get(String(creation.parentUnit));
+      let parentStart = starts.get(String(creation.parentUnit));
       if (!parentStart) continue;
+      if (creation.creationPhase === 'after') {
+        const parentMovement = movementByUnit.get(String(creation.parentUnit));
+        if (parentMovement?.orders?.length) parentStart = deriveMovementEnd(parentStart, parentMovement.orders).endHex || parentStart;
+      }
       const direction = canonical(creation.direction);
       starts.set(String(creation.unit), ['N','NE','SE','S','SW','NW'].includes(direction) ? (stepCoordinate(parentStart, direction) || parentStart) : parentStart);
       pending.splice(i, 1); changed = true;

@@ -1,4 +1,4 @@
-// Planned Tribe/Element splits are turn-scoped and originate from the parent Tribe's beginning-of-turn hex.
+// Planned units are turn-scoped and originate from the parent Tribe's beginning-of-turn hex.
 // This layer adds those virtual units to the existing Movement Planner without changing imported workbook data.
 
 savedMovementPlansState.unitSplits = [];
@@ -22,10 +22,8 @@ savedMovementUnits = function savedMovementUnitsWithPlannedSplits() {
     });
   }
 
-  const order = { Tribe: 0, Element: 1, Fleet: 2, Garrison: 3, Courier: 4 };
   return [...byCode.values()].sort((a, b) =>
-    (order[a.unitType] ?? 9) - (order[b.unitType] ?? 9)
-    || String(a.unitCode).localeCompare(String(b.unitCode), undefined, { numeric: true })
+    savedMovementCompareUnits(a, b)
   );
 };
 

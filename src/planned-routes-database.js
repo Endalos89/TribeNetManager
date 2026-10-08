@@ -28,6 +28,9 @@ class PlannedRoutesDatabase {
         path_json TEXT NOT NULL,
         known_mp INTEGER NOT NULL DEFAULT 0,
         unknown_entry_count INTEGER NOT NULL DEFAULT 0,
+        scout_count INTEGER,
+        horse_count INTEGER,
+        mission TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -35,6 +38,9 @@ class PlannedRoutesDatabase {
 
     const columns = new Set(this.db.prepare('PRAGMA table_info(planned_routes)').all().map(row => row.name));
     if (!columns.has('tribe_code')) this.db.exec('ALTER TABLE planned_routes ADD COLUMN tribe_code TEXT;');
+    if (!columns.has('scout_count')) this.db.exec('ALTER TABLE planned_routes ADD COLUMN scout_count INTEGER;');
+    if (!columns.has('horse_count')) this.db.exec('ALTER TABLE planned_routes ADD COLUMN horse_count INTEGER;');
+    if (!columns.has('mission')) this.db.exec('ALTER TABLE planned_routes ADD COLUMN mission TEXT;');
     this.db.prepare(`UPDATE planned_routes SET tribe_code = substr(unit_code, 1, 4) WHERE tribe_code IS NULL OR tribe_code = ''`).run();
 
     this.db.exec(`
@@ -60,6 +66,9 @@ class PlannedRoutesDatabase {
       path: JSON.parse(row.path_json || '[]'),
       knownMp: Number(row.known_mp || 0),
       unknownEntryCount: Number(row.unknown_entry_count || 0),
+      noOfScouts: row.scout_count == null ? null : Number(row.scout_count),
+      noOfHorses: row.horse_count == null ? null : Number(row.horse_count),
+      mission: row.mission || null,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
@@ -92,11 +101,11 @@ class PlannedRoutesDatabase {
         this.db.prepare(`
           UPDATE planned_routes SET
             tribe_code = ?, origin_hex = ?, destination_hex = ?, directions_json = ?, path_json = ?,
-            known_mp = ?, unknown_entry_count = ?, updated_at = ?
+            known_mp = ?, unknown_entry_count = ?, scout_count = ?, horse_count = ?, mission = ?, updated_at = ?
           WHERE id = ?
         `).run(
           tribeCode, route.originHex, route.destinationHex, JSON.stringify(route.directions || []), JSON.stringify(route.path || []),
-          Number(route.knownMp || 0), Number(route.unknownEntryCount || 0), now, Number(existing.id)
+          Number(route.knownMp || 0), Number(route.unknownEntryCount || 0), route.noOfScouts == null ? null : Number(route.noOfScouts), route.noOfHorses == null ? null : Number(route.noOfHorses), route.mission || null, now, Number(existing.id)
         );
         return this.get(Number(existing.id));
       }
@@ -120,11 +129,13 @@ class PlannedRoutesDatabase {
       INSERT INTO planned_routes(
         turn_key, tribe_code, unit_code, route_type, scout_number, origin_hex, destination_hex,
         directions_json, path_json, known_mp, unknown_entry_count, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      , scout_count, horse_count, mission
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       route.turnKey, tribeCode, route.unitCode, type, scoutNumber, route.originHex, route.destinationHex,
       JSON.stringify(route.directions || []), JSON.stringify(route.path || []),
-      Number(route.knownMp || 0), Number(route.unknownEntryCount || 0), now, now
+      Number(route.knownMp || 0), Number(route.unknownEntryCount || 0), now, now,
+      route.noOfScouts == null ? null : Number(route.noOfScouts), route.noOfHorses == null ? null : Number(route.noOfHorses), route.mission || null
     );
     return this.get(Number(result.lastInsertRowid));
   }

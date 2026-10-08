@@ -42,7 +42,7 @@
       <section class="module-grid">
         <button id="openMapperButton" class="module-card enabled">
           <div class="module-icon">⬢</div>
-          <div><h2>Mapper</h2><p>Use Results knowledge automatically, plan movement/scouting by turn, and switch between the classic and 3D views.</p></div>
+          <div><h2>Mapper</h2><p>Use Results knowledge automatically, record movement/scouting by turn, and switch between the classic and 3D views.</p></div>
           <span class="module-status">Open</span>
         </button>
         <button id="openTurnManagerButton" class="module-card enabled" onclick="location.href='turn-manager.html'">
@@ -67,7 +67,7 @@
         <button id="backButton" class="button">← Launcher</button>
         <button id="overviewButton" class="button active">World Overview</button>
         <div class="planner-controls">
-          <label class="toggle-control"><input id="planningToggle" type="checkbox" checked /><span>Orders overlay</span></label>
+          <label class="toggle-control"><input id="planningToggle" type="checkbox" checked /><span>Movement overlay</span></label>
           <label class="toggle-control"><input id="scoutingToggle" type="checkbox" checked /><span>Scouting</span></label>
           <select id="turnSelect" class="turn-select" title="Completed orders history"><option value="">No completed orders imported</option></select>
           <span id="planStatus" class="toolbar-readout"></span>
@@ -76,7 +76,7 @@
         <label class="mapper-view-switch"><input id="mapperViewToggle" type="checkbox" checked aria-label="Use 3D terrain view" /> 3D terrain</label>
         <div id="detailControls" class="detail-controls hidden">
           <button id="detailOverviewButton" class="button">Overview</button>
-          <button id="movementPlannerButton" class="button" disabled>Plan Movement</button>
+          <button id="movementPlannerButton" class="button" disabled>Movement</button>
           <span id="movementPlannerReadout" class="toolbar-readout"></span>
           <label class="coordinate-jump">Go to <input id="coordinateInput" maxlength="7" placeholder="PK1614" /></label>
           <button id="goCoordinateButton" class="button">Go</button>
@@ -114,19 +114,19 @@
           <canvas id="mapCanvas"></canvas>
           <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex to cycle units, then inspect the land · Click a unit label for logistics</div>
           <div id="movementPlannerCard" class="movement-planner-card hidden">
-            <div class="movement-planner-title"><strong id="movementPlannerTitle">Movement planner</strong><span>lowest MP route</span></div>
+            <div class="movement-planner-title"><strong id="movementPlannerTitle">Movement</strong><span>lowest MP route</span></div>
             <div id="movementPlannerSummary"></div>
             <div id="movementPlannerDirections"></div>
             <div id="movementPlannerNote"></div>
           </div>
           <div id="plannerOverlayCard" class="planner-overlay-card collapsed hidden">
             <button id="planningPanelToggle" class="planning-panel-toggle" type="button" aria-expanded="false">
-              <span>Planning panel</span><span id="planningPanelChevron">＋</span>
+              <span>Movement panel</span><span id="planningPanelChevron">＋</span>
             </button>
             <div id="planningPanelContent" class="planning-panel-content" hidden>
               <div class="planner-overlay-title"><strong id="plannerTurnTitle">Completed orders</strong><span id="plannerSourceLabel"></span></div>
               <div id="plannerWarnings" class="planner-warnings"></div>
-              <div class="planning-panel-hint">Select a unit, then use Plan Movement to choose a destination. Shift-click appends one adjacent move.</div>
+              <div class="planning-panel-hint">Select a unit, then use Movement to choose a destination. Shift-click appends one adjacent move.</div>
             </div>
           </div>
         </div>

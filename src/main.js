@@ -12,6 +12,8 @@ const { applyWagonAnimalRules } = require('./logistics-rules');
 const { ACTIVITY_CATALOG } = require('./activity-catalog');
 const { normalizeView } = require('./update-view-state');
 const { routesDb, removeRoutesForUnit } = require('./planned-routes-ipc');
+const { canonicalTurnKey, inferTurnKeyFromFilename } = require('./turn-key');
+const { patchOrdersWorkbook, saveOrderTemplate, findOrderTemplate, compareUnitCodes } = require('./orders-workbook');
 const {
   planningTurnKeyFromResult,
   resultTurnToStartWorkbook,
@@ -196,6 +198,78 @@ function effectiveManagedTurn(turnKey) {
   };
 }
 
+function ordersExportBaseline(turnKey) {
+  const managed = turnManagerDatabase.getTurn(turnKey);
+  if (managed?.start?.data) return managed.start.data;
+  const result = resultForPlanTurn(turnKey);
+  return result ? resultTurnToStartWorkbook(result) : null;
+}
+
+function ordersExportUnits(turnKey) {
+  const baseline = ordersExportBaseline(turnKey);
+  const byCode = new Map();
+  for (const unit of baseline?.units || []) {
+    const code = String(unit.unit || unit.unitCode || '').trim();
+    if (code) byCode.set(code.toLowerCase(), { unitCode: code, unitType: unit.type || unit.unitType || 'Unit', unitName: unit.unitName || '', currentHex: unit.startHex || unit.currentHex || null });
+  }
+  for (const split of turnManagerDatabase.listUnitSplits(turnKey)) {
+    byCode.set(String(split.unitCode).toLowerCase(), {
+      unitCode: split.unitCode,
+      unitType: split.unitType,
+      unitName: split.unitName || '',
+      currentHex: split.startHex,
+      parentUnit: split.parentUnit,
+      plannedSplit: true
+    });
+  }
+  for (const route of routesDb().list(turnKey)) {
+    if (route.routeType === 'unit' && !byCode.has(String(route.unitCode).toLowerCase())) byCode.set(String(route.unitCode).toLowerCase(), { unitCode: route.unitCode, unitType: 'Unit', unitName: '', currentHex: route.originHex });
+  }
+  return [...byCode.values()].sort((a, b) => compareUnitCodes(a.unitCode, b.unitCode));
+}
+
+function buildOrdersExportData(turnKey) {
+  const units = ordersExportUnits(turnKey);
+  const routes = routesDb().list(turnKey);
+  const unitTypeByCode = new Map(units.map(unit => [String(unit.unitCode).toLowerCase(), String(unit.unitType || '')]));
+  const illegalGarrisonMove = routes.find(route => route.routeType === 'unit' && unitTypeByCode.get(String(route.unitCode).toLowerCase()) === 'Garrison');
+  if (illegalGarrisonMove) throw new Error(`Garrison ${illegalGarrisonMove.unitCode} is stationary and cannot have a Movement route.`);
+  const unitRoutes = new Map(routes.filter(route => route.routeType === 'unit').map(route => [String(route.unitCode).toLowerCase(), route]));
+  const movements = units.map(unit => ({
+    unitCode: unit.unitCode,
+    directions: unitRoutes.get(String(unit.unitCode).toLowerCase())?.directions?.length
+      ? unitRoutes.get(String(unit.unitCode).toLowerCase()).directions
+      : ['Still']
+  }));
+  const scouts = routes.filter(route => route.routeType === 'scout').map(route => ({
+    unitCode: route.unitCode,
+    scoutNumber: route.scoutNumber,
+    noOfScouts: route.noOfScouts || 1,
+    noOfHorses: route.noOfHorses || 0,
+    mission: route.mission || 'PATROL',
+    directions: route.directions
+  }));
+  const splits = turnManagerDatabase.listUnitSplits(turnKey).sort((a, b) => compareUnitCodes(a.unitCode, b.unitCode));
+  const gmActions = [];
+  for (const split of splits) {
+    const moved = unitRoutes.has(String(split.unitCode).toLowerCase());
+    const phase = moved ? 'before' : 'after';
+    gmActions.push({
+      unit: split.parentUnit,
+      text: `Create ${split.unitType} ${split.unitCode} from ${split.parentUnit}${phase === 'after' ? ' after movement' : ''}`
+    });
+    if (split.unitType === 'Tribe') {
+      for (const skill of split.skills || []) {
+        gmActions.push({
+          unit: split.unitCode,
+          text: `Skill ${skill.skill} ${skill.level} should be moved from Tribe ${String(split.parentUnit).slice(0, 4)} to Tribe ${split.unitCode}`
+        });
+      }
+    }
+  }
+  return { movements, scouts, gmActions };
+}
+
 function saveCompletedOrders(filePath) {
   const parsed = parseTurnWorkbook(filePath, 'final');
   const plan = applyWagonAnimalRules(parsed.rawPlan);
@@ -343,6 +417,49 @@ ipcMain.handle('planner:imports', (_event, turnKey) => database.getTurnImports(t
 ipcMain.handle('planner:get', (_event, id) => withCurrentLogistics(hydratedPlanRecord(database.getTurnPlan(id || null))));
 ipcMain.handle('planner:get-turn', (_event, turnKey) => withCurrentLogistics(hydratedPlanRecord(database.getTurnPlanForTurn(turnKey))));
 ipcMain.handle('planner:activate', (_event, id) => withCurrentLogistics(hydratedPlanRecord(database.setActiveTurnPlan(id))));
+
+ipcMain.handle('orders:template-import', async (_event, expectedTurnKey) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import blank Orders workbook',
+    properties: ['openFile'],
+    filters: [{ name: 'Excel workbooks', extensions: ['xlsx', 'xlsm', 'xls'] }]
+  });
+  if (result.canceled || !result.filePaths.length) return { canceled: true };
+  try {
+    const filePath = result.filePaths[0];
+    const inferred = canonicalTurnKey(inferTurnKeyFromFilename(filePath));
+    const requested = canonicalTurnKey(expectedTurnKey);
+    const turnKey = requested || inferred;
+    if (!turnKey) throw new Error('The workbook filename does not identify a turn, and no planning turn is selected.');
+    const saved = await saveOrderTemplate(filePath, app.getPath('userData'), turnKey);
+    return { canceled: false, ...saved };
+  } catch (error) {
+    console.error('Blank Orders template import failed', error);
+    return { canceled: false, error: error.message };
+  }
+});
+
+ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
+  const turnKey = canonicalTurnKey(requestedTurnKey);
+  if (!turnKey) return { canceled: false, error: 'Select a planning turn before exporting Orders.' };
+  try {
+    const templatePath = await findOrderTemplate(app.getPath('userData'), turnKey);
+    if (!templatePath) return { canceled: false, error: `Import a blank Orders workbook for Turn ${turnKey} first.` };
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export completed Orders workbook',
+      defaultPath: path.join(app.getPath('documents'), `${turnKey.replace('-', '_')}_Orders Complete.xlsx`),
+      filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }]
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    const outputPath = path.extname(result.filePath) ? result.filePath : `${result.filePath}.xlsx`;
+    const data = buildOrdersExportData(turnKey);
+    const exported = await patchOrdersWorkbook({ templatePath, outputPath, ...data });
+    return { canceled: false, outputFile: path.basename(exported.outputPath), outputPath: exported.outputPath };
+  } catch (error) {
+    console.error('Orders workbook export failed', error);
+    return { canceled: false, error: error.message };
+  }
+});
 
 ipcMain.handle('turn-manager:import', async (_event, role) => {
   if (role === 'start') {

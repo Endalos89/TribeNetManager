@@ -4,7 +4,10 @@ const savedMovementPlansState = {
   routeType: 'unit',
   scoutOriginMode: 'current',
   turnKey: null,
-  ready: false
+  ready: false,
+  scoutCount: 1,
+  scoutHorses: 0,
+  scoutMission: 'PATROL'
 };
 
 function savedMovementEscape(value) {
@@ -14,6 +17,18 @@ function savedMovementEscape(value) {
 function savedMovementRootTribe(unitCode) {
   const match = String(unitCode || '').match(/^(\d{4})/);
   return match ? match[1] : String(unitCode || '').trim();
+}
+
+function savedMovementCompareUnits(left, right) {
+  const parse = unit => {
+    const value = String(unit?.unitCode || unit?.unit || '').toLowerCase();
+    const root = Number(value.slice(0, 4)) || 0;
+    const suffix = value.slice(4);
+    const typeOrder = suffix === '' ? 0 : suffix[0] === 'e' ? 1 : suffix[0] === 'f' ? 2 : suffix[0] === 'g' ? 3 : suffix[0] === 'c' ? 4 : 9;
+    return [root, typeOrder, Number(suffix.slice(1)) || 0, value];
+  };
+  const a = parse(left); const b = parse(right);
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3].localeCompare(b[3]);
 }
 
 function savedMovementCurrentTurnKey() {
@@ -45,15 +60,92 @@ function savedMovementUnits() {
   for (const movement of state?.planImport?.plan?.movements || []) add(movement, 2);
   for (const unit of resultsTimeline?.turn?.units || []) add(unit, 3);
 
-  return [...byCode.values()].map(row => row.unit).sort((a, b) => {
-    const order = { Tribe: 0, Element: 1, Fleet: 2, Garrison: 3, Courier: 4 };
-    return (order[a.unitType] ?? 9) - (order[b.unitType] ?? 9)
-      || String(a.unitCode).localeCompare(String(b.unitCode), undefined, { numeric: true });
-  });
+  return [...byCode.values()].map(row => row.unit).sort(savedMovementCompareUnits);
 }
 
 function savedMovementSelectedUnit() {
   return savedMovementUnits().find(unit => String(unit.unitCode) === String(savedMovementPlansState.selectedUnitCode)) || null;
+}
+
+function savedMovementCreationParents() {
+  return savedMovementUnits().filter(unit => String(unit.unitType || unit.type) === 'Tribe' && !unit.plannedSplit);
+}
+
+async function savedMovementPopulateCreationForm() {
+  const parentSelect = document.getElementById('movementPlannerCreateParent');
+  if (!parentSelect) return;
+  const parents = savedMovementCreationParents();
+  parentSelect.innerHTML = parents.map(unit => `<option value="${savedMovementEscape(unit.unitCode)}">${savedMovementEscape(unit.unitCode)} · ${savedMovementEscape(unit.unitName || 'Tribe')}</option>`).join('');
+  const selected = savedMovementSelectedUnit();
+  if (selected && String(selected.unitType) === 'Tribe') parentSelect.value = selected.unitCode;
+  const type = document.getElementById('movementPlannerCreateType');
+  const code = document.getElementById('movementPlannerCreateCode');
+  if (type && code && !code.value) code.value = type.value === 'Tribe' ? '1485' : `${parentSelect.value || '0000'}e1`;
+  await savedMovementLoadCreationSkills();
+}
+
+async function savedMovementLoadCreationSkills() {
+  const host = document.getElementById('movementPlannerCreateSkills');
+  const parent = document.getElementById('movementPlannerCreateParent')?.value;
+  const type = document.getElementById('movementPlannerCreateType')?.value;
+  if (!host || !parent) return;
+  host.innerHTML = '';
+  if (type !== 'Tribe') return;
+  try {
+    const managed = savedMovementCurrentTurnKey() ? await window.tribenet.getManagedTurn(savedMovementCurrentTurnKey()) : null;
+    const skills = managed?.start?.data?.skillsByTribe?.[savedMovementRootTribe(parent)] || [];
+    if (!skills.length) {
+      host.textContent = 'No source-Tribe skills were found in the Results baseline.';
+      return;
+    }
+    host.innerHTML = '<span>Move entire skills to the new Tribe (optional)</span>' + skills.map((row, index) => `
+      <label><input type="checkbox" data-creation-skill="${savedMovementEscape(row.skill || row.shortname || '')}" data-creation-level="${Number(row.level || 0)}" /> ${savedMovementEscape(row.skill || row.shortname)} ${Number(row.level || 0)}</label>
+    `).join('');
+  } catch (error) {
+    host.textContent = `Could not load source skills: ${error.message || error}`;
+  }
+}
+
+async function savedMovementCreateUnit() {
+  const status = document.getElementById('movementPlannerCreateStatus');
+  const turnKey = savedMovementCurrentTurnKey();
+  const parentUnit = document.getElementById('movementPlannerCreateParent')?.value;
+  const unitType = document.getElementById('movementPlannerCreateType')?.value;
+  const unitCode = document.getElementById('movementPlannerCreateCode')?.value.trim().toLowerCase();
+  const unitName = document.getElementById('movementPlannerCreateName')?.value.trim();
+  const skills = [...document.querySelectorAll('#movementPlannerCreateSkills input[data-creation-skill]:checked')].map(input => ({
+    skill: input.dataset.creationSkill, level: Number(input.dataset.creationLevel || 0)
+  }));
+  if (!turnKey || !parentUnit || !unitType || !unitCode) {
+    if (status) status.textContent = 'Choose a source Tribe and enter a unit code.';
+    return;
+  }
+  try {
+    const created = await window.tribenet.addPlannedUnitSplit(turnKey, { parentUnit, unitCode, unitType, unitName, creationPhase: 'after', skills });
+    savedMovementPlansState.selectedUnitCode = created.unitCode;
+    await savedMovementRefresh();
+    const form = document.getElementById('movementPlannerCreateForm');
+    form?.classList.add('hidden');
+    if (status) status.textContent = `${created.unitType} ${created.unitCode} created. It will be created after movement unless you save a Movement route for it.`;
+  } catch (error) {
+    if (status) status.textContent = error.message || String(error);
+  }
+}
+
+async function savedMovementImportTemplate() {
+  const status = document.getElementById('movementPlannerWorkbookStatus');
+  try {
+    const result = await window.tribenet.importOrdersTemplate(savedMovementCurrentTurnKey());
+    if (status) status.textContent = result?.error ? `Import failed: ${result.error}` : result?.canceled ? 'Import cancelled.' : `Blank Orders workbook loaded for Turn ${result.turnKey}.`;
+  } catch (error) { if (status) status.textContent = error.message || String(error); }
+}
+
+async function savedMovementExportWorkbook() {
+  const status = document.getElementById('movementPlannerWorkbookStatus');
+  try {
+    const result = await window.tribenet.exportOrdersWorkbook(savedMovementCurrentTurnKey());
+    if (status) status.textContent = result?.error ? `Export failed: ${result.error}` : result?.canceled ? 'Export cancelled.' : `Orders workbook exported: ${result.outputFile}.`;
+  } catch (error) { if (status) status.textContent = error.message || String(error); }
 }
 
 function savedMovementUnitMove(unitCode) {
@@ -93,10 +185,10 @@ function savedMovementEnsureCardControls() {
         <select id="movementPlannerUnitSelect" aria-label="Movement unit"><option value="">Select unit…</option></select>
       </label>
       <label class="movement-planner-field">
-        <span>Plan as</span>
+        <span>Mode</span>
         <select id="movementPlannerRouteType" aria-label="Movement type">
-          <option value="unit">Unit Move</option>
-          <option value="scout">Scout Move</option>
+          <option value="unit">Movement</option>
+          <option value="scout">Scouting</option>
         </select>
       </label>
       <label id="movementPlannerScoutOriginField" class="movement-planner-field hidden">
@@ -106,6 +198,34 @@ function savedMovementEnsureCardControls() {
           <option value="after-unit">After saved Unit Move</option>
         </select>
       </label>
+      <label id="movementPlannerScoutCountField" class="movement-planner-field hidden">
+        <span>Scouts</span><input id="movementPlannerScoutCount" type="number" min="1" max="99" value="1" />
+      </label>
+      <label id="movementPlannerScoutHorsesField" class="movement-planner-field hidden">
+        <span>Horses</span><input id="movementPlannerScoutHorses" type="number" min="0" max="99" value="0" />
+      </label>
+      <label id="movementPlannerScoutMissionField" class="movement-planner-field hidden">
+        <span>Mission</span>
+        <select id="movementPlannerScoutMission"><option>LOCATE</option><option selected>PATROL</option><option>RAID</option><option>SPY</option></select>
+      </label>
+    </div>
+    <div class="movement-planner-create-row">
+      <button id="movementPlannerNewUnit" class="button">Create unit</button>
+      <span>Creates at the source Tribe’s beginning-of-turn location. A saved movement makes the creation “before movement”; otherwise it is “after movement”.</span>
+    </div>
+    <div id="movementPlannerCreateForm" class="movement-planner-create-form hidden">
+      <label class="movement-planner-field"><span>Source Tribe</span><select id="movementPlannerCreateParent"></select></label>
+      <label class="movement-planner-field"><span>Type</span><select id="movementPlannerCreateType"><option>Element</option><option>Fleet</option><option>Garrison</option><option>Courier</option><option>Tribe</option></select></label>
+      <label class="movement-planner-field"><span>Code</span><input id="movementPlannerCreateCode" placeholder="0485e1" /></label>
+      <label class="movement-planner-field"><span>Name</span><input id="movementPlannerCreateName" placeholder="Optional" /></label>
+      <div id="movementPlannerCreateSkills" class="movement-planner-create-skills"></div>
+      <button id="movementPlannerCreateSubmit" class="button accent">Create</button>
+      <span id="movementPlannerCreateStatus"></span>
+    </div>
+    <div class="movement-planner-workbook-row">
+      <button id="movementPlannerImportTemplate" class="button">Import blank Orders</button>
+      <button id="movementPlannerExportWorkbook" class="button accent">Export Orders workbook</button>
+      <span id="movementPlannerWorkbookStatus"></span>
     </div>
     <div id="movementPlannerOriginHint" class="movement-planner-origin-hint"></div>
     <div class="movement-planner-save-row">
@@ -120,6 +240,9 @@ function savedMovementEnsureCardControls() {
   const unitSelect = document.getElementById('movementPlannerUnitSelect');
   const typeSelect = document.getElementById('movementPlannerRouteType');
   const scoutOriginSelect = document.getElementById('movementPlannerScoutOrigin');
+  const scoutCount = document.getElementById('movementPlannerScoutCount');
+  const scoutHorses = document.getElementById('movementPlannerScoutHorses');
+  const scoutMission = document.getElementById('movementPlannerScoutMission');
 
   unitSelect.addEventListener('change', async () => {
     savedMovementPlansState.selectedUnitCode = unitSelect.value;
@@ -144,6 +267,29 @@ function savedMovementEnsureCardControls() {
     savedMovementRenderSaveControls();
     movementPlannerUpdateButton();
   });
+
+  for (const input of [scoutCount, scoutHorses, scoutMission]) input?.addEventListener('change', () => {
+    savedMovementPlansState.scoutCount = Math.max(1, Number(scoutCount?.value || 1));
+    savedMovementPlansState.scoutHorses = Math.max(0, Number(scoutHorses?.value || 0));
+    savedMovementPlansState.scoutMission = String(scoutMission?.value || 'PATROL').toUpperCase();
+    savedMovementRenderSaveControls();
+  });
+
+  document.getElementById('movementPlannerNewUnit')?.addEventListener('click', async () => {
+    const form = document.getElementById('movementPlannerCreateForm');
+    form?.classList.toggle('hidden');
+    if (form && !form.classList.contains('hidden')) await savedMovementPopulateCreationForm();
+  });
+  document.getElementById('movementPlannerCreateParent')?.addEventListener('change', savedMovementLoadCreationSkills);
+  document.getElementById('movementPlannerCreateType')?.addEventListener('change', async () => {
+    const parent = document.getElementById('movementPlannerCreateParent')?.value || '0000';
+    const code = document.getElementById('movementPlannerCreateCode');
+    if (code) code.value = document.getElementById('movementPlannerCreateType')?.value === 'Tribe' ? '1485' : `${parent}e1`;
+    await savedMovementLoadCreationSkills();
+  });
+  document.getElementById('movementPlannerCreateSubmit')?.addEventListener('click', savedMovementCreateUnit);
+  document.getElementById('movementPlannerImportTemplate')?.addEventListener('click', savedMovementImportTemplate);
+  document.getElementById('movementPlannerExportWorkbook')?.addEventListener('click', savedMovementExportWorkbook);
 
   document.getElementById('movementPlannerSaveRoute').addEventListener('click', savedMovementSaveCurrentRoute);
   panel.addEventListener('click', async event => {
@@ -193,6 +339,12 @@ function savedMovementPopulateUnits() {
   }
   scoutOriginSelect.value = savedMovementPlansState.scoutOriginMode;
   scoutOriginField.classList.toggle('hidden', savedMovementPlansState.routeType !== 'scout');
+  const scoutFields = [
+    document.getElementById('movementPlannerScoutCountField'),
+    document.getElementById('movementPlannerScoutHorsesField'),
+    document.getElementById('movementPlannerScoutMissionField')
+  ];
+  for (const field of scoutFields) field?.classList.toggle('hidden', savedMovementPlansState.routeType !== 'scout');
 
   select.disabled = !units.length;
   typeSelect.disabled = !units.length;
@@ -245,20 +397,27 @@ function savedMovementRenderSaveControls() {
   const route = movementPlannerState.route;
   const type = savedMovementPlansState.routeType;
   const scoutStatus = savedMovementScoutGroupStatus();
+  const stationary = String(unit?.unitType || unit?.type || '') === 'Garrison' && type === 'unit';
+  const scoutCount = Math.max(1, Number(document.getElementById('movementPlannerScoutCount')?.value || savedMovementPlansState.scoutCount || 1));
+  const scoutHorses = Math.max(0, Number(document.getElementById('movementPlannerScoutHorses')?.value || savedMovementPlansState.scoutHorses || 0));
   const canSave = Boolean(
-    unit && savedMovementCurrentTurnKey() && route?.status === 'ok' && route.directions?.length
-    && (type !== 'scout' || (scoutStatus && scoutStatus.count < 8))
+    unit && !stationary && savedMovementCurrentTurnKey() && route?.status === 'ok' && route.directions?.length
+    && (type !== 'scout' || (scoutStatus && scoutStatus.count < 8 && scoutHorses <= scoutCount))
   );
 
   saveButton.textContent = type === 'scout' ? 'Save Scout Move' : 'Save Unit Move';
   saveButton.disabled = !canSave;
   saveButton.title = !unit
     ? 'Select a unit first.'
-    : !route?.directions?.length
-      ? 'Plan at least one movement command first.'
+    : stationary
+      ? 'Garrisons are stationary and use Still.'
+      : !route?.directions?.length
+        ? 'Plan at least one movement command first.'
       : type === 'scout' && scoutStatus?.count >= 8
         ? `Tribe ${scoutStatus.tribeCode} has already used all 8 scout moves this turn.`
-        : '';
+        : type === 'scout' && scoutHorses > scoutCount
+          ? 'Horses cannot exceed the number of scouts.'
+          : '';
 
   if (type === 'scout') {
     limit.textContent = scoutStatus
@@ -266,8 +425,10 @@ function savedMovementRenderSaveControls() {
       : 'Select a unit to see its Tribe scout allowance.';
   } else {
     limit.textContent = unit
-      ? 'Unit Move is independent of scouting. Saving again replaces this unit’s saved move for the turn.'
-      : 'Select a unit to plan movement for this turn.';
+      ? stationary
+        ? 'Garrisons are stationary and will be exported with Still as MOVEMENT_1.'
+        : 'Unit Move is independent of scouting. Saving again replaces this unit’s saved move for the turn.'
+      : 'Select a unit to record movement for this turn.';
   }
 
   if (!unit) {
@@ -307,10 +468,10 @@ function savedMovementRenderSetupPrompt() {
   const origin = savedMovementOriginFor();
   if (title) title.textContent = unit
     ? `${savedMovementPlansState.routeType === 'scout' ? 'Scout' : 'Movement'} from ${origin || '—'}`
-    : 'Movement planner';
+    : 'Movement';
   if (summary) summary.textContent = unit
-    ? 'Click Plan Movement, then choose a destination.'
-    : 'Select a unit below, choose Unit Move or Scout Move, then plan the route.';
+    ? 'Click Movement, then choose a destination.'
+    : 'Select a unit below, choose Movement or Scouting, then choose the route.';
   movementPlannerRenderAllowances(null);
   if (routeText) routeText.textContent = '';
   if (note) {
@@ -405,6 +566,10 @@ async function savedMovementSaveCurrentRoute() {
   const turnKey = savedMovementCurrentTurnKey();
   const status = document.getElementById('movementPlannerSaveStatus');
   if (!unit || !turnKey || route?.status !== 'ok' || !route.directions?.length) return;
+  if (savedMovementPlansState.routeType === 'unit' && unit.unitType === 'Garrison') {
+    savedMovementSetStationaryStatus();
+    return;
+  }
 
   const payload = {
     turnKey,
@@ -416,6 +581,10 @@ async function savedMovementSaveCurrentRoute() {
     directions: route.directions,
     path: route.path,
     knownMp: Number(route.knownMp ?? route.totalMp ?? 0),
+    badWeatherMp: Number(route.badWeatherMp ?? route.knownMp ?? route.totalMp ?? 0),
+    noOfScouts: savedMovementPlansState.routeType === 'scout' ? Math.max(1, Number(document.getElementById('movementPlannerScoutCount')?.value || 1)) : null,
+    noOfHorses: savedMovementPlansState.routeType === 'scout' ? Math.max(0, Number(document.getElementById('movementPlannerScoutHorses')?.value || 0)) : null,
+    mission: savedMovementPlansState.routeType === 'scout' ? String(document.getElementById('movementPlannerScoutMission')?.value || 'PATROL').toUpperCase() : null,
     unknownEntryCount: Number(route.unknownEntryCount || 0)
   };
 
@@ -428,6 +597,11 @@ async function savedMovementSaveCurrentRoute() {
   } catch (error) {
     if (status) status.textContent = error.message || String(error);
   }
+}
+
+function savedMovementSetStationaryStatus() {
+  const status = document.getElementById('movementPlannerSaveStatus');
+  if (status) status.textContent = 'Garrisons are stationary; MOVEMENT_1 will be Still.';
 }
 
 function savedMovementDrawLabel(point, text, color) {
@@ -497,7 +671,7 @@ movementPlannerUpdateButton = function movementPlannerUpdateButtonWithUnits() {
     button.disabled = false;
     button.title = savedMovementPlansState.selectedUnitCode
       ? `Plan ${savedMovementPlansState.routeType === 'scout' ? 'scouting' : 'movement'} for ${savedMovementPlansState.selectedUnitCode}`
-      : 'Open Movement Planner and select a unit';
+      : 'Open Movement and select a unit';
   }
 };
 
@@ -523,6 +697,13 @@ if (savedMovementPlannerButton) {
         savedMovementRenderSetupPrompt();
         movementPlannerSetStatus('Select a unit in the planner card.');
       }
+      return;
+    }
+
+    if (savedMovementPlansState.routeType === 'unit' && savedMovementSelectedUnit()?.unitType === 'Garrison') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      savedMovementSetStationaryStatus();
       return;
     }
 

@@ -48,6 +48,29 @@ try {
     parentUnit: '0485e9', unitCode: '2485', unitType: 'Tribe'
   }), /parent must be an existing Tribe/i);
 
+  turns.saveWorkbook({
+    role: 'start',
+    turnKey: '049-12',
+    sourceFile: '049_12_start.xlsx',
+    importedAt: '2026-09-27T00:00:00.000Z',
+    skillsByTribe: {
+      '0490': [
+        { skill: 'Administration', level: 2 },
+        { skill: 'Diplomacy', level: 2 },
+        { skill: 'Courier', level: 1 },
+        { skill: 'Woodworking', level: 3 }
+      ]
+    },
+    units: [{ unit: '0490', type: 'Tribe', startHex: 'PK1711' }]
+  });
+  assert.equal(turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '0490e1', unitType: 'Element', skills: [] }).unitType, 'Element');
+  assert.throws(() => turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '0490f1', unitType: 'Fleet' }), /Administration 2 allows 1/i);
+  assert.equal(turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '1490', unitType: 'Tribe', skills: [{ skill: 'Woodworking' }] }).skills[0].level, 3);
+  assert.throws(() => turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '2490', unitType: 'Tribe' }), /Diplomacy 2 allows 2/i);
+  assert.equal(turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '0490c1', unitType: 'Courier' }).unitType, 'Courier');
+  assert.throws(() => turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '0490c2', unitType: 'Courier' }), /Courier 1 allows 1/i);
+  assert.equal(turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '0490g1', unitType: 'Garrison' }).unitType, 'Garrison');
+
   routes.save({
     turnKey: '048-12',
     tribeCode: '0485',

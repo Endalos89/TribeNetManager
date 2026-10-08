@@ -50,6 +50,7 @@ function makeHex(coordinate, terrain) {
   const result = findFastestRoute(buildKnownHexMap(rows), origin.coordinate, target.coordinate);
   assert.equal(result.status, 'ok');
   assert.equal(result.totalMp, 9, 'three prairie entries should beat LCM + prairie (13 MP)');
+  assert.equal(result.badWeatherMp, 12, 'bad weather should be shown as a second conservative total without changing the route');
   assert.deepEqual(result.directions, ['NE', 'SE', 'S']);
 })();
 

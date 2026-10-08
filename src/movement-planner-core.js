@@ -46,6 +46,10 @@
   });
 
   const IMPASSABLE_TERRAIN = new Set(['UNKNOWN', 'O', 'L', 'HSM', 'ALPS']);
+  // The planner deliberately keeps the normal route as the authoritative route.
+  // This one-MP-per-entered-hex value is a conservative warning total for bad
+  // weather, so weather never changes the route the player selected.
+  const BAD_WEATHER_ENTRY_PENALTY = 1;
 
   function letter(index) {
     return String.fromCharCode(65 + index);
@@ -208,6 +212,7 @@
       path,
       directions,
       totalMp: Number(distance.get(goalCoordinate) || 0),
+      badWeatherMp: path.slice(1).reduce((total, point) => total + (point.baseEntryMp == null ? 0 : point.baseEntryMp + BAD_WEATHER_ENTRY_PENALTY), 0),
       steps: Number(steps.get(goalCoordinate) || 0)
     };
   }
@@ -334,6 +339,7 @@
     MOVEMENT_ALLOWANCES,
     TERRAIN_MOVEMENT_COST,
     IMPASSABLE_TERRAIN,
+    BAD_WEATHER_ENTRY_PENALTY,
     coordinateFor,
     parseCoordinate,
     step,

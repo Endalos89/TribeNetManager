@@ -67,6 +67,7 @@ function parseCreation(text, unitHint = null) {
     type: m[1][0].toUpperCase() + m[1].slice(1).toLowerCase(),
     unit: m[2],
     parentUnit: m[3],
+    creationPhase: /after\s+movement/i.test(s) ? 'after' : 'before',
     source: unitHint || null,
     text: s
   };
@@ -350,11 +351,13 @@ function parseOrdersWorkbook(filePath) {
   }
 
   const movements = sheetRecords(workbook, 'Tribe_Movement')
-    .filter(r => cleanUnit(r.TRIBE) && normalizeHex(r.Hex))
+    // Hex is only the optional destination for a GOTO order.  A normal movement
+    // row has no Hex value; its origin comes from the Results baseline.
+    .filter(r => cleanUnit(r.TRIBE))
     .map(r => ({
       unitName: clean(r.UnitName), unit: cleanUnit(r.TRIBE), type: unitType(r.TRIBE),
       followTribe: cleanUnit(r.FOLLOW_TRIBE), movementType: clean(r.MovementType),
-      startHex: normalizeHex(r.Hex), orders: collectMovement(r, 'MOVEMENT_', 40), processed: clean(r.Processed)
+      gotoHex: normalizeHex(r.Hex), startHex: null, orders: collectMovement(r, 'MOVEMENT_', 40), processed: clean(r.Processed)
     }));
 
   const scouts = sheetRecords(workbook, 'Scout_Movement')

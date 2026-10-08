@@ -111,6 +111,21 @@ const { buildCompletedTurnState, resolvePlanMovementStarts, completedStateToMana
   assert.deepStrictEqual(scoutAnchor.orders, []);
 })();
 
+(function afterMovementCreationUsesParentEndLocation() {
+  const resultTurn = { turnKey:'906-03', units:[{ unitType:'Tribe', unitCode:'0485', currentHex:'PK1614' }] };
+  const plan = {
+    turnKey:'906-04',
+    unitCreations:[{ type:'Tribe', unit:'1485', parentUnit:'0485', creationPhase:'after' }],
+    movements:[
+      { unit:'0485', type:'Tribe', startHex:null, orders:['N'] },
+      { unit:'1485', type:'Tribe', startHex:null, orders:['Still'] }
+    ]
+  };
+  const hydrated = resolvePlanMovementStarts(plan, resultTurn);
+  assert.strictEqual(hydrated.movements.find(row => row.unit === '0485').startHex, 'PK1614');
+  assert.strictEqual(hydrated.movements.find(row => row.unit === '1485').startHex, 'PK1613', 'after-movement creations should begin where the source Tribe ends');
+})();
+
 (function actualResultsBeatSameTurnProjection() {
   const actual = {
     turnKey: '906-04', metadata: { nextTurn: '906-05' }, sourceFile: '0485_906_04_Results.docx',

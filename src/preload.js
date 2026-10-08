@@ -94,6 +94,8 @@ contextBridge.exposeInMainWorld('tribenet', {
   getPlannerPlan: id => ipcRenderer.invoke('planner:get', id),
   getPlannerPlanForTurn: turnKey => ipcRenderer.invoke('planner:get-turn', turnKey),
   activatePlannerPlan: id => ipcRenderer.invoke('planner:activate', id),
+  importOrdersTemplate: turnKey => ipcRenderer.invoke('orders:template-import', turnKey || null),
+  exportOrdersWorkbook: turnKey => ipcRenderer.invoke('orders:export', turnKey || null),
   importTurnWorkbook: role => ipcRenderer.invoke('turn-manager:import', role),
   listManagedTurns: () => ipcRenderer.invoke('turn-manager:list-turns'),
   getManagedTurn: turnKey => ipcRenderer.invoke('turn-manager:get-turn', turnKey),
