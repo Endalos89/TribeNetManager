@@ -11,6 +11,7 @@
   ]);
   const UNKNOWN_COST_SCENARIOS = Object.freeze([3, 6, 9]);
   const OPTIMISTIC_UNKNOWN_COST = UNKNOWN_COST_SCENARIOS[0];
+  const TERRAIN_LIKELIHOOD_RADIUS = 2;
   const FEATURE_CODES = Object.freeze({
     ocean: ['O', 'OCEAN'],
     lake: ['L', 'LAKE'],
@@ -83,6 +84,82 @@
       || ['PARTIAL', 'FOG', 'UNEXPLORED', 'UNKNOWN'].includes(knowledge)
       || marker.includes('?')
       || marker.includes('FOG');
+  }
+
+  function terrainLikelihood(known, coordinate) {
+    const origin = core().parseCoordinate(coordinate);
+    if (!origin) return { land: .65, ocean: .2, mountain: .15, passable: .65 };
+
+    // This is a deliberately modest prior. Known nearby terrain then shifts
+    // it: adjacent terrain is stronger evidence than terrain two hexes away.
+    let land = 3;
+    let ocean = 1;
+    let mountain = .5;
+    const distances = new Map([[origin.coordinate, 0]]);
+    const queue = [origin];
+    while (queue.length) {
+      const current = queue.shift();
+      const distance = distances.get(current.coordinate);
+      if (distance >= TERRAIN_LIKELIHOOD_RADIUS) continue;
+      for (const next of core().adjacentHexes(current)) {
+        if (distances.has(next.coordinate)) continue;
+        distances.set(next.coordinate, distance + 1);
+        queue.push(next);
+      }
+    }
+    for (const [nearbyCoordinate, distance] of distances) {
+      if (!distance) continue;
+      const row = known.get(nearbyCoordinate);
+      if (!row || isUnknownEntry(row)) continue;
+      const weight = distance === 1 ? 4 : 1.5;
+      if (isOcean(row) || matchesFeature(row, 'lake')) ocean += weight;
+      else if (isMountain(row)) mountain += weight;
+      else land += weight;
+    }
+    const total = land + ocean + mountain;
+    return {
+      land: land / total,
+      ocean: ocean / total,
+      mountain: mountain / total,
+      passable: land / total
+    };
+  }
+
+  function addCoverageWeight(weights, key, value) {
+    if (!key || !Number.isFinite(Number(value)) || Number(value) <= 0) return;
+    const existing = Number(weights[key] || 0);
+    weights[key] = Math.max(existing, Number(value));
+  }
+
+  function routeCoverageWeights(known, route) {
+    const weights = {};
+    let reachProbability = 1;
+    for (let index = 0; index < (route.path || []).length; index += 1) {
+      const point = route.path[index];
+      const row = known.get(point.coordinate);
+      if (index > 0 && isUnknownEntry(row)) {
+        reachProbability *= terrainLikelihood(known, point.coordinate).passable;
+        addCoverageWeight(weights, point.coordinate, reachProbability);
+      }
+      const parsed = core().parseCoordinate(point.coordinate);
+      if (!parsed || reachProbability <= 0) continue;
+      for (const adjacent of core().adjacentHexes(parsed)) {
+        const neighbour = known.get(adjacent.coordinate);
+        if (!neighbour) {
+          addCoverageWeight(weights, adjacent.coordinate, reachProbability * terrainLikelihood(known, adjacent.coordinate).passable);
+        } else if (isFogOrQuestion(neighbour) && !isOcean(neighbour)) {
+          addCoverageWeight(weights, adjacent.coordinate, reachProbability * terrainLikelihood(known, adjacent.coordinate).passable);
+        } else if (isOcean(neighbour)) {
+          // Ocean is useful as a coastline signal, but it is not another
+          // question-mark land hex to maximise.
+          addCoverageWeight(weights, `ocean:${adjacent.coordinate}`, reachProbability * .1);
+        }
+      }
+    }
+    if (route.targetCoordinate && !isOcean(known.get(route.targetCoordinate))) {
+      addCoverageWeight(weights, route.targetCoordinate, reachProbability * terrainLikelihood(known, route.targetCoordinate).passable);
+    }
+    return weights;
   }
 
   function directionBetween(fromCoordinate, toCoordinate) {
@@ -289,7 +366,7 @@
     return null;
   }
 
-  function specialOrderFor(known, path, targetCoordinate) {
+  function specialOrderContextFor(known, path, targetCoordinate) {
     if (!path || path.length < 2) return null;
     // Follow orders are issued from the last known land hex at the edge of
     // the route. A multi-hex unknown continuation means the final path point
@@ -306,6 +383,7 @@
     const endpointPoint = core().parseCoordinate(endpoint.coordinate);
     const featureCandidates = endpointPoint
       ? core().adjacentHexes(endpointPoint).map(point => ({ point, row: known.get(point.coordinate) })).filter(item => featureFor(item.row))
+        .sort((left, right) => Number(featureFor(left.row) !== 'ocean') - Number(featureFor(right.row) !== 'ocean'))
       : [];
     if (target) {
       const targetRow = known.get(target.coordinate);
@@ -329,7 +407,11 @@
       : featureFor(chosen.row) === 'lake' ? 'FL'
         : featureFor(chosen.row) === 'mountain' ? 'FM' : 'FR';
     const order = `${prefix}${suffix}`;
-    return VALID_SCOUT_ORDERS.has(order) ? order : null;
+    return VALID_SCOUT_ORDERS.has(order) ? { order, edgeIndex } : null;
+  }
+
+  function specialOrderFor(known, path, targetCoordinate) {
+    return specialOrderContextFor(known, path, targetCoordinate)?.order || null;
   }
 
   function addCoverage(coverage, known, route) {
@@ -351,20 +433,28 @@
   }
 
   function routeScore(route, covered, previousRoutes) {
-    const newCoverage = [...route.coverage].filter(key => !covered.has(key)).length;
-    const overlap = [...route.coverage].filter(key => covered.has(key)).length;
+    const weightedCoverage = route.coverageWeights || Object.fromEntries((route.coverage || []).map(key => [key, 1]));
+    let newCoverage = 0;
+    let overlap = 0;
+    for (const [key, weight] of Object.entries(weightedCoverage)) {
+      const existing = covered instanceof Map ? Number(covered.get(key) || 0) : (covered.has(key) ? 1 : 0);
+      const value = Number(weight || 0);
+      newCoverage += value * (1 - existing);
+      overlap += value * existing;
+    }
     const repeatedSignature = previousRoutes.some(previous => previous.signature === route.signature);
-    const featureBonus = route.specialOrder ? 2 : 0;
-    // Coverage dominates. MP and unknown-terrain risk break ties, while a
-    // small overlap cost keeps identical duplicate routes for genuine hedging
-    // only when they remain the best available option.
+    const coastalBonus = /^FO[LR]$/i.test(route.specialOrder || '') ? 280 : 0;
+    const likelihoodBonus = Number(route.expectedCoverage || 0) * 8;
+    // Expected new coverage dominates. A route that only repeats already
+    // covered hexes should therefore lose, while a different path remains
+    // viable when it adds genuinely new coverage or hedges terrain risk.
     return newCoverage * 1000
-      + route.coverage.size * 18
-      + featureBonus
+      + coastalBonus
+      + likelihoodBonus
       - route.estimatedMp * 2
       - route.worstCaseMp * .5
-      - overlap * .15
-      - (repeatedSignature ? 180 : 0);
+      - overlap * 12
+      - (repeatedSignature ? 500 : 0);
   }
 
   function generate(rows, originCoordinate, options = {}) {
@@ -389,55 +479,102 @@
         movementAllowance: allowance
       });
       if (!route || route.status !== 'ok' || !route.directions?.length || route.optimisticMp > allowance) continue;
-      const coverage = addCoverage(new Set(), known, route);
+      const specialContext = specialOrderContextFor(known, route.path, target.coordinate);
+      const specialOrder = specialContext?.order || null;
+      let effectiveRoute = route;
+      let directions = [...route.directions];
+      let destinationHex = route.destinationCoordinate;
+      if (specialContext && specialContext.edgeIndex > 0) {
+        // FOL/FOR must be the final order and must start from the last known
+        // land hex. Do not leave ordinary unknown-terrain commands after it.
+        const firstUnknownIndex = specialContext.edgeIndex + 1;
+        const coastalPath = route.path.slice(0, Math.min(route.path.length, firstUnknownIndex + 1));
+        effectiveRoute = { ...route, path: coastalPath };
+        directions = [...route.directions.slice(0, specialContext.edgeIndex), specialOrder];
+        destinationHex = route.path[firstUnknownIndex]?.coordinate || route.destinationCoordinate;
+      }
+      const coverage = addCoverage(new Set(), known, effectiveRoute);
       if (!coverage.size) continue;
-      const specialOrder = specialOrderFor(known, route.path, target.coordinate);
-      const directions = [...route.directions];
-      if (specialOrder && directions.length) directions[directions.length - 1] = specialOrder;
       if (directions.some(order => !VALID_SCOUT_ORDERS.has(order) || order === 'GOTO')) continue;
+      const effectiveUnknownEntryCount = effectiveRoute.path.slice(1)
+        .filter(point => isUnknownEntry(known.get(point.coordinate))).length;
+      const effectiveScenario = UNKNOWN_COST_SCENARIOS.map(cost => route.knownMp + effectiveUnknownEntryCount * cost);
+      const coverageWeights = routeCoverageWeights(known, effectiveRoute);
       candidates.push({
         ...route,
+        path: effectiveRoute.path,
+        directions,
+        unknownEntryCount: effectiveUnknownEntryCount,
+        estimatedMp: effectiveScenario[1],
+        worstCaseMp: effectiveScenario[2],
+        scenarioMp: { low: effectiveScenario[0], expected: effectiveScenario[1], high: effectiveScenario[2] },
+        optimisticMp: effectiveScenario[0],
         unitCode: options.unitCode || '',
         routeType: 'scout',
         noOfScouts: people,
         noOfHorses: horses,
         mission,
-        directions,
         specialOrder,
         coverage: [...coverage],
+        coverageWeights,
         coverageCount: coverage.size,
-        signature: directions.join('>'),
-        destinationHex: route.destinationCoordinate,
+        expectedCoverage: Object.values(coverageWeights).reduce((total, value) => total + Number(value || 0), 0),
+        // Include the path as well as its orders. Two routes can legitimately
+        // use the same order sequence while reaching different branches.
+        signature: `${directions.join('>')}|${route.path.map(point => point.coordinate).join('>')}`,
+        destinationHex,
         movementAllowance: allowance,
         mounted
       });
     }
 
     const selected = [];
-    const covered = new Set();
-    for (let index = 0; index < scoutRows; index++) {
+    const coveredWeights = new Map();
+    const selectRoute = route => {
+      selected.push({ ...route, scoutIndex: selected.length + 1 });
+      for (const [key, weight] of Object.entries(route.coverageWeights || {})) {
+        const existing = Number(coveredWeights.get(key) || 0);
+        const probability = Number(weight || 0);
+        // Union probability: a second route may still reveal a hex the first
+        // route failed to reveal, but with diminishing marginal value.
+        coveredWeights.set(key, existing + (1 - existing) * probability);
+      }
+    };
+
+    // A known coastline deserves one route of its own. Without FOL/FOR, a
+    // scout that reaches the water simply stops and wastes the remainder of
+    // its exploration allowance.
+    const coastalCandidates = candidates.filter(route => /^FO[LR]$/i.test(route.specialOrder || ''));
+    if (coastalCandidates.length && scoutRows > 0) {
+      const bestCoastal = coastalCandidates
+        .map(route => ({ route, score: routeScore(route, coveredWeights, selected) }))
+        .sort((left, right) => right.score - left.score || left.route.worstCaseMp - right.route.worstCaseMp || left.route.signature.localeCompare(right.route.signature))[0]?.route;
+      if (bestCoastal) selectRoute(bestCoastal);
+    }
+
+    for (let index = selected.length; index < scoutRows; index++) {
       if (!candidates.length) break;
       const unusedSignatures = new Set(candidates.map(route => route.signature));
       for (const previous of selected) unusedSignatures.delete(previous.signature);
       const pool = unusedSignatures.size
         ? candidates.filter(route => unusedSignatures.has(route.signature))
         : candidates;
-      const ranked = pool.map(route => ({ route, score: routeScore(route, covered, selected) }))
+      const ranked = pool.map(route => ({ route, score: routeScore(route, coveredWeights, selected) }))
         .sort((left, right) => right.score - left.score || left.route.worstCaseMp - right.route.worstCaseMp || left.route.signature.localeCompare(right.route.signature));
       const best = ranked[0]?.route;
       if (!best) break;
-      selected.push({ ...best, scoutIndex: index + 1 });
-      for (const key of best.coverage) covered.add(key);
+      selectRoute(best);
     }
 
     return {
       routes: selected,
       targets,
-      covered: [...covered],
-      totalCoverage: covered.size,
+      covered: [...coveredWeights.keys()],
+      totalCoverage: coveredWeights.size,
       mounted,
       allowance,
       mission,
+      expectedCoverage: [...coveredWeights.values()].reduce((total, value) => total + Number(value || 0), 0),
       warnings: selected.length < scoutRows
         ? [`Only ${selected.length} of ${scoutRows} scout route${scoutRows === 1 ? '' : 's'} could be generated within ${allowance} MP and ${maxCommands} commands.`]
         : []
@@ -451,6 +588,7 @@
     isFogOrQuestion,
     isOcean,
     isMountain,
+    terrainLikelihood,
     specialOrderFor,
     generate
   };

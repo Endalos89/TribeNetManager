@@ -257,7 +257,9 @@
     for (const coordinate of segment.reveals || []) playback.revealed.add(coordinate);
     if (segment.to?.coordinate) {
       playback.revealed.add(segment.to.coordinate);
-      if (segment.partial) {
+      const target = playback.targetHexes.get(segment.to.coordinate);
+      const targetTerrain = String(target?.terrain || target?.terrainCode || '').trim().toUpperCase();
+      if (segment.partial && !['O', 'OCEAN'].includes(targetTerrain)) {
         // The question is tied to the attempted border segment, while the
         // report terrain becomes visible as soon as that segment completes.
         playback.partialPreviews.add(segment.to.coordinate);
@@ -655,7 +657,9 @@
         for (const coordinate of event?.reveals || []) playback.revealed.add(coordinate);
         if (event?.to?.coordinate) {
           playback.revealed.add(event.to.coordinate);
-          if (event.partial) {
+          const target = playback.targetHexes.get(event.to.coordinate);
+          const targetTerrain = String(target?.terrain || target?.terrainCode || '').trim().toUpperCase();
+          if (event.partial && !['O', 'OCEAN'].includes(targetTerrain)) {
             playback.partialPreviews.add(event.to.coordinate);
             playback.revealedQuestions.add(event.to.coordinate);
           }

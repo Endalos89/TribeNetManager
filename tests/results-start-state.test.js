@@ -91,9 +91,11 @@ const context = {
   }
 };
 context.window = context;
-vm.runInNewContext(`${source}\n;globalThis.__test={applyResultTurn,advanceToNextStartState};`, context, { filename: 'results-map.js' });
+vm.runInNewContext(`${source}\n;globalThis.__test={applyResultTurn,advanceToNextStartState,resultIsPartial};`, context, { filename: 'results-map.js' });
 
 (async () => {
+  assert.strictEqual(context.__test.resultIsPartial({ terrain: 'O', knowledgeLevel: 'attempted' }), false, 'Ocean attempts should not receive question-mark treatment');
+  assert.strictEqual(context.__test.resultIsPartial({ terrain: 'PR', knowledgeLevel: 'attempted' }), true, 'Partial land attempts should retain question-mark treatment');
   await new Promise(resolve => setTimeout(resolve, 160));
 
   await context.__test.applyResultTurn('906-02');

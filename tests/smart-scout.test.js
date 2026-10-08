@@ -29,7 +29,7 @@ for (const route of result.routes) {
   assert.ok(route.directions.every(order => SmartScoutCore.VALID_SCOUT_ORDERS.has(order)), 'every generated order must be valid for Scout_Movement');
   assert.ok(!route.directions.includes('GOTO'), 'GOTO must never be generated for scouting');
   assert.ok(route.scenarioMp.high >= route.scenarioMp.expected, 'unknown-terrain what-if high cost should be conservative');
-  assert.ok(route.unknownEntryCount >= 2, 'Smart Scout should continue through multiple unknown hexes when optimistic movement allows it');
+  if (!route.specialOrder) assert.ok(route.unknownEntryCount >= 2, 'Smart Scout should continue through multiple unknown hexes when optimistic movement allows it');
   assert.ok(route.optimisticMp <= route.movementAllowance, 'unknown continuation should fit the optimistic movement allowance');
 }
 
@@ -37,6 +37,14 @@ assert.ok(
   result.routes.some(route => ['FOL', 'FOR', 'FML', 'FMR'].includes(route.specialOrder)),
   'Smart Scout should consider ocean/mountain follow orders when a feature edge is available'
 );
+
+const openResult = SmartScoutCore.generate(rows.slice(0, 3), 'AA0101', {
+  scoutCount: 1,
+  noOfScouts: 2,
+  noOfHorses: 2,
+  mission: 'PATROL'
+});
+assert.ok(openResult.routes[0]?.unknownEntryCount >= 2, 'Smart Scout should continue through multiple unknown hexes when no follow order is needed');
 
 const endpoint = MovementPlannerCore.parseCoordinate('AA1010');
 const previous = MovementPlannerCore.step(endpoint, 'S');
@@ -62,5 +70,18 @@ assert.strictEqual(
   'FOL',
   'an ocean one counter-clockwise step from the movement heading is on the left'
 );
+
+const nearOcean = MovementPlannerCore.step(endpoint, 'N');
+const nearLand = MovementPlannerCore.step(endpoint, 'S');
+const oceanLikelihood = SmartScoutCore.terrainLikelihood(MovementPlannerCore.buildKnownHexMap([
+  { coordinate: nearOcean.coordinate, terrain: 'O' },
+  { coordinate: nearLand.coordinate, terrain: 'PR' }
+]), endpoint.coordinate);
+const landLikelihood = SmartScoutCore.terrainLikelihood(MovementPlannerCore.buildKnownHexMap([
+  { coordinate: nearOcean.coordinate, terrain: 'PR' },
+  { coordinate: nearLand.coordinate, terrain: 'PR' }
+]), endpoint.coordinate);
+assert.ok(oceanLikelihood.ocean > landLikelihood.ocean, 'nearby ocean should increase the estimated ocean likelihood');
+assert.ok(oceanLikelihood.passable < landLikelihood.passable, 'nearby ocean should reduce the estimated passability');
 
 console.log('smart-scout tests passed');

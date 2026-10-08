@@ -247,8 +247,12 @@ function resultHasBlockedEvidence(data) {
   return Boolean(data?.evidence?.some(item => /Not enough M\.P/i.test(String(item))));
 }
 
+function resultIsOcean(data) {
+  return ['O', 'OCEAN'].includes(String(data?.terrain || data?.terrainCode || '').trim().toUpperCase());
+}
+
 function resultIsPartial(data) {
-  return Boolean(data && (
+  return Boolean(data && !resultIsOcean(data) && (
     data.knowledgeLevel === 'observed' ||
     data.knowledgeLevel === 'attempted' ||
     resultHasBlockedEvidence(data)
