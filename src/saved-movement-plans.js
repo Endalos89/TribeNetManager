@@ -921,10 +921,11 @@ function savedMovementSetStationaryStatus() {
   if (status) status.textContent = 'Garrisons are stationary; MOVEMENT_1 will be Still.';
 }
 
-function savedMovementDrawLabel(point, text, color) {
+function savedMovementDrawLabel(point, text, color, alpha = 1) {
   if (!point) return;
   const p = screenFromBase(baseCenter(point.globalCol, point.globalRow));
   ctx.save();
+  ctx.globalAlpha = alpha;
   ctx.font = `800 ${Math.max(8, Math.min(11, state.scale * .27))}px Segoe UI`;
   const width = ctx.measureText(text).width + 10;
   const x = p.x - width / 2;
@@ -949,14 +950,16 @@ function savedMovementDrawOverlay() {
     if (route.routeType === 'scout' && (!state.planningVisible || !state.scoutingVisible)) continue;
     const scout = route.routeType === 'scout';
     const color = scout ? '#78c9e6' : '#f0b45e';
-    drawRoute(route.path, {
+    const routeId = savedMovementRouteKey(route);
+    const style = routeStyle(route.unitCode || route.unit, {
       color,
       width: Math.max(1.8, state.scale * (scout ? .07 : .09)),
       alpha: .58,
       dashed: scout
-    });
+    }, routeId);
+    drawRoute(route.path, style);
     const end = route.path?.[route.path.length - 1];
-    savedMovementDrawLabel(end, scout ? `S${route.scoutNumber} ${route.unitCode}` : `M ${route.unitCode}`, color);
+    savedMovementDrawLabel(end, scout ? `S${route.scoutNumber} ${route.unitCode}` : `M ${route.unitCode}`, color, style.alpha);
   }
 }
 

@@ -122,6 +122,7 @@ assert.ok(!source.includes('movementPlannerScoutOrigin'), 'Scouting should not e
 assert.ok(source.includes('savedMovementSaveSmartScout'), 'Smart Scout drafts should be saved as a replaceable scouting set.');
 assert.ok(source.includes('data-select-planned-route'), 'Saved scout and movement rows should be clickable for route highlighting.');
 assert.ok(source.includes('savedMovementSelectSavedRoute'), 'Clicking a saved route should select and center that route.');
+assert.ok(source.includes('savedMovementRouteKey(route)') && source.includes('routeStyle(route.unitCode || route.unit'), 'The saved-route overlay should apply the selected-route emphasis.');
 assert.ok(source.includes('movementPlannerReset({ keepCard: true })'), 'Saving or resetting changes should leave the Movement controls available for the next unit.');
 assert.ok(source.includes('movementPlannerResetAllUnitChanges'), 'Movement controls should expose a reset-all unit changes action.');
 assert.ok(indexHtml.includes('<script src="saved-movement-plans.js"></script>'), 'Saved movement planner should load deterministically with the mapper.');
