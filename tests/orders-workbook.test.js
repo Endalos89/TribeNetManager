@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 const XLSX = require('xlsx');
 const JSZip = require('jszip');
-const { patchOrdersWorkbook, compareUnitCodes, validateOrdersTemplate } = require('../src/orders-workbook');
+const { patchOrdersWorkbook, compareUnitCodes, validateOrdersTemplate, skillTransferText } = require('../src/orders-workbook');
 const { parseOrdersWorkbook } = require('../src/planner');
 
 const blank = path.join(__dirname, '..', '..', 'upload', '0485_906_4_Orders.xlsx');
@@ -20,6 +20,7 @@ const output = path.join(temp, 'completed.xlsx');
     assert.ok(validateOrdersTemplate(blank).movementRows >= 2);
     assert.ok(compareUnitCodes('0485', '0485e1') < 0);
     assert.ok(compareUnitCodes('0485e1', '1485') < 0, 'a Tribe must precede the next Tribe only after its own units');
+    assert.equal(skillTransferText({ name: 'Woodworking', level: 3 }, '0485', '1485'), 'Skill Woodworking 3 should be moved from Tribe 0485 to Tribe 1485');
 
     await patchOrdersWorkbook({
       templatePath: blank,

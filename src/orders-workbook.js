@@ -114,6 +114,15 @@ function compareUnitCodes(a, b) {
   return left[0] - right[0] || left[1] - right[1] || left[2] - right[2] || String(left[3]).localeCompare(String(right[3]));
 }
 
+function skillTransferText(skill, parentUnit, targetUnit) {
+  const name = String(skill?.skill || skill?.name || skill?.shortname || '').trim();
+  if (!name) throw new Error('A skill transfer is missing its skill name.');
+  const level = Number(skill?.level || 0);
+  if (!Number.isFinite(level) || level <= 0) throw new Error(`Skill transfer for ${name} has an invalid level.`);
+  const sourceTribe = String(parentUnit || '').slice(0, 4);
+  return `Skill ${name} ${level} should be moved from Tribe ${sourceTribe} to Tribe ${targetUnit}`;
+}
+
 function normalizeDirections(directions, max, label) {
   const values = (directions || []).map(value => String(value || '').trim()).filter(Boolean);
   if (values.length > max) throw new Error(`${label} has ${values.length} commands, but the workbook allows only ${max}.`);
@@ -369,6 +378,7 @@ module.exports = {
   inferTurnKey,
   rootTribe,
   compareUnitCodes,
+  skillTransferText,
   validateOrdersTemplate,
   patchOrdersWorkbook,
   saveOrderTemplate,

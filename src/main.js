@@ -13,7 +13,7 @@ const { ACTIVITY_CATALOG } = require('./activity-catalog');
 const { normalizeView } = require('./update-view-state');
 const { routesDb, removeRoutesForUnit } = require('./planned-routes-ipc');
 const { canonicalTurnKey, inferTurnKeyFromFilename } = require('./turn-key');
-const { patchOrdersWorkbook, saveOrderTemplate, findOrderTemplate, compareUnitCodes } = require('./orders-workbook');
+const { patchOrdersWorkbook, saveOrderTemplate, findOrderTemplate, compareUnitCodes, skillTransferText } = require('./orders-workbook');
 const {
   planningTurnKeyFromResult,
   resultTurnToStartWorkbook,
@@ -262,7 +262,7 @@ function buildOrdersExportData(turnKey) {
       for (const skill of split.skills || []) {
         gmActions.push({
           unit: split.unitCode,
-          text: `Skill ${skill.skill} ${skill.level} should be moved from Tribe ${String(split.parentUnit).slice(0, 4)} to Tribe ${split.unitCode}`
+          text: skillTransferText(skill, split.parentUnit, split.unitCode)
         });
       }
     }
