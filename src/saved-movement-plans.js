@@ -445,6 +445,13 @@ function savedMovementSmartDraftDestination(draft) {
   return draft?.destinationHex || draft?.targetCoordinate || draft?.path?.[draft.path.length - 1]?.coordinate || null;
 }
 
+function savedMovementSmartDraftOrder(draft) {
+  const order = draft?.specialOrder || draft?.directions?.[draft.directions.length - 1];
+  return typeof ConditionalOrders !== 'undefined' && ConditionalOrders.DEFINITIONS?.[String(order || '').toUpperCase()]
+    ? String(order).toUpperCase()
+    : null;
+}
+
 function savedMovementRenderSmartDrafts() {
   const host = document.getElementById('movementPlannerSmartScoutDrafts');
   if (!host) return;
@@ -461,8 +468,10 @@ function savedMovementRenderSmartDrafts() {
     const scenario = draft.scenarioMp || {};
     const coverage = Number(draft.coverageCount || draft.coverage?.length || 0);
     const routeLabel = draft.specialOrder ? ` · ${draft.specialOrder} considered` : '';
+    const dynamicOrder = savedMovementSmartDraftOrder(draft);
+    const destinationLabel = `${savedMovementEscape(savedMovementSmartDraftDestination(draft) || '—')}${dynamicOrder ? ` · ${dynamicOrder} continues dynamically` : ''}`;
     return `<div class="movement-planner-smart-draft">
-      <div><strong>Row ${index + 1}</strong><span>${savedMovementEscape(draft.originHex || draft.origin || '—')} → ${savedMovementEscape(savedMovementSmartDraftDestination(draft) || '—')}</span></div>
+      <div><strong>Row ${index + 1}</strong><span>${savedMovementEscape(draft.originHex || draft.origin || '—')} → ${destinationLabel}</span></div>
       <small>${savedMovementEscape((draft.directions || []).join(' → '))}</small>
       <small>${coverage} unique reveal${coverage === 1 ? '' : 's'}${routeLabel} · ${Number(draft.knownMp || 0)} MP · bad weather ${Number(draft.badWeatherMp || draft.knownMp || 0)} MP · unknown what-if ${Number(scenario.low || draft.estimatedMp || 0)}–${Number(scenario.high || draft.worstCaseMp || 0)} MP</small>
       <div class="movement-planner-smart-draft-actions"><button class="button" data-edit-smart-scout="${index}">Edit route</button><button class="button danger" data-remove-smart-scout="${index}">Remove</button></div>
@@ -943,6 +952,18 @@ function savedMovementDrawLabel(point, text, color, alpha = 1) {
   ctx.restore();
 }
 
+function savedMovementConditionalPredictions(route) {
+  const order = String(route?.directions?.[route.directions.length - 1] || '').toUpperCase();
+  if (typeof ConditionalOrders === 'undefined' || !ConditionalOrders.DEFINITIONS?.[order]) return [];
+  const path = route?.path || [];
+  const anchor = path[path.length - 1];
+  const previous = path[path.length - 2];
+  if (!anchor || !previous || !state.hexCache) return [];
+  const heading = directionBetween(previous.coordinate, anchor.coordinate);
+  const preview = ConditionalOrders.preview(state.hexCache, anchor, heading, order, { maxSteps: 6 });
+  return preview.predictionPaths || [];
+}
+
 function savedMovementDrawOverlay() {
   if (state.mode !== 'detail' || !savedMovementPlansState.routes.length) return;
   for (const route of savedMovementPlansState.routes) {
@@ -958,6 +979,12 @@ function savedMovementDrawOverlay() {
       dashed: scout
     }, routeId);
     drawRoute(route.path, style);
+    drawConditionalPredictions({ predictionPaths: savedMovementConditionalPredictions(route) }, routeStyle(route.unitCode || route.unit, {
+      color,
+      width: Math.max(1.2, state.scale * (scout ? .05 : .06)),
+      alpha: .3,
+      dashed: true
+    }, routeId));
     const end = route.path?.[route.path.length - 1];
     savedMovementDrawLabel(end, scout ? `S${route.scoutNumber} ${route.unitCode}` : `M ${route.unitCode}`, color, style.alpha);
   }

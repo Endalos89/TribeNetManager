@@ -375,6 +375,11 @@ function stepHex(pos, direction) {
   if (c < 0 || c >= TOTAL_COLS || r < 0 || r >= TOTAL_ROWS) return null;
   return { globalCol: c, globalRow: r, coordinate: coordinateFor(c, r) };
 }
+function directionBetween(fromCoordinate, toCoordinate) {
+  const from = parseCoordinate(fromCoordinate);
+  if (!from) return null;
+  return ['N', 'NE', 'SE', 'S', 'SW', 'NW'].find(direction => stepHex(from, direction)?.coordinate === toCoordinate) || null;
+}
 function underlyingDirection(order) {
   const map = { NL:'N', NEL:'NE', NWL:'NW', SL:'S', SEL:'SE', SWL:'SW' }; return map[order] || null;
 }
@@ -382,40 +387,17 @@ function isFollowDirective(order) { return /^(FO[LR]|FC[LR]|FL[LR]|FM[LR]|FR[LR]
 function normalizeMovementOrder(value) {
   return String(value ?? '').toUpperCase().replace(/\s+/g, '').trim();
 }
-function followCoastRoute(start, side, options = {}) {
-  const points = [{ globalCol:start.globalCol, globalRow:start.globalRow, coordinate:start.coordinate, kind:'exact' }];
-  const queue = [{ point:start, path:points }];
-  const visited = new Set([start.coordinate]);
-  const dirs = ['N','NE','SE','S','SW','NW'];
-  const known = point => state.hexCache.get(point.coordinate);
-  const terrainOf = data => String(data?.terrain ?? data?.terrainCode ?? '').trim().toUpperCase();
-  const ocean = point => ['O','OCEAN'].includes(terrainOf(known(point)));
-  const unexplored = point => {
-    const data=known(point); if(!data)return true;
-    const terrain=terrainOf(data), knowledge=String(data.knowledgeLevel ?? data.knowledge ?? '').trim().toLowerCase();
-    return !terrain || ['UNKNOWN','?','UNEXPLORED'].includes(terrain) || ['observed','attempted','unexplored','unknown'].includes(knowledge);
-  };
-  while (queue.length && visited.size <= 90) {
-    const current = queue.shift();
-    const oceanIndexes = dirs.map((d,i)=>({i,p:stepHex(current.point,d)})).filter(x=>x.p&&ocean(x.p));
-    const preferred=[];
-    for (const edge of oceanIndexes) {
-      const delta=side==='right'?-1:1;
-      for (const offset of [delta,delta*2,-delta,-delta*2,0]) {
-        const candidate=stepHex(current.point,dirs[(edge.i+offset+6)%6]);
-        if(candidate&&!preferred.some(p=>p.coordinate===candidate.coordinate))preferred.push(candidate);
-      }
-    }
-    for(const candidate of preferred){
-      if(unexplored(candidate))return {points:[...current.path,{...candidate,kind:'approx',order:options.order}],found:true};
-      if(!['O','OCEAN'].includes(terrainOf(known(candidate)))&&!visited.has(candidate.coordinate)){visited.add(candidate.coordinate);queue.push({point:candidate,path:[...current.path,{...candidate,kind:'approx',order:options.order}]});}
-    }
-  }
-  return {points,found:false};
+function conditionalOrderPreview(start, previous, order, options = {}) {
+  if (typeof ConditionalOrders === 'undefined') return { valid: false, warnings: [`${order} cannot be previewed until the conditional-order core is loaded.`] };
+  const heading = previous ? directionBetween(previous.coordinate, start.coordinate) : null;
+  return ConditionalOrders.preview(state.hexCache, start, heading, order, {
+    remainingMp: options.remainingMp ?? Infinity,
+    maxSteps: options.limitSteps || 6
+  });
 }
 function routeFor(startHex, orders, options = {}) {
   const start = parseCoordinate(startHex); if (!start) return { points: [], warnings: [`Invalid start hex ${startHex}`], unresolved: [] };
-  const points = [{ globalCol: start.globalCol, globalRow: start.globalRow, coordinate: start.coordinate, kind: 'exact' }]; const warnings = [], unresolved = [];
+  const points = [{ globalCol: start.globalCol, globalRow: start.globalRow, coordinate: start.coordinate, kind: 'exact' }]; const warnings = [], unresolved = [], predictionPaths = [];
   let current = points[0];
   for (const rawOrder of orders || []) {
     const order = normalizeMovementOrder(rawOrder);
@@ -430,10 +412,21 @@ function routeFor(startHex, orders, options = {}) {
       for (let i = 0; i < count; i++) { const next = stepHex(current, limitDir); if (!next) break; current = { ...next, kind:'approx', order }; points.push(current); }
       warnings.push(`${options.label || 'Route'}: ${order} means ${limitDir} to movement limit; dashed continuation is illustrative.`); unresolved.push(order); break;
     }
-    if (/^FO[LR]$/i.test(order)) {
-      const coast=followCoastRoute(current,/^FOR$/i.test(order)?'right':'left',{order});
-      if(coast.points.length>1){current=coast.points[coast.points.length-1];points.push(...coast.points.slice(1));warnings.push(`${options.label || 'Route'}: ${order} ends at the first potential unexplored coastal hex revealed by the current map; continuation remains illustrative.`);}
-      else warnings.push(`${options.label || 'Route'}: ${order} has no revealed ocean edge to follow yet.`);
+    if (typeof ConditionalOrders !== 'undefined' && ConditionalOrders.DEFINITIONS?.[order]) {
+      const previous = points.length > 1 ? points[points.length - 2] : null;
+      const preview = conditionalOrderPreview(current, previous, order, options);
+      if (preview.valid) {
+        const forecasts = (preview.predictionPaths || []).slice(0, 8).map(path => path.map(point => ({ ...point, kind: point.coordinate === current.coordinate ? 'exact' : 'conditional', order })));
+        predictionPaths.push(...forecasts);
+        const forecast = forecasts[0] || preview.previewPath || [];
+        if (forecast.length > 1) {
+          current = forecast[forecast.length - 1];
+          points.push(...forecast.slice(1));
+        }
+        warnings.push(`${options.label || 'Route'}: ${preview.warnings?.[0] || `${order} is conditional; the displayed continuation is only a forecast.`}`);
+      } else {
+        warnings.push(`${options.label || 'Route'}: ${preview.warnings?.[0] || `${order} has no valid visible feature edge from this hex.`}`);
+      }
       unresolved.push(order);break;
     }
     if (isFollowDirective(order)) {
@@ -445,7 +438,7 @@ function routeFor(startHex, orders, options = {}) {
     }
     warnings.push(`${options.label || 'Route'}: ${order} is not yet drawable.`); unresolved.push(order); break;
   }
-  return { points, warnings, unresolved };
+  return { points, warnings, unresolved, predictionPaths };
 }
 function buildPlanRoutes(plan) {
   const movements = [], movementWarnings = [], ends = new Map();
@@ -473,7 +466,12 @@ function drawArrowSegment(a, b, style = {}) {
   const angle = Math.atan2(pb.y - pa.y, pb.x - pa.x), size = Math.max(6, state.scale * .24); ctx.beginPath(); ctx.moveTo(pb.x, pb.y); ctx.lineTo(pb.x - size * Math.cos(angle - .55), pb.y - size * Math.sin(angle - .55)); ctx.lineTo(pb.x - size * Math.cos(angle + .55), pb.y - size * Math.sin(angle + .55)); ctx.closePath(); ctx.fill(); ctx.restore();
 }
 function drawRoute(points, style = {}) {
-  if (!points || points.length < 2) return; for (let i = 1; i < points.length; i++) drawArrowSegment(points[i-1], points[i], { ...style, dashed: style.dashed || points[i].kind === 'approx' });
+  if (!points || points.length < 2) return; for (let i = 1; i < points.length; i++) drawArrowSegment(points[i-1], points[i], { ...style, dashed: style.dashed || points[i].kind === 'approx' || points[i].kind === 'conditional' });
+}
+function drawConditionalPredictions(route, style = {}) {
+  for (const path of route?.predictionPaths || route?.conditionalPredictionPaths || []) {
+    drawRoute(path, { ...style, dashed: true, alpha: Math.min(style.alpha ?? 1, .28) });
+  }
 }
 function planRouteKey(route) {
   if (route?.id != null) return String(route.id);
@@ -554,6 +552,7 @@ function drawPlanOverlay() {
   for (const m of state.routeCache.movements) {
     const routeId = planRouteKey(m);
     drawRoute(m.route.points, routeStyle(m.unit, { color:'#f0b45e', width:Math.max(2.2,state.scale*.11), alpha:.94 }, routeId));
+    drawConditionalPredictions(m.route, routeStyle(m.unit, { color:'#f0b45e', width:Math.max(1.4,state.scale*.07), alpha:.3 }, routeId));
     const start = m.route.points[0], end = m.route.points[m.route.points.length - 1]; if (!start) continue;
     const key = start.coordinate, slot = labelSlots.get(key) || 0;
     if (!historicalResults) { drawUnitLabel(start, m.unit, m.type, slot, 'start'); labelSlots.set(key, slot+1); }
@@ -569,6 +568,7 @@ function drawPlanOverlay() {
       const routeId = planRouteKey(s);
       const emphasis=routeStyle(s.unit, { alpha:.76 }, routeId);
       drawRoute(s.route.points, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1.7,state.scale*.075), alpha:.76, dashed:true }, routeId));
+      drawConditionalPredictions(s.route, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1.2,state.scale*.05), alpha:.3, dashed:true }, routeId));
       const start=s.route.points[0], end=s.route.points[s.route.points.length-1]; if (start) drawScoutLabel(start, s.id, s.unit); if (s.route.unresolved.length && end) drawConditionalMarker(end, s.route.unresolved[0], '#78c9e6', emphasis.alpha);
       if (s.route.points.length > 1 && !s.route.unresolved.length) drawArrowSegment(end, start, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1,state.scale*.05), alpha:.32, dashed:true }, routeId));
     }
