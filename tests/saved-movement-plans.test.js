@@ -120,6 +120,8 @@ assert.ok(source.includes('movement-planner-setup-grid'), 'Unit/type/scouting co
 assert.ok(source.includes('value="smart-scout"'), 'Movement controls should expose Smart Scout mode.');
 assert.ok(!source.includes('movementPlannerScoutOrigin'), 'Scouting should not expose a before/after movement option.');
 assert.ok(source.includes('savedMovementSaveSmartScout'), 'Smart Scout drafts should be saved as a replaceable scouting set.');
+assert.ok(source.includes('data-select-planned-route'), 'Saved scout and movement rows should be clickable for route highlighting.');
+assert.ok(source.includes('savedMovementSelectSavedRoute'), 'Clicking a saved route should select and center that route.');
 assert.ok(source.includes('movementPlannerReset({ keepCard: true })'), 'Saving or resetting changes should leave the Movement controls available for the next unit.');
 assert.ok(source.includes('movementPlannerResetAllUnitChanges'), 'Movement controls should expose a reset-all unit changes action.');
 assert.ok(indexHtml.includes('<script src="saved-movement-plans.js"></script>'), 'Saved movement planner should load deterministically with the mapper.');

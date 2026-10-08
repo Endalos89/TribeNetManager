@@ -325,6 +325,13 @@
   border: 1px solid #2c4938;
   border-radius: 7px;
   background: rgba(11, 27, 20, .72);
+  cursor: pointer;
+}
+
+.movement-planner-saved-route:hover,
+.movement-planner-saved-route.selected {
+  border-color: #78c9e6;
+  background: rgba(20, 55, 61, .86);
 }
 
 .movement-planner-saved-route > div {

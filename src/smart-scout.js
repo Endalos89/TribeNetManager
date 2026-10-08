@@ -86,6 +86,12 @@
       || marker.includes('FOG');
   }
 
+  function isScoutRevealTarget(row) {
+    if (!row) return true;
+    if (isOcean(row) || matchesFeature(row, 'lake') || isMountain(row)) return false;
+    return isFogOrQuestion(row);
+  }
+
   function terrainLikelihood(known, coordinate) {
     const origin = core().parseCoordinate(coordinate);
     if (!origin) return { land: .65, ocean: .2, mountain: .15, passable: .65 };
@@ -137,7 +143,7 @@
     for (let index = 0; index < (route.path || []).length; index += 1) {
       const point = route.path[index];
       const row = known.get(point.coordinate);
-      if (index > 0 && isUnknownEntry(row)) {
+      if (index > 0 && (point.kind === 'approx' || isUnknownEntry(row))) {
         reachProbability *= terrainLikelihood(known, point.coordinate).passable;
         addCoverageWeight(weights, point.coordinate, reachProbability);
       }
@@ -523,8 +529,8 @@
       }
       for (const candidate of preferred) {
         const row = known.get(candidate.coordinate);
-        if (!row || isUnknownEntry(row)) return candidate;
-        if (!isOcean(row) && !current.visited.has(candidate.coordinate)) {
+        if (isScoutRevealTarget(row)) return candidate;
+        if (!isOcean(row) && (isPassable(row) || isUnknownEntry(row)) && !current.visited.has(candidate.coordinate)) {
           const visited = new Set(current.visited);
           visited.add(candidate.coordinate);
           queue.push({ point: candidate, visited });
@@ -643,7 +649,7 @@
     if (!coverage.size) return null;
     if (directions.some(order => !VALID_SCOUT_ORDERS.has(order) || order === 'GOTO')) return null;
     const effectiveUnknownEntryCount = (effectiveRoute.path || []).slice(1)
-      .filter(point => isUnknownEntry(known.get(point.coordinate))).length;
+      .filter(point => point.kind === 'approx' || isUnknownEntry(known.get(point.coordinate))).length;
     const knownMp = Number(route.knownMp ?? route.totalMp ?? 0);
     const effectiveScenario = UNKNOWN_COST_SCENARIOS.map(cost => knownMp + effectiveUnknownEntryCount * cost);
     const coverageWeights = routeCoverageWeights(known, { ...effectiveRoute, targetCoordinate: route.targetCoordinate });
@@ -731,9 +737,19 @@
         if (!route || route.status !== 'ok' || !route.directions?.length || route.optimisticMp > allowance) continue;
         const specialContext = specialOrderContextFor(known, route.path, target.coordinate);
         const specialOrder = specialContext?.order || null;
+        let coastalFollowTarget = null;
+        if (/^FO[LR]$/i.test(specialOrder || '')) {
+          const edge = route.path[specialContext.edgeIndex];
+          const edgePoint = edge ? core().parseCoordinate(edge.coordinate) : null;
+          const side = /R$/i.test(specialOrder) ? 'right' : 'left';
+          coastalFollowTarget = edgePoint ? firstCoastalUnknown(known, edgePoint, side) : null;
+          // Do not save FOL/FOR when the route reaches water but has no
+          // unresolved land hex for the follow order to reveal.
+          if (!coastalFollowTarget) continue;
+        }
         let effectiveRoute = route;
         let directions = [...route.directions];
-        let destinationHex = route.destinationCoordinate;
+        let destinationHex = coastalFollowTarget?.coordinate || route.destinationCoordinate;
         if (specialContext && specialContext.edgeIndex > 0) {
           // FOL/FOR must be the final order and must start from the last known
           // land hex. Do not leave ordinary unknown-terrain commands after it.
@@ -741,7 +757,7 @@
           const coastalPath = route.path.slice(0, Math.min(route.path.length, firstUnknownIndex + 1));
           effectiveRoute = { ...route, path: coastalPath };
           directions = [...route.directions.slice(0, specialContext.edgeIndex), specialOrder];
-          destinationHex = route.path[firstUnknownIndex]?.coordinate || route.destinationCoordinate;
+          destinationHex = coastalFollowTarget?.coordinate || route.path[firstUnknownIndex]?.coordinate || route.destinationCoordinate;
         }
         addRouteCandidate(candidateFromRoute(known, route, {
           ...candidateOptions,

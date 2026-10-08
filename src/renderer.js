@@ -34,7 +34,7 @@ const state = {
   mode: 'overview', cameraX: 0, cameraY: 0, scale: 29, selected: null,
   hexCache: new Map(), loadedArea: null, dragging: false, dragStart: null, summaries: new Map(),
   planningVisible: true, scoutingVisible: true, planningPanelCollapsed: true, planImport: null, planHistory: [], routeCache: null,
-  selectedUnitHex: null
+  selectedUnitHex: null, selectedRouteId: null
 };
 
 const $ = id => document.getElementById(id);
@@ -475,7 +475,15 @@ function drawArrowSegment(a, b, style = {}) {
 function drawRoute(points, style = {}) {
   if (!points || points.length < 2) return; for (let i = 1; i < points.length; i++) drawArrowSegment(points[i-1], points[i], { ...style, dashed: style.dashed || points[i].kind === 'approx' });
 }
-function routeStyle(unit, style = {}) {
+function planRouteKey(route) {
+  if (route?.id != null) return String(route.id);
+  return `${route?.routeType || 'route'}:${route?.unitCode || route?.unit || ''}:${route?.scoutNumber ?? ''}`;
+}
+function routeStyle(unit, style = {}, routeId = null) {
+  if (state.selectedRouteId != null) {
+    const selected = String(state.selectedRouteId) === String(routeId);
+    return { ...style, alpha: (style.alpha ?? 1) * (selected ? 1 : .14) };
+  }
   if (!state.selectedUnit) return style;
   const selected = String(state.selectedUnit) === String(unit);
   // Keep the selected unit's movement and scouting routes at full strength;
@@ -544,11 +552,12 @@ function drawPlanOverlay() {
   const historicalResults = typeof resultsTimeline !== 'undefined' && resultsTimeline.turn && !resultsTimeline.turn.isPlanningTurn;
   const labelSlots = new Map();
   for (const m of state.routeCache.movements) {
-    drawRoute(m.route.points, routeStyle(m.unit, { color:'#f0b45e', width:Math.max(2.2,state.scale*.11), alpha:.94 }));
+    const routeId = planRouteKey(m);
+    drawRoute(m.route.points, routeStyle(m.unit, { color:'#f0b45e', width:Math.max(2.2,state.scale*.11), alpha:.94 }, routeId));
     const start = m.route.points[0], end = m.route.points[m.route.points.length - 1]; if (!start) continue;
     const key = start.coordinate, slot = labelSlots.get(key) || 0;
     if (!historicalResults) { drawUnitLabel(start, m.unit, m.type, slot, 'start'); labelSlots.set(key, slot+1); }
-    if (m.route.unresolved.length) drawConditionalMarker(end || start, m.route.unresolved[0], '#f0b45e', routeStyle(m.unit, { alpha:.94 }).alpha);
+    if (m.route.unresolved.length) drawConditionalMarker(end || start, m.route.unresolved[0], '#f0b45e', routeStyle(m.unit, { alpha:.94 }, routeId).alpha);
   }
   for (const creation of plan.unitCreations || []) {
     const child = state.routeCache.movements.find(m => m.unit === creation.unit), parent = state.routeCache.movements.find(m => m.unit === creation.parentUnit);
@@ -557,10 +566,11 @@ function drawPlanOverlay() {
   }
   if (state.scoutingVisible) {
     for (const s of state.routeCache.scouts) {
-      const emphasis=routeStyle(s.unit, { alpha:.76 });
-      drawRoute(s.route.points, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1.7,state.scale*.075), alpha:.76, dashed:true }));
+      const routeId = planRouteKey(s);
+      const emphasis=routeStyle(s.unit, { alpha:.76 }, routeId);
+      drawRoute(s.route.points, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1.7,state.scale*.075), alpha:.76, dashed:true }, routeId));
       const start=s.route.points[0], end=s.route.points[s.route.points.length-1]; if (start) drawScoutLabel(start, s.id, s.unit); if (s.route.unresolved.length && end) drawConditionalMarker(end, s.route.unresolved[0], '#78c9e6', emphasis.alpha);
-      if (s.route.points.length > 1 && !s.route.unresolved.length) drawArrowSegment(end, start, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1,state.scale*.05), alpha:.32, dashed:true }));
+      if (s.route.points.length > 1 && !s.route.unresolved.length) drawArrowSegment(end, start, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1,state.scale*.05), alpha:.32, dashed:true }, routeId));
     }
   }
 }

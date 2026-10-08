@@ -24,6 +24,12 @@ function savedMovementRootTribe(unitCode) {
   return match ? match[1] : String(unitCode || '').trim();
 }
 
+function savedMovementRouteKey(route) {
+  return typeof planRouteKey === 'function'
+    ? planRouteKey(route)
+    : String(route?.id ?? `${route?.routeType || 'route'}:${route?.unitCode || ''}:${route?.scoutNumber ?? ''}`);
+}
+
 function savedMovementCompareUnits(left, right) {
   const parse = unit => {
     const value = String(unit?.unitCode || unit?.unit || '').toLowerCase();
@@ -254,6 +260,7 @@ function savedMovementEnsureCardControls() {
 
   unitSelect.addEventListener('change', async () => {
     savedMovementPlansState.selectedUnitCode = unitSelect.value;
+    state.selectedRouteId = null;
     savedMovementPlansState.smartScoutDrafts = [];
     savedMovementPlansState.smartScoutEditingIndex = null;
     savedMovementPopulateUnits();
@@ -264,6 +271,7 @@ function savedMovementEnsureCardControls() {
 
   typeSelect.addEventListener('change', async () => {
     savedMovementPlansState.routeType = ['scout', 'smart-scout'].includes(typeSelect.value) ? typeSelect.value : 'unit';
+    state.selectedRouteId = null;
     savedMovementPlansState.smartScoutEditingIndex = null;
     if (savedMovementPlansState.routeType === 'smart-scout') {
       movementPlannerReset({ keepCard: true });
@@ -325,6 +333,11 @@ function savedMovementEnsureCardControls() {
       savedMovementRenderSaveControls();
       return;
     }
+    const selectedRoute = event.target.closest('[data-select-planned-route]');
+    if (selectedRoute && !event.target.closest('[data-remove-planned-route]')) {
+      savedMovementSelectSavedRoute(selectedRoute.dataset.selectPlannedRoute);
+      return;
+    }
     const button = event.target.closest('[data-remove-planned-route]');
     if (!button) return;
     await window.tribenet.removePlannedRoute(Number(button.dataset.removePlannedRoute));
@@ -332,6 +345,17 @@ function savedMovementEnsureCardControls() {
     const status = document.getElementById('movementPlannerSaveStatus');
     if (status) status.textContent = 'Saved route removed.';
   });
+}
+
+function savedMovementSelectSavedRoute(routeKey) {
+  const route = savedMovementPlansState.routes.find(item => savedMovementRouteKey(item) === String(routeKey));
+  if (!route) return;
+  state.selectedRouteId = savedMovementRouteKey(route);
+  state.selectedUnit = route.unitCode || route.unit || null;
+  const origin = parseCoordinate(route.originHex || route.startHex);
+  state.selectedUnitHex = origin?.coordinate || null;
+  if (origin) centerOnHex(origin.globalCol, origin.globalRow);
+  draw();
 }
 
 function savedMovementPopulateUnits() {
@@ -407,6 +431,9 @@ async function savedMovementRefresh() {
   const turnKey = savedMovementCurrentTurnKey();
   savedMovementPlansState.turnKey = turnKey;
   savedMovementPlansState.routes = turnKey ? await window.tribenet.listPlannedRoutes(turnKey) : [];
+  if (state.selectedRouteId != null && !savedMovementPlansState.routes.some(route => savedMovementRouteKey(route) === String(state.selectedRouteId))) {
+    state.selectedRouteId = null;
+  }
   savedMovementPopulateUnits();
   savedMovementRenderSaveControls();
   savedMovementPlansState.ready = true;
@@ -676,8 +703,10 @@ function savedMovementRenderSaveControls() {
     const label = item.routeType === 'scout' ? `Scout ${item.scoutNumber}` : 'Unit Move';
     const mp = `${item.knownMp}${item.unknownEntryCount ? ` + ?×${item.unknownEntryCount}` : ''} MP`;
     const commands = item.directions.join(' → ');
+    const routeKey = savedMovementRouteKey(item);
+    const selected = String(state.selectedRouteId || '') === routeKey;
     return `
-      <div class="movement-planner-saved-route">
+      <div class="movement-planner-saved-route${selected ? ' selected' : ''}" data-select-planned-route="${savedMovementEscape(routeKey)}" role="button" tabindex="0" title="Highlight this route on the map">
         <div><strong>${savedMovementEscape(label)}</strong><span>${savedMovementEscape(item.originHex)} → ${savedMovementEscape(item.destinationHex)} · ${savedMovementEscape(mp)}</span></div>
         <small>${savedMovementEscape(commands)}</small>
         <button class="button danger movement-planner-remove-route" data-remove-planned-route="${item.id}">Remove</button>

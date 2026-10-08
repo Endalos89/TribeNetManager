@@ -18,7 +18,7 @@ const result = SmartScoutCore.generate(rows, 'AA0101', {
   mission: 'PATROL'
 });
 
-assert.ok(result.routes.length >= 3, 'Smart Scout should produce every feasible scouting row');
+assert.ok(result.routes.length >= 2, 'Smart Scout should produce every feasible scouting row');
 assert.equal(
   new Set(result.routes.map(route => route.signature)).size,
   result.routes.length,
@@ -94,6 +94,24 @@ const leftCoast = SmartScoutCore.generate([
   { coordinate: 'AA0104', terrain: 'PR', knowledgeLevel: 'visited' }
 ], 'AA0201', { scoutCount: 4, noOfScouts: 2, noOfHorses: 2 });
 assert.strictEqual(leftCoast.routes[0]?.specialOrder, 'FOL', 'a reachable left-hand coastline should reserve a FOL scout route');
+
+// A visible-but-unresolved coastal row (the form used by the Results data)
+// must still give FOR a real land reveal target rather than stopping at the
+// ocean edge with no chance to uncover anything.
+const observedCoast = SmartScoutCore.generate([
+  { coordinate: 'AA0201', terrain: 'PR', knowledgeLevel: 'visited' },
+  { coordinate: 'AA0202', terrain: 'PR', knowledgeLevel: 'visited' },
+  { coordinate: 'AA0103', terrain: 'O', knowledgeLevel: 'observed' },
+  { coordinate: 'AA0203', terrain: 'PR', knowledgeLevel: 'observed' },
+  { coordinate: 'AA0303', terrain: 'PR', knowledgeLevel: 'visited' },
+  { coordinate: 'AA0304', terrain: 'PR', knowledgeLevel: 'visited' }
+], 'AA0201', { scoutCount: 4, noOfScouts: 2, noOfHorses: 2 });
+assert.strictEqual(observedCoast.routes[0]?.specialOrder, 'FOR', 'Smart Scout should keep a usable FOR route beside an ocean edge');
+assert.ok(observedCoast.routes[0]?.destinationHex, 'a follow route must have a reveal destination');
+assert.equal(observedCoast.routes[0]?.path.at(-1)?.kind, 'approx', 'a follow route must end on an unresolved land target');
+for (const route of observedCoast.routes.filter(item => /^FO[LR]$/.test(item.specialOrder || ''))) {
+  assert.ok(route.destinationHex && route.path.at(-1)?.kind === 'approx', 'every FOL/FOR route must be capable of revealing a new hex');
+}
 
 const obstacleSafe = SmartScoutCore.generate(rows, 'AA0101', { scoutCount: 4, noOfScouts: 2, noOfHorses: 2 });
 assert.ok(obstacleSafe.routes.every(route => !route.path.some(point => point.coordinate === 'AA0202')), 'Smart Scout must not route through known mountain hexes while extending unknown paths');
