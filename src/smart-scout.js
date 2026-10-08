@@ -10,6 +10,7 @@
     'N', 'NE', 'NEL', 'NL', 'NW', 'NWL', 'S', 'SE', 'SEL', 'SL', 'Still', 'SW', 'SWL'
   ]);
   const UNKNOWN_COST_SCENARIOS = Object.freeze([3, 6, 9]);
+  const OPTIMISTIC_UNKNOWN_COST = UNKNOWN_COST_SCENARIOS[0];
   const FEATURE_CODES = Object.freeze({
     ocean: ['O', 'OCEAN'],
     lake: ['L', 'LAKE'],
@@ -70,6 +71,18 @@
 
   function isPassable(row) {
     return core().isRevealedLand(row);
+  }
+
+  function isUnknownEntry(row) {
+    if (!row) return true;
+    if (isOcean(row) || matchesFeature(row, 'lake') || isMountain(row)) return false;
+    const terrain = terrainOf(row);
+    const knowledge = knowledgeOf(row);
+    const marker = `${row?.marker || ''} ${row?.status || ''}`.toUpperCase();
+    return ['UNKNOWN', '?', 'UNEXPLORED'].includes(terrain)
+      || ['PARTIAL', 'FOG', 'UNEXPLORED', 'UNKNOWN'].includes(knowledge)
+      || marker.includes('?')
+      || marker.includes('FOG');
   }
 
   function directionBetween(fromCoordinate, toCoordinate) {
@@ -192,14 +205,64 @@
       targetIsUnknown = true;
     }
 
-    const unknownEntries = path.slice(1).filter(point => {
-      const row = known.get(point.coordinate);
-      return !row || terrainOf(row) === 'UNKNOWN' || terrainOf(row) === '?';
-    }).length;
     const knownMp = Number(result.totalMp || 0);
-    const scenarioMp = UNKNOWN_COST_SCENARIOS.map(cost => knownMp + unknownEntries * cost);
     const directions = [...(result.directions || [])];
-    if (directions.length > options.maxCommands) return { status: 'too-many-commands' };
+    const maxCommands = Math.max(1, Number(options.maxCommands || 9));
+    const movementAllowance = Math.max(0, Number(options.movementAllowance ?? Infinity));
+    const visited = new Set(path.map(point => point.coordinate));
+    let unknownEntries = path.slice(1).filter(point => isUnknownEntry(known.get(point.coordinate))).length;
+
+    // Once a scout enters the unknown, keep extending the route while the
+    // optimistic (all 3-MP terrain) total still fits. This is deliberately
+    // separate from the normal route calculation: unknown hexes have no
+    // terrain cost yet, but the generated orders should still cover the full
+    // distance available in the best possible case.
+    while (
+      path.length - 1 < maxCommands
+      && knownMp + (unknownEntries + 1) * OPTIMISTIC_UNKNOWN_COST <= movementAllowance
+    ) {
+      const endpoint = core().parseCoordinate(path[path.length - 1]?.coordinate);
+      if (!endpoint) break;
+      const nextOptions = core().adjacentHexes(endpoint)
+        .filter(next => !visited.has(next.coordinate))
+        .map(next => ({
+          ...next,
+          row: known.get(next.coordinate)
+        }))
+        .filter(next => !next.row || isUnknownEntry(next.row));
+      if (!nextOptions.length) break;
+
+      // Prefer branches that expose more unresolved neighbours, then keep the
+      // direction ordering stable so repeated generations are reproducible.
+      nextOptions.sort((left, right) => {
+        const score = candidate => core().adjacentHexes(candidate).reduce((total, adjacent) => {
+          const row = known.get(adjacent.coordinate);
+          if (!row) return total + 2;
+          if (isOcean(row)) return total + 1;
+          return total + (isUnknownEntry(row) ? 2 : 0);
+        }, 0);
+        return score(right) - score(left) || left.direction.localeCompare(right.direction);
+      });
+      const next = nextOptions[0];
+      path.push({
+        ...next,
+        terrain: terrainOf(next.row),
+        entryMp: null,
+        baseEntryMp: null,
+        weatherPenalty: null,
+        cumulativeMp: null,
+        knownCumulativeMp: knownMp,
+        unknownCumulativeCount: unknownEntries + 1,
+        kind: 'approx'
+      });
+      directions.push(next.direction);
+      result.steps = Number(result.steps || 0) + 1;
+      visited.add(next.coordinate);
+      unknownEntries += 1;
+    }
+
+    const scenarioMp = UNKNOWN_COST_SCENARIOS.map(cost => knownMp + unknownEntries * cost);
+    if (directions.length > maxCommands) return { status: 'too-many-commands' };
 
     return {
       ...result,
@@ -212,7 +275,9 @@
       estimatedMp: scenarioMp[1],
       worstCaseMp: scenarioMp[2],
       scenarioMp: { low: scenarioMp[0], expected: scenarioMp[1], high: scenarioMp[2] },
-      targetCoordinate
+      targetCoordinate,
+      destinationCoordinate: path[path.length - 1]?.coordinate || targetCoordinate,
+      optimisticMp: scenarioMp[0]
     };
   }
 
@@ -226,8 +291,14 @@
 
   function specialOrderFor(known, path, targetCoordinate) {
     if (!path || path.length < 2) return null;
-    const endpoint = path[path.length - 1];
-    const previous = path[path.length - 2];
+    // Follow orders are issued from the last known land hex at the edge of
+    // the route. A multi-hex unknown continuation means the final path point
+    // itself has no known coastline/mountain row to inspect.
+    let edgeIndex = path.length - 1;
+    while (edgeIndex > 0 && isUnknownEntry(known.get(path[edgeIndex].coordinate))) edgeIndex -= 1;
+    const endpoint = path[edgeIndex];
+    const previous = path[edgeIndex - 1];
+    if (!endpoint || !previous) return null;
     const moveDirection = directionBetween(previous.coordinate, endpoint.coordinate);
     if (!moveDirection) return null;
     const moveIndex = core().DIRECTIONS?.indexOf(moveDirection) ?? ['N', 'NE', 'SE', 'S', 'SW', 'NW'].indexOf(moveDirection);
@@ -247,7 +318,12 @@
     const featureIndex = core().DIRECTIONS?.indexOf(featureDirection) ?? ['N', 'NE', 'SE', 'S', 'SW', 'NW'].indexOf(featureDirection);
     if (moveIndex < 0 || featureIndex < 0) return null;
     const delta = (featureIndex - moveIndex + 6) % 6;
-    const side = delta === 1 || delta === 2 ? 'left' : 'right';
+    // DIRECTIONS is clockwise (N, NE, SE, S, SW, NW). Therefore one or two
+    // clockwise steps from the movement heading are on the right, matching
+    // the renderer's authoritative convention: FOR=right, FOL=left.
+    const side = delta === 1 || delta === 2 ? 'right'
+      : delta === 4 || delta === 5 ? 'left' : null;
+    if (!side) return null;
     const suffix = side === 'left' ? 'L' : 'R';
     const prefix = featureFor(chosen.row) === 'ocean' ? 'FO'
       : featureFor(chosen.row) === 'lake' ? 'FL'
@@ -308,8 +384,11 @@
     const targets = candidateTargets(known, origin.coordinate, Math.min(maxCommands, mounted ? 6 : 4));
     const candidates = [];
     for (const target of targets) {
-      const route = routeWithUnknownTarget(known, origin.coordinate, target.coordinate, { maxCommands });
-      if (!route || route.status !== 'ok' || !route.directions?.length || route.knownMp > allowance) continue;
+      const route = routeWithUnknownTarget(known, origin.coordinate, target.coordinate, {
+        maxCommands,
+        movementAllowance: allowance
+      });
+      if (!route || route.status !== 'ok' || !route.directions?.length || route.optimisticMp > allowance) continue;
       const coverage = addCoverage(new Set(), known, route);
       if (!coverage.size) continue;
       const specialOrder = specialOrderFor(known, route.path, target.coordinate);
@@ -328,6 +407,7 @@
         coverage: [...coverage],
         coverageCount: coverage.size,
         signature: directions.join('>'),
+        destinationHex: route.destinationCoordinate,
         movementAllowance: allowance,
         mounted
       });
@@ -371,6 +451,7 @@
     isFogOrQuestion,
     isOcean,
     isMountain,
+    specialOrderFor,
     generate
   };
 });
