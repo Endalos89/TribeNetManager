@@ -281,7 +281,9 @@ function validatePatchedWorkbook(sourceXml, outputPath, expected) {
     if (commands.join('|') !== item.directions.join('|')) throw new Error(`Workbook validation failed: movement commands for ${item.unitCode} changed.`);
   }
   const validUnits = new Set(readRows('Valid Units').map(row => String(row.Unit || '').trim().toLowerCase()).filter(Boolean));
-  for (const item of expected.movements) if (!validUnits.has(String(item.unitCode).trim().toLowerCase())) throw new Error(`Workbook validation failed: ${item.unitCode} is missing from Valid Units.`);
+  for (const item of [...(expected.movements || []), ...(expected.validUnits || [])]) {
+    if (!validUnits.has(String(item.unitCode).trim().toLowerCase())) throw new Error(`Workbook validation failed: ${item.unitCode} is missing from Valid Units.`);
+  }
   const scouts = readRows('Scout_Movement').filter(row => expected.scouts.some(item => String(item.unitCode) === String(row.TRIBE)) && Number(row.No_of_Scouts || 0));
   if (scouts.length !== expected.scouts.length) throw new Error('Workbook validation failed: scouting rows were not written.');
   const actions = readRows('GM Actions').map(row => String(row['What does the GM need to do?'] || '')).filter(Boolean);
@@ -289,10 +291,14 @@ function validatePatchedWorkbook(sourceXml, outputPath, expected) {
   return output;
 }
 
-async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], scouts = [], gmActions = [] }) {
+async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], scouts = [], gmActions = [], validUnits = [] }) {
   const template = validateOrdersTemplate(templatePath);
   const normalizedMovements = normalizeMovementRows(movements, template.movementRows);
   const normalizedScouts = normalizeScoutRows(scouts, template.scoutRows);
+  const normalizedValidUnits = [...(validUnits || []), ...normalizedMovements]
+    .filter(row => row?.unitCode)
+    .map(row => ({ unitCode: String(row.unitCode).trim(), unitName: String(row.unitName || '').trim() }))
+    .filter((row, index, rows) => rows.findIndex(item => item.unitCode.toLowerCase() === row.unitCode.toLowerCase()) === index);
   const normalizedActions = (gmActions || []).filter(action => action?.text).map(action => ({ unit: String(action.unit || '').trim(), text: String(action.text).trim() }));
   if (normalizedActions.length > template.gmRows) throw new Error(`The blank workbook has room for ${template.gmRows} GM Action rows, but ${normalizedActions.length} are planned.`);
   const sourceReal = path.resolve(templatePath);
@@ -325,13 +331,13 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   zip.file(paths.get('GM Actions'), gmXml);
 
   let validUnitsXml = await zip.file(paths.get('Valid Units')).async('string');
-  validUnitsXml = patchCells(validUnitsXml, validUnitCells(template.workbook, normalizedMovements));
+  validUnitsXml = patchCells(validUnitsXml, validUnitCells(template.workbook, normalizedValidUnits));
   zip.file(paths.get('Valid Units'), validUnitsXml);
 
   await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.promises.writeFile(outputPath, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
-  validatePatchedWorkbook(buffer, outputPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions });
-  return { outputPath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions };
+  validatePatchedWorkbook(buffer, outputPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits });
+  return { outputPath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits };
 }
 
 function templateDirectory(userDataPath) {

@@ -59,6 +59,13 @@ try {
   const reused = db.save(route({ unitCode: '0485E2', routeType: 'scout' }));
   assert.equal(reused.scoutNumber, 3, 'removing a scout should free that scout slot');
 
+  db.save(route({ turnKey: 'reset-turn', unitCode: '0485' }));
+  db.save(route({ turnKey: 'reset-turn', unitCode: '0485E1', destinationHex: 'AA0103' }));
+  db.save(route({ turnKey: 'reset-turn', unitCode: '0485', routeType: 'scout', destinationHex: 'AA0104' }));
+  assert.equal(db.removeAllUnitRoutes('reset-turn'), 2, 'reset should remove every Movement route for the turn');
+  assert.equal(db.list('reset-turn').filter(item => item.routeType === 'unit').length, 0);
+  assert.equal(db.list('reset-turn').filter(item => item.routeType === 'scout').length, 1, 'reset should preserve Scouting routes');
+
   console.log('planned-routes tests passed');
 } finally {
   db.close();

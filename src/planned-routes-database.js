@@ -153,6 +153,11 @@ class PlannedRoutesDatabase {
     return Number(this.db.prepare('DELETE FROM planned_routes WHERE turn_key = ? AND unit_code = ?').run(turnKey, unitCode).changes || 0);
   }
 
+  removeAllUnitRoutes(turnKey) {
+    if (!turnKey) return 0;
+    return Number(this.db.prepare("DELETE FROM planned_routes WHERE turn_key = ? AND route_type = 'unit'").run(turnKey).changes || 0);
+  }
+
   close() {
     if (this.db) this.db.close();
   }

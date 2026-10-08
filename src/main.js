@@ -232,10 +232,10 @@ function buildOrdersExportData(turnKey) {
   const units = ordersExportUnits(turnKey);
   const routes = routesDb().list(turnKey);
   const unitTypeByCode = new Map(units.map(unit => [String(unit.unitCode).toLowerCase(), String(unit.unitType || '')]));
-  const illegalGarrisonMove = routes.find(route => route.routeType === 'unit' && unitTypeByCode.get(String(route.unitCode).toLowerCase()) === 'Garrison');
-  if (illegalGarrisonMove) throw new Error(`Garrison ${illegalGarrisonMove.unitCode} is stationary and cannot have a Movement route.`);
-  const unitRoutes = new Map(routes.filter(route => route.routeType === 'unit').map(route => [String(route.unitCode).toLowerCase(), route]));
-  const movements = units.map(unit => ({
+  const unitRoutes = new Map(routes
+    .filter(route => route.routeType === 'unit' && unitTypeByCode.get(String(route.unitCode).toLowerCase())?.toLowerCase() !== 'garrison')
+    .map(route => [String(route.unitCode).toLowerCase(), route]));
+  const movements = units.filter(unit => String(unit.unitType || '').toLowerCase() !== 'garrison').map(unit => ({
     unitCode: unit.unitCode,
     directions: unitRoutes.get(String(unit.unitCode).toLowerCase())?.directions?.length
       ? unitRoutes.get(String(unit.unitCode).toLowerCase()).directions
@@ -267,7 +267,12 @@ function buildOrdersExportData(turnKey) {
       }
     }
   }
-  return { movements, scouts, gmActions };
+  return {
+    movements,
+    scouts,
+    gmActions,
+    validUnits: units.map(unit => ({ unitCode: unit.unitCode, unitName: unit.unitName || '' }))
+  };
 }
 
 function saveCompletedOrders(filePath) {

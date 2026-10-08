@@ -2,6 +2,9 @@
   const status = document.getElementById('launcherImportStatus');
   const resultsButton = document.getElementById('launcherImportResultsButton');
   const completedButton = document.getElementById('launcherImportCompletedButton');
+  const blankOrdersButton = document.getElementById('launcherImportBlankOrdersButton');
+  const exportOrdersButton = document.getElementById('launcherExportOrdersButton');
+  const ordersStatus = document.getElementById('launcherOrdersStatus');
   const RESULT_TURN_STORAGE_KEY = 'tribenet:selectedResultTurn';
   let busy = false;
 
@@ -38,8 +41,25 @@
     busy = Boolean(nextBusy);
     if (resultsButton) resultsButton.disabled = busy;
     if (completedButton) completedButton.disabled = busy;
+    if (blankOrdersButton) blankOrdersButton.disabled = busy;
+    if (exportOrdersButton) exportOrdersButton.disabled = busy || !selectedPlanningTurnKey();
     const button = fairButton();
     if (button) button.disabled = busy || !button.dataset.turnKey;
+  }
+
+  function selectedPlanningTurnKey() {
+    return canonicalTurnKey(localStorage.getItem(RESULT_TURN_STORAGE_KEY));
+  }
+
+  async function refreshOrdersStatus() {
+    if (!blankOrdersButton && !exportOrdersButton && !ordersStatus) return;
+    const turnKey = selectedPlanningTurnKey();
+    if (exportOrdersButton) exportOrdersButton.disabled = busy || !turnKey;
+    if (ordersStatus) {
+      ordersStatus.textContent = turnKey
+        ? `Orders workbook actions target planning Turn ${turnKey}.`
+        : 'Import Results first, or upload a blank Orders workbook whose filename identifies the turn.';
+    }
   }
 
   function planningTurnKey(resultTurn) {
@@ -186,6 +206,53 @@
     }
   }
 
+  async function importBlankOrders() {
+    setBusy(true);
+    if (ordersStatus) ordersStatus.textContent = 'Uploading blank Orders workbook…';
+    try {
+      const result = await window.tribenet.importOrdersTemplate(selectedPlanningTurnKey());
+      if (result?.canceled) {
+        if (ordersStatus) ordersStatus.textContent = 'Blank Orders upload cancelled.';
+        return;
+      }
+      if (result?.error) {
+        if (ordersStatus) ordersStatus.textContent = `Blank Orders upload failed: ${result.error}`;
+        return;
+      }
+      const turnKey = canonicalTurnKey(result.turnKey);
+      if (turnKey) localStorage.setItem(RESULT_TURN_STORAGE_KEY, turnKey);
+      if (ordersStatus) ordersStatus.textContent = `Blank Orders workbook loaded for Turn ${turnKey}.`;
+    } finally {
+      setBusy(false);
+      await refreshOrdersStatus();
+    }
+  }
+
+  async function exportOrders() {
+    const turnKey = selectedPlanningTurnKey();
+    if (!turnKey) {
+      if (ordersStatus) ordersStatus.textContent = 'Import Results or upload a blank Orders workbook first.';
+      return;
+    }
+    setBusy(true);
+    if (ordersStatus) ordersStatus.textContent = `Preparing Orders workbook for Turn ${turnKey}…`;
+    try {
+      const result = await window.tribenet.exportOrdersWorkbook(turnKey);
+      if (result?.canceled) {
+        if (ordersStatus) ordersStatus.textContent = 'Orders export cancelled.';
+        return;
+      }
+      if (result?.error) {
+        if (ordersStatus) ordersStatus.textContent = `Orders export failed: ${result.error}`;
+        return;
+      }
+      if (ordersStatus) ordersStatus.textContent = `Orders workbook exported: ${result.outputFile}.`;
+    } finally {
+      setBusy(false);
+      await refreshOrdersStatus();
+    }
+  }
+
   function bindFairButton() {
     const button = fairButton();
     if (!button) return false;
@@ -205,7 +272,12 @@
 
   resultsButton?.addEventListener('click', importResults);
   completedButton?.addEventListener('click', importCompleted);
-  window.addEventListener('tribenet-import-complete', () => refreshFairStatus().catch(console.error));
+  blankOrdersButton?.addEventListener('click', importBlankOrders);
+  exportOrdersButton?.addEventListener('click', exportOrders);
+  window.addEventListener('tribenet-import-complete', () => {
+    refreshFairStatus().catch(console.error);
+    refreshOrdersStatus().catch(console.error);
+  });
   window.addEventListener('tribenet-fair-import-complete', () => refreshFairStatus().catch(console.error));
 
   if (!bindFairButton()) {
@@ -214,4 +286,5 @@
     });
     observer.observe(document.body, { childList:true, subtree:true });
   }
+  refreshOrdersStatus().catch(console.error);
 })();

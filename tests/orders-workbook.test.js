@@ -29,6 +29,7 @@ const output = path.join(temp, 'completed.xlsx');
         { unitCode: '0485e1', directions: ['Still'] },
         { unitCode: '1485', directions: ['SE', 'SE', 'S', 'SE'] }
       ],
+      validUnits: [{ unitCode: '0485g1', unitName: 'Home Garrison' }],
       scouts: [
         { unitCode: '0485', noOfScouts: 2, noOfHorses: 2, mission: 'PATROL', directions: ['FOR'] },
         { unitCode: '0485e1', noOfScouts: 2, noOfHorses: 2, mission: 'PATROL', directions: ['SW', 'SW', 'S'] },
@@ -42,6 +43,9 @@ const output = path.join(temp, 'completed.xlsx');
     assert.deepEqual(movement.slice(0, 3).map(row => [row.TRIBE, row.MOVEMENT_1, row.MOVEMENT_2, row.MOVEMENT_3]), [
       ['0485', 'N', 'N', 'N'], ['0485e1', 'Still', 'EMPTY', 'EMPTY'], ['1485', 'SE', 'SE', 'S']
     ]);
+    assert.equal(movement.some(row => row.TRIBE === '0485g1'), false, 'Garrisons must not receive a Movement row');
+    const validUnits = XLSX.utils.sheet_to_json(workbook.Sheets['Valid Units'], { defval: null });
+    assert.ok(validUnits.some(row => row.Unit === '0485g1'), 'Garrisons should still be available as valid unit codes');
     const scouts = XLSX.utils.sheet_to_json(workbook.Sheets.Scout_Movement, { defval: null }).filter(row => row.No_of_Scouts);
     assert.deepEqual(scouts.map(row => row.TRIBE), ['0485', '0485e1', '1485'], 'scouting rows must group Tribe before linked units');
     assert.equal(XLSX.utils.sheet_to_json(workbook.Sheets['GM Actions'], { defval: null })[0]['What does the GM need to do?'], 'Create Tribe 1485 from 0485');

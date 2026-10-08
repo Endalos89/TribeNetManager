@@ -10,6 +10,7 @@ assert.doesNotMatch(preload, /require\(['"]\.\//, 'sandboxed preload must not re
 assert.match(preload, /ipcRenderer\.invoke\(['"]planned-routes:list['"]/, 'planned routes should go through IPC');
 assert.match(preload, /ipcRenderer\.invoke\(['"]planned-routes:save['"]/, 'planned route saves should go through IPC');
 assert.match(preload, /ipcRenderer\.invoke\(['"]planned-routes:remove['"]/, 'planned route removal should go through IPC');
+assert.match(preload, /ipcRenderer\.invoke\(['"]planned-routes:remove-all-unit['"]/, 'reset-all movement should go through IPC');
 assert.match(preload, /ipcRenderer\.invoke\(['"]turn-manager:add-unit-split['"]/, 'planned split creation should go through IPC');
 assert.match(preload, /ipcRenderer\.invoke\(['"]turn-manager:list-unit-splits['"]/, 'planned splits should be readable through IPC');
 assert.match(preload, /ipcRenderer\.invoke\(['"]turn-manager:delete-unit-split['"]/, 'planned split removal should go through IPC');
