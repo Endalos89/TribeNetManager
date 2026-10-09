@@ -125,6 +125,11 @@
           <div id="turnActionBar" class="turn-action-bar hidden" aria-live="polite"></div>
           <div id="turnActionHoverCard" class="turn-action-hover-card hidden" role="status" aria-live="polite"></div>
           <div id="turnActionTooltip" class="turn-action-tooltip hidden" role="tooltip"></div>
+          <div id="turnActionRouteLegend" class="turn-action-route-legend hidden" aria-label="Route certainty legend">
+            <span class="turn-action-route-legend-title">ROUTES</span>
+            <span><i class="turn-action-route-swatch certain"></i>Certain land</span>
+            <span><i class="turn-action-route-swatch maybe"></i>Uncertain / fog</span>
+          </div>
         </div>
         <aside class="hex-editor">
           <div id="noSelection" class="empty-selection">
@@ -216,7 +221,7 @@
 
     <dialog id="scoutRoutesDialog" class="turn-action-dialog">
       <form method="dialog" class="turn-action-dialog-form">
-        <div class="turn-action-dialog-heading">
+        <div class="turn-action-dialog-heading" data-drag-handle="scout-routes">
           <div><p class="eyebrow">SCOUTING ORDERS</p><h2>Edit saved routes</h2></div>
           <button value="cancel" class="button square" aria-label="Close">×</button>
         </div>

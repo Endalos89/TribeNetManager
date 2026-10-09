@@ -307,6 +307,43 @@
   white-space: nowrap;
 }
 
+.turn-action-route-legend {
+  position: absolute;
+  z-index: 18;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #2f4a55;
+  border-radius: 7px;
+  background: rgba(8, 17, 22, .88);
+  color: #a9bdc5;
+  font-size: 8px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.turn-action-route-legend-title {
+  color: #e8eef2;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.turn-action-route-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  margin-right: 3px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.turn-action-route-swatch.certain { background: #8dd7a1; }
+.turn-action-route-swatch.maybe { background: #e4bb65; }
+
 .turn-action-heading,
 .turn-action-heading > div,
 .turn-action-buttons,
@@ -393,18 +430,15 @@
   background: #2b1d1b;
 }
 
-.turn-action-button svg,
-.turn-action-utility svg {
+.turn-action-button img,
+.turn-action-utility img {
   width: 17px;
   height: 17px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
+  image-rendering: pixelated;
+  object-fit: contain;
 }
 
-.turn-action-button svg {
+.turn-action-button img {
   width: 20px;
   height: 20px;
   padding: 3px;
@@ -465,7 +499,7 @@
 }
 
 .turn-action-utility:hover { color: #e1f4e4; }
-.turn-action-utility svg { width: 12px; height: 12px; }
+.turn-action-utility img { width: 12px; height: 12px; padding: 0; border: 0; background: transparent; }
 
 .turn-action-dialog {
   width: min(520px, calc(100vw - 32px));
@@ -475,6 +509,16 @@
   background: #0d1b14;
   color: #e7f3ea;
   box-shadow: 0 24px 80px rgba(0, 0, 0, .58);
+}
+
+#scoutRoutesDialog {
+  position: fixed;
+  margin: 0;
+}
+
+#scoutRoutesDialog [data-drag-handle="scout-routes"] {
+  cursor: move;
+  user-select: none;
 }
 
 .turn-action-dialog::backdrop { background: rgba(1, 7, 5, .66); }

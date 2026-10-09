@@ -12,6 +12,7 @@ assert.match(index, /id="turnActionBar"/, 'The mapper must expose the selected-u
 assert.match(index, /id="turnActionHoverCard"/, 'Move Unit must expose a hover cost readout.');
 assert.match(index, /id="turnActionTooltip"/, 'Action controls must expose an immediate tooltip surface.');
 assert.match(index, /id="scoutRoutesDialog"/, 'Scouting orders must have a dedicated edit dialog.');
+assert.match(index, /id="turnActionRouteLegend"/, 'The map must expose a route certainty legend.');
 assert.match(index, /id="unitSplitDialog"/, 'Split Off Unit must have a dedicated dialog.');
 assert.match(actions, /Move Unit/, 'Move Unit action is missing.');
 assert.match(actions, /Split Off Unit/, 'Split Off Unit action is missing.');
@@ -19,6 +20,10 @@ assert.match(actions, /Send Out Scout/, 'Send Out Scout action is missing.');
 assert.match(actions, /key === 'M'/, 'Move Unit hotkey is missing.');
 assert.match(actions, /key === 'X'/, 'Split Off Unit hotkey is missing.');
 assert.match(actions, /key === 'C'/, 'Send Out Scout hotkey is missing.');
+assert.match(actions, /key === 'F'/, 'Follow Ocean hotkey is missing.');
+assert.match(actions, /follow-ocean/, 'Follow Ocean must be an explicit scouting action.');
+assert.match(actions, /turnActionsArmFollowOcean/, 'Follow Ocean must be directly armable from the action bar.');
+assert.match(actions, /item-icons\//, 'Action icons must use the Compendium image assets.');
 assert.match(actions, /event\.key !== 'Shift'/, 'Shift release must be the chain commit boundary.');
 assert.match(actions, /turnActionsCommit\(\)/, 'Turn actions must commit after a completed click/chain.');
 assert.match(actions, /pendingMapClick/, 'Shift release must wait for the map click to finish appending its route.');
@@ -36,6 +41,8 @@ assert.match(actions, /turnActionsCancelRightClick/, 'Right-clicking during an a
 assert.match(actions, /reset-scouting/, 'The action bar must provide a unit-scoped scouting reset.');
 assert.match(actions, /open-scouts/, 'The action bar must open saved scout routes for the selected unit.');
 assert.match(actions, /turnActionsOpenScoutRoutes/, 'Saved scout routes must support hover highlighting and edit/cancel actions.');
+assert.match(actions, /if \(!dialog\.open\) dialog\.show\(\)/, 'Scouting routes must use a non-modal popup.');
+assert.match(actions, /turnActionsBindDialogDrag/, 'Scouting routes popup must be draggable.');
 assert.match(actions, /savedMovementResetMovementForUnit/, 'Movement reset must be scoped to the selected unit.');
 assert.match(actions, /savedMovementResetScoutingForUnit/, 'Scouting reset must be scoped to the selected unit.');
 assert.match(actions, /edit-scout/, 'A selected scout route must offer editing.');
@@ -45,6 +52,7 @@ assert.match(actions, /title="Send Out Scout · C"/, 'Scout action must expose i
 assert.match(actions, /turnActionsBindTooltips/, 'Action controls must bind immediate custom tooltips.');
 assert.match(renderer, /certainColor/, 'Route arrows must distinguish certain terrain from uncertain terrain.');
 assert.match(renderer, /maybeColor/, 'Route arrows must expose a second colour for uncertain terrain.');
+assert.match(actions, /R\$\{savedMovementVisibleRouteNumber\(route\)\}/, 'Scouting routes must show route numbers.');
 assert.match(actions, /editingRouteId/, 'Scout editing must update the existing route rather than insert a duplicate.');
 assert.match(actions, /selectedScout \? turnActionsEditSelectedScout\(\) : turnActionsStart\('scout'\)/, 'C should edit a selected scout route and otherwise start scouting.');
 assert.match(fs.readFileSync('src/saved-movement-plans.js', 'utf8'), /savedMovementHandleRouteLabelClick/, 'Scout labels must be clickable.');

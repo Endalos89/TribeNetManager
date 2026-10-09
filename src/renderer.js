@@ -592,7 +592,10 @@ function drawPlanOverlay() {
   const labelSlots = new Map();
   for (const m of state.routeCache.movements) {
     const routeId = planRouteKey(m);
-    drawRoute(m.route.points, routeStyle(m.unit, { color:'#f0b45e', width:Math.max(2.2,state.scale*.11), alpha:.94 }, routeId));
+    drawRoute(m.route.points, routeStyle(m.unit, {
+      color:'#8dd7a1', certainColor:'#8dd7a1', maybeColor:'#e4bb65',
+      width:Math.max(2.2,state.scale*.11), alpha:.94
+    }, routeId));
     drawConditionalPredictions(m.route, routeStyle(m.unit, { color:'#f0b45e', width:Math.max(1.4,state.scale*.07), alpha:.3 }, routeId));
     const start = m.route.points[0], end = m.route.points[m.route.points.length - 1]; if (!start) continue;
     const key = start.coordinate, slot = labelSlots.get(key) || 0;
@@ -608,7 +611,10 @@ function drawPlanOverlay() {
     for (const s of state.routeCache.scouts) {
       const routeId = planRouteKey(s);
       const emphasis=routeStyle(s.unit, { alpha:.76 }, routeId);
-      drawRoute(s.route.points, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1.7,state.scale*.075), alpha:.76, dashed:true }, routeId));
+      drawRoute(s.route.points, routeStyle(s.unit, {
+        color:'#78c9e6', certainColor:'#78c9e6', maybeColor:'#e4bb65',
+        width:Math.max(1.7,state.scale*.075), alpha:.76, dashed:true
+      }, routeId));
       drawConditionalPredictions(s.route, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1.2,state.scale*.05), alpha:.3, dashed:true }, routeId));
       const start=s.route.points[0], end=s.route.points[s.route.points.length-1]; if (start) drawScoutLabel(start, s.id, s.unit); if (s.route.unresolved.length && end) drawConditionalMarker(end, s.route.unresolved[0], '#78c9e6', emphasis.alpha);
       if (s.route.points.length > 1 && !s.route.unresolved.length) drawArrowSegment(end, start, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1,state.scale*.05), alpha:.32, dashed:true }, routeId));

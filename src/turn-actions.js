@@ -9,18 +9,24 @@ const turnActionState = {
   hoverRequest: 0,
   suppressContextMenuUntil: 0,
   pendingMapClick: null,
-  editingRouteId: null
+  editingRouteId: null,
+  followOceanMode: false
 };
 
+function turnActionsImageIcon(filename, alt) {
+  return `<img class="turn-action-icon" src="item-icons/${filename}" alt="${alt || ''}" aria-hidden="true" width="32" height="32" loading="lazy" decoding="async">`;
+}
+
 const TURN_ACTION_ICONS = {
-  move: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h13M13 6l6 6-6 6"/></svg>',
-  split: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M5 8l7 4 7-4M5 16l7-4 7 4"/></svg>',
-  scout: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19c4-8 7-12 16-14M4 19l6-1M4 19l2-6"/></svg>',
-  cancel: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>',
-  reset: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6M4 5v6h6"/></svg>',
-  edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-.8 4.8L8 20l10.8-10.8-4-4L4 16Z"/><path d="m13.5 6.5 4 4M4 20l4-1"/></svg>',
-  remove: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>',
-  routes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>'
+  move: turnActionsImageIcon('cart.png', 'Move'),
+  split: turnActionsImageIcon('axe.png', 'Split'),
+  scout: turnActionsImageIcon('cavalry-saddle.png', 'Scout'),
+  followOcean: turnActionsImageIcon('boat.png', 'Follow Ocean'),
+  cancel: turnActionsImageIcon('blade-shears.png', 'Cancel'),
+  reset: turnActionsImageIcon('arrow.png', 'Reset'),
+  edit: turnActionsImageIcon('bench.png', 'Edit'),
+  remove: turnActionsImageIcon('caltrops.png', 'Remove'),
+  routes: turnActionsImageIcon('banner.png', 'Routes')
 };
 
 function turnActionsEscape(value) {
@@ -72,6 +78,7 @@ function turnActionsMovementRisk(route, allowance) {
 function turnActionsRender() {
   const bar = document.getElementById('turnActionBar');
   if (!bar) return;
+  turnActionsRenderLegend();
   const unit = turnActionsUnit();
   if (!turnActionsPlanningAvailable() || !unit) {
     bar.classList.add('hidden');
@@ -104,6 +111,7 @@ function turnActionsRender() {
       ${!stationary ? `<button class="turn-action-button${turnActionState.active === 'unit' ? ' active' : ''}" data-turn-action="move"${!canMove && !active ? ' disabled' : ''} aria-label="Move Unit" title="Move Unit · M">${TURN_ACTION_ICONS.move}</button>` : ''}
       <button class="turn-action-button${turnActionState.active === 'split' ? ' active' : ''}" data-turn-action="split"${active ? ' disabled' : ''} aria-label="Split Off Unit" title="Split Off Unit · X">${TURN_ACTION_ICONS.split}</button>
       <button class="turn-action-button${turnActionState.active === 'scout' ? ' active' : ''}" data-turn-action="scout"${active ? ' disabled' : ''} aria-label="Send Out Scout" title="Send Out Scout · C">${TURN_ACTION_ICONS.scout}</button>
+      ${turnActionState.active === 'scout' ? `<button class="turn-action-button route-action${turnActionState.followOceanMode ? ' active' : ''}" data-turn-action="follow-ocean" aria-label="Follow Ocean" title="Follow Ocean · F">${TURN_ACTION_ICONS.followOcean}</button>` : ''}
       ${unitScoutRoutes.length ? `<button class="turn-action-button route-action" data-turn-action="open-scouts" aria-label="View scouting routes" title="View scouting routes · V">${TURN_ACTION_ICONS.routes}</button>` : ''}
       ${active ? `<button class="turn-action-button secondary" data-turn-action="cancel" aria-label="Cancel action" title="Cancel action · Esc">${TURN_ACTION_ICONS.cancel}</button>` : ''}
       ${selectedScout && !active ? `<span class="turn-action-route-selection">Scout S${selectedScout.scoutNumber} selected</span><button class="turn-action-button route-action" data-turn-action="edit-scout" aria-label="Edit scouting" title="Edit scouting · C">${TURN_ACTION_ICONS.edit}</button><button class="turn-action-button secondary route-action" data-turn-action="cancel-scout" aria-label="Cancel scouting" title="Cancel scouting">${TURN_ACTION_ICONS.remove}</button>` : ''}
@@ -133,6 +141,13 @@ function turnActionsReadScoutFields() {
 function turnActionsSetStatus(message) {
   turnActionState.status = String(message || '');
   turnActionsRender();
+}
+
+function turnActionsRenderLegend() {
+  const legend = document.getElementById('turnActionRouteLegend');
+  if (!legend) return;
+  const hasRoutes = Boolean(savedMovementPlansState?.routes?.length) || Boolean(turnActionState.active);
+  legend.classList.toggle('hidden', state.mode !== 'detail' || !state.planningVisible || !hasRoutes);
 }
 
 function turnActionsHoverCard() {
@@ -358,7 +373,9 @@ async function turnActionsStart(type, options = {}) {
   turnActionState.shiftChainStarted = false;
   turnActionState.pendingOcean = null;
   turnActionState.tracePoint = null;
+  turnActionState.followOceanMode = Boolean(options.followOcean);
   turnActionState.status = `Click a destination${type === 'scout' ? ' to trace the scout route' : ''}. Hold Shift to chain commands.`;
+  if (turnActionState.followOceanMode) turnActionState.status = 'Follow Ocean armed · plot at least one land move, then select the ocean edge.';
   movementPlannerState.active = true;
   movementPlannerState.shiftHeld = false;
   movementPlannerState.route = null;
@@ -384,6 +401,7 @@ function turnActionsCancel() {
   turnActionState.pendingOcean = null;
   turnActionState.tracePoint = null;
   turnActionState.editingRouteId = null;
+  turnActionState.followOceanMode = false;
   movementPlannerState.active = false;
   movementPlannerState.origin = null;
   movementPlannerState.route = null;
@@ -437,7 +455,7 @@ function turnActionsOceanPoint(coordinate) {
 }
 
 async function turnActionsHandleScoutTrace(targetCoordinate) {
-  if (turnActionState.active !== 'scout' || !movementPlannerState.shiftHeld) return false;
+  if (turnActionState.active !== 'scout' || (!movementPlannerState.shiftHeld && !turnActionState.followOceanMode && !turnActionState.pendingOcean)) return false;
   const target = parseCoordinate(targetCoordinate);
   if (!target) return true;
   const ocean = turnActionsOceanPoint(target.coordinate);
@@ -491,8 +509,11 @@ async function turnActionsHandleScoutTrace(targetCoordinate) {
   turnActionState.pendingOcean = null;
   turnActionState.tracePoint = target;
   turnActionState.shiftChainStarted = true;
+  const commitFollowOcean = turnActionState.followOceanMode && !movementPlannerState.shiftHeld;
+  turnActionState.followOceanMode = false;
   turnActionsSetStatus(`${order} inferred. Release Shift to commit, or cancel to discard.`);
   draw();
+  if (commitFollowOcean) await turnActionsCommit();
   return true;
 }
 
@@ -566,6 +587,24 @@ async function turnActionsCancelSelectedScout() {
   turnActionsSetStatus(removed ? `Scouting S${route.scoutNumber} cancelled for ${route.unitCode}.` : 'The scouting route was already removed.');
 }
 
+function turnActionsArmFollowOcean() {
+  if (turnActionState.active !== 'scout') return turnActionsStart('scout', { followOcean: true });
+  const route = movementPlannerState.route;
+  if (!route?.path?.length || !route.directions?.length) {
+    turnActionsSetStatus('Plot at least one land move before starting Follow Ocean.');
+    return;
+  }
+  if (route.directions.some(order => /^FO[LR]$/i.test(String(order)))) {
+    turnActionsSetStatus('Follow Ocean is already the final order on this route.');
+    return;
+  }
+  turnActionState.followOceanMode = true;
+  turnActionState.pendingOcean = null;
+  turnActionState.tracePoint = null;
+  turnActionsSetStatus('Follow Ocean armed · select an adjacent ocean hex, then the adjacent land hex.');
+  draw();
+}
+
 function turnActionsScoutRouteSummary(route) {
   const start = route.originHex || route.startHex || route.path?.[0]?.coordinate || '—';
   const end = route.destinationHex || route.path?.[route.path.length - 1]?.coordinate || '—';
@@ -576,6 +615,36 @@ function turnActionsScoutRouteSummary(route) {
 
 function turnActionsCloseScoutRoutes() {
   document.getElementById('scoutRoutesDialog')?.close();
+}
+
+function turnActionsBindDialogDrag(dialog) {
+  const handle = dialog?.querySelector('[data-drag-handle="scout-routes"]');
+  if (!dialog || !handle || handle.dataset.dragBound) return;
+  handle.dataset.dragBound = '1';
+  let drag = null;
+  handle.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || event.target.closest('button')) return;
+    const rect = dialog.getBoundingClientRect();
+    drag = { startX: event.clientX, startY: event.clientY, left: rect.left, top: rect.top };
+    handle.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+  handle.addEventListener('pointermove', event => {
+    if (!drag) return;
+    const maxLeft = Math.max(8, window.innerWidth - dialog.offsetWidth - 8);
+    const maxTop = Math.max(8, window.innerHeight - dialog.offsetHeight - 8);
+    const left = Math.max(8, Math.min(maxLeft, drag.left + event.clientX - drag.startX));
+    const top = Math.max(8, Math.min(maxTop, drag.top + event.clientY - drag.startY));
+    dialog.style.left = `${left}px`;
+    dialog.style.top = `${top}px`;
+  });
+  const stopDrag = event => {
+    if (!drag) return;
+    drag = null;
+    handle.releasePointerCapture?.(event.pointerId);
+  };
+  handle.addEventListener('pointerup', stopDrag);
+  handle.addEventListener('pointercancel', stopDrag);
 }
 
 function turnActionsOpenScoutRoutes() {
@@ -594,7 +663,7 @@ function turnActionsOpenScoutRoutes() {
     const key = savedMovementRouteKey(route);
     return `<div class="turn-action-route-row" data-scout-route-id="${turnActionsEscape(key)}">
       <button type="button" class="turn-action-route-main" data-route-select="${turnActionsEscape(key)}">
-        <strong>Scout S${turnActionsEscape(route.scoutNumber || '?')}</strong>
+        <strong>R${savedMovementVisibleRouteNumber(route)} · Scout S${turnActionsEscape(route.scoutNumber || '?')}</strong>
         <span>${turnActionsEscape(turnActionsScoutRouteSummary(route))}</span>
       </button>
       <div class="turn-action-route-actions">
@@ -623,19 +692,28 @@ function turnActionsOpenScoutRoutes() {
     });
     row.querySelector('[data-route-edit]')?.addEventListener('click', async event => {
       event.stopPropagation();
+      row.dataset.pinned = '1';
       savedMovementSelectSavedRoute(key);
       turnActionsCloseScoutRoutes();
       await turnActionsEditSelectedScout();
     });
     row.querySelector('[data-route-cancel]')?.addEventListener('click', async event => {
       event.stopPropagation();
+      row.dataset.pinned = '1';
       savedMovementSelectSavedRoute(key);
       turnActionsCloseScoutRoutes();
       await turnActionsCancelSelectedScout();
     });
   });
   turnActionsBindTooltips(list);
-  dialog.showModal();
+  turnActionsBindDialogDrag(dialog);
+  if (!dialog.open) dialog.show();
+  if (!dialog.dataset.positioned) {
+    const rect = dialog.getBoundingClientRect();
+    dialog.style.left = `${Math.max(16, (window.innerWidth - rect.width) / 2)}px`;
+    dialog.style.top = `${Math.max(16, (window.innerHeight - rect.height) / 2)}px`;
+    dialog.dataset.positioned = '1';
+  }
 }
 
 async function turnActionsResetSplits() {
@@ -651,6 +729,7 @@ async function turnActionsHandle(action) {
   if (action === 'cancel') return turnActionsCancel();
   if (action === 'edit-scout') return turnActionsEditSelectedScout();
   if (action === 'cancel-scout') return turnActionsCancelSelectedScout();
+  if (action === 'follow-ocean') return turnActionsArmFollowOcean();
   if (action === 'open-scouts') return turnActionsOpenScoutRoutes();
   if (action === 'reset-movement') return turnActionsResetMovement();
   if (action === 'reset-scouting') return turnActionsResetScouting();
@@ -734,11 +813,13 @@ window.addEventListener('contextmenu', turnActionsCancelRightClick, true);
 window.addEventListener('keydown', event => {
   if (event.key === 'Shift') { setTimeout(turnActionsRefreshHover, 0); return; }
   if (event.key === 'Escape' && turnActionState.active) { event.preventDefault(); turnActionsCancel(); return; }
-  if (event.repeat || turnActionState.active || !state.selectedUnit || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
   const key = String(event.key || '').toUpperCase();
+  if (key === 'F' && turnActionState.active === 'scout' && !event.repeat) { event.preventDefault(); turnActionsArmFollowOcean(); return; }
+  if (event.repeat || turnActionState.active || !state.selectedUnit || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
   if (key === 'M' && savedMovementCanMoveUnit(turnActionsUnit())) { event.preventDefault(); turnActionsStart('unit'); }
   if (key === 'X') { event.preventDefault(); turnActionsOpenSplit(); }
   if (key === 'C') { event.preventDefault(); const selectedScout = turnActionsSelectedScout(); selectedScout ? turnActionsEditSelectedScout() : turnActionsStart('scout'); }
+  if (key === 'F') { event.preventDefault(); turnActionsArmFollowOcean(); }
   if (key === 'V' && savedMovementPlansState.routes.some(route => route.routeType === 'scout' && String(route.unitCode).toLowerCase() === String(state.selectedUnit).toLowerCase())) { event.preventDefault(); turnActionsOpenScoutRoutes(); }
 });
 window.addEventListener('keyup', async event => {

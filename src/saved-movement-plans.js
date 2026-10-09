@@ -216,11 +216,21 @@ function savedMovementSelectSavedRoute(routeKey) {
   draw();
 }
 
+function savedMovementVisibleRouteNumber(route) {
+  const visible = savedMovementPlansState.routes.filter(candidate => {
+    if (candidate.routeType === 'unit') return Boolean(state.planningVisible);
+    if (candidate.routeType === 'scout') return Boolean(state.planningVisible && state.scoutingVisible);
+    return false;
+  });
+  const index = visible.indexOf(route);
+  return index >= 0 ? index + 1 : 1;
+}
+
 function savedMovementRouteLabelBounds(route) {
   const end = route?.path?.[route.path.length - 1];
   if (!end || route.routeType !== 'scout' || !state.scoutingVisible) return null;
   const point = screenFromBase(baseCenter(end.globalCol, end.globalRow));
-  const text = `S${route.scoutNumber} ${route.unitCode}`;
+  const text = `R${savedMovementVisibleRouteNumber(route)} · S${route.scoutNumber} ${route.unitCode}`;
   ctx.save();
   ctx.font = `700 ${Math.max(8, Math.min(10, state.scale * .25))}px Segoe UI`;
   const width = ctx.measureText(text).width + 10;
@@ -402,7 +412,7 @@ function savedMovementDrawOverlay() {
       color, width: Math.max(1.2, state.scale * (scout ? .05 : .06)), alpha: .3, dashed: true
     }, routeId));
     const end = route.path?.[route.path.length - 1];
-    savedMovementDrawLabel(end, scout ? `S${route.scoutNumber} ${route.unitCode}` : `M ${route.unitCode}`, color, style.alpha);
+    savedMovementDrawLabel(end, `R${savedMovementVisibleRouteNumber(route)} · ${scout ? `S${route.scoutNumber}` : 'M'} ${route.unitCode}`, color, style.alpha);
   }
 }
 
