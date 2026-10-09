@@ -553,6 +553,15 @@
   overflow-y: auto;
 }
 
+.turn-action-dialog-empty {
+  margin: 4px 0;
+  padding: 18px 10px;
+  border: 1px dashed #41614b;
+  color: #9ab8a1;
+  font-size: 10px;
+  text-align: center;
+}
+
 .turn-action-route-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

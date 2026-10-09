@@ -14,19 +14,19 @@ const turnActionState = {
 };
 
 function turnActionsImageIcon(filename, alt) {
-  return `<img class="turn-action-icon" src="item-icons/${filename}" alt="${alt || ''}" aria-hidden="true" width="32" height="32" loading="lazy" decoding="async">`;
+  return `<img class="turn-action-icon" src="action-icons/${filename}" alt="${alt || ''}" aria-hidden="true" width="32" height="32" loading="lazy" decoding="async">`;
 }
 
 const TURN_ACTION_ICONS = {
-  move: turnActionsImageIcon('cart.png', 'Move'),
-  split: turnActionsImageIcon('axe.png', 'Split'),
-  scout: turnActionsImageIcon('cavalry-saddle.png', 'Scout'),
-  followOcean: turnActionsImageIcon('boat.png', 'Follow Ocean'),
-  cancel: turnActionsImageIcon('blade-shears.png', 'Cancel'),
-  reset: turnActionsImageIcon('arrow.png', 'Reset'),
-  edit: turnActionsImageIcon('bench.png', 'Edit'),
-  remove: turnActionsImageIcon('caltrops.png', 'Remove'),
-  routes: turnActionsImageIcon('banner.png', 'Routes')
+  move: turnActionsImageIcon('move.svg', 'Move'),
+  split: turnActionsImageIcon('split.svg', 'Split'),
+  scout: turnActionsImageIcon('scout.svg', 'Scout'),
+  followOcean: turnActionsImageIcon('follow-ocean.svg', 'Follow Ocean'),
+  cancel: turnActionsImageIcon('cancel.svg', 'Cancel'),
+  reset: turnActionsImageIcon('reset.svg', 'Reset'),
+  edit: turnActionsImageIcon('edit.svg', 'Edit'),
+  remove: turnActionsImageIcon('remove-route.svg', 'Remove'),
+  routes: turnActionsImageIcon('routes.svg', 'Routes')
 };
 
 function turnActionsEscape(value) {
@@ -389,7 +389,7 @@ async function turnActionsStart(type, options = {}) {
   turnActionState.tracePoint = null;
   turnActionState.followOceanMode = Boolean(options.followOcean);
   turnActionState.status = `Click a destination${type === 'scout' ? ' to trace the scout route' : ''}. Hold Shift to chain commands.`;
-  if (turnActionState.followOceanMode) turnActionState.status = 'Follow Ocean armed · plot at least one land move, then select the ocean edge.';
+  if (turnActionState.followOceanMode) turnActionState.status = 'Follow Ocean armed · select an adjacent ocean hex, then a land or unexplored hex for direction.';
   movementPlannerState.active = true;
   movementPlannerState.shiftHeld = false;
   movementPlannerState.route = null;
@@ -404,6 +404,13 @@ async function turnActionsStart(type, options = {}) {
   try { await movementPlannerLoadKnowledge(); } catch (_) {}
   const originRow = movementPlannerState.knownHexes?.get(point.coordinate) || state.hexCache.get(point.coordinate);
   if (type === 'scout' && savedMovementScoutUsesUnitMove() && !MovementPlannerCore.isRevealedLand(originRow)) turnActionsSetUnknownOrigin(point.coordinate);
+  if (type === 'scout' && options.followOcean && !movementPlannerState.route) {
+    movementPlannerState.route = {
+      status: 'ok', origin: point.coordinate, requestedTarget: point.coordinate, actualTarget: point.coordinate,
+      path: [{ ...point, terrain: originRow?.terrain || 'UNKNOWN', entryMp: 0, cumulativeMp: 0, knownCumulativeMp: 0, unknownCumulativeCount: 0, kind: 'exact' }],
+      directions: [], steps: 0, knownMp: 0, badWeatherMp: 0, unknownEntryCount: 0, totalMp: 0
+    };
+  }
   turnActionsRender();
   draw();
 }
@@ -427,7 +434,7 @@ function turnActionsCancel() {
 async function turnActionsCommit() {
   if (!turnActionState.active || turnActionState.active === 'split') return;
   if (turnActionState.pendingOcean) {
-    turnActionsSetStatus('Finish the coastal trace by Shift-clicking an adjacent land hex.');
+    turnActionsSetStatus('Finish the coastal trace by selecting an adjacent land or unexplored hex.');
     return;
   }
   const route = movementPlannerState.route;
@@ -469,12 +476,11 @@ function turnActionsOceanPoint(coordinate) {
   return ['O', 'OCEAN'].includes(terrain) ? parseCoordinate(coordinate) : null;
 }
 
-async function turnActionsApplyFollowOcean(ocean) {
+async function turnActionsApplyFollowOcean(ocean, target) {
   const route = movementPlannerState.route;
   const path = route?.path || [];
   const endpoint = path[path.length - 1];
-  const previous = path[path.length - 2];
-  const heading = previous && directionBetween(previous.coordinate, endpoint.coordinate);
+  const heading = endpoint && target ? directionBetween(endpoint.coordinate, target.coordinate) : null;
   const order = heading && typeof ConditionalOrders !== 'undefined'
     ? ConditionalOrders.orderForFeature(state.hexCache, endpoint, heading, ocean)
     : null;
@@ -494,7 +500,7 @@ async function turnActionsApplyFollowOcean(ocean) {
     steps: Number(route.steps || 0) + 1
   };
   turnActionState.pendingOcean = null;
-  turnActionState.tracePoint = ocean;
+  turnActionState.tracePoint = target;
   turnActionState.shiftChainStarted = true;
   const commitFollowOcean = turnActionState.followOceanMode && !movementPlannerState.shiftHeld;
   turnActionState.followOceanMode = false;
@@ -518,51 +524,37 @@ async function turnActionsHandleScoutTrace(targetCoordinate) {
   if (ocean) {
     const path = route?.path || [];
     const endpoint = path[path.length - 1];
-    const previous = path[path.length - 2];
-    if (!endpoint || !previous || !route.directions?.length) {
-      turnActionsSetStatus('Move the scout onto a land route first, then trace the ocean edge.');
+    if (!endpoint || !route) {
+      turnActionsSetStatus('Start scouting before selecting a coastline.');
       return true;
     }
-    // The ocean tile itself identifies the side of the coastline. Resolve the
-    // conditional order immediately, so Follow Ocean works with either the
-    // explicit button or the legacy Shift-click flow.
-    return turnActionsApplyFollowOcean(ocean);
+    const adjacentToEndpoint = MovementPlannerCore.adjacentHexes(endpoint).some(point => point.coordinate === ocean.coordinate);
+    if (!adjacentToEndpoint) {
+      turnActionsSetStatus('Select an ocean hex adjacent to the scout route endpoint.');
+      return true;
+    }
+    turnActionState.pendingOcean = ocean;
+    turnActionState.tracePoint = ocean;
+    turnActionState.shiftChainStarted = true;
+    turnActionsSetStatus(`Ocean ${ocean.coordinate} selected. Now select the land or unexplored hex to set the direction.`);
+    draw();
+    return true;
   }
 
   if (!turnActionState.pendingOcean) return false;
-  const adjacent = MovementPlannerCore.adjacentHexes(turnActionState.pendingOcean).some(point => point.coordinate === target.coordinate);
-  if (!adjacent || !MovementPlannerCore.isRevealedLand(state.hexCache.get(target.coordinate))) {
-    turnActionsSetStatus('After selecting ocean, Shift-click one adjacent revealed land hex.');
+  const targetRow = state.hexCache?.get?.(target.coordinate) || movementPlannerState.knownHexes?.get?.(target.coordinate);
+  const targetTerrain = String(targetRow?.terrain ?? targetRow?.terrainCode ?? '').trim().toUpperCase();
+  const targetIsUnexplored = !targetRow || ['UNKNOWN', '?', 'UNEXPLORED'].includes(targetTerrain)
+    || ['ATTEMPTED', 'PARTIAL', 'FOG', 'UNEXPLORED', 'UNKNOWN'].includes(String(targetRow?.knowledgeLevel ?? targetRow?.knowledge ?? '').trim().toUpperCase());
+  const adjacentToOcean = MovementPlannerCore.adjacentHexes(turnActionState.pendingOcean).some(point => point.coordinate === target.coordinate);
+  const landOrUnexplored = targetIsUnexplored || MovementPlannerCore.isRevealedLand(targetRow);
+  const endpoint = (route?.path || [])[route?.path?.length - 1];
+  const heading = endpoint ? directionBetween(endpoint.coordinate, target.coordinate) : null;
+  if (!adjacentToOcean || !landOrUnexplored || !heading) {
+    turnActionsSetStatus('After selecting ocean, select an adjacent land or unexplored hex in the direction you want to follow.');
     return true;
   }
-  const path = route?.path || [];
-  const endpoint = path[path.length - 1];
-  const previous = path[path.length - 2];
-  const heading = previous && directionBetween(previous.coordinate, endpoint.coordinate);
-  const order = heading ? ConditionalOrders.orderForFeature(state.hexCache, endpoint, heading, turnActionState.pendingOcean) : null;
-  if (!order || !/^FO[LR]$/.test(order)) {
-    turnActionsSetStatus('That coastline does not resolve to FOL/FOR from the current heading.');
-    return true;
-  }
-  const preview = ConditionalOrders.preview(state.hexCache, endpoint, heading, order, { maxSteps: 6 });
-  movementPlannerState.route = {
-    ...route,
-    directions: [...route.directions, order],
-    destinationHex: endpoint.coordinate,
-    actualTarget: endpoint.coordinate,
-    conditionalPredictionPaths: preview.predictionPaths || [],
-    conditionalOrder: order,
-    steps: Number(route.steps || 0) + 1
-  };
-  turnActionState.pendingOcean = null;
-  turnActionState.tracePoint = target;
-  turnActionState.shiftChainStarted = true;
-  const commitFollowOcean = turnActionState.followOceanMode && !movementPlannerState.shiftHeld;
-  turnActionState.followOceanMode = false;
-  turnActionsSetStatus(`${order} inferred. Release Shift to commit, or cancel to discard.`);
-  draw();
-  if (commitFollowOcean) await turnActionsCommit();
-  return true;
+  return turnActionsApplyFollowOcean(turnActionState.pendingOcean, target);
 }
 
 const turnActionsOriginalSelectHex = selectHex;
@@ -629,8 +621,12 @@ async function turnActionsEditSelectedScout() {
 async function turnActionsCancelSelectedScout() {
   const route = turnActionsSelectedScout();
   if (!route?.id) return;
-  const removed = await window.tribenet.removePlannedRoute(route.id);
+  const routeId = route.id;
   state.selectedRouteId = null;
+  savedMovementPlansState.routes = savedMovementPlansState.routes.filter(item => Number(item.id) !== Number(routeId));
+  turnActionsHideHover();
+  draw();
+  const removed = await window.tribenet.removePlannedRoute(routeId);
   await savedMovementRefresh();
   turnActionsSetStatus(removed ? `Scouting S${route.scoutNumber} cancelled for ${route.unitCode}.` : 'The scouting route was already removed.');
 }
@@ -638,18 +634,26 @@ async function turnActionsCancelSelectedScout() {
 function turnActionsArmFollowOcean() {
   if (turnActionState.active !== 'scout') return turnActionsStart('scout', { followOcean: true });
   const route = movementPlannerState.route;
-  if (!route?.path?.length || !route.directions?.length) {
-    turnActionsSetStatus('Plot at least one land move before starting Follow Ocean.');
-    return;
+  if (!route?.path?.length) {
+    const origin = movementPlannerState.origin;
+    if (!origin) {
+      turnActionsSetStatus('Start scouting before starting Follow Ocean.');
+      return;
+    }
+    movementPlannerState.route = {
+      status: 'ok', origin: origin.coordinate, requestedTarget: origin.coordinate, actualTarget: origin.coordinate,
+      path: [{ ...origin, terrain: state.hexCache?.get?.(origin.coordinate)?.terrain || 'UNKNOWN', entryMp: 0, cumulativeMp: 0, knownCumulativeMp: 0, unknownCumulativeCount: 0, kind: 'exact' }],
+      directions: [], steps: 0, knownMp: 0, badWeatherMp: 0, unknownEntryCount: 0, totalMp: 0
+    };
   }
-  if (route.directions.some(order => /^FO[LR]$/i.test(String(order)))) {
+  if (movementPlannerState.route.directions?.some(order => /^FO[LR]$/i.test(String(order)))) {
     turnActionsSetStatus('Follow Ocean is already the final order on this route.');
     return;
   }
   turnActionState.followOceanMode = true;
   turnActionState.pendingOcean = null;
   turnActionState.tracePoint = null;
-  turnActionsSetStatus('Follow Ocean armed · select an adjacent ocean hex, then the adjacent land hex.');
+  turnActionsSetStatus('Follow Ocean armed · select an adjacent ocean hex, then a land or unexplored hex for direction.');
   draw();
 }
 
@@ -703,6 +707,10 @@ function turnActionsOpenScoutRoutes() {
   const routes = savedMovementPlansState.routes.filter(route => route.routeType === 'scout'
     && String(route.unitCode).toLowerCase() === String(unit.unitCode).toLowerCase());
   if (!routes.length) {
+    list.innerHTML = '<p class="turn-action-dialog-empty">No scouting routes saved for this unit.</p>';
+    state.selectedRouteId = null;
+    turnActionsHideHover();
+    draw();
     turnActionsSetStatus(`No scouting routes saved for ${unit.unitCode}.`);
     return;
   }

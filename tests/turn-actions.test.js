@@ -25,7 +25,11 @@ assert.match(actions, /follow-ocean/, 'Follow Ocean must be an explicit scouting
 assert.match(actions, /turnActionsArmFollowOcean/, 'Follow Ocean must be directly armable from the action bar.');
 assert.match(actions, /\['O', 'OCEAN'\]\.includes\(terrain\)/, 'Follow Ocean must recognise both ocean terrain encodings.');
 assert.match(actions, /turnActionsApplyFollowOcean/, 'Follow Ocean must resolve from the selected ocean edge.');
-assert.match(actions, /item-icons\//, 'Action icons must use the Compendium image assets.');
+assert.match(actions, /action-icons\//, 'Action icons must use dedicated image assets.');
+assert.match(actions, /move\.svg|split\.svg|scout\.svg|follow-ocean\.svg/, 'Actions must use purpose-specific icons.');
+for (const icon of ['move.svg', 'split.svg', 'scout.svg', 'follow-ocean.svg', 'cancel.svg', 'reset.svg', 'edit.svg', 'remove-route.svg', 'routes.svg']) {
+  assert.ok(fs.existsSync(`src/action-icons/${icon}`), `Missing dedicated action icon: ${icon}`);
+}
 assert.match(actions, /event\.key !== 'Shift'/, 'Shift release must be the chain commit boundary.');
 assert.match(actions, /turnActionsCommit\(\)/, 'Turn actions must commit after a completed click/chain.');
 assert.match(actions, /pendingMapClick/, 'Shift release must wait for the map click to finish appending its route.');
@@ -66,6 +70,8 @@ assert.match(actions, /event\.button === 2/, 'Right-click handling must identify
 assert.match(actions, /addEventListener\('mouseup', turnActionsCancelRightClick, true\)/, 'Right-click cancellation must run before map mouseup selection.');
 assert.match(actions, /addEventListener\('contextmenu', turnActionsCancelRightClick, true\)/, 'Cancelled right-clicks must not open the browser context menu.');
 assert.match(actions, /pendingOcean/, 'Scout coastal traces must retain the selected ocean tile.');
+assert.match(actions, /Now select the land or unexplored hex to set the direction/, 'Follow Ocean must use a second land selection to determine direction.');
+assert.match(actions, /turnActionState\.pendingOcean = ocean/, 'Follow Ocean must keep the ocean selection pending.');
 assert.match(actions, /orderForFeature/, 'Scout coastal traces must infer FOL/FOR.');
 assert.match(savedPlans, /garrison.*fleet.*courier|fleet.*courier.*garrison/i, 'Garrisons, fleets and couriers must be handled as stationary units.');
 assert.match(savedPlans, /plannedSplit && savedMovementUnitMove\(unit\.parentUnit\)/, 'A split created after parent movement must remain stationary.');

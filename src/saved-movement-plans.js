@@ -10,6 +10,7 @@ const savedMovementPlansState = {
   scoutMission: 'PATROL',
   unitSplits: []
 };
+let savedMovementRefreshSequence = 0;
 
 function savedMovementEscape(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -260,11 +261,15 @@ function savedMovementHandleRouteLabelClick(clientX, clientY) {
 }
 
 async function savedMovementRefresh() {
+  const refreshSequence = ++savedMovementRefreshSequence;
   const turnKey = savedMovementCurrentTurnKey();
   savedMovementPlansState.turnKey = turnKey;
-  savedMovementPlansState.routes = turnKey ? await window.tribenet.listPlannedRoutes(turnKey) : [];
+  const routes = turnKey ? await window.tribenet.listPlannedRoutes(turnKey) : [];
+  if (refreshSequence !== savedMovementRefreshSequence) return;
+  savedMovementPlansState.routes = routes;
   if (state.selectedRouteId != null && !savedMovementPlansState.routes.some(route => savedMovementRouteKey(route) === String(state.selectedRouteId))) {
     state.selectedRouteId = null;
+    if (typeof turnActionsHideHover === 'function') turnActionsHideHover();
   }
   savedMovementPlansState.ready = true;
   savedMovementPopulateUnits();
