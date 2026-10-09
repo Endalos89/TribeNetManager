@@ -124,6 +124,7 @@
           <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex to cycle units, then inspect the land · Click a unit label for logistics</div>
           <div id="turnActionBar" class="turn-action-bar hidden" aria-live="polite"></div>
           <div id="turnActionHoverCard" class="turn-action-hover-card hidden" role="status" aria-live="polite"></div>
+          <div id="turnActionTooltip" class="turn-action-tooltip hidden" role="tooltip"></div>
         </div>
         <aside class="hex-editor">
           <div id="noSelection" class="empty-selection">
@@ -210,6 +211,20 @@
           <button id="movementPlannerCreateSubmit" type="button" class="button accent">Create</button>
         </div>
         <div id="movementPlannerCreateStatus" class="turn-action-status"></div>
+      </form>
+    </dialog>
+
+    <dialog id="scoutRoutesDialog" class="turn-action-dialog">
+      <form method="dialog" class="turn-action-dialog-form">
+        <div class="turn-action-dialog-heading">
+          <div><p class="eyebrow">SCOUTING ORDERS</p><h2>Edit saved routes</h2></div>
+          <button value="cancel" class="button square" aria-label="Close">×</button>
+        </div>
+        <p class="turn-action-dialog-copy">Hover a route to highlight it on the map. Select it to keep the highlight, or edit/cancel it from here.</p>
+        <div id="turnActionScoutRoutesList" class="turn-action-route-list"></div>
+        <div class="turn-action-dialog-actions">
+          <button value="cancel" class="button">Close</button>
+        </div>
       </form>
     </dialog>
 

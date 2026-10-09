@@ -19,7 +19,8 @@ const TURN_ACTION_ICONS = {
   cancel: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>',
   reset: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6M4 5v6h6"/></svg>',
   edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-.8 4.8L8 20l10.8-10.8-4-4L4 16Z"/><path d="m13.5 6.5 4 4M4 20l4-1"/></svg>',
-  remove: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>'
+  remove: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>',
+  routes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>'
 };
 
 function turnActionsEscape(value) {
@@ -103,6 +104,7 @@ function turnActionsRender() {
       ${!stationary ? `<button class="turn-action-button${turnActionState.active === 'unit' ? ' active' : ''}" data-turn-action="move"${!canMove && !active ? ' disabled' : ''} aria-label="Move Unit" title="Move Unit · M">${TURN_ACTION_ICONS.move}</button>` : ''}
       <button class="turn-action-button${turnActionState.active === 'split' ? ' active' : ''}" data-turn-action="split"${active ? ' disabled' : ''} aria-label="Split Off Unit" title="Split Off Unit · X">${TURN_ACTION_ICONS.split}</button>
       <button class="turn-action-button${turnActionState.active === 'scout' ? ' active' : ''}" data-turn-action="scout"${active ? ' disabled' : ''} aria-label="Send Out Scout" title="Send Out Scout · C">${TURN_ACTION_ICONS.scout}</button>
+      ${unitScoutRoutes.length ? `<button class="turn-action-button route-action" data-turn-action="open-scouts" aria-label="View scouting routes" title="View scouting routes · V">${TURN_ACTION_ICONS.routes}</button>` : ''}
       ${active ? `<button class="turn-action-button secondary" data-turn-action="cancel" aria-label="Cancel action" title="Cancel action · Esc">${TURN_ACTION_ICONS.cancel}</button>` : ''}
       ${selectedScout && !active ? `<span class="turn-action-route-selection">Scout S${selectedScout.scoutNumber} selected</span><button class="turn-action-button route-action" data-turn-action="edit-scout" aria-label="Edit scouting" title="Edit scouting · C">${TURN_ACTION_ICONS.edit}</button><button class="turn-action-button secondary route-action" data-turn-action="cancel-scout" aria-label="Cancel scouting" title="Cancel scouting">${TURN_ACTION_ICONS.remove}</button>` : ''}
     </div>
@@ -115,6 +117,7 @@ function turnActionsRender() {
   bar.classList.remove('hidden');
 
   bar.querySelectorAll('[data-turn-action]').forEach(button => button.addEventListener('click', () => turnActionsHandle(button.dataset.turnAction)));
+  turnActionsBindTooltips(bar);
   for (const id of ['turnActionScoutPeople', 'turnActionScoutHorses', 'turnActionScoutMission']) {
     document.getElementById(id)?.addEventListener('change', turnActionsReadScoutFields);
   }
@@ -134,6 +137,38 @@ function turnActionsSetStatus(message) {
 
 function turnActionsHoverCard() {
   return document.getElementById('turnActionHoverCard');
+}
+
+function turnActionsTooltip() {
+  return document.getElementById('turnActionTooltip');
+}
+
+function turnActionsBindTooltips(root) {
+  root?.querySelectorAll('[title]').forEach(button => {
+    if (button.dataset.tooltipBound) return;
+    button.dataset.tooltipBound = '1';
+    button.addEventListener('pointerenter', event => {
+      const tooltip = turnActionsTooltip();
+      const text = button.getAttribute('title');
+      if (!tooltip || !text) return;
+      tooltip.textContent = text;
+      tooltip.classList.remove('hidden');
+      const rect = button.getBoundingClientRect();
+      const margin = 7;
+      const left = Math.max(8, Math.min(rect.left + rect.width / 2 - tooltip.offsetWidth / 2, window.innerWidth - tooltip.offsetWidth - 8));
+      const above = rect.top - tooltip.offsetHeight - margin;
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${above >= 8 ? above : rect.bottom + margin}px`;
+    });
+    button.addEventListener('pointerleave', () => turnActionsHideTooltip());
+    button.addEventListener('focus', () => button.dispatchEvent(new PointerEvent('pointerenter')));
+    button.addEventListener('blur', () => turnActionsHideTooltip());
+  });
+}
+
+function turnActionsHideTooltip() {
+  const tooltip = turnActionsTooltip();
+  if (tooltip) tooltip.classList.add('hidden');
 }
 
 function turnActionsHideHover() {
@@ -179,45 +214,7 @@ function turnActionsHoverPoint(event) {
 }
 
 function turnActionsHoverAppendPreview(route, target, known) {
-  const endpoint = route?.path?.[route.path.length - 1];
-  if (!endpoint) return { status: 'no-route', requestedTarget: target.coordinate };
-  const direction = turnActionsDirectionBetween(endpoint, target);
-  if (!direction) return { status: 'not-adjacent', requestedTarget: target.coordinate };
-  const targetHex = known.get(target.coordinate);
-  if (targetHex && !MovementPlannerCore.isRevealedLand(targetHex)) {
-    return { status: 'target-impassable', requestedTarget: target.coordinate, targetTerrain: targetHex.terrain };
-  }
-  const entryMp = targetHex ? MovementPlannerCore.terrainMovementCost(targetHex.terrain, 0) : null;
-  const knownMp = Number(route.knownMp ?? route.totalMp ?? 0) + (entryMp == null ? 0 : entryMp);
-  const unknownEntryCount = Number(route.unknownEntryCount || 0) + (entryMp == null ? 1 : 0);
-  const point = {
-    coordinate: target.coordinate,
-    globalCol: target.globalCol,
-    globalRow: target.globalRow,
-    terrain: targetHex?.terrain || 'UNKNOWN',
-    entryMp,
-    baseEntryMp: entryMp,
-    weatherPenalty: 0,
-    cumulativeMp: unknownEntryCount ? null : knownMp,
-    knownCumulativeMp: knownMp,
-    unknownCumulativeCount: unknownEntryCount,
-    kind: entryMp == null ? 'approx' : 'exact'
-  };
-  return {
-    ...route,
-    status: 'ok',
-    requestedTarget: target.coordinate,
-    actualTarget: target.coordinate,
-    targetIsUnknown: entryMp == null,
-    path: [...route.path, point],
-    directions: [...route.directions, direction],
-    steps: Number(route.steps || 0) + 1,
-    knownMp,
-    badWeatherMp: Number(route.badWeatherMp || 0) + (entryMp == null ? 0 : entryMp + MovementPlannerCore.BAD_WEATHER_ENTRY_PENALTY),
-    unknownEntryCount,
-    totalMp: unknownEntryCount ? null : knownMp,
-    appended: true
-  };
+  return movementPlannerFindAppendedRoute(route, target.coordinate, known);
 }
 
 function turnActionsHoverAllowanceText(knownMp) {
@@ -234,9 +231,11 @@ function turnActionsRenderHover(route, target, clientX, clientY) {
   card.className = 'turn-action-hover-card';
   if (!route || route.status !== 'ok') {
     const message = route?.status === 'not-adjacent'
-      ? 'Shift-chain requires an adjacent tile.'
+      ? 'The current endpoint is unrevealed; extend it one adjacent hex at a time.'
       : route?.status === 'target-impassable'
         ? `${target.coordinate} is ${route.targetTerrain || 'not enterable'}.`
+        : route?.status === 'conditional-terminal'
+          ? 'FOL/FOR is the final scouting order.'
         : route?.status === 'no-revealed-adjacent'
           ? 'No revealed land route reaches this fog tile.'
           : 'No route through revealed land reaches this tile.';
@@ -263,7 +262,7 @@ function turnActionsRenderHover(route, target, clientX, clientY) {
 }
 
 async function turnActionsPreviewHover(event) {
-  if (turnActionState.active !== 'unit' || !movementPlannerState.active || state.dragging) return;
+  if (!['unit', 'scout'].includes(turnActionState.active) || !movementPlannerState.active || state.dragging) return;
   const hover = turnActionsHoverPoint(event);
   if (!hover) { turnActionsHideHover(); return; }
   const target = parseCoordinate(coordinateFor(hover.point.globalCol, hover.point.globalRow));
@@ -284,7 +283,7 @@ async function turnActionsPreviewHover(event) {
   }
   try {
     const known = await movementPlannerLoadKnowledge();
-    if (request !== turnActionState.hoverRequest || turnActionState.active !== 'unit') return;
+    if (request !== turnActionState.hoverRequest || !['unit', 'scout'].includes(turnActionState.active)) return;
     const route = movementPlannerState.shiftHeld && movementPlannerState.route?.status === 'ok'
       ? turnActionsHoverAppendPreview(movementPlannerState.route, target, known)
       : movementPlannerPrepareRoute(MovementPlannerCore.findFastestRoute(known, movementPlannerState.origin.coordinate, target.coordinate));
@@ -404,6 +403,8 @@ async function turnActionsCommit() {
     turnActionsSetStatus('Choose a destination before committing the action.');
     return;
   }
+  const selectedUnitCode = state.selectedUnit;
+  const selectedUnitHex = state.selectedUnitHex;
   try {
     const saved = await savedMovementSaveCurrentRoute();
     if (!saved) {
@@ -414,6 +415,11 @@ async function turnActionsCommit() {
     const wasEditing = turnActionState.editingRouteId != null;
     const clearedScoutRoutes = Number(saved.clearedScoutRoutes || 0);
     turnActionsCancel();
+    if (selectedUnitCode) {
+      state.selectedUnit = selectedUnitCode;
+      state.selectedUnitHex = selectedUnitHex || state.selectedUnitHex;
+      savedMovementPlansState.selectedUnitCode = String(selectedUnitCode);
+    }
     turnActionState.status = `${wasEditing ? `${label} updated` : `${label} committed`} for ${savedMovementPlansState.selectedUnitCode}.${clearedScoutRoutes ? ` ${clearedScoutRoutes} scouting route${clearedScoutRoutes === 1 ? '' : 's'} cleared because the destination changed.` : ''}`;
     turnActionsRender();
   } catch (error) {
@@ -560,6 +566,78 @@ async function turnActionsCancelSelectedScout() {
   turnActionsSetStatus(removed ? `Scouting S${route.scoutNumber} cancelled for ${route.unitCode}.` : 'The scouting route was already removed.');
 }
 
+function turnActionsScoutRouteSummary(route) {
+  const start = route.originHex || route.startHex || route.path?.[0]?.coordinate || '—';
+  const end = route.destinationHex || route.path?.[route.path.length - 1]?.coordinate || '—';
+  const commands = (route.directions || []).join(' → ') || 'No commands';
+  const mission = route.mission ? ` · ${route.mission}` : '';
+  return `${start} → ${end}${mission} · ${commands}`;
+}
+
+function turnActionsCloseScoutRoutes() {
+  document.getElementById('scoutRoutesDialog')?.close();
+}
+
+function turnActionsOpenScoutRoutes() {
+  const unit = turnActionsUnit();
+  const dialog = document.getElementById('scoutRoutesDialog');
+  const list = document.getElementById('turnActionScoutRoutesList');
+  if (!unit || !dialog || !list) return;
+  const routes = savedMovementPlansState.routes.filter(route => route.routeType === 'scout'
+    && String(route.unitCode).toLowerCase() === String(unit.unitCode).toLowerCase());
+  if (!routes.length) {
+    turnActionsSetStatus(`No scouting routes saved for ${unit.unitCode}.`);
+    return;
+  }
+  const previousSelection = state.selectedRouteId;
+  list.innerHTML = routes.map(route => {
+    const key = savedMovementRouteKey(route);
+    return `<div class="turn-action-route-row" data-scout-route-id="${turnActionsEscape(key)}">
+      <button type="button" class="turn-action-route-main" data-route-select="${turnActionsEscape(key)}">
+        <strong>Scout S${turnActionsEscape(route.scoutNumber || '?')}</strong>
+        <span>${turnActionsEscape(turnActionsScoutRouteSummary(route))}</span>
+      </button>
+      <div class="turn-action-route-actions">
+        <button type="button" class="turn-action-button route-action" data-route-edit="${turnActionsEscape(key)}" aria-label="Edit scouting route" title="Edit scouting · C">${TURN_ACTION_ICONS.edit}</button>
+        <button type="button" class="turn-action-button secondary route-action" data-route-cancel="${turnActionsEscape(key)}" aria-label="Cancel scouting route" title="Cancel scouting">${TURN_ACTION_ICONS.remove}</button>
+      </div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-scout-route-id]').forEach(row => {
+    const key = row.dataset.scoutRouteId;
+    row.addEventListener('mouseenter', () => {
+      savedMovementSelectSavedRoute(key);
+      row.classList.add('selected');
+    });
+    row.addEventListener('mouseleave', () => {
+      if (row.dataset.pinned !== '1') {
+        if (previousSelection == null) state.selectedRouteId = null;
+        else savedMovementSelectSavedRoute(previousSelection);
+        row.classList.remove('selected');
+        draw();
+      }
+    });
+    row.querySelector('[data-route-select]')?.addEventListener('click', () => {
+      row.dataset.pinned = '1';
+      savedMovementSelectSavedRoute(key);
+    });
+    row.querySelector('[data-route-edit]')?.addEventListener('click', async event => {
+      event.stopPropagation();
+      savedMovementSelectSavedRoute(key);
+      turnActionsCloseScoutRoutes();
+      await turnActionsEditSelectedScout();
+    });
+    row.querySelector('[data-route-cancel]')?.addEventListener('click', async event => {
+      event.stopPropagation();
+      savedMovementSelectSavedRoute(key);
+      turnActionsCloseScoutRoutes();
+      await turnActionsCancelSelectedScout();
+    });
+  });
+  turnActionsBindTooltips(list);
+  dialog.showModal();
+}
+
 async function turnActionsResetSplits() {
   if (!window.confirm('Reset all created units for this turn? Their saved routes will also be removed.')) return;
   await savedMovementResetAllUnitChanges();
@@ -573,6 +651,7 @@ async function turnActionsHandle(action) {
   if (action === 'cancel') return turnActionsCancel();
   if (action === 'edit-scout') return turnActionsEditSelectedScout();
   if (action === 'cancel-scout') return turnActionsCancelSelectedScout();
+  if (action === 'open-scouts') return turnActionsOpenScoutRoutes();
   if (action === 'reset-movement') return turnActionsResetMovement();
   if (action === 'reset-scouting') return turnActionsResetScouting();
   if (action === 'reset-splits') return turnActionsResetSplits();
@@ -592,7 +671,19 @@ function turnActionsRefresh() {
 const turnActionsOriginalDraw = draw;
 draw = function drawWithTurnActions() {
   turnActionsOriginalDraw();
-  const hoverRoute = turnActionState.active === 'unit' ? turnActionState.hover?.route : null;
+  const route = movementPlannerState.route;
+  if (turnActionState.active && route?.status === 'ok' && route.path?.length > 1) {
+    const scout = turnActionState.active === 'scout';
+    drawRoute(route.path, {
+      color: scout ? '#78c9e6' : '#8dd7a1',
+      certainColor: scout ? '#78c9e6' : '#8dd7a1',
+      maybeColor: '#e4bb65',
+      width: Math.max(2.5, state.scale * .11),
+      alpha: .98,
+      dashed: scout
+    });
+  }
+  const hoverRoute = ['unit', 'scout'].includes(turnActionState.active) ? turnActionState.hover?.route : null;
   if (hoverRoute?.status === 'ok' && hoverRoute.path?.length > 1) {
     const committedLength = movementPlannerState.route?.path?.length || 1;
     const previewPath = movementPlannerState.shiftHeld && movementPlannerState.route?.status === 'ok'
@@ -600,6 +691,8 @@ draw = function drawWithTurnActions() {
       : hoverRoute.path;
     drawRoute(previewPath, {
       color: '#ffe08a',
+      certainColor: '#ffe08a',
+      maybeColor: '#e4bb65',
       width: Math.max(2.2, state.scale * .095),
       alpha: .92,
       dashed: true
@@ -607,7 +700,6 @@ draw = function drawWithTurnActions() {
     const endpoint = hoverRoute.path[hoverRoute.path.length - 1];
     if (endpoint) movementPlannerDrawRing(endpoint, endpoint.terrain === 'UNKNOWN' ? '#9ec9db' : '#ffe08a', endpoint.terrain === 'UNKNOWN', .72);
   }
-  const route = movementPlannerState.route;
   if (!turnActionState.active || !route?.conditionalPredictionPaths?.length) return;
   const style = turnActionState.active === 'scout'
     ? { color:'#78c9e6', width:Math.max(1.2,state.scale*.05), alpha:.3, dashed:true }
@@ -647,6 +739,7 @@ window.addEventListener('keydown', event => {
   if (key === 'M' && savedMovementCanMoveUnit(turnActionsUnit())) { event.preventDefault(); turnActionsStart('unit'); }
   if (key === 'X') { event.preventDefault(); turnActionsOpenSplit(); }
   if (key === 'C') { event.preventDefault(); const selectedScout = turnActionsSelectedScout(); selectedScout ? turnActionsEditSelectedScout() : turnActionsStart('scout'); }
+  if (key === 'V' && savedMovementPlansState.routes.some(route => route.routeType === 'scout' && String(route.unitCode).toLowerCase() === String(state.selectedUnit).toLowerCase())) { event.preventDefault(); turnActionsOpenScoutRoutes(); }
 });
 window.addEventListener('keyup', async event => {
   if (event.key !== 'Shift') return;

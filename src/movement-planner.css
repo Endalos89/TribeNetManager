@@ -290,6 +290,23 @@
 .turn-action-hover-card.over { border-color: #c7645e; background: rgba(36, 12, 10, .97); }
 .turn-action-hover-card.error { border-color: #a85e58; color: #f0c1bb; }
 
+.turn-action-tooltip {
+  position: fixed;
+  z-index: 80;
+  max-width: 240px;
+  padding: 5px 8px;
+  border: 1px solid #6f8b72;
+  border-radius: 5px;
+  background: #0b1711;
+  color: #efffe9;
+  box-shadow: 0 7px 18px rgba(0, 0, 0, .48);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.2;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 .turn-action-heading,
 .turn-action-heading > div,
 .turn-action-buttons,
@@ -352,11 +369,12 @@
   padding: 7px;
   border: 1px solid #3d654a;
   border-radius: 8px;
-  background: #10251a;
+  background: linear-gradient(145deg, #173422, #0d2016);
   color: #e7f5e9;
   cursor: pointer;
   font-size: 10px;
   font-weight: 750;
+  box-shadow: inset 0 0 0 1px rgba(164, 211, 164, .05), 0 2px 5px rgba(0, 0, 0, .22);
 }
 
 .turn-action-button:hover,
@@ -384,6 +402,15 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.8;
+}
+
+.turn-action-button svg {
+  width: 20px;
+  height: 20px;
+  padding: 3px;
+  border: 1px solid rgba(151, 198, 155, .25);
+  border-radius: 5px;
+  background: #0a1710;
 }
 
 .turn-action-route-selection { color: #8fb69a; font-size: 9px; margin-left: 4px; }
@@ -453,6 +480,60 @@
 .turn-action-dialog::backdrop { background: rgba(1, 7, 5, .66); }
 
 .turn-action-dialog-form { display: grid; gap: 10px; padding: 18px; }
+
+.turn-action-dialog-copy {
+  margin: -2px 0 2px;
+  color: #9ab8a1;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.turn-action-route-list {
+  display: grid;
+  gap: 7px;
+  max-height: min(430px, 55vh);
+  overflow-y: auto;
+}
+
+.turn-action-route-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+  padding: 6px;
+  border: 1px solid #2d4d39;
+  border-radius: 7px;
+  background: #102219;
+  transition: border-color .08s ease, background .08s ease, box-shadow .08s ease;
+}
+
+.turn-action-route-row:hover,
+.turn-action-route-row.selected {
+  border-color: #8bc992;
+  background: #193522;
+  box-shadow: 0 0 0 1px rgba(139, 201, 146, .16);
+}
+
+.turn-action-route-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 4px 5px;
+  border: 0;
+  background: transparent;
+  color: #dff7e6;
+  cursor: pointer;
+  text-align: left;
+}
+
+.turn-action-route-main strong { color: #fff0bd; font-size: 11px; }
+.turn-action-route-main span { overflow: hidden; color: #9ec2a8; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+
+.turn-action-route-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 .turn-action-dialog-heading,
 .turn-action-dialog-actions {

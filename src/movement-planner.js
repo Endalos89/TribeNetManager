@@ -32,7 +32,7 @@ function movementPlannerUpdateButton() {
   button.classList.toggle('active', movementPlannerState.active);
   button.textContent = movementPlannerState.active ? 'Stop Movement' : 'Movement';
   button.title = movementPlannerState.active
-    ? `Movement from ${movementPlannerState.origin?.coordinate || 'selected origin'} · Shift-click appends one move`
+    ? `Movement from ${movementPlannerState.origin?.coordinate || 'selected origin'} · Shift-click appends a route`
     : 'Use the currently selected hex as the movement origin';
 }
 
@@ -185,6 +185,8 @@ function movementPlannerResultMessage(result) {
       ? `No route through revealed land reaches an adjacent hex of ${result.requestedTarget}.`
       : `No route through revealed land reaches ${result.requestedTarget}.`;
   }
+  if (result.status === 'not-adjacent') return 'The current endpoint is unrevealed; extend it one adjacent hex at a time.';
+  if (result.status === 'conditional-terminal') return 'FOL/FOR is the final scouting order. Release Shift to commit or cancel the action.';
   if (result.status === 'invalid-coordinate') return 'The origin or destination coordinate is invalid.';
   return 'No route available.';
 }
@@ -213,7 +215,7 @@ function movementPlannerRenderCard(result) {
     summary.textContent = movementPlannerResultMessage(result);
     movementPlannerRenderAllowances(null);
     routeText.textContent = '';
-    note.textContent = 'Automatic routing only uses revealed, land-passable terrain. Shift-click can append one adjacent move from an existing route endpoint.';
+    note.textContent = 'Automatic routing only uses revealed, land-passable terrain. Hold Shift to append a route from the current endpoint.';
     return;
   }
 
@@ -225,8 +227,8 @@ function movementPlannerRenderCard(result) {
     ? `Movement commands: ${result.directions.map((direction, index) => `${index + 1}. ${direction}`).join(' → ')}`
     : 'Movement commands: none — already at the destination.';
   note.textContent = result.unknownEntryCount > 0
-    ? `Fog moves are included in the commands, but their terrain MP cannot be known until revealed. Hold Shift and click an adjacent hex to append another move, including fog → fog.`
-    : 'Hold Shift and click an adjacent hex to append one move. Scouts use the same terrain costs but have 8 MP on foot or 15 MP mounted. The second total is a conservative bad-weather warning; the selected route still uses normal MP.';
+    ? `Fog moves are included in the commands, but their terrain MP cannot be known until revealed. Hold Shift and click any reachable destination to append a route; a fog endpoint can still be extended one adjacent hex at a time.`
+    : 'Hold Shift and click any destination to append the lowest-MP route from the current endpoint. Scouts use the same terrain costs but have 8 MP on foot or 15 MP mounted. The second total is a conservative bad-weather warning; the selected route still uses normal MP.';
 }
 
 async function movementPlannerPlanTo(targetCoordinate) {
@@ -260,24 +262,39 @@ async function movementPlannerPlanTo(targetCoordinate) {
   }
 }
 
-async function movementPlannerAppendMove(targetCoordinate) {
-  const route = movementPlannerState.route;
-  if (!movementPlannerState.active || route?.status !== 'ok' || !route.path?.length) return;
-  const endpoint = route.path[route.path.length - 1];
-  const direction = movementPlannerDirectionBetween(endpoint.coordinate, targetCoordinate);
-  if (!direction) {
-    movementPlannerSetStatus('Shift-add only works for a hex adjacent to the current route endpoint.');
-    return;
-  }
+function movementPlannerMergeAppendedRoute(route, tail) {
+  const unknownEntryCount = Number(route.unknownEntryCount || 0) + Number(tail.unknownEntryCount || 0);
+  const knownMp = Number(route.knownMp ?? route.totalMp ?? 0) + Number(tail.knownMp ?? tail.totalMp ?? 0);
+  return {
+    ...route,
+    ...tail,
+    status: 'ok',
+    origin: route.origin,
+    requestedTarget: tail.requestedTarget,
+    actualTarget: tail.actualTarget,
+    targetIsUnknown: Boolean(tail.targetIsUnknown),
+    path: [...route.path, ...(tail.path || []).slice(1)],
+    directions: [...(route.directions || []), ...(tail.directions || [])],
+    steps: Number(route.steps || 0) + Number(tail.steps || 0),
+    knownMp,
+    badWeatherMp: Number(route.badWeatherMp || 0) + Number(tail.badWeatherMp || 0),
+    unknownEntryCount,
+    totalMp: unknownEntryCount ? null : knownMp,
+    appended: true
+  };
+}
 
-  const known = await movementPlannerLoadKnowledge();
+function movementPlannerAppendSingleMoveResult(route, targetCoordinate, known) {
   const target = MovementPlannerCore.parseCoordinate(targetCoordinate);
   const targetHex = known.get(targetCoordinate);
-  if (!target) return;
+  if (!target) return { status: 'invalid-coordinate', requestedTarget: targetCoordinate };
   if (targetHex && !MovementPlannerCore.isRevealedLand(targetHex)) {
-    movementPlannerSetStatus(`${targetCoordinate} is revealed but not passable by a land unit.`);
-    return;
+    return { status: 'target-impassable', requestedTarget: targetCoordinate, targetTerrain: targetHex.terrain };
   }
+
+  const endpoint = route.path[route.path.length - 1];
+  const direction = movementPlannerDirectionBetween(endpoint.coordinate, targetCoordinate);
+  if (!direction) return { status: 'not-adjacent', requestedTarget: targetCoordinate };
 
   const entryMp = targetHex ? MovementPlannerCore.terrainMovementCost(targetHex.terrain, 0) : null;
   const knownMp = Number(route.knownMp ?? route.totalMp ?? 0) + (entryMp == null ? 0 : entryMp);
@@ -295,9 +312,9 @@ async function movementPlannerAppendMove(targetCoordinate) {
     unknownCumulativeCount: unknownEntryCount,
     kind: entryMp == null ? 'approx' : 'exact'
   };
-
-  movementPlannerState.route = {
+  return {
     ...route,
+    status: 'ok',
     requestedTarget: targetCoordinate,
     actualTarget: targetCoordinate,
     targetIsUnknown: entryMp == null,
@@ -305,13 +322,51 @@ async function movementPlannerAppendMove(targetCoordinate) {
     directions: [...route.directions, direction],
     steps: Number(route.steps || 0) + 1,
     knownMp,
-      badWeatherMp: Number(route.badWeatherMp || 0) + (entryMp == null ? 0 : entryMp + MovementPlannerCore.BAD_WEATHER_ENTRY_PENALTY),
+    badWeatherMp: Number(route.badWeatherMp || 0) + (entryMp == null ? 0 : entryMp + MovementPlannerCore.BAD_WEATHER_ENTRY_PENALTY),
     unknownEntryCount,
     totalMp: unknownEntryCount ? null : knownMp,
     appended: true
   };
-  movementPlannerRenderCard(movementPlannerState.route);
-  movementPlannerSetStatus(`${movementPlannerRouteMpText(movementPlannerState.route)} · ${movementPlannerState.route.steps} commands`);
+}
+
+function movementPlannerFindAppendedRoute(route, targetCoordinate, known) {
+  if (!route?.path?.length) return { status: 'no-route', requestedTarget: targetCoordinate };
+  if ((route.directions || []).some(order => /^FO[LR]$/i.test(String(order)))) {
+    return { status: 'conditional-terminal', requestedTarget: targetCoordinate };
+  }
+  const target = MovementPlannerCore.parseCoordinate(targetCoordinate);
+  const endpoint = route.path[route.path.length - 1];
+  if (!target) return { status: 'invalid-coordinate', requestedTarget: targetCoordinate };
+  if (endpoint.coordinate === target.coordinate) return route;
+
+  const endpointHex = known.get(endpoint.coordinate);
+  if (!endpointHex || !MovementPlannerCore.isRevealedLand(endpointHex)) {
+    return movementPlannerAppendSingleMoveResult(route, targetCoordinate, known);
+  }
+
+  const tail = movementPlannerPrepareRoute(MovementPlannerCore.findFastestRoute(
+    known,
+    endpoint.coordinate,
+    target.coordinate
+  ));
+  if (tail?.status !== 'ok') return tail;
+  return movementPlannerMergeAppendedRoute(route, tail);
+}
+
+async function movementPlannerAppendRouteTo(targetCoordinate) {
+  const route = movementPlannerState.route;
+  if (!movementPlannerState.active || route?.status !== 'ok' || !route.path?.length) return;
+  const known = await movementPlannerLoadKnowledge();
+  const result = movementPlannerFindAppendedRoute(route, targetCoordinate, known);
+  if (result.status !== 'ok') {
+    movementPlannerSetStatus(result.status === 'not-adjacent'
+      ? 'The current endpoint is unrevealed; extend it one adjacent hex at a time.'
+      : movementPlannerResultMessage(result));
+    return;
+  }
+  movementPlannerState.route = result;
+  movementPlannerRenderCard(result);
+  movementPlannerSetStatus(`${movementPlannerRouteMpText(result)} · ${result.steps} commands`);
   draw();
 }
 
@@ -352,7 +407,7 @@ async function movementPlannerToggle() {
   if (summary) summary.textContent = 'Click a destination for the lowest-MP known route. Fog destinations include the final move into fog.';
   movementPlannerRenderAllowances(null);
   if (routeText) routeText.textContent = '';
-  if (note) note.textContent = 'After a route is shown, hold Shift and click an adjacent hex to append one more movement command.';
+  if (note) note.textContent = 'After a route is shown, hold Shift and click any destination to append a route from its endpoint.';
   draw();
 }
 
@@ -374,7 +429,13 @@ function drawMovementPlannerOverlay() {
 
   const result = movementPlannerState.route;
   if (!result || result.status !== 'ok') return;
-  drawRoute(result.path, { color: '#8dd7a1', width: Math.max(2.5, state.scale * .12), alpha: .96 });
+  drawRoute(result.path, {
+    color: '#8dd7a1',
+    certainColor: '#8dd7a1',
+    maybeColor: '#e4bb65',
+    width: Math.max(2.5, state.scale * .12),
+    alpha: .96
+  });
 
   const endpoint = result.path[result.path.length - 1];
   movementPlannerDrawRing(endpoint, endpoint.terrain === 'UNKNOWN' ? '#9ec9db' : '#8dd7a1', endpoint.terrain === 'UNKNOWN', .68);
@@ -415,7 +476,7 @@ selectHex = async function selectHexWithMovementPlanner(globalCol, globalRow) {
   const coordinate = coordinateFor(globalCol, globalRow);
   if (movementPlannerState.active && movementPlannerState.origin) {
     if (movementPlannerState.shiftHeld && movementPlannerState.route?.status === 'ok') {
-      await movementPlannerAppendMove(coordinate);
+      await movementPlannerAppendRouteTo(coordinate);
       return;
     }
     if (coordinate !== movementPlannerState.origin.coordinate) {

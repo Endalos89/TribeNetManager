@@ -494,7 +494,20 @@ function drawArrowSegment(a, b, style = {}) {
   const angle = Math.atan2(pb.y - pa.y, pb.x - pa.x), size = Math.max(6, state.scale * .24); ctx.beginPath(); ctx.moveTo(pb.x, pb.y); ctx.lineTo(pb.x - size * Math.cos(angle - .55), pb.y - size * Math.sin(angle - .55)); ctx.lineTo(pb.x - size * Math.cos(angle + .55), pb.y - size * Math.sin(angle + .55)); ctx.closePath(); ctx.fill(); ctx.restore();
 }
 function drawRoute(points, style = {}) {
-  if (!points || points.length < 2) return; for (let i = 1; i < points.length; i++) drawArrowSegment(points[i-1], points[i], { ...style, dashed: style.dashed || points[i].kind === 'approx' || points[i].kind === 'conditional' });
+  if (!points || points.length < 2) return;
+  for (let i = 1; i < points.length; i++) {
+    const hasEntryMp = Object.prototype.hasOwnProperty.call(points[i], 'entryMp');
+    const maybe = points[i].kind === 'approx'
+      || points[i].kind === 'conditional'
+      || points[i].terrain === 'UNKNOWN'
+      || (hasEntryMp && points[i].entryMp == null);
+    const color = maybe ? (style.maybeColor || style.color) : (style.certainColor || style.color);
+    drawArrowSegment(points[i - 1], points[i], {
+      ...style,
+      color,
+      dashed: style.dashed || maybe
+    });
+  }
 }
 function drawConditionalPredictions(route, style = {}) {
   for (const path of route?.predictionPaths || route?.conditionalPredictionPaths || []) {
