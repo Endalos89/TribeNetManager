@@ -79,12 +79,7 @@
         origin: jsonClone(movementPlannerState.origin),
         route: jsonClone(movementPlannerState.route),
         selectedUnitCode: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.selectedUnitCode || '' : '',
-        routeType: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.routeType || 'unit' : 'unit',
-        smartScoutCount: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.smartScoutCount || 1 : 1,
-        smartScoutPeople: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.smartScoutPeople || 2 : 2,
-        smartScoutHorses: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.smartScoutHorses || 2 : 2,
-        smartScoutMission: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.smartScoutMission || 'PATROL' : 'PATROL',
-        smartScoutDrafts: typeof savedMovementPlansState !== 'undefined' ? jsonClone(savedMovementPlansState.smartScoutDrafts || []) : []
+        routeType: typeof savedMovementPlansState !== 'undefined' ? savedMovementPlansState.routeType || 'unit' : 'unit'
       };
     }
     return snapshot;
@@ -234,12 +229,7 @@
     const planner = snapshot.movementPlanner;
     if (planner && typeof savedMovementPlansState !== 'undefined') {
       savedMovementPlansState.selectedUnitCode = planner.selectedUnitCode || '';
-      savedMovementPlansState.routeType = ['scout', 'smart-scout'].includes(planner.routeType) ? planner.routeType : 'unit';
-      savedMovementPlansState.smartScoutCount = Math.max(1, Math.min(8, Number(planner.smartScoutCount || 1)));
-      savedMovementPlansState.smartScoutPeople = Math.max(1, Number(planner.smartScoutPeople || 2));
-      savedMovementPlansState.smartScoutHorses = Math.max(0, Number(planner.smartScoutHorses || 2));
-      savedMovementPlansState.smartScoutMission = String(planner.smartScoutMission || 'PATROL').toUpperCase();
-      savedMovementPlansState.smartScoutDrafts = jsonClone(planner.smartScoutDrafts || []);
+      savedMovementPlansState.routeType = planner.routeType === 'scout' ? 'scout' : 'unit';
       savedMovementPopulateUnits();
       savedMovementRenderSaveControls();
     }
@@ -255,23 +245,11 @@
       movementPlannerUpdateButton();
 
       if (movementPlannerState.active) {
-        if (movementPlannerState.route) {
-          movementPlannerRenderCard(movementPlannerState.route);
-          movementPlannerSetStatus(`${movementPlannerRouteMpText(movementPlannerState.route)} · ${movementPlannerState.route.steps || movementPlannerState.route.directions?.length || 0} commands`);
-        } else if (movementPlannerState.origin) {
-          const card = document.getElementById('movementPlannerCard');
-          card?.classList.remove('hidden');
-          const title = document.getElementById('movementPlannerTitle');
-          const summary = document.getElementById('movementPlannerSummary');
-          const routeText = document.getElementById('movementPlannerDirections');
-          if (title) title.textContent = `Movement from ${movementPlannerState.origin.coordinate}`;
-          if (summary) summary.textContent = 'Click a destination to continue this route.';
-          if (routeText) routeText.textContent = '';
-          movementPlannerRenderAllowances(null);
-          movementPlannerSetStatus(`Origin ${movementPlannerState.origin.coordinate} · click a destination`);
-        }
+        if (typeof turnActionState !== 'undefined') turnActionState.active = savedMovementPlansState.routeType === 'scout' ? 'scout' : 'unit';
+        if (typeof turnActionsRefresh === 'function') turnActionsRefresh();
       } else {
-        movementPlannerHideCard();
+        if (typeof turnActionState !== 'undefined') turnActionState.active = null;
+        if (typeof turnActionsRefresh === 'function') turnActionsRefresh();
       }
     }
 

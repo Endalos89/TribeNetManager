@@ -68,7 +68,7 @@ try {
   db.save(route({ turnKey: 'replace-turn', unitCode: '0485', routeType: 'scout', destinationHex: 'AA0104' }));
   db.save(route({ turnKey: 'replace-turn', unitCode: '0485', routeType: 'scout', destinationHex: 'AA0105' }));
   db.save(route({ turnKey: 'replace-turn', unitCode: '0485E1', routeType: 'scout', destinationHex: 'AA0106' }));
-  assert.equal(db.removeAllScoutRoutesForUnit('replace-turn', '0485'), 2, 'Smart Scout replacement should only remove scouting rows for the selected unit');
+  assert.equal(db.removeAllScoutRoutesForUnit('replace-turn', '0485'), 2, 'Scouting replacement should only remove scouting rows for the selected unit');
   assert.deepEqual(db.list('replace-turn').map(item => item.unitCode), ['0485E1']);
 
   console.log('planned-routes tests passed');

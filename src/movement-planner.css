@@ -248,64 +248,207 @@
   font-size: 9px;
 }
 
-.movement-planner-smart-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 8px;
-  color: #91ad9b;
-  font-size: 9px;
+.turn-action-bar {
+  position: absolute;
+  z-index: 20;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 28px));
+  padding: 10px 12px 9px;
+  border: 1px solid #52765c;
+  border-radius: 12px;
+  background: rgba(7, 18, 14, .96);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .38);
+  color: #dff7e6;
 }
 
-.movement-planner-smart-drafts {
-  display: grid;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.movement-planner-smart-heading,
-.movement-planner-smart-draft > div:first-child {
+.turn-action-heading,
+.turn-action-heading > div,
+.turn-action-buttons,
+.turn-action-utilities,
+.turn-action-scout-fields {
   display: flex;
   align-items: center;
+}
+
+.turn-action-heading {
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
-.movement-planner-smart-heading {
-  color: #d8edf5;
+.turn-action-heading > div {
+  gap: 8px;
+  min-width: 0;
+}
+
+.turn-action-heading .eyebrow {
+  margin: 0;
+  color: #8fb69a;
+  font-size: 8px;
+}
+
+.turn-action-heading strong {
+  color: #fff0bd;
+  font-size: 13px;
+}
+
+.turn-action-heading > div > span:last-child {
+  color: #8fae9a;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-action-status {
+  max-width: 58%;
+  color: #a8d2b0;
+  font-size: 9px;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.turn-action-buttons {
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.turn-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid #3d654a;
+  border-radius: 8px;
+  background: #10251a;
+  color: #e7f5e9;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.turn-action-button:hover,
+.turn-action-button.active {
+  border-color: #92d29c;
+  background: #1b3b27;
+}
+
+.turn-action-button:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+}
+
+.turn-action-button.secondary {
+  border-color: #6c4f4a;
+  background: #2b1d1b;
+}
+
+.turn-action-button svg,
+.turn-action-utility svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.turn-action-button kbd {
+  min-width: 18px;
+  padding: 2px 4px;
+  border: 1px solid #496956;
+  border-radius: 4px;
+  color: #9fc4a7;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.turn-action-scout-fields {
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.turn-action-scout-fields label {
+  display: grid;
+  gap: 3px;
+  color: #8fb69a;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.turn-action-scout-fields input,
+.turn-action-scout-fields select {
+  width: 78px;
+  box-sizing: border-box;
+  padding: 5px 6px;
+  border: 1px solid #355443;
+  border-radius: 5px;
+  background: #0b1711;
+  color: #e7f3ea;
   font-size: 10px;
 }
 
-.movement-planner-smart-heading span,
-.movement-planner-smart-draft > div:first-child span,
-.movement-planner-smart-draft small,
-.movement-planner-smart-empty {
-  color: #88a794;
+.turn-action-scout-fields select { width: 100px; }
+
+.turn-action-utilities {
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+  margin-top: 7px;
+  color: #789586;
   font-size: 8px;
 }
 
-.movement-planner-smart-draft {
-  border: 1px solid rgba(120, 201, 230, .28);
-  border-radius: 7px;
-  padding: 7px;
-  background: rgba(10, 28, 36, .55);
-}
-
-.movement-planner-smart-draft small {
-  display: block;
-  margin-top: 3px;
-  line-height: 1.35;
-}
-
-.movement-planner-smart-draft-actions {
-  justify-content: flex-start !important;
-  margin-top: 6px;
-}
-
-.movement-planner-smart-draft-actions .button {
-  padding: 4px 7px;
+.turn-action-utility {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: #9cc7a8;
+  cursor: pointer;
   font-size: 8px;
+}
+
+.turn-action-utility:hover { color: #e1f4e4; }
+.turn-action-utility svg { width: 12px; height: 12px; }
+
+.turn-action-dialog {
+  width: min(520px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid #52765c;
+  border-radius: 12px;
+  background: #0d1b14;
+  color: #e7f3ea;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .58);
+}
+
+.turn-action-dialog::backdrop { background: rgba(1, 7, 5, .66); }
+
+.turn-action-dialog-form { display: grid; gap: 10px; padding: 18px; }
+
+.turn-action-dialog-heading,
+.turn-action-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.turn-action-dialog-heading h2 { margin: 0; font-size: 18px; }
+.turn-action-dialog-actions { justify-content: flex-end; margin-top: 4px; }
+.turn-action-status { min-height: 14px; color: #9cc7a8; font-size: 9px; }
+
+@media (max-width: 760px) {
+  .turn-action-bar { bottom: 8px; width: calc(100% - 16px); }
+  .turn-action-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .turn-action-status { max-width: 100%; text-align: left; }
+  .turn-action-utilities { align-items: flex-start; flex-direction: column; }
 }
 
 .movement-planner-saved-list {

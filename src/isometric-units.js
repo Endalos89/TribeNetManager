@@ -212,8 +212,8 @@
     const ref=coordinateFor(point.globalCol,point.globalRow),units=unitsAt(ref);
     const key=JSON.stringify([resultsTimeline.turn?.turnKey,state.planImport?.id,state.planImport?.turnKey,ref]);
     cycle=nextSelection(cycle,key,units.map(u=>u.code));
-    if(cycle.code!==null){const entry=units.find(u=>u.code===cycle.code);state.selectedUnitHex=ref;state.selectedUnit=entry.code;if(typeof root.draw==='function')root.draw();requestAnimationFrame(()=>showUnitLogistics(entry.code,entry.snapshot));}
-    else{state.selectedUnit=null;state.selectedUnitHex=null;$('unitEditor').classList.add('hidden');selectHex(point.globalCol,point.globalRow);}
+    if(cycle.code!==null){const entry=units.find(u=>u.code===cycle.code);state.selectedUnitHex=ref;state.selectedUnit=entry.code;if(typeof root.draw==='function')root.draw();window.dispatchEvent(new CustomEvent('tribenet:unit-selected',{detail:{unitCode:entry.code,hex:ref}}));requestAnimationFrame(()=>showUnitLogistics(entry.code,entry.snapshot));}
+    else{state.selectedUnit=null;state.selectedUnitHex=null;$('unitEditor').classList.add('hidden');window.dispatchEvent(new CustomEvent('tribenet:unit-selected',{detail:null}));selectHex(point.globalCol,point.globalRow);}
     return units.length > 0;
   }
   function drawSelectionHighlight() {

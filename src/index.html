@@ -87,8 +87,6 @@
         <label class="mapper-view-switch"><input id="mapperViewToggle" type="checkbox" checked aria-label="Use 3D terrain view" /> 3D terrain</label>
         <div id="detailControls" class="detail-controls hidden">
           <button id="detailOverviewButton" class="button">Overview</button>
-          <button id="movementPlannerButton" class="button" disabled>Movement</button>
-          <span id="movementPlannerReadout" class="toolbar-readout"></span>
           <label class="coordinate-jump">Go to <input id="coordinateInput" maxlength="7" placeholder="PK1614" /></label>
           <button id="goCoordinateButton" class="button">Go</button>
           <button id="zoomOutButton" class="button square">−</button>
@@ -124,22 +122,7 @@
         <div id="canvasWrap" class="canvas-wrap">
           <canvas id="mapCanvas"></canvas>
           <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex to cycle units, then inspect the land · Click a unit label for logistics</div>
-          <div id="movementPlannerCard" class="movement-planner-card hidden">
-            <div class="movement-planner-title"><strong id="movementPlannerTitle">Movement</strong><span>lowest MP route</span></div>
-            <div id="movementPlannerSummary"></div>
-            <div id="movementPlannerDirections"></div>
-            <div id="movementPlannerNote"></div>
-          </div>
-          <div id="plannerOverlayCard" class="planner-overlay-card collapsed hidden">
-            <button id="planningPanelToggle" class="planning-panel-toggle" type="button" aria-expanded="false">
-              <span>Movement panel</span><span id="planningPanelChevron">＋</span>
-            </button>
-            <div id="planningPanelContent" class="planning-panel-content" hidden>
-              <div class="planner-overlay-title"><strong id="plannerTurnTitle">Completed orders</strong><span id="plannerSourceLabel"></span></div>
-              <div id="plannerWarnings" class="planner-warnings"></div>
-              <div class="planning-panel-hint">Select a unit, then use Movement to choose a destination. Shift-click appends one adjacent move.</div>
-            </div>
-          </div>
+          <div id="turnActionBar" class="turn-action-bar hidden" aria-live="polite"></div>
         </div>
         <aside class="hex-editor">
           <div id="noSelection" class="empty-selection">
@@ -210,6 +193,25 @@
       </section>
     </main>
 
+    <dialog id="unitSplitDialog" class="turn-action-dialog">
+      <form method="dialog" id="movementPlannerCreateForm" class="turn-action-dialog-form">
+        <div class="turn-action-dialog-heading">
+          <div><p class="eyebrow">SPLIT OFF UNIT</p><h2>Create a new unit</h2></div>
+          <button value="cancel" class="button square" aria-label="Close">×</button>
+        </div>
+        <label class="movement-planner-field"><span>Source Tribe</span><select id="movementPlannerCreateParent"></select></label>
+        <label class="movement-planner-field"><span>Type</span><select id="movementPlannerCreateType"><option>Element</option><option>Fleet</option><option>Garrison</option><option>Courier</option><option>Tribe</option></select></label>
+        <label class="movement-planner-field"><span>Code</span><input id="movementPlannerCreateCode" placeholder="0485e1" /></label>
+        <label class="movement-planner-field"><span>Name</span><input id="movementPlannerCreateName" placeholder="Optional" /></label>
+        <div id="movementPlannerCreateSkills" class="movement-planner-create-skills"></div>
+        <div class="turn-action-dialog-actions">
+          <button value="cancel" class="button">Cancel</button>
+          <button id="movementPlannerCreateSubmit" type="button" class="button accent">Create</button>
+        </div>
+        <div id="movementPlannerCreateStatus" class="turn-action-status"></div>
+      </form>
+    </dialog>
+
     <!-- Legacy hooks retained only so older renderer modules can initialize; imports are launcher-only. -->
     <button id="importOrdersButton" class="hidden" aria-hidden="true" tabindex="-1"></button>
     <button id="mapImportResultsButton" class="hidden" aria-hidden="true" tabindex="-1"></button>
@@ -221,12 +223,12 @@
   <script src="isometric-core.js"></script>
   <script src="results-map.js"></script>
   <script src="movement-planner.js"></script>
-  <script src="smart-scout.js"></script>
   <script src="saved-movement-plans.js"></script>
   <script src="launcher-imports.js"></script>
   <script src="isometric-units.js"></script>
   <script src="isometric-mapper.js"></script>
   <script src="item-icon-manifest.js"></script>
   <script src="results-playback.js"></script>
+  <script src="turn-actions.js"></script>
 </body>
 </html>

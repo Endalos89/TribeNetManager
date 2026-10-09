@@ -337,27 +337,11 @@ async function importOrdersWorkbook() {
 function updatePlanUI() {
   const active = Boolean(state.planImport?.plan); $('planningToggle').disabled = !active; $('scoutingToggle').disabled = !active || !state.planningVisible;
   $('planStatus').textContent = active ? `Turn ${state.planImport.turnKey}` : 'Import an orders workbook to plan on the map.';
-  const planningContext = typeof resultsTimeline !== 'undefined' && resultsTimeline.turn?.isPlanningTurn;
-  const card = $('plannerOverlayCard'); card.classList.toggle('hidden', !(active || planningContext) || !state.planningVisible || state.mode !== 'detail');
-  if (card) {
-    card.classList.toggle('collapsed', state.planningPanelCollapsed);
-    const content = $('planningPanelContent'); if (content) content.hidden = state.planningPanelCollapsed;
-    const toggle = $('planningPanelToggle'); if (toggle) toggle.setAttribute('aria-expanded', String(!state.planningPanelCollapsed));
-    const chevron = $('planningPanelChevron'); if (chevron) chevron.textContent = state.planningPanelCollapsed ? '＋' : '−';
-  }
-  if (!active) {
-    if (planningContext) {
-      $('plannerTurnTitle').textContent = `Planning Turn ${resultsTimeline.turn.turnKey}`;
-      $('plannerSourceLabel').textContent = 'Draft from Results baseline';
-      $('plannerWarnings').innerHTML = '<div class="planning-panel-hint">Select a unit on the map to choose a movement origin. Routes use the revealed baseline.</div>';
-    }
-    return;
-  }
-  $('plannerTurnTitle').textContent = `Turn ${state.planImport.turnKey}`; $('plannerSourceLabel').textContent = state.planImport.sourceFile;
+  if (!active) return;
   renderPlanWarnings();
 }
 function renderPlanWarnings() {
-  const host = $('plannerWarnings'); host.innerHTML = ''; if (!state.routeCache) return;
+  const host = $('plannerWarnings'); if (!host) return; host.innerHTML = ''; if (!state.routeCache) return;
   const warnings = [...state.routeCache.movementWarnings, ...(state.scoutingVisible ? state.routeCache.scoutWarnings : [])];
   if (!warnings.length) { host.innerHTML = '<div class="planner-ok">All displayed routes are explicit.</div>'; return; }
   const shown = warnings.slice(0, 7);
@@ -395,6 +379,41 @@ function conditionalOrderPreview(start, previous, order, options = {}) {
     maxSteps: options.limitSteps || 6
   });
 }
+function followCoastRoute(start, side, options = {}) {
+  const points = [{ globalCol: start.globalCol, globalRow: start.globalRow, coordinate: start.coordinate, kind: 'exact' }];
+  const queue = [{ point: start, path: points }];
+  const visited = new Set([start.coordinate]);
+  const dirs = ['N', 'NE', 'SE', 'S', 'SW', 'NW'];
+  const known = point => state.hexCache?.get?.(point.coordinate);
+  const terrainOf = data => String(data?.terrain ?? data?.terrainCode ?? '').trim().toUpperCase();
+  const ocean = point => ['O', 'OCEAN'].includes(terrainOf(known(point)));
+  const unexplored = point => {
+    const data = known(point); if (!data) return true;
+    const terrain = terrainOf(data), knowledge = String(data.knowledgeLevel ?? data.knowledge ?? '').trim().toLowerCase();
+    return !terrain || ['UNKNOWN', '?', 'UNEXPLORED'].includes(terrain) || ['observed', 'attempted', 'unexplored', 'unknown'].includes(knowledge);
+  };
+  while (queue.length && visited.size <= 90) {
+    const current = queue.shift();
+    const oceanIndexes = dirs.map((direction, index) => ({ index, point: stepHex(current.point, direction) }))
+      .filter(entry => entry.point && ocean(entry.point));
+    const preferred = [];
+    for (const edge of oceanIndexes) {
+      const delta = side === 'right' ? -1 : 1;
+      for (const offset of [delta, delta * 2, -delta, -delta * 2, 0]) {
+        const candidate = stepHex(current.point, dirs[(edge.index + offset + 6) % 6]);
+        if (candidate && !preferred.some(point => point.coordinate === candidate.coordinate)) preferred.push(candidate);
+      }
+    }
+    for (const candidate of preferred) {
+      if (unexplored(candidate)) return { points: [...current.path, { ...candidate, kind: 'approx', order: options.order }], found: true };
+      if (!ocean(candidate) && !visited.has(candidate.coordinate)) {
+        visited.add(candidate.coordinate);
+        queue.push({ point: candidate, path: [...current.path, { ...candidate, kind: 'approx', order: options.order }] });
+      }
+    }
+  }
+  return { points, found: false };
+}
 function routeFor(startHex, orders, options = {}) {
   const start = parseCoordinate(startHex); if (!start) return { points: [], warnings: [`Invalid start hex ${startHex}`], unresolved: [] };
   const points = [{ globalCol: start.globalCol, globalRow: start.globalRow, coordinate: start.coordinate, kind: 'exact' }]; const warnings = [], unresolved = [], predictionPaths = [];
@@ -412,7 +431,7 @@ function routeFor(startHex, orders, options = {}) {
       for (let i = 0; i < count; i++) { const next = stepHex(current, limitDir); if (!next) break; current = { ...next, kind:'approx', order }; points.push(current); }
       warnings.push(`${options.label || 'Route'}: ${order} means ${limitDir} to movement limit; dashed continuation is illustrative.`); unresolved.push(order); break;
     }
-    if (typeof ConditionalOrders !== 'undefined' && ConditionalOrders.DEFINITIONS?.[order]) {
+    if ((typeof ConditionalOrders !== 'undefined' && ConditionalOrders.DEFINITIONS?.[order]) || /^FO[LR]$/.test(order)) {
       const previous = points.length > 1 ? points[points.length - 2] : null;
       const preview = conditionalOrderPreview(current, previous, order, options);
       if (preview.valid) {
@@ -425,7 +444,16 @@ function routeFor(startHex, orders, options = {}) {
         }
         warnings.push(`${options.label || 'Route'}: ${preview.warnings?.[0] || `${order} is conditional; the displayed continuation is only a forecast.`}`);
       } else {
-        warnings.push(`${options.label || 'Route'}: ${preview.warnings?.[0] || `${order} has no valid visible feature edge from this hex.`}`);
+        const fallback = /^FO[LR]$/.test(order)
+          ? followCoastRoute(current, /^FOR$/.test(order) ? 'right' : 'left', { order })
+          : { points: [current], found: false };
+        if (fallback.points.length > 1) {
+          current = fallback.points[fallback.points.length - 1];
+          points.push(...fallback.points.slice(1));
+          warnings.push(`${options.label || 'Route'}: ${order} is conditional; the displayed continuation is only a fallback forecast.`);
+        } else {
+          warnings.push(`${options.label || 'Route'}: ${preview.warnings?.[0] || `${order} has no valid visible feature edge from this hex.`}`);
+        }
       }
       unresolved.push(order);break;
     }

@@ -116,16 +116,14 @@ assert.strictEqual(
   'The old optional scout-origin argument should not change the automatic after-movement origin.'
 );
 
-assert.ok(source.includes('movement-planner-setup-grid'), 'Unit/type/scouting controls should be rendered inside the planner card.');
-assert.ok(source.includes('value="smart-scout"'), 'Movement controls should expose Smart Scout mode.');
-assert.ok(!source.includes('movementPlannerScoutOrigin'), 'Scouting should not expose a before/after movement option.');
-assert.ok(source.includes('savedMovementSaveSmartScout'), 'Smart Scout drafts should be saved as a replaceable scouting set.');
-assert.ok(source.includes('data-select-planned-route'), 'Saved scout and movement rows should be clickable for route highlighting.');
+assert.ok(!source.includes('Smart Scout') && !source.includes('smartScout'), 'Smart Scout should be removed from saved movement planning.');
+assert.ok(source.includes('savedMovementCanMoveUnit'), 'Unit movement must respect the timing of a planned split.');
+assert.ok(source.includes('savedMovementResetAllUnitChanges'), 'Unit changes must remain resettable.');
 assert.ok(source.includes('savedMovementSelectSavedRoute'), 'Clicking a saved route should select and center that route.');
 assert.ok(source.includes('savedMovementRouteKey(route)') && source.includes('routeStyle(route.unitCode || route.unit'), 'The saved-route overlay should apply the selected-route emphasis.');
-assert.ok(source.includes('movementPlannerReset({ keepCard: true })'), 'Saving or resetting changes should leave the Movement controls available for the next unit.');
-assert.ok(source.includes('movementPlannerResetAllUnitChanges'), 'Movement controls should expose a reset-all unit changes action.');
-assert.ok(indexHtml.includes('<script src="saved-movement-plans.js"></script>'), 'Saved movement planner should load deterministically with the mapper.');
+assert.ok(indexHtml.includes('id="turnActionBar"'), 'The mapper should expose the selected-unit turn action bar.');
+assert.ok(indexHtml.includes('<script src="turn-actions.js"></script>'), 'Turn actions should load after saved route persistence.');
+assert.ok(!indexHtml.includes('smart-scout.js'), 'Smart Scout should not be loaded by the mapper.');
 assert.ok(!preload.includes("savedPlansScript.src = 'saved-movement-plans.js'"), 'Preload should not inject the saved movement planner asynchronously.');
 
 console.log('Saved movement unit selection/scout origin regression tests passed.');
