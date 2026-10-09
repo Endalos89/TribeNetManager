@@ -4,6 +4,7 @@ const {
   buildKnownHexMap,
   findFastestRoute,
   movementAllowanceSummary,
+  unitMovementProfile,
   parseCoordinate,
   adjacentHexes
 } = require('../src/movement-planner-core');
@@ -27,6 +28,16 @@ function makeHex(coordinate, terrain) {
       ['scoutMounted', true, 3, 0]
     ]
   );
+})();
+
+(function derivesUnitMovementFromMounts() {
+  assert.deepEqual(
+    unitMovementProfile({ totalPeople: 100, horseCount: 100, wagonCount: 0 }),
+    { allowance: 27, mounted: true, people: 100, horses: 100, wagons: 0, known: true }
+  );
+  assert.equal(unitMovementProfile({ totalPeople: 100, horseCount: 99 }).allowance, 18, 'one person without a horse keeps the unit on foot');
+  assert.equal(unitMovementProfile({ totalPeople: 100, horseCount: 100, wagonCount: 1 }).mounted, false, 'wagons prevent mounted movement');
+  assert.equal(unitMovementProfile({ fullyMounted: true, totalPeople: 100, horseCount: 0 }).allowance, 27, 'explicit unit statistics take precedence when available');
 })();
 
 (function choosesLowerMovementCostOverFewerHexes() {

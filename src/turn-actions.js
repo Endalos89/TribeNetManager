@@ -45,9 +45,22 @@ function turnActionsRouteSummary() {
   const known = Number(route.knownMp ?? route.totalMp ?? 0);
   const weather = Number(route.badWeatherMp ?? known);
   const unknown = Number(route.unknownEntryCount || 0);
+  const allowance = turnActionsUnitMovement(turnActionsUnit()).allowance;
   const commands = (route.directions || []).join(' → ');
-  const cost = unknown ? `${known} MP + ?×${unknown} · bad weather ${weather}+? MP` : `${known} MP · bad weather ${weather} MP`;
+  const cost = unknown ? `${known} + ?×${unknown}/${allowance} MP · bad weather ${weather}+?` : `${known}/${allowance} MP · bad weather ${weather} MP`;
   return `${cost}${commands ? ` · ${commands}` : ''}`;
+}
+
+function turnActionsUnitMovement(unit) {
+  return MovementPlannerCore.unitMovementProfile(unit);
+}
+
+function turnActionsMovementRisk(route, allowance) {
+  const knownMp = Number(route?.knownMp ?? route?.totalMp);
+  if (!Number.isFinite(knownMp) || knownMp > allowance) return 'over';
+  const weatherMp = Number(route?.badWeatherMp ?? knownMp);
+  if (Number(route?.unknownEntryCount || 0) > 0 || weatherMp > allowance) return 'warn';
+  return 'safe';
 }
 
 function turnActionsRender() {
@@ -228,8 +241,12 @@ function turnActionsRenderHover(route, target, clientX, clientY) {
   const commands = (route.directions || []).join(' → ') || 'No movement';
   const normal = unknown ? `${knownMp} known + ?×${unknown}` : `${knownMp} MP`;
   const weather = unknown ? `${weatherMp} known + ?×${unknown}` : `${weatherMp} MP`;
-  card.classList.toggle('warn', unknown > 0 || knownMp > 27 || weatherMp > 27);
-  card.innerHTML = `<strong>${coordinate}</strong><span>Normal: ${normal} · Bad weather: ${weather}</span><span>${turnActionsEscape(commands)}</span><small>${turnActionsHoverAllowanceText(knownMp)}${unknown ? ' · fog cost unresolved' : ''}</small>`;
+  const profile = turnActionsUnitMovement(turnActionsUnit());
+  const risk = turnActionsMovementRisk(route, profile.allowance);
+  const unitMovement = `${profile.allowance} MP · ${profile.mounted ? 'Mounted' : 'Foot'}`;
+  const composition = profile.people > 0 ? ` · ${profile.horses}/${profile.people} horses` : '';
+  card.classList.add(risk);
+  card.innerHTML = `<strong>${coordinate}</strong><span>Unit total: ${unitMovement}${composition}</span><span>Normal: ${normal} · Bad weather: ${weather}</span><span>${turnActionsEscape(commands)}</span><small>${risk === 'safe' ? 'Good in bad weather' : risk === 'warn' ? 'Normal route fits; bad weather or fog is a risk' : 'Too far for this unit'}${unknown ? ' · fog cost unresolved' : ''}</small>`;
   card.classList.remove('hidden');
   turnActionsPositionHoverCard(clientX, clientY);
 }

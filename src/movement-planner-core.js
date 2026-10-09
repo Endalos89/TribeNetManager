@@ -122,6 +122,37 @@
     }));
   }
 
+  function numeric(value) {
+    const number = Number(String(value ?? 0).replace(/,/g, ''));
+    return Number.isFinite(number) ? Math.max(0, number) : 0;
+  }
+
+  function unitMovementProfile(unit) {
+    const people = unit?.people || unit?.resources?.Humans || {};
+    const animals = unit?.resources?.Animals || {};
+    const goods = unit?.resources?.Goods || {};
+    const inventory = new Map((unit?.inventory || []).map(row => [String(row.item || '').toUpperCase(), numeric(row.quantity)]));
+    const listedPeople = ['Warriors', 'Actives', 'Inactives', 'Slaves', 'Hirelings', 'Mercs', 'Locals', 'Residents', 'Followers', 'Auxiliaries']
+      .reduce((total, key) => total + numeric(people[key] ?? people[key.toLowerCase()]), 0);
+    const totalPeople = Math.max(numeric(unit?.totalPeople), numeric(people.People ?? people.people), listedPeople);
+    const horses = numeric(unit?.horseCount ?? unit?.horses ?? animals.Horse ?? animals.Horses ?? inventory.get('HORSE') ?? inventory.get('HORSES'));
+    const wagons = numeric(unit?.wagonCount ?? unit?.wagons ?? goods.Wagon ?? goods.Wagons ?? inventory.get('WAGON') ?? inventory.get('WAGONS'));
+    const carts = numeric(unit?.cartCount ?? unit?.carts ?? goods.Cart ?? goods.Carts ?? inventory.get('CART') ?? inventory.get('CARTS'));
+    const explicitMounted = typeof unit?.fullyMounted === 'boolean' ? unit.fullyMounted : null;
+    const mounted = explicitMounted == null
+      ? totalPeople > 0 && horses >= totalPeople && wagons + carts === 0
+      : explicitMounted;
+    const allowance = MOVEMENT_ALLOWANCES.find(row => row.key === (mounted ? 'mounted' : 'foot'))?.mp || (mounted ? 27 : 18);
+    return {
+      allowance,
+      mounted,
+      people: totalPeople,
+      horses,
+      wagons: wagons + carts,
+      known: explicitMounted != null || totalPeople > 0 || horses > 0 || wagons + carts > 0
+    };
+  }
+
   function buildKnownHexMap(rows) {
     const result = new Map();
     for (const row of rows || []) {
@@ -347,6 +378,7 @@
     terrainMovementCost,
     isRevealedLand,
     movementAllowanceSummary,
+    unitMovementProfile,
     buildKnownHexMap,
     findFastestRoute
   };

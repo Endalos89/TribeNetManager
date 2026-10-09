@@ -20,6 +20,9 @@ assert.match(actions, /turnActionsCommit\(\)/, 'Turn actions must commit after a
 assert.match(actions, /turnActionsPreviewHover/, 'Move Unit must calculate a route preview while hovering.');
 assert.match(actions, /turnActionsHoverAppendPreview/, 'Shift hover must preview the chained route.');
 assert.match(actions, /turnActionsRefreshHover/, 'Changing Shift state must refresh the hover preview.');
+assert.match(actions, /turnActionsUnitMovement/, 'Move Unit must use the selected unit movement profile.');
+assert.match(actions, /turnActionsMovementRisk/, 'Move Unit must classify safe, risky and over-range routes.');
+assert.match(actions, /Unit total:/, 'Move Unit must show the selected unit total movement.');
 assert.match(actions, /Bad weather/, 'Move Unit must show the bad-weather movement warning.');
 assert.match(actions, /pendingOcean/, 'Scout coastal traces must retain the selected ocean tile.');
 assert.match(actions, /orderForFeature/, 'Scout coastal traces must infer FOL/FOR.');

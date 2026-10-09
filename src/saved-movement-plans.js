@@ -56,8 +56,17 @@ function savedMovementNormalizeUnit(unit, fallbackHex = null) {
 
 function savedMovementUnits() {
   const byCode = new Map();
+  const unitStats = new Map((state?.planImport?.plan?.unitStats || [])
+    .map(row => [String(row.unit || row.unitCode || '').trim().toLowerCase(), row]));
   const add = (unit, priority) => {
-    const normalized = savedMovementNormalizeUnit(unit);
+    const unitCode = String(unit?.unitCode || unit?.unit || '').trim();
+    const stats = unitStats.get(unitCode.toLowerCase()) || null;
+    const normalized = savedMovementNormalizeUnit({
+      ...(stats || {}),
+      ...unit,
+      unitCode: unitCode || stats?.unit || stats?.unitCode,
+      currentHex: unit?.currentHex || unit?.startHex || stats?.currentHex || stats?.startHex
+    });
     if (!normalized) return;
     const key = normalized.unitCode.toLowerCase();
     const existing = byCode.get(key);

@@ -285,7 +285,9 @@
 .turn-action-hover-card strong { color: #fff0bd; font-size: 11px; }
 .turn-action-hover-card span { color: #b9d9bf; margin-top: 3px; }
 .turn-action-hover-card small { color: #88a794; margin-top: 4px; }
-.turn-action-hover-card.warn { border-color: #ad8650; }
+.turn-action-hover-card.safe { border-color: #6fb877; }
+.turn-action-hover-card.warn { border-color: #d4b45c; background: rgba(30, 24, 8, .97); }
+.turn-action-hover-card.over { border-color: #c7645e; background: rgba(36, 12, 10, .97); }
 .turn-action-hover-card.error { border-color: #a85e58; color: #f0c1bb; }
 
 .turn-action-heading,
