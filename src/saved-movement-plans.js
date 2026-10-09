@@ -393,6 +393,16 @@ function savedMovementDrawLabel(point, text, color, alpha = 1) {
   ctx.restore();
 }
 
+function savedMovementRouteWeatherAllowance(route) {
+  if (route?.routeType === 'scout') {
+    const scouts = Math.max(1, Number(route.noOfScouts || route.scoutCount || 1));
+    const horses = Math.max(0, Number(route.noOfHorses || route.horseCount || 0));
+    return horses >= scouts ? 15 : 8;
+  }
+  const unit = savedMovementUnits().find(candidate => String(candidate.unitCode).toLowerCase() === String(route?.unitCode || '').toLowerCase());
+  return MovementPlannerCore.unitMovementProfile(unit).allowance;
+}
+
 function savedMovementDrawOverlay() {
   if (state.mode !== 'detail' || !savedMovementPlansState.routes.length) return;
   for (const route of savedMovementPlansState.routes) {
@@ -405,6 +415,7 @@ function savedMovementDrawOverlay() {
     const routeId = savedMovementRouteKey(route);
     const style = routeStyle(route.unitCode || route.unit, {
       color, certainColor, maybeColor,
+      badWeatherAllowance: savedMovementRouteWeatherAllowance(route),
       width: Math.max(1.8, state.scale * (scout ? .07 : .09)), alpha: .58, dashed: scout
     }, routeId);
     drawRoute(route.path, style);

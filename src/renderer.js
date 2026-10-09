@@ -495,12 +495,29 @@ function drawArrowSegment(a, b, style = {}) {
 }
 function drawRoute(points, style = {}) {
   if (!points || points.length < 2) return;
+  const weatherAllowance = Number(style.badWeatherAllowance);
+  const weatherPenalty = Number(style.badWeatherEntryPenalty ?? (typeof MovementPlannerCore !== 'undefined' ? MovementPlannerCore.BAD_WEATHER_ENTRY_PENALTY : 1));
+  let normalCumulative = 0;
+  let badWeatherCumulative = 0;
   for (let i = 1; i < points.length; i++) {
     const hasEntryMp = Object.prototype.hasOwnProperty.call(points[i], 'entryMp');
+    const knownRow = state.hexCache?.get?.(points[i].coordinate);
+    const terrain = points[i].terrain ?? knownRow?.terrain ?? knownRow?.terrainCode;
+    const terrainCost = typeof MovementPlannerCore !== 'undefined'
+      ? MovementPlannerCore.terrainMovementCost(terrain, 0)
+      : null;
+    const baseEntryMp = Number(points[i].baseEntryMp ?? points[i].entryMp ?? terrainCost);
+    if (Number.isFinite(baseEntryMp)) {
+      normalCumulative += baseEntryMp;
+      badWeatherCumulative += baseEntryMp + weatherPenalty;
+    }
+    const weatherRisk = Number.isFinite(weatherAllowance)
+      && (normalCumulative > weatherAllowance || badWeatherCumulative > weatherAllowance);
     const maybe = points[i].kind === 'approx'
       || points[i].kind === 'conditional'
       || points[i].terrain === 'UNKNOWN'
-      || (hasEntryMp && points[i].entryMp == null);
+      || (hasEntryMp && points[i].entryMp == null)
+      || weatherRisk;
     const color = maybe ? (style.maybeColor || style.color) : (style.certainColor || style.color);
     drawArrowSegment(points[i - 1], points[i], {
       ...style,
@@ -594,6 +611,7 @@ function drawPlanOverlay() {
     const routeId = planRouteKey(m);
     drawRoute(m.route.points, routeStyle(m.unit, {
       color:'#8dd7a1', certainColor:'#8dd7a1', maybeColor:'#e4bb65',
+      badWeatherAllowance: MovementPlannerCore.unitMovementProfile(m).allowance,
       width:Math.max(2.2,state.scale*.11), alpha:.94
     }, routeId));
     drawConditionalPredictions(m.route, routeStyle(m.unit, { color:'#f0b45e', width:Math.max(1.4,state.scale*.07), alpha:.3 }, routeId));
@@ -613,6 +631,7 @@ function drawPlanOverlay() {
       const emphasis=routeStyle(s.unit, { alpha:.76 }, routeId);
       drawRoute(s.route.points, routeStyle(s.unit, {
         color:'#78c9e6', certainColor:'#78c9e6', maybeColor:'#e4bb65',
+        badWeatherAllowance: s.mounted ? 15 : 8,
         width:Math.max(1.7,state.scale*.075), alpha:.76, dashed:true
       }, routeId));
       drawConditionalPredictions(s.route, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1.2,state.scale*.05), alpha:.3, dashed:true }, routeId));

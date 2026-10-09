@@ -429,10 +429,12 @@ function drawMovementPlannerOverlay() {
 
   const result = movementPlannerState.route;
   if (!result || result.status !== 'ok') return;
+  const selectedUnit = typeof savedMovementSelectedUnit === 'function' ? savedMovementSelectedUnit() : null;
   drawRoute(result.path, {
     color: '#8dd7a1',
     certainColor: '#8dd7a1',
     maybeColor: '#e4bb65',
+    badWeatherAllowance: MovementPlannerCore.unitMovementProfile(selectedUnit).allowance,
     width: Math.max(2.5, state.scale * .12),
     alpha: .96
   });

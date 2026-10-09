@@ -67,6 +67,12 @@ function turnActionsUnitMovement(unit) {
   return MovementPlannerCore.unitMovementProfile(unit);
 }
 
+function turnActionsScoutAllowance() {
+  const scouts = Math.max(1, Number(savedMovementPlansState.scoutCount || 1));
+  const horses = Math.max(0, Number(savedMovementPlansState.scoutHorses || 0));
+  return horses >= scouts ? 15 : 8;
+}
+
 function turnActionsMovementRisk(route, allowance) {
   const knownMp = Number(route?.knownMp ?? route?.totalMp);
   if (!Number.isFinite(knownMp) || knownMp > allowance) return 'over';
@@ -225,7 +231,16 @@ function turnActionsHoverPoint(event) {
   const point = typeof IsoMapper !== 'undefined' && IsoMapper.enabled
     ? IsoMapper.pick(x, y) || nearestHex(base.x, base.y)
     : nearestHex(base.x, base.y);
-  return point ? { point, clientX: event.clientX, clientY: event.clientY } : null;
+  if (!point) return null;
+  // Keep the cost card anchored to the centre of the hex. Pointer-level
+  // positioning makes it jitter whenever Shift tracing causes a small mouse
+  // correction inside the same hex.
+  const centre = screenFromBase(baseCenter(point.globalCol, point.globalRow));
+  return {
+    point,
+    clientX: rect.left + centre.x,
+    clientY: rect.top + centre.y
+  };
 }
 
 function turnActionsHoverAppendPreview(route, target, known) {
@@ -284,7 +299,6 @@ async function turnActionsPreviewHover(event) {
   if (!target) return;
   const hoverKey = `${target.coordinate}:${movementPlannerState.shiftHeld ? 'chain' : 'route'}`;
   if (turnActionState.hover?.key === hoverKey) {
-    turnActionsPositionHoverCard(hover.clientX, hover.clientY);
     return;
   }
   const request = ++turnActionState.hoverRequest;
@@ -450,8 +464,44 @@ function turnActionsDirectionBetween(from, to) {
 }
 
 function turnActionsOceanPoint(coordinate) {
-  const row = state.hexCache.get(coordinate);
-  return row && String(row.terrain || '').toUpperCase() === 'O' ? parseCoordinate(coordinate) : null;
+  const row = state.hexCache?.get?.(coordinate) || movementPlannerState.knownHexes?.get?.(coordinate);
+  const terrain = String(row?.terrain ?? row?.terrainCode ?? '').trim().toUpperCase();
+  return ['O', 'OCEAN'].includes(terrain) ? parseCoordinate(coordinate) : null;
+}
+
+async function turnActionsApplyFollowOcean(ocean) {
+  const route = movementPlannerState.route;
+  const path = route?.path || [];
+  const endpoint = path[path.length - 1];
+  const previous = path[path.length - 2];
+  const heading = previous && directionBetween(previous.coordinate, endpoint.coordinate);
+  const order = heading && typeof ConditionalOrders !== 'undefined'
+    ? ConditionalOrders.orderForFeature(state.hexCache, endpoint, heading, ocean)
+    : null;
+  if (!order || !/^FO[LR]$/.test(order)) {
+    turnActionsSetStatus('That ocean edge does not resolve to FOL/FOR from the current heading.');
+    return true;
+  }
+
+  const preview = ConditionalOrders.preview(state.hexCache, endpoint, heading, order, { maxSteps: 6 });
+  movementPlannerState.route = {
+    ...route,
+    directions: [...route.directions, order],
+    destinationHex: endpoint.coordinate,
+    actualTarget: endpoint.coordinate,
+    conditionalPredictionPaths: preview.predictionPaths || [],
+    conditionalOrder: order,
+    steps: Number(route.steps || 0) + 1
+  };
+  turnActionState.pendingOcean = null;
+  turnActionState.tracePoint = ocean;
+  turnActionState.shiftChainStarted = true;
+  const commitFollowOcean = turnActionState.followOceanMode && !movementPlannerState.shiftHeld;
+  turnActionState.followOceanMode = false;
+  turnActionsSetStatus(`${order} inferred. ${commitFollowOcean ? 'Saving…' : 'Release Shift to commit, or cancel to discard.'}`);
+  draw();
+  if (commitFollowOcean) await turnActionsCommit();
+  return true;
 }
 
 async function turnActionsHandleScoutTrace(targetCoordinate) {
@@ -473,12 +523,10 @@ async function turnActionsHandleScoutTrace(targetCoordinate) {
       turnActionsSetStatus('Move the scout onto a land route first, then trace the ocean edge.');
       return true;
     }
-    turnActionState.pendingOcean = ocean;
-    turnActionState.tracePoint = ocean;
-    turnActionState.shiftChainStarted = true;
-    turnActionsSetStatus(`Ocean ${ocean.coordinate} selected. Shift-click adjacent land to infer FOL/FOR.`);
-    draw();
-    return true;
+    // The ocean tile itself identifies the side of the coastline. Resolve the
+    // conditional order immediately, so Follow Ocean works with either the
+    // explicit button or the legacy Shift-click flow.
+    return turnActionsApplyFollowOcean(ocean);
   }
 
   if (!turnActionState.pendingOcean) return false;
@@ -694,15 +742,16 @@ function turnActionsOpenScoutRoutes() {
       event.stopPropagation();
       row.dataset.pinned = '1';
       savedMovementSelectSavedRoute(key);
-      turnActionsCloseScoutRoutes();
       await turnActionsEditSelectedScout();
     });
     row.querySelector('[data-route-cancel]')?.addEventListener('click', async event => {
       event.stopPropagation();
       row.dataset.pinned = '1';
       savedMovementSelectSavedRoute(key);
-      turnActionsCloseScoutRoutes();
       await turnActionsCancelSelectedScout();
+      // Keep the non-modal route picker open and refresh its options so more
+      // than one scouting order can be reviewed or cancelled in one pass.
+      if (dialog.open) turnActionsOpenScoutRoutes();
     });
   });
   turnActionsBindTooltips(list);
@@ -757,6 +806,7 @@ draw = function drawWithTurnActions() {
       color: scout ? '#78c9e6' : '#8dd7a1',
       certainColor: scout ? '#78c9e6' : '#8dd7a1',
       maybeColor: '#e4bb65',
+      badWeatherAllowance: scout ? turnActionsScoutAllowance() : turnActionsUnitMovement(turnActionsUnit()).allowance,
       width: Math.max(2.5, state.scale * .11),
       alpha: .98,
       dashed: scout
