@@ -7,7 +7,8 @@ const turnActionState = {
   status: '',
   hover: null,
   hoverRequest: 0,
-  suppressContextMenuUntil: 0
+  suppressContextMenuUntil: 0,
+  pendingMapClick: null
 };
 
 const TURN_ACTION_ICONS = {
@@ -474,17 +475,29 @@ async function turnActionsHandleScoutTrace(targetCoordinate) {
 const turnActionsOriginalSelectHex = selectHex;
 selectHex = async function selectHexWithTurnActions(globalCol, globalRow) {
   if (!turnActionState.active) return turnActionsOriginalSelectHex(globalCol, globalRow);
-  const coordinate = coordinateFor(globalCol, globalRow);
-  if (coordinate === movementPlannerState.origin?.coordinate) return;
-  if (await turnActionsHandleScoutTrace(coordinate)) return;
-  await turnActionsOriginalSelectHex(globalCol, globalRow);
-  if (!turnActionState.active) return;
-  if (movementPlannerState.shiftHeld) {
-    turnActionState.shiftChainStarted = true;
-    turnActionsRender();
-    return;
+  // Map selection is asynchronous because route calculation may need to load
+  // the current turn's terrain knowledge. Keep the promise visible so a quick
+  // Shift release cannot commit the previous route before this click has been
+  // appended to it.
+  const clickWork = (async () => {
+    const coordinate = coordinateFor(globalCol, globalRow);
+    if (coordinate === movementPlannerState.origin?.coordinate) return;
+    if (await turnActionsHandleScoutTrace(coordinate)) return;
+    await turnActionsOriginalSelectHex(globalCol, globalRow);
+    if (!turnActionState.active) return;
+    if (movementPlannerState.shiftHeld) {
+      turnActionState.shiftChainStarted = true;
+      turnActionsRender();
+      return;
+    }
+    await turnActionsCommit();
+  })();
+  turnActionState.pendingMapClick = clickWork;
+  try {
+    await clickWork;
+  } finally {
+    if (turnActionState.pendingMapClick === clickWork) turnActionState.pendingMapClick = null;
   }
-  await turnActionsCommit();
 };
 
 function turnActionsOpenSplit() {
@@ -588,6 +601,9 @@ window.addEventListener('keydown', event => {
 });
 window.addEventListener('keyup', async event => {
   if (event.key !== 'Shift') return;
+  // The key can be released immediately after mouseup. Wait for that click's
+  // async append/route calculation before committing the complete chain.
+  if (turnActionState.pendingMapClick) await turnActionState.pendingMapClick;
   if (turnActionState.active && turnActionState.shiftChainStarted) await turnActionsCommit();
 });
 window.addEventListener('blur', () => { movementPlannerState.shiftHeld = false; });

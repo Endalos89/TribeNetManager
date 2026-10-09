@@ -17,6 +17,8 @@ assert.match(actions, /key === 'X'/, 'Split Off Unit hotkey is missing.');
 assert.match(actions, /key === 'C'/, 'Send Out Scout hotkey is missing.');
 assert.match(actions, /event\.key !== 'Shift'/, 'Shift release must be the chain commit boundary.');
 assert.match(actions, /turnActionsCommit\(\)/, 'Turn actions must commit after a completed click/chain.');
+assert.match(actions, /pendingMapClick/, 'Shift release must wait for the map click to finish appending its route.');
+assert.match(actions, /await turnActionState\.pendingMapClick/, 'Shift release must await the pending map click before committing.');
 assert.match(actions, /turnActionsPreviewHover/, 'Move Unit must calculate a route preview while hovering.');
 assert.match(actions, /turnActionsHoverAppendPreview/, 'Shift hover must preview the chained route.');
 assert.match(actions, /turnActionsRefreshHover/, 'Changing Shift state must refresh the hover preview.');
