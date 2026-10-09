@@ -263,6 +263,31 @@
   color: #dff7e6;
 }
 
+.turn-action-hover-card {
+  position: absolute;
+  z-index: 21;
+  min-width: 190px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid #6b8f72;
+  border-radius: 8px;
+  background: rgba(7, 18, 14, .97);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .42);
+  color: #e7f5e9;
+  pointer-events: none;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.turn-action-hover-card strong,
+.turn-action-hover-card span,
+.turn-action-hover-card small { display: block; }
+.turn-action-hover-card strong { color: #fff0bd; font-size: 11px; }
+.turn-action-hover-card span { color: #b9d9bf; margin-top: 3px; }
+.turn-action-hover-card small { color: #88a794; margin-top: 4px; }
+.turn-action-hover-card.warn { border-color: #ad8650; }
+.turn-action-hover-card.error { border-color: #a85e58; color: #f0c1bb; }
+
 .turn-action-heading,
 .turn-action-heading > div,
 .turn-action-buttons,

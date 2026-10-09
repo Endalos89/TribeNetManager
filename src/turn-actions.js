@@ -4,7 +4,9 @@ const turnActionState = {
   shiftChainStarted: false,
   pendingOcean: null,
   tracePoint: null,
-  status: ''
+  status: '',
+  hover: null,
+  hoverRequest: 0
 };
 
 const TURN_ACTION_ICONS = {
@@ -57,7 +59,7 @@ function turnActionsRender() {
     return;
   }
 
-  const garrison = String(unit.unitType || unit.type || '').toLowerCase() === 'garrison';
+  const stationary = savedMovementIsStationaryUnit(unit);
   const canMove = savedMovementCanMoveUnit(unit);
   const routeCount = savedMovementPlansState.routes.filter(route => String(route.unitCode).toLowerCase() === String(unit.unitCode).toLowerCase()).length;
   const splitCount = (savedMovementPlansState.unitSplits || []).length;
@@ -76,7 +78,7 @@ function turnActionsRender() {
     </div>
     ${scoutControls}
     <div class="turn-action-buttons">
-      ${!garrison ? `<button class="turn-action-button${turnActionState.active === 'unit' ? ' active' : ''}" data-turn-action="move"${!canMove && !active ? ' disabled' : ''} title="Move Unit (M)">${TURN_ACTION_ICONS.move}<span>Move Unit</span><kbd>M</kbd></button>` : ''}
+      ${!stationary ? `<button class="turn-action-button${turnActionState.active === 'unit' ? ' active' : ''}" data-turn-action="move"${!canMove && !active ? ' disabled' : ''} title="Move Unit (M)">${TURN_ACTION_ICONS.move}<span>Move Unit</span><kbd>M</kbd></button>` : ''}
       <button class="turn-action-button${turnActionState.active === 'split' ? ' active' : ''}" data-turn-action="split"${active ? ' disabled' : ''} title="Split Off Unit (X)">${TURN_ACTION_ICONS.split}<span>Split Off Unit</span><kbd>X</kbd></button>
       <button class="turn-action-button${turnActionState.active === 'scout' ? ' active' : ''}" data-turn-action="scout"${active ? ' disabled' : ''} title="Send Out Scout (C)">${TURN_ACTION_ICONS.scout}<span>Send Out Scout</span><kbd>C</kbd></button>
       ${active ? `<button class="turn-action-button secondary" data-turn-action="cancel" title="Cancel action (Esc)">${TURN_ACTION_ICONS.cancel}<span>Cancel</span><kbd>Esc</kbd></button>` : ''}
@@ -106,6 +108,180 @@ function turnActionsSetStatus(message) {
   turnActionsRender();
 }
 
+function turnActionsHoverCard() {
+  return document.getElementById('turnActionHoverCard');
+}
+
+function turnActionsHideHover() {
+  turnActionState.hover = null;
+  turnActionState.hoverRequest += 1;
+  const card = turnActionsHoverCard();
+  if (card) card.classList.add('hidden');
+}
+
+function turnActionsPositionHoverCard(clientX, clientY) {
+  const card = turnActionsHoverCard();
+  const wrap = document.getElementById('canvasWrap');
+  if (!card || !wrap) return;
+  const rect = wrap.getBoundingClientRect();
+  const gap = 14;
+  const left = Math.max(8, Math.min(clientX - rect.left + gap, rect.width - card.offsetWidth - 8));
+  let top = Math.max(8, Math.min(clientY - rect.top + gap, rect.height - card.offsetHeight - 8));
+  const bar = document.getElementById('turnActionBar');
+  if (bar && !bar.classList.contains('hidden')) {
+    const barRect = bar.getBoundingClientRect();
+    const barTop = barRect.top - rect.top - 8;
+    if (top + card.offsetHeight > barTop) {
+      const above = clientY - rect.top - card.offsetHeight - gap;
+      if (above >= 8) top = above;
+    }
+  }
+  card.style.left = `${left}px`;
+  card.style.top = `${top}px`;
+}
+
+function turnActionsHoverPoint(event) {
+  const canvas = document.getElementById('mapCanvas');
+  if (!canvas || state.mode !== 'detail') return null;
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+  const base = baseFromScreen(x, y);
+  const point = typeof IsoMapper !== 'undefined' && IsoMapper.enabled
+    ? IsoMapper.pick(x, y) || nearestHex(base.x, base.y)
+    : nearestHex(base.x, base.y);
+  return point ? { point, clientX: event.clientX, clientY: event.clientY } : null;
+}
+
+function turnActionsHoverAppendPreview(route, target, known) {
+  const endpoint = route?.path?.[route.path.length - 1];
+  if (!endpoint) return { status: 'no-route', requestedTarget: target.coordinate };
+  const direction = turnActionsDirectionBetween(endpoint, target);
+  if (!direction) return { status: 'not-adjacent', requestedTarget: target.coordinate };
+  const targetHex = known.get(target.coordinate);
+  if (targetHex && !MovementPlannerCore.isRevealedLand(targetHex)) {
+    return { status: 'target-impassable', requestedTarget: target.coordinate, targetTerrain: targetHex.terrain };
+  }
+  const entryMp = targetHex ? MovementPlannerCore.terrainMovementCost(targetHex.terrain, 0) : null;
+  const knownMp = Number(route.knownMp ?? route.totalMp ?? 0) + (entryMp == null ? 0 : entryMp);
+  const unknownEntryCount = Number(route.unknownEntryCount || 0) + (entryMp == null ? 1 : 0);
+  const point = {
+    coordinate: target.coordinate,
+    globalCol: target.globalCol,
+    globalRow: target.globalRow,
+    terrain: targetHex?.terrain || 'UNKNOWN',
+    entryMp,
+    baseEntryMp: entryMp,
+    weatherPenalty: 0,
+    cumulativeMp: unknownEntryCount ? null : knownMp,
+    knownCumulativeMp: knownMp,
+    unknownCumulativeCount: unknownEntryCount,
+    kind: entryMp == null ? 'approx' : 'exact'
+  };
+  return {
+    ...route,
+    status: 'ok',
+    requestedTarget: target.coordinate,
+    actualTarget: target.coordinate,
+    targetIsUnknown: entryMp == null,
+    path: [...route.path, point],
+    directions: [...route.directions, direction],
+    steps: Number(route.steps || 0) + 1,
+    knownMp,
+    badWeatherMp: Number(route.badWeatherMp || 0) + (entryMp == null ? 0 : entryMp + MovementPlannerCore.BAD_WEATHER_ENTRY_PENALTY),
+    unknownEntryCount,
+    totalMp: unknownEntryCount ? null : knownMp,
+    appended: true
+  };
+}
+
+function turnActionsHoverAllowanceText(knownMp) {
+  return MovementPlannerCore.MOVEMENT_ALLOWANCES
+    .filter(row => row.key === 'foot' || row.key === 'mounted')
+    .map(row => `${row.label.replace(' movement', '')} ${row.mp - knownMp >= 0 ? `${row.mp - knownMp} left` : `${knownMp - row.mp} over`}`)
+    .join(' · ');
+}
+
+function turnActionsRenderHover(route, target, clientX, clientY) {
+  const card = turnActionsHoverCard();
+  if (!card) return;
+  const coordinate = turnActionsEscape(target.coordinate);
+  card.className = 'turn-action-hover-card';
+  if (!route || route.status !== 'ok') {
+    const message = route?.status === 'not-adjacent'
+      ? 'Shift-chain requires an adjacent tile.'
+      : route?.status === 'target-impassable'
+        ? `${target.coordinate} is ${route.targetTerrain || 'not enterable'}.`
+        : route?.status === 'no-revealed-adjacent'
+          ? 'No revealed land route reaches this fog tile.'
+          : 'No route through revealed land reaches this tile.';
+    card.classList.add('error');
+    card.innerHTML = `<strong>${coordinate}</strong><span>${turnActionsEscape(message)}</span>`;
+    card.classList.remove('hidden');
+    turnActionsPositionHoverCard(clientX, clientY);
+    return;
+  }
+  const knownMp = Number(route.knownMp ?? route.totalMp ?? 0);
+  const weatherMp = Number(route.badWeatherMp ?? knownMp);
+  const unknown = Number(route.unknownEntryCount || 0);
+  const commands = (route.directions || []).join(' → ') || 'No movement';
+  const normal = unknown ? `${knownMp} known + ?×${unknown}` : `${knownMp} MP`;
+  const weather = unknown ? `${weatherMp} known + ?×${unknown}` : `${weatherMp} MP`;
+  card.classList.toggle('warn', unknown > 0 || knownMp > 27 || weatherMp > 27);
+  card.innerHTML = `<strong>${coordinate}</strong><span>Normal: ${normal} · Bad weather: ${weather}</span><span>${turnActionsEscape(commands)}</span><small>${turnActionsHoverAllowanceText(knownMp)}${unknown ? ' · fog cost unresolved' : ''}</small>`;
+  card.classList.remove('hidden');
+  turnActionsPositionHoverCard(clientX, clientY);
+}
+
+async function turnActionsPreviewHover(event) {
+  if (turnActionState.active !== 'unit' || !movementPlannerState.active || state.dragging) return;
+  const hover = turnActionsHoverPoint(event);
+  if (!hover) { turnActionsHideHover(); return; }
+  const target = parseCoordinate(coordinateFor(hover.point.globalCol, hover.point.globalRow));
+  if (!target) return;
+  const hoverKey = `${target.coordinate}:${movementPlannerState.shiftHeld ? 'chain' : 'route'}`;
+  if (turnActionState.hover?.key === hoverKey) {
+    turnActionsPositionHoverCard(hover.clientX, hover.clientY);
+    return;
+  }
+  const request = ++turnActionState.hoverRequest;
+  turnActionState.hover = { ...hover, target, route: null, key: hoverKey };
+  const card = turnActionsHoverCard();
+  if (card) {
+    card.className = 'turn-action-hover-card';
+    card.innerHTML = `<strong>${turnActionsEscape(target.coordinate)}</strong><span>Calculating route…</span>`;
+    card.classList.remove('hidden');
+    turnActionsPositionHoverCard(hover.clientX, hover.clientY);
+  }
+  try {
+    const known = await movementPlannerLoadKnowledge();
+    if (request !== turnActionState.hoverRequest || turnActionState.active !== 'unit') return;
+    const route = movementPlannerState.shiftHeld && movementPlannerState.route?.status === 'ok'
+      ? turnActionsHoverAppendPreview(movementPlannerState.route, target, known)
+      : movementPlannerPrepareRoute(MovementPlannerCore.findFastestRoute(known, movementPlannerState.origin.coordinate, target.coordinate));
+    turnActionState.hover.route = route;
+    turnActionsRenderHover(route, target, hover.clientX, hover.clientY);
+    draw();
+  } catch (_) {
+    if (request !== turnActionState.hoverRequest) return;
+    turnActionsRenderHover({ status: 'error' }, target, hover.clientX, hover.clientY);
+  }
+}
+
+function turnActionsRefreshHover() {
+  const hover = turnActionState.hover;
+  if (!hover?.target || !Number.isFinite(hover.clientX) || !Number.isFinite(hover.clientY)) return;
+  turnActionsPreviewHover({ clientX: hover.clientX, clientY: hover.clientY });
+}
+
+function turnActionsBindHover() {
+  const canvas = document.getElementById('mapCanvas');
+  if (!canvas) return;
+  canvas.addEventListener('mousemove', turnActionsPreviewHover);
+  canvas.addEventListener('mouseleave', turnActionsHideHover);
+}
+
 function turnActionsOrigin(unit, type) {
   return savedMovementOriginFor(unit.unitCode, type) || unit.currentHex || null;
 }
@@ -126,6 +302,7 @@ function turnActionsSetUnknownOrigin(coordinate) {
 async function turnActionsStart(type) {
   const unit = turnActionsUnit();
   if (!unit) return;
+  turnActionsHideHover();
   if (type === 'unit' && !savedMovementCanMoveUnit(unit)) {
     turnActionsSetStatus(unit.plannedSplit ? 'This unit was created after its parent moved and must remain Still this turn.' : savedMovementSetStationaryStatus());
     return;
@@ -167,6 +344,7 @@ async function turnActionsStart(type) {
 }
 
 function turnActionsCancel() {
+  turnActionsHideHover();
   turnActionState.active = null;
   turnActionState.shiftChainStarted = false;
   turnActionState.pendingOcean = null;
@@ -197,8 +375,9 @@ async function turnActionsCommit() {
       return;
     }
     const label = turnActionsActiveLabel();
+    const clearedScoutRoutes = Number(saved.clearedScoutRoutes || 0);
     turnActionsCancel();
-    turnActionState.status = `${label} committed for ${savedMovementPlansState.selectedUnitCode}.`;
+    turnActionState.status = `${label} committed for ${savedMovementPlansState.selectedUnitCode}.${clearedScoutRoutes ? ` ${clearedScoutRoutes} scouting route${clearedScoutRoutes === 1 ? '' : 's'} cleared because the destination changed.` : ''}`;
     turnActionsRender();
   } catch (error) {
     turnActionsSetStatus(error.message || String(error));
@@ -333,6 +512,21 @@ function turnActionsRefresh() {
 const turnActionsOriginalDraw = draw;
 draw = function drawWithTurnActions() {
   turnActionsOriginalDraw();
+  const hoverRoute = turnActionState.active === 'unit' ? turnActionState.hover?.route : null;
+  if (hoverRoute?.status === 'ok' && hoverRoute.path?.length > 1) {
+    const committedLength = movementPlannerState.route?.path?.length || 1;
+    const previewPath = movementPlannerState.shiftHeld && movementPlannerState.route?.status === 'ok'
+      ? hoverRoute.path.slice(Math.max(0, committedLength - 1))
+      : hoverRoute.path;
+    drawRoute(previewPath, {
+      color: '#ffe08a',
+      width: Math.max(2.2, state.scale * .095),
+      alpha: .92,
+      dashed: true
+    });
+    const endpoint = hoverRoute.path[hoverRoute.path.length - 1];
+    if (endpoint) movementPlannerDrawRing(endpoint, endpoint.terrain === 'UNKNOWN' ? '#9ec9db' : '#ffe08a', endpoint.terrain === 'UNKNOWN', .72);
+  }
   const route = movementPlannerState.route;
   if (!turnActionState.active || !route?.conditionalPredictionPaths?.length) return;
   const style = turnActionState.active === 'scout'
@@ -346,11 +540,11 @@ draw = function drawWithTurnActions() {
 
 window.addEventListener('tribenet:unit-selected', turnActionsSyncSelection);
 window.addEventListener('keydown', event => {
-  if (event.key === 'Shift') return;
+  if (event.key === 'Shift') { setTimeout(turnActionsRefreshHover, 0); return; }
   if (event.key === 'Escape' && turnActionState.active) { event.preventDefault(); turnActionsCancel(); return; }
   if (event.repeat || turnActionState.active || !state.selectedUnit || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
   const key = String(event.key || '').toUpperCase();
-  if (key === 'M' && String(turnActionsUnit()?.unitType || '').toLowerCase() !== 'garrison') { event.preventDefault(); turnActionsStart('unit'); }
+  if (key === 'M' && savedMovementCanMoveUnit(turnActionsUnit())) { event.preventDefault(); turnActionsStart('unit'); }
   if (key === 'X') { event.preventDefault(); turnActionsOpenSplit(); }
   if (key === 'C') { event.preventDefault(); turnActionsStart('scout'); }
 });
@@ -369,4 +563,5 @@ document.getElementById('movementPlannerCreateType')?.addEventListener('change',
 });
 document.getElementById('movementPlannerCreateSubmit')?.addEventListener('click', savedMovementCreateUnit);
 
+turnActionsBindHover();
 turnActionsRender();

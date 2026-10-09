@@ -11,6 +11,10 @@ const savedMovementPlansState = {
   unitSplits: []
 };
 
+function savedMovementEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
 function savedMovementRootTribe(unitCode) {
   const match = String(unitCode || '').match(/^(\d{4})/);
   return match ? match[1] : String(unitCode || '').trim();
@@ -92,7 +96,7 @@ async function savedMovementPopulateCreationForm() {
   const parentSelect = document.getElementById('movementPlannerCreateParent');
   if (!parentSelect) return;
   const parents = savedMovementCreationParents();
-  parentSelect.innerHTML = parents.map(unit => `<option value="${String(unit.unitCode)}">${String(unit.unitCode)} · ${String(unit.unitName || 'Tribe')}</option>`).join('');
+  parentSelect.innerHTML = parents.map(unit => `<option value="${savedMovementEscape(unit.unitCode)}">${savedMovementEscape(unit.unitCode)} · ${savedMovementEscape(unit.unitName || 'Tribe')}</option>`).join('');
   const selected = savedMovementSelectedUnit();
   if (selected && String(selected.unitType) === 'Tribe') parentSelect.value = selected.unitCode;
   const type = document.getElementById('movementPlannerCreateType');
@@ -116,7 +120,7 @@ async function savedMovementLoadCreationSkills() {
       return;
     }
     host.innerHTML = '<span>Move entire skills to the new Tribe (optional)</span>' + skills.map(row => `
-      <label><input type="checkbox" data-creation-skill="${String(row.skill || row.shortname || '')}" data-creation-level="${Number(row.level || 0)}" /> ${String(row.skill || row.shortname)} ${Number(row.level || 0)}</label>
+      <label><input type="checkbox" data-creation-skill="${savedMovementEscape(row.skill || row.shortname || '')}" data-creation-level="${Number(row.level || 0)}" /> ${savedMovementEscape(row.skill || row.shortname)} ${Number(row.level || 0)}</label>
     `).join('');
   } catch (error) {
     host.textContent = `Could not load source skills: ${error.message || error}`;
@@ -155,6 +159,10 @@ function savedMovementUnitMove(unitCode) {
   return savedMovementPlansState.routes.find(route => route.routeType === 'unit' && String(route.unitCode).toLowerCase() === String(unitCode).toLowerCase()) || null;
 }
 
+function savedMovementIsStationaryUnit(unit) {
+  return ['garrison', 'fleet', 'courier'].includes(String(unit?.unitType || unit?.type || '').trim().toLowerCase());
+}
+
 function savedMovementOriginFor(unitCode = savedMovementPlansState.selectedUnitCode, routeType = savedMovementPlansState.routeType) {
   const unit = savedMovementUnits().find(row => String(row.unitCode).toLowerCase() === String(unitCode).toLowerCase());
   if (!unit) return null;
@@ -172,7 +180,7 @@ function savedMovementScoutUsesUnitMove() {
 
 function savedMovementCanMoveUnit(unit = savedMovementSelectedUnit()) {
   if (!unit) return false;
-  if (String(unit.unitType || unit.type).toLowerCase() === 'garrison') return false;
+  if (savedMovementIsStationaryUnit(unit)) return false;
   if (unit.plannedSplit && savedMovementUnitMove(unit.parentUnit)) return false;
   return true;
 }
@@ -233,6 +241,9 @@ async function savedMovementSaveCurrentRoute() {
   const scoutStatus = savedMovementScoutGroupStatus(unit);
   if (type === 'scout' && (!scoutStatus || scoutStatus.count >= 8 || scoutHorses > scoutCount)) return false;
 
+  const previousUnitMove = type === 'unit' ? savedMovementUnitMove(unit.unitCode) : null;
+  const previousDestination = previousUnitMove?.destinationHex || unit.currentHex || null;
+
   const payload = {
     turnKey,
     tribeCode: savedMovementRootTribe(unit.unitCode),
@@ -250,8 +261,15 @@ async function savedMovementSaveCurrentRoute() {
     unknownEntryCount: Number(route.unknownEntryCount || 0)
   };
   await window.tribenet.savePlannedRoute(payload);
+  let clearedScoutRoutes = 0;
+  if (type === 'unit'
+    && payload.destinationHex
+    && String(previousDestination || '').toUpperCase() !== String(payload.destinationHex).toUpperCase()
+    && typeof window.tribenet.removeAllScoutRoutesForUnit === 'function') {
+    clearedScoutRoutes = Number(await window.tribenet.removeAllScoutRoutesForUnit(turnKey, unit.unitCode) || 0);
+  }
   await savedMovementRefresh();
-  return true;
+  return { ...payload, clearedScoutRoutes };
 }
 
 async function savedMovementResetAllMovement() {
@@ -276,7 +294,7 @@ async function savedMovementResetAllUnitChanges() {
 }
 
 function savedMovementSetStationaryStatus() {
-  return 'Garrisons are stationary; MOVEMENT_1 will be Still.';
+  return 'Fleets, Couriers and Garrisons are stationary; MOVEMENT_1 will be Still.';
 }
 
 function savedMovementConditionalPredictions(route) {
