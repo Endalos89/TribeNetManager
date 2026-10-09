@@ -646,7 +646,7 @@ window.addEventListener('keydown', event => {
   const key = String(event.key || '').toUpperCase();
   if (key === 'M' && savedMovementCanMoveUnit(turnActionsUnit())) { event.preventDefault(); turnActionsStart('unit'); }
   if (key === 'X') { event.preventDefault(); turnActionsOpenSplit(); }
-  if (key === 'C') { event.preventDefault(); turnActionsStart('scout'); }
+  if (key === 'C') { event.preventDefault(); const selectedScout = turnActionsSelectedScout(); selectedScout ? turnActionsEditSelectedScout() : turnActionsStart('scout'); }
 });
 window.addEventListener('keyup', async event => {
   if (event.key !== 'Shift') return;
