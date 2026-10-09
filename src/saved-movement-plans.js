@@ -212,9 +212,41 @@ function savedMovementSelectSavedRoute(routeKey) {
   savedMovementPlansState.selectedUnitCode = state.selectedUnit;
   const origin = parseCoordinate(route.originHex || route.startHex);
   state.selectedUnitHex = origin?.coordinate || null;
-  if (origin) centerOnHex(origin.globalCol, origin.globalRow);
   if (typeof turnActionsRefresh === 'function') turnActionsRefresh();
   draw();
+}
+
+function savedMovementRouteLabelBounds(route) {
+  const end = route?.path?.[route.path.length - 1];
+  if (!end || route.routeType !== 'scout' || !state.scoutingVisible) return null;
+  const point = screenFromBase(baseCenter(end.globalCol, end.globalRow));
+  const text = `S${route.scoutNumber} ${route.unitCode}`;
+  ctx.save();
+  ctx.font = `700 ${Math.max(8, Math.min(10, state.scale * .25))}px Segoe UI`;
+  const width = ctx.measureText(text).width + 10;
+  ctx.restore();
+  return {
+    route,
+    left: point.x - width / 2,
+    right: point.x + width / 2,
+    top: point.y + state.scale * .48,
+    bottom: point.y + state.scale * .48 + 16
+  };
+}
+
+function savedMovementHandleRouteLabelClick(clientX, clientY) {
+  if (state.mode !== 'detail' || (typeof turnActionState !== 'undefined' && turnActionState.active)) return false;
+  const canvas = document.getElementById('mapCanvas');
+  if (!canvas) return false;
+  const rect = canvas.getBoundingClientRect();
+  const x = clientX - rect.left, y = clientY - rect.top;
+  const hit = savedMovementPlansState.routes
+    .filter(route => route.routeType === 'scout' && state.planningVisible && state.scoutingVisible)
+    .map(savedMovementRouteLabelBounds)
+    .find(bounds => bounds && x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom);
+  if (!hit) return false;
+  savedMovementSelectSavedRoute(savedMovementRouteKey(hit.route));
+  return true;
 }
 
 async function savedMovementRefresh() {
@@ -269,6 +301,8 @@ async function savedMovementSaveCurrentRoute() {
     mission: type === 'scout' ? String(savedMovementPlansState.scoutMission || 'PATROL').toUpperCase() : null,
     unknownEntryCount: Number(route.unknownEntryCount || 0)
   };
+  const editingRouteId = typeof turnActionState !== 'undefined' ? turnActionState.editingRouteId : null;
+  if (type === 'scout' && editingRouteId != null) payload.id = Number(editingRouteId);
   await window.tribenet.savePlannedRoute(payload);
   let clearedScoutRoutes = 0;
   if (type === 'unit'
@@ -281,12 +315,27 @@ async function savedMovementSaveCurrentRoute() {
   return { ...payload, clearedScoutRoutes };
 }
 
-async function savedMovementResetAllMovement() {
+async function savedMovementResetMovementForUnit(unitCode = savedMovementPlansState.selectedUnitCode) {
   const turnKey = savedMovementCurrentTurnKey();
-  if (!turnKey) return 0;
-  const count = savedMovementPlansState.routes.filter(item => item.routeType === 'unit').length;
-  if (!count) return 0;
-  const removed = await window.tribenet.removeAllUnitRoutes(turnKey);
+  const unit = savedMovementUnits().find(row => String(row.unitCode).toLowerCase() === String(unitCode || '').toLowerCase());
+  if (!turnKey || !unit) return { movement: 0, scouting: 0 };
+  const movement = savedMovementUnitMove(unit.unitCode);
+  let removedMovement = 0;
+  if (movement?.id != null) removedMovement = Number(await window.tribenet.removePlannedRoute(movement.id) ? 1 : 0);
+  const removedScouting = typeof window.tribenet.removeAllScoutRoutesForUnit === 'function'
+    ? Number(await window.tribenet.removeAllScoutRoutesForUnit(turnKey, unit.unitCode) || 0)
+    : 0;
+  state.selectedRouteId = null;
+  await savedMovementRefresh();
+  return { movement: removedMovement, scouting: removedScouting };
+}
+
+async function savedMovementResetScoutingForUnit(unitCode = savedMovementPlansState.selectedUnitCode) {
+  const turnKey = savedMovementCurrentTurnKey();
+  const unit = savedMovementUnits().find(row => String(row.unitCode).toLowerCase() === String(unitCode || '').toLowerCase());
+  if (!turnKey || !unit || typeof window.tribenet.removeAllScoutRoutesForUnit !== 'function') return 0;
+  const removed = Number(await window.tribenet.removeAllScoutRoutesForUnit(turnKey, unit.unitCode) || 0);
+  state.selectedRouteId = null;
   await savedMovementRefresh();
   return removed;
 }

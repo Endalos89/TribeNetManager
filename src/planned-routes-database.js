@@ -111,6 +111,31 @@ class PlannedRoutesDatabase {
       }
     }
 
+    if (type === 'scout' && route.id != null) {
+      const existing = this.db.prepare(`
+        SELECT id FROM planned_routes
+        WHERE id = ? AND route_type = 'scout'
+        LIMIT 1
+      `).get(Number(route.id));
+      if (existing) {
+        this.db.prepare(`
+          UPDATE planned_routes SET
+            turn_key = ?, tribe_code = ?, unit_code = ?, origin_hex = ?, destination_hex = ?,
+            directions_json = ?, path_json = ?, known_mp = ?, unknown_entry_count = ?,
+            scout_count = ?, horse_count = ?, mission = ?, updated_at = ?
+          WHERE id = ?
+        `).run(
+          route.turnKey, tribeCode, route.unitCode, route.originHex, route.destinationHex,
+          JSON.stringify(route.directions || []), JSON.stringify(route.path || []),
+          Number(route.knownMp || 0), Number(route.unknownEntryCount || 0),
+          route.noOfScouts == null ? null : Number(route.noOfScouts),
+          route.noOfHorses == null ? null : Number(route.noOfHorses),
+          route.mission || null, now, Number(existing.id)
+        );
+        return this.get(Number(existing.id));
+      }
+    }
+
     let scoutNumber = null;
     if (type === 'scout') {
       const existingScouts = this.db.prepare(`
@@ -151,11 +176,6 @@ class PlannedRoutesDatabase {
   removeForUnit(turnKey, unitCode) {
     if (!turnKey || !unitCode) return 0;
     return Number(this.db.prepare('DELETE FROM planned_routes WHERE turn_key = ? AND unit_code = ?').run(turnKey, unitCode).changes || 0);
-  }
-
-  removeAllUnitRoutes(turnKey) {
-    if (!turnKey) return 0;
-    return Number(this.db.prepare("DELETE FROM planned_routes WHERE turn_key = ? AND route_type = 'unit'").run(turnKey).changes || 0);
   }
 
   removeAllScoutRoutesForUnit(turnKey, unitCode) {

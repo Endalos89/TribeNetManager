@@ -27,6 +27,15 @@ assert.match(actions, /turnActionsMovementRisk/, 'Move Unit must classify safe, 
 assert.match(actions, /Unit total:/, 'Move Unit must show the selected unit total movement.');
 assert.match(actions, /Bad weather/, 'Move Unit must show the bad-weather movement warning.');
 assert.match(actions, /turnActionsCancelRightClick/, 'Right-clicking during an active action must cancel it.');
+assert.match(actions, /reset-scouting/, 'The action bar must provide a unit-scoped scouting reset.');
+assert.match(actions, /savedMovementResetMovementForUnit/, 'Movement reset must be scoped to the selected unit.');
+assert.match(actions, /savedMovementResetScoutingForUnit/, 'Scouting reset must be scoped to the selected unit.');
+assert.match(actions, /edit-scout/, 'A selected scout route must offer editing.');
+assert.match(actions, /cancel-scout/, 'A selected scout route must offer cancellation.');
+assert.match(actions, /title="Move Unit · M"/, 'Action buttons must expose their name and hotkey on hover.');
+assert.match(actions, /title="Send Out Scout · C"/, 'Scout action must expose its name and hotkey on hover.');
+assert.match(actions, /editingRouteId/, 'Scout editing must update the existing route rather than insert a duplicate.');
+assert.match(fs.readFileSync('src/saved-movement-plans.js', 'utf8'), /savedMovementHandleRouteLabelClick/, 'Scout labels must be clickable.');
 assert.match(actions, /event\.button === 2/, 'Right-click handling must identify the secondary mouse button.');
 assert.match(actions, /addEventListener\('mouseup', turnActionsCancelRightClick, true\)/, 'Right-click cancellation must run before map mouseup selection.');
 assert.match(actions, /addEventListener\('contextmenu', turnActionsCancelRightClick, true\)/, 'Cancelled right-clicks must not open the browser context menu.');

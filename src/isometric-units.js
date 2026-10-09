@@ -233,6 +233,9 @@
     root.IsoUnits=api;
     window.addEventListener('mouseup',e=>{
       if(state.mode!=='detail' || !state.dragging || e.button!==0)return;
+      if(typeof savedMovementHandleRouteLabelClick==='function' && savedMovementHandleRouteLabelClick(e.clientX,e.clientY)){
+        state.dragging=false;canvas.classList.remove('dragging');e.preventDefault();e.stopImmediatePropagation();return;
+      }
       if(movementPlannerState.active){cycle=null;return;}
       if(Math.hypot(e.clientX-state.dragStart.x,e.clientY-state.dragStart.y)>=5)return;
       const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;

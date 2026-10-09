@@ -345,9 +345,11 @@
 .turn-action-button {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  gap: 0;
+  width: 40px;
   min-height: 38px;
-  padding: 7px 10px;
+  padding: 7px;
   border: 1px solid #3d654a;
   border-radius: 8px;
   background: #10251a;
@@ -384,15 +386,8 @@
   stroke-width: 1.8;
 }
 
-.turn-action-button kbd {
-  min-width: 18px;
-  padding: 2px 4px;
-  border: 1px solid #496956;
-  border-radius: 4px;
-  color: #9fc4a7;
-  font-size: 8px;
-  font-weight: 700;
-}
+.turn-action-route-selection { color: #8fb69a; font-size: 9px; margin-left: 4px; }
+.turn-action-button.route-action { width: 34px; min-height: 32px; }
 
 .turn-action-scout-fields {
   gap: 7px;

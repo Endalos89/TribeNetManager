@@ -46,6 +46,10 @@ try {
   const scouts = db.list('27').filter(item => item.routeType === 'scout');
   assert.equal(scouts.length, 8);
   assert.deepEqual(scouts.map(item => item.scoutNumber), [1,2,3,4,5,6,7,8]);
+  const editedScout = db.save({ ...scouts[0], destinationHex: 'AA2002', directions: ['SE'], knownMp: 3 });
+  assert.equal(editedScout.id, scouts[0].id, 'editing a scout should update the existing route');
+  assert.equal(editedScout.scoutNumber, scouts[0].scoutNumber, 'editing a scout should preserve its numbered slot');
+  assert.equal(db.list('27').filter(item => item.routeType === 'scout').length, 8, 'editing a scout must not create a duplicate');
   assert.throws(
     () => db.save(route({ unitCode: '0485E2', routeType: 'scout' })),
     /maximum 8 scout moves/i,
@@ -59,12 +63,6 @@ try {
   const reused = db.save(route({ unitCode: '0485E2', routeType: 'scout' }));
   assert.equal(reused.scoutNumber, 3, 'removing a scout should free that scout slot');
 
-  db.save(route({ turnKey: 'reset-turn', unitCode: '0485' }));
-  db.save(route({ turnKey: 'reset-turn', unitCode: '0485E1', destinationHex: 'AA0103' }));
-  db.save(route({ turnKey: 'reset-turn', unitCode: '0485', routeType: 'scout', destinationHex: 'AA0104' }));
-  assert.equal(db.removeAllUnitRoutes('reset-turn'), 2, 'reset should remove every Movement route for the turn');
-  assert.equal(db.list('reset-turn').filter(item => item.routeType === 'unit').length, 0);
-  assert.equal(db.list('reset-turn').filter(item => item.routeType === 'scout').length, 1, 'reset should preserve Scouting routes');
   db.save(route({ turnKey: 'replace-turn', unitCode: '0485', routeType: 'scout', destinationHex: 'AA0104' }));
   db.save(route({ turnKey: 'replace-turn', unitCode: '0485', routeType: 'scout', destinationHex: 'AA0105' }));
   db.save(route({ turnKey: 'replace-turn', unitCode: '0485E1', routeType: 'scout', destinationHex: 'AA0106' }));

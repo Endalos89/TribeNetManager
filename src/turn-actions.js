@@ -8,7 +8,8 @@ const turnActionState = {
   hover: null,
   hoverRequest: 0,
   suppressContextMenuUntil: 0,
-  pendingMapClick: null
+  pendingMapClick: null,
+  editingRouteId: null
 };
 
 const TURN_ACTION_ICONS = {
@@ -16,7 +17,9 @@ const TURN_ACTION_ICONS = {
   split: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M5 8l7 4 7-4M5 16l7-4 7 4"/></svg>',
   scout: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19c4-8 7-12 16-14M4 19l6-1M4 19l2-6"/></svg>',
   cancel: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>',
-  reset: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6M4 5v6h6"/></svg>'
+  reset: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6M4 5v6h6"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-.8 4.8L8 20l10.8-10.8-4-4L4 16Z"/><path d="m13.5 6.5 4 4M4 20l4-1"/></svg>',
+  remove: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>'
 };
 
 function turnActionsEscape(value) {
@@ -78,6 +81,10 @@ function turnActionsRender() {
   const canMove = savedMovementCanMoveUnit(unit);
   const routeCount = savedMovementPlansState.routes.filter(route => String(route.unitCode).toLowerCase() === String(unit.unitCode).toLowerCase()).length;
   const splitCount = (savedMovementPlansState.unitSplits || []).length;
+  const unitMove = savedMovementUnitMove(unit.unitCode);
+  const unitScoutRoutes = savedMovementPlansState.routes.filter(route => route.routeType === 'scout' && String(route.unitCode).toLowerCase() === String(unit.unitCode).toLowerCase());
+  const selectedRoute = state.selectedRouteId == null ? null : savedMovementPlansState.routes.find(route => savedMovementRouteKey(route) === String(state.selectedRouteId));
+  const selectedScout = selectedRoute?.routeType === 'scout' ? selectedRoute : null;
   const active = Boolean(turnActionState.active);
   const scoutControls = turnActionState.active === 'scout' ? `
     <div class="turn-action-scout-fields">
@@ -93,15 +100,17 @@ function turnActionsRender() {
     </div>
     ${scoutControls}
     <div class="turn-action-buttons">
-      ${!stationary ? `<button class="turn-action-button${turnActionState.active === 'unit' ? ' active' : ''}" data-turn-action="move"${!canMove && !active ? ' disabled' : ''} title="Move Unit (M)">${TURN_ACTION_ICONS.move}<span>Move Unit</span><kbd>M</kbd></button>` : ''}
-      <button class="turn-action-button${turnActionState.active === 'split' ? ' active' : ''}" data-turn-action="split"${active ? ' disabled' : ''} title="Split Off Unit (X)">${TURN_ACTION_ICONS.split}<span>Split Off Unit</span><kbd>X</kbd></button>
-      <button class="turn-action-button${turnActionState.active === 'scout' ? ' active' : ''}" data-turn-action="scout"${active ? ' disabled' : ''} title="Send Out Scout (C)">${TURN_ACTION_ICONS.scout}<span>Send Out Scout</span><kbd>C</kbd></button>
-      ${active ? `<button class="turn-action-button secondary" data-turn-action="cancel" title="Cancel action (Esc)">${TURN_ACTION_ICONS.cancel}<span>Cancel</span><kbd>Esc</kbd></button>` : ''}
+      ${!stationary ? `<button class="turn-action-button${turnActionState.active === 'unit' ? ' active' : ''}" data-turn-action="move"${!canMove && !active ? ' disabled' : ''} aria-label="Move Unit" title="Move Unit · M">${TURN_ACTION_ICONS.move}</button>` : ''}
+      <button class="turn-action-button${turnActionState.active === 'split' ? ' active' : ''}" data-turn-action="split"${active ? ' disabled' : ''} aria-label="Split Off Unit" title="Split Off Unit · X">${TURN_ACTION_ICONS.split}</button>
+      <button class="turn-action-button${turnActionState.active === 'scout' ? ' active' : ''}" data-turn-action="scout"${active ? ' disabled' : ''} aria-label="Send Out Scout" title="Send Out Scout · C">${TURN_ACTION_ICONS.scout}</button>
+      ${active ? `<button class="turn-action-button secondary" data-turn-action="cancel" aria-label="Cancel action" title="Cancel action · Esc">${TURN_ACTION_ICONS.cancel}</button>` : ''}
+      ${selectedScout && !active ? `<span class="turn-action-route-selection">Scout S${selectedScout.scoutNumber} selected</span><button class="turn-action-button route-action" data-turn-action="edit-scout" aria-label="Edit scouting" title="Edit scouting · C">${TURN_ACTION_ICONS.edit}</button><button class="turn-action-button secondary route-action" data-turn-action="cancel-scout" aria-label="Cancel scouting" title="Cancel scouting">${TURN_ACTION_ICONS.remove}</button>` : ''}
     </div>
     <div class="turn-action-utilities">
       <span>${routeCount ? `${routeCount} saved action${routeCount === 1 ? '' : 's'} for this unit` : 'No saved actions for this unit'}</span>
-      ${savedMovementPlansState.routes.some(route => route.routeType === 'unit') ? `<button class="turn-action-utility" data-turn-action="reset-movement">${TURN_ACTION_ICONS.reset}Reset movement</button>` : ''}
-      ${splitCount ? `<button class="turn-action-utility" data-turn-action="reset-splits">${TURN_ACTION_ICONS.reset}Reset unit changes</button>` : ''}
+      ${unitMove ? `<button class="turn-action-utility" data-turn-action="reset-movement" aria-label="Cancel movement" title="Cancel movement for ${turnActionsEscape(unit.unitCode)}">${TURN_ACTION_ICONS.cancel}</button>` : ''}
+      ${unitScoutRoutes.length ? `<button class="turn-action-utility" data-turn-action="reset-scouting" aria-label="Reset scouting" title="Reset scouting for ${turnActionsEscape(unit.unitCode)}">${TURN_ACTION_ICONS.reset}</button>` : ''}
+      ${splitCount ? `<button class="turn-action-utility" data-turn-action="reset-splits" title="Reset unit changes">${TURN_ACTION_ICONS.reset}</button>` : ''}
     </div>`;
   bar.classList.remove('hidden');
 
@@ -318,7 +327,7 @@ function turnActionsSetUnknownOrigin(coordinate) {
   return true;
 }
 
-async function turnActionsStart(type) {
+async function turnActionsStart(type, options = {}) {
   const unit = turnActionsUnit();
   if (!unit) return;
   turnActionsHideHover();
@@ -327,11 +336,17 @@ async function turnActionsStart(type) {
     return;
   }
   if (type === 'scout') {
+    const editingRoute = options.route?.routeType === 'scout' ? options.route : null;
+    if (editingRoute) {
+      savedMovementPlansState.scoutCount = Math.max(1, Number(editingRoute.noOfScouts || savedMovementPlansState.scoutCount || 2));
+      savedMovementPlansState.scoutHorses = Math.max(0, Number(editingRoute.noOfHorses || savedMovementPlansState.scoutHorses || 2));
+      savedMovementPlansState.scoutMission = String(editingRoute.mission || savedMovementPlansState.scoutMission || 'PATROL').toUpperCase();
+    }
     savedMovementPlansState.scoutCount = Math.max(1, Number(savedMovementPlansState.scoutCount || 2));
     savedMovementPlansState.scoutHorses = Math.max(0, Number(savedMovementPlansState.scoutHorses || 2));
     if (savedMovementPlansState.scoutHorses > savedMovementPlansState.scoutCount) savedMovementPlansState.scoutHorses = savedMovementPlansState.scoutCount;
     const status = savedMovementScoutGroupStatus(unit);
-    if (!status || status.count >= 8) {
+    if (!status || (status.count >= 8 && !editingRoute)) {
       turnActionsSetStatus(`Tribe ${status?.tribeCode || savedMovementRootTribe(unit.unitCode)} has used all 8 scout moves this turn.`);
       return;
     }
@@ -340,6 +355,7 @@ async function turnActionsStart(type) {
   savedMovementPlansState.routeType = type;
   state.selectedRouteId = null;
   turnActionState.active = type;
+  turnActionState.editingRouteId = type === 'scout' && options.route?.id != null ? Number(options.route.id) : null;
   turnActionState.shiftChainStarted = false;
   turnActionState.pendingOcean = null;
   turnActionState.tracePoint = null;
@@ -368,6 +384,7 @@ function turnActionsCancel() {
   turnActionState.shiftChainStarted = false;
   turnActionState.pendingOcean = null;
   turnActionState.tracePoint = null;
+  turnActionState.editingRouteId = null;
   movementPlannerState.active = false;
   movementPlannerState.origin = null;
   movementPlannerState.route = null;
@@ -394,9 +411,10 @@ async function turnActionsCommit() {
       return;
     }
     const label = turnActionsActiveLabel();
+    const wasEditing = turnActionState.editingRouteId != null;
     const clearedScoutRoutes = Number(saved.clearedScoutRoutes || 0);
     turnActionsCancel();
-    turnActionState.status = `${label} committed for ${savedMovementPlansState.selectedUnitCode}.${clearedScoutRoutes ? ` ${clearedScoutRoutes} scouting route${clearedScoutRoutes === 1 ? '' : 's'} cleared because the destination changed.` : ''}`;
+    turnActionState.status = `${wasEditing ? `${label} updated` : `${label} committed`} for ${savedMovementPlansState.selectedUnitCode}.${clearedScoutRoutes ? ` ${clearedScoutRoutes} scouting route${clearedScoutRoutes === 1 ? '' : 's'} cleared because the destination changed.` : ''}`;
     turnActionsRender();
   } catch (error) {
     turnActionsSetStatus(error.message || String(error));
@@ -509,9 +527,37 @@ function turnActionsOpenSplit() {
 }
 
 async function turnActionsResetMovement() {
-  if (!window.confirm('Reset all saved Movement routes for this turn? Scouting routes will be kept.')) return;
-  await savedMovementResetAllMovement();
-  turnActionsSetStatus('All Movement routes reset.');
+  const unit = turnActionsUnit();
+  if (!unit) return;
+  const removed = await savedMovementResetMovementForUnit(unit.unitCode);
+  turnActionsSetStatus(`Movement cancelled for ${unit.unitCode}.${removed.scouting ? ` ${removed.scouting} scouting route${removed.scouting === 1 ? '' : 's'} also cancelled.` : ''}`);
+}
+
+async function turnActionsResetScouting() {
+  const unit = turnActionsUnit();
+  if (!unit) return;
+  const removed = await savedMovementResetScoutingForUnit(unit.unitCode);
+  turnActionsSetStatus(`${removed ? `${removed} scouting route${removed === 1 ? '' : 's'}` : 'No scouting routes'} cancelled for ${unit.unitCode}.`);
+}
+
+function turnActionsSelectedScout() {
+  if (state.selectedRouteId == null) return null;
+  const route = savedMovementPlansState.routes.find(item => savedMovementRouteKey(item) === String(state.selectedRouteId));
+  return route?.routeType === 'scout' ? route : null;
+}
+
+async function turnActionsEditSelectedScout() {
+  const route = turnActionsSelectedScout();
+  if (route) await turnActionsStart('scout', { route });
+}
+
+async function turnActionsCancelSelectedScout() {
+  const route = turnActionsSelectedScout();
+  if (!route?.id) return;
+  const removed = await window.tribenet.removePlannedRoute(route.id);
+  state.selectedRouteId = null;
+  await savedMovementRefresh();
+  turnActionsSetStatus(removed ? `Scouting S${route.scoutNumber} cancelled for ${route.unitCode}.` : 'The scouting route was already removed.');
 }
 
 async function turnActionsResetSplits() {
@@ -525,7 +571,10 @@ async function turnActionsHandle(action) {
   if (action === 'scout') return turnActionsStart('scout');
   if (action === 'split') return turnActionsOpenSplit();
   if (action === 'cancel') return turnActionsCancel();
+  if (action === 'edit-scout') return turnActionsEditSelectedScout();
+  if (action === 'cancel-scout') return turnActionsCancelSelectedScout();
   if (action === 'reset-movement') return turnActionsResetMovement();
+  if (action === 'reset-scouting') return turnActionsResetScouting();
   if (action === 'reset-splits') return turnActionsResetSplits();
 }
 
