@@ -24,6 +24,10 @@ assert.match(actions, /turnActionsUnitMovement/, 'Move Unit must use the selecte
 assert.match(actions, /turnActionsMovementRisk/, 'Move Unit must classify safe, risky and over-range routes.');
 assert.match(actions, /Unit total:/, 'Move Unit must show the selected unit total movement.');
 assert.match(actions, /Bad weather/, 'Move Unit must show the bad-weather movement warning.');
+assert.match(actions, /turnActionsCancelRightClick/, 'Right-clicking during an active action must cancel it.');
+assert.match(actions, /event\.button === 2/, 'Right-click handling must identify the secondary mouse button.');
+assert.match(actions, /addEventListener\('mouseup', turnActionsCancelRightClick, true\)/, 'Right-click cancellation must run before map mouseup selection.');
+assert.match(actions, /addEventListener\('contextmenu', turnActionsCancelRightClick, true\)/, 'Cancelled right-clicks must not open the browser context menu.');
 assert.match(actions, /pendingOcean/, 'Scout coastal traces must retain the selected ocean tile.');
 assert.match(actions, /orderForFeature/, 'Scout coastal traces must infer FOL/FOR.');
 assert.match(savedPlans, /garrison.*fleet.*courier|fleet.*courier.*garrison/i, 'Garrisons, fleets and couriers must be handled as stationary units.');

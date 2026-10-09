@@ -6,7 +6,8 @@ const turnActionState = {
   tracePoint: null,
   status: '',
   hover: null,
-  hoverRequest: 0
+  hoverRequest: 0,
+  suppressContextMenuUntil: 0
 };
 
 const TURN_ACTION_ICONS = {
@@ -556,6 +557,26 @@ draw = function drawWithTurnActions() {
 };
 
 window.addEventListener('tribenet:unit-selected', turnActionsSyncSelection);
+function turnActionsCancelRightClick(event) {
+  const isContextMenu = event.type === 'contextmenu';
+  const isRightButton = isContextMenu || event.button === 2;
+  if (!isRightButton) return;
+
+  const suppressContextMenu = turnActionState.suppressContextMenuUntil > Date.now();
+  if (!turnActionState.active && !suppressContextMenu) return;
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (!isContextMenu) {
+    turnActionState.suppressContextMenuUntil = Date.now() + 1000;
+    if (turnActionState.active) turnActionsCancel();
+  } else {
+    turnActionState.suppressContextMenuUntil = 0;
+  }
+}
+window.addEventListener('mousedown', turnActionsCancelRightClick, true);
+window.addEventListener('mouseup', turnActionsCancelRightClick, true);
+window.addEventListener('contextmenu', turnActionsCancelRightClick, true);
 window.addEventListener('keydown', event => {
   if (event.key === 'Shift') { setTimeout(turnActionsRefreshHover, 0); return; }
   if (event.key === 'Escape' && turnActionState.active) { event.preventDefault(); turnActionsCancel(); return; }
