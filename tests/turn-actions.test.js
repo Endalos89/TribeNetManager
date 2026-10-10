@@ -25,6 +25,8 @@ assert.match(actions, /follow-ocean/, 'Follow Ocean must be an explicit scouting
 assert.match(actions, /turnActionsArmFollowOcean/, 'Follow Ocean must be directly armable from the action bar.');
 assert.match(actions, /\['O', 'OCEAN'\]\.includes\(terrain\)/, 'Follow Ocean must recognise both ocean terrain encodings.');
 assert.match(actions, /turnActionsApplyFollowOcean/, 'Follow Ocean must resolve from the selected ocean edge.');
+assert.match(savedPlans, /conditionalPredictionPaths: route\.conditionalPredictionPaths \|\| \[\]/, 'Conditional Follow Ocean paths must be persisted with saved routes.');
+assert.match(savedPlans, /if \(Array\.isArray\(route\?\.conditionalPredictionPaths\)/, 'Saved conditional paths must be drawn after reload.');
 assert.match(actions, /action-icons\//, 'Action icons must use dedicated image assets.');
 assert.match(actions, /move\.svg|split\.svg|scout\.svg|follow-ocean\.svg/, 'Actions must use purpose-specific icons.');
 for (const icon of ['move.svg', 'split.svg', 'scout.svg', 'follow-ocean.svg', 'cancel.svg', 'reset.svg', 'edit.svg', 'remove-route.svg', 'routes.svg']) {

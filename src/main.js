@@ -13,7 +13,8 @@ const { ACTIVITY_CATALOG } = require('./activity-catalog');
 const { normalizeView } = require('./update-view-state');
 const { routesDb, removeRoutesForUnit } = require('./planned-routes-ipc');
 const { canonicalTurnKey, inferTurnKeyFromFilename } = require('./turn-key');
-const { patchOrdersWorkbook, saveOrderTemplate, findOrderTemplate, compareUnitCodes, skillTransferText } = require('./orders-workbook');
+const { patchOrdersWorkbook, saveOrderTemplate, findOrderTemplate } = require('./orders-workbook');
+const { buildOrdersExportData: assembleOrdersExportData } = require('./orders-export-data');
 const {
   planningTurnKeyFromResult,
   resultTurnToStartWorkbook,
@@ -205,74 +206,28 @@ function ordersExportBaseline(turnKey) {
   return result ? resultTurnToStartWorkbook(result) : null;
 }
 
-function ordersExportUnits(turnKey) {
-  const baseline = ordersExportBaseline(turnKey);
-  const byCode = new Map();
-  for (const unit of baseline?.units || []) {
-    const code = String(unit.unit || unit.unitCode || '').trim();
-    if (code) byCode.set(code.toLowerCase(), { unitCode: code, unitType: unit.type || unit.unitType || 'Unit', unitName: unit.unitName || '', currentHex: unit.startHex || unit.currentHex || null });
-  }
-  for (const split of turnManagerDatabase.listUnitSplits(turnKey)) {
-    byCode.set(String(split.unitCode).toLowerCase(), {
-      unitCode: split.unitCode,
-      unitType: split.unitType,
-      unitName: split.unitName || '',
-      currentHex: split.startHex,
-      parentUnit: split.parentUnit,
-      plannedSplit: true
-    });
-  }
-  for (const route of routesDb().list(turnKey)) {
-    if (route.routeType === 'unit' && !byCode.has(String(route.unitCode).toLowerCase())) byCode.set(String(route.unitCode).toLowerCase(), { unitCode: route.unitCode, unitType: 'Unit', unitName: '', currentHex: route.originHex });
-  }
-  return [...byCode.values()].sort((a, b) => compareUnitCodes(a.unitCode, b.unitCode));
+function ordersExportDraftKeys(turnKey) {
+  const keys = [turnKey];
+  const baseline = resultForPlanTurn(turnKey);
+  if (baseline?.turnKey && String(baseline.turnKey) !== String(turnKey)) keys.push(baseline.turnKey);
+  return keys;
+}
+
+function ordersExportDraftRoutes(turnKey) {
+  return ordersExportDraftKeys(turnKey).map(key => routesDb().list(key));
+}
+
+function ordersExportDraftSplits(turnKey) {
+  return ordersExportDraftKeys(turnKey).map(key => turnManagerDatabase.listUnitSplits(key));
 }
 
 function buildOrdersExportData(turnKey) {
-  const units = ordersExportUnits(turnKey);
-  const routes = routesDb().list(turnKey);
-  const unitTypeByCode = new Map(units.map(unit => [String(unit.unitCode).toLowerCase(), String(unit.unitType || '')]));
-  const unitRoutes = new Map(routes
-    .filter(route => route.routeType === 'unit' && unitTypeByCode.get(String(route.unitCode).toLowerCase())?.toLowerCase() !== 'garrison')
-    .map(route => [String(route.unitCode).toLowerCase(), route]));
-  const movements = units.filter(unit => String(unit.unitType || '').toLowerCase() !== 'garrison').map(unit => ({
-    unitCode: unit.unitCode,
-    directions: unitRoutes.get(String(unit.unitCode).toLowerCase())?.directions?.length
-      ? unitRoutes.get(String(unit.unitCode).toLowerCase()).directions
-      : ['Still']
-  }));
-  const scouts = routes.filter(route => route.routeType === 'scout').map(route => ({
-    unitCode: route.unitCode,
-    scoutNumber: route.scoutNumber,
-    noOfScouts: route.noOfScouts || 1,
-    noOfHorses: route.noOfHorses || 0,
-    mission: route.mission || 'PATROL',
-    directions: route.directions
-  }));
-  const splits = turnManagerDatabase.listUnitSplits(turnKey).sort((a, b) => compareUnitCodes(a.unitCode, b.unitCode));
-  const gmActions = [];
-  for (const split of splits) {
-    const moved = unitRoutes.has(String(split.unitCode).toLowerCase());
-    const phase = moved ? 'before' : 'after';
-    gmActions.push({
-      unit: split.parentUnit,
-      text: `Create ${split.unitType} ${split.unitCode} from ${split.parentUnit}${phase === 'after' ? ' after movement' : ''}`
-    });
-    if (split.unitType === 'Tribe') {
-      for (const skill of split.skills || []) {
-        gmActions.push({
-          unit: split.unitCode,
-          text: skillTransferText(skill, split.parentUnit, split.unitCode)
-        });
-      }
-    }
-  }
-  return {
-    movements,
-    scouts,
-    gmActions,
-    validUnits: units.map(unit => ({ unitCode: unit.unitCode, unitName: unit.unitName || '' }))
-  };
+  const baseline = ordersExportBaseline(turnKey);
+  return assembleOrdersExportData({
+    baselineUnits: baseline?.units || [],
+    routeGroups: ordersExportDraftRoutes(turnKey),
+    splitGroups: ordersExportDraftSplits(turnKey)
+  });
 }
 
 function saveCompletedOrders(filePath) {

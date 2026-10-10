@@ -309,6 +309,7 @@ async function savedMovementSaveCurrentRoute() {
     destinationHex: route.destinationHex || route.actualTarget || route.path?.[route.path.length - 1]?.coordinate,
     directions: route.directions,
     path: route.path,
+    conditionalPredictionPaths: route.conditionalPredictionPaths || [],
     knownMp: Number(route.knownMp ?? route.totalMp ?? 0),
     badWeatherMp: Number(route.badWeatherMp ?? route.knownMp ?? route.totalMp ?? 0),
     noOfScouts: type === 'scout' ? scoutCount : null,
@@ -371,6 +372,7 @@ function savedMovementSetStationaryStatus() {
 }
 
 function savedMovementConditionalPredictions(route) {
+  if (Array.isArray(route?.conditionalPredictionPaths) && route.conditionalPredictionPaths.length) return route.conditionalPredictionPaths;
   const order = String(route?.directions?.[route.directions.length - 1] || '').toUpperCase();
   if (typeof ConditionalOrders === 'undefined' || !ConditionalOrders.DEFINITIONS?.[order]) return [];
   const path = route?.path || [];

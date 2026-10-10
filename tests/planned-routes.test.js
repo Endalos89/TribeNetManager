@@ -22,6 +22,7 @@ function route(overrides = {}) {
     ],
     knownMp: 3,
     unknownEntryCount: 0,
+    conditionalPredictionPaths: [],
     ...overrides
   };
 }
@@ -68,6 +69,17 @@ try {
   db.save(route({ turnKey: 'replace-turn', unitCode: '0485E1', routeType: 'scout', destinationHex: 'AA0106' }));
   assert.equal(db.removeAllScoutRoutesForUnit('replace-turn', '0485'), 2, 'Scouting replacement should only remove scouting rows for the selected unit');
   assert.deepEqual(db.list('replace-turn').map(item => item.unitCode), ['0485E1']);
+
+  const conditional = db.save(route({
+    turnKey: 'conditional-turn',
+    routeType: 'scout',
+    directions: ['FOL'],
+    conditionalPredictionPaths: [[
+      { coordinate: 'AA0101', globalCol: 0, globalRow: 0 },
+      { coordinate: 'AA0102', globalCol: 0, globalRow: 1, kind: 'conditional' }
+    ]]
+  }));
+  assert.deepEqual(conditional.conditionalPredictionPaths[0].map(point => point.coordinate), ['AA0101', 'AA0102'], 'conditional scouting paths should survive persistence');
 
   console.log('planned-routes tests passed');
 } finally {

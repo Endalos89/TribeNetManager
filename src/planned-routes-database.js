@@ -26,6 +26,7 @@ class PlannedRoutesDatabase {
         destination_hex TEXT NOT NULL,
         directions_json TEXT NOT NULL,
         path_json TEXT NOT NULL,
+        conditional_prediction_json TEXT NOT NULL DEFAULT '[]',
         known_mp INTEGER NOT NULL DEFAULT 0,
         unknown_entry_count INTEGER NOT NULL DEFAULT 0,
         scout_count INTEGER,
@@ -41,6 +42,7 @@ class PlannedRoutesDatabase {
     if (!columns.has('scout_count')) this.db.exec('ALTER TABLE planned_routes ADD COLUMN scout_count INTEGER;');
     if (!columns.has('horse_count')) this.db.exec('ALTER TABLE planned_routes ADD COLUMN horse_count INTEGER;');
     if (!columns.has('mission')) this.db.exec('ALTER TABLE planned_routes ADD COLUMN mission TEXT;');
+    if (!columns.has('conditional_prediction_json')) this.db.exec("ALTER TABLE planned_routes ADD COLUMN conditional_prediction_json TEXT NOT NULL DEFAULT '[]';");
     this.db.prepare(`UPDATE planned_routes SET tribe_code = substr(unit_code, 1, 4) WHERE tribe_code IS NULL OR tribe_code = ''`).run();
 
     this.db.exec(`
@@ -64,6 +66,7 @@ class PlannedRoutesDatabase {
       destinationHex: row.destination_hex,
       directions: JSON.parse(row.directions_json || '[]'),
       path: JSON.parse(row.path_json || '[]'),
+      conditionalPredictionPaths: JSON.parse(row.conditional_prediction_json || '[]'),
       knownMp: Number(row.known_mp || 0),
       unknownEntryCount: Number(row.unknown_entry_count || 0),
       noOfScouts: row.scout_count == null ? null : Number(row.scout_count),
@@ -100,11 +103,11 @@ class PlannedRoutesDatabase {
       if (existing) {
         this.db.prepare(`
           UPDATE planned_routes SET
-            tribe_code = ?, origin_hex = ?, destination_hex = ?, directions_json = ?, path_json = ?,
+            tribe_code = ?, origin_hex = ?, destination_hex = ?, directions_json = ?, path_json = ?, conditional_prediction_json = ?,
             known_mp = ?, unknown_entry_count = ?, scout_count = ?, horse_count = ?, mission = ?, updated_at = ?
           WHERE id = ?
         `).run(
-          tribeCode, route.originHex, route.destinationHex, JSON.stringify(route.directions || []), JSON.stringify(route.path || []),
+          tribeCode, route.originHex, route.destinationHex, JSON.stringify(route.directions || []), JSON.stringify(route.path || []), JSON.stringify(route.conditionalPredictionPaths || []),
           Number(route.knownMp || 0), Number(route.unknownEntryCount || 0), route.noOfScouts == null ? null : Number(route.noOfScouts), route.noOfHorses == null ? null : Number(route.noOfHorses), route.mission || null, now, Number(existing.id)
         );
         return this.get(Number(existing.id));
@@ -121,12 +124,12 @@ class PlannedRoutesDatabase {
         this.db.prepare(`
           UPDATE planned_routes SET
             turn_key = ?, tribe_code = ?, unit_code = ?, origin_hex = ?, destination_hex = ?,
-            directions_json = ?, path_json = ?, known_mp = ?, unknown_entry_count = ?,
+            directions_json = ?, path_json = ?, conditional_prediction_json = ?, known_mp = ?, unknown_entry_count = ?,
             scout_count = ?, horse_count = ?, mission = ?, updated_at = ?
           WHERE id = ?
         `).run(
           route.turnKey, tribeCode, route.unitCode, route.originHex, route.destinationHex,
-          JSON.stringify(route.directions || []), JSON.stringify(route.path || []),
+          JSON.stringify(route.directions || []), JSON.stringify(route.path || []), JSON.stringify(route.conditionalPredictionPaths || []),
           Number(route.knownMp || 0), Number(route.unknownEntryCount || 0),
           route.noOfScouts == null ? null : Number(route.noOfScouts),
           route.noOfHorses == null ? null : Number(route.noOfHorses),
@@ -153,12 +156,12 @@ class PlannedRoutesDatabase {
     const result = this.db.prepare(`
       INSERT INTO planned_routes(
         turn_key, tribe_code, unit_code, route_type, scout_number, origin_hex, destination_hex,
-        directions_json, path_json, known_mp, unknown_entry_count, created_at, updated_at
+        directions_json, path_json, conditional_prediction_json, known_mp, unknown_entry_count, created_at, updated_at
       , scout_count, horse_count, mission
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       route.turnKey, tribeCode, route.unitCode, type, scoutNumber, route.originHex, route.destinationHex,
-      JSON.stringify(route.directions || []), JSON.stringify(route.path || []),
+      JSON.stringify(route.directions || []), JSON.stringify(route.path || []), JSON.stringify(route.conditionalPredictionPaths || []),
       Number(route.knownMp || 0), Number(route.unknownEntryCount || 0), now, now,
       route.noOfScouts == null ? null : Number(route.noOfScouts), route.noOfHorses == null ? null : Number(route.noOfHorses), route.mission || null
     );
