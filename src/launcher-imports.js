@@ -246,7 +246,10 @@
         if (ordersStatus) ordersStatus.textContent = `Orders export failed: ${result.error}`;
         return;
       }
-      if (ordersStatus) ordersStatus.textContent = `${result.updatedExisting ? 'Updated' : 'Created'} Orders workbook for Turn ${turnKey}: ${result.outputFile}. Saved in the Completed Orders folder.`;
+      const openMessage = result.opened === false
+        ? ` Could not open it automatically: ${result.openError || 'the default spreadsheet application was unavailable'}.`
+        : ' Opened automatically.';
+      if (ordersStatus) ordersStatus.textContent = `${result.updatedExisting ? 'Updated' : 'Created'} Orders workbook for Turn ${turnKey}: ${result.outputFile}. Saved in the Completed Orders folder.${openMessage}`;
     } finally {
       setBusy(false);
       await refreshOrdersStatus();

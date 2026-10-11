@@ -417,12 +417,20 @@ ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
     const destination = resolveOrdersExportPath(app, turnKey);
     const data = buildOrdersExportData(turnKey);
     const exported = await patchOrdersWorkbook({ templatePath, outputPath: destination.outputPath, ...data });
+    let openError = '';
+    try {
+      openError = await shell.openPath(exported.outputPath);
+    } catch (error) {
+      openError = error.message;
+    }
     return {
       canceled: false,
       outputFile: path.basename(exported.outputPath),
       outputPath: exported.outputPath,
       outputFolder: path.dirname(exported.outputPath),
-      updatedExisting: destination.updatedExisting
+      updatedExisting: destination.updatedExisting,
+      opened: !openError,
+      openError: openError || null
     };
   } catch (error) {
     console.error('Orders workbook export failed', error);
