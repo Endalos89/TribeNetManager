@@ -150,30 +150,19 @@ function normalizeMovementRows(rows, maxRows) {
 function validUnitCells(workbook, units) {
   const sheet = workbook.Sheets['Valid Units'];
   if (!sheet) throw new Error('The Orders workbook is missing the Valid Units sheet.');
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
-  const existing = new Map();
-  for (let index = 1; index < rows.length; index++) {
-    const code = String(rows[index]?.[0] || '').trim().toLowerCase();
-    if (code) existing.set(code, index + 1);
-  }
   const cells = [];
-  const usedRows = new Set(existing.values());
-  let nextRow = 2;
-  for (const unit of units || []) {
+  const capacity = rowCapacity(sheet);
+  for (let row = 2; row <= capacity; row++) {
+    cells.push({ address: `A${row}`, value: null });
+    cells.push({ address: `B${row}`, value: null });
+  }
+  for (const [index, unit] of (units || []).entries()) {
     const code = String(unit.unitCode || '').trim();
     if (!code) continue;
-    const key = code.toLowerCase();
-    let row = existing.get(key);
-    if (!row) {
-      while (usedRows.has(nextRow) && nextRow <= rowCapacity(sheet)) nextRow += 1;
-      if (nextRow > rowCapacity(sheet)) throw new Error(`Valid Units has no empty row for ${code}.`);
-      row = nextRow;
-      usedRows.add(row);
-      existing.set(key, row);
-      cells.push({ address: `A${row}`, value: code });
-    }
-    const description = String(unit.unitName || '').trim();
-    if (description) cells.push({ address: `B${row}`, value: description });
+    const row = index + 2;
+    if (row > capacity) throw new Error(`Valid Units has no empty row for ${code}.`);
+    cells.push({ address: `A${row}`, value: code });
+    cells.push({ address: `B${row}`, value: String(unit.unitName || '').trim() });
   }
   return cells;
 }
@@ -251,8 +240,27 @@ function replaceCell(sheetXml, address, value, kind = 'text') {
 
 function patchCells(sheetXml, cells) {
   let output = sheetXml;
-  for (const cell of cells) output = replaceCell(output, cell.address, cell.value, cell.kind);
+  for (const cell of cells) {
+    // Some templates reserve a large !ref range without materialising every
+    // blank row. Clearing those rows is harmless and must not make export fail;
+    // writing a non-empty value to a missing row still reports a real template
+    // problem through replaceCell.
+    const row = Number((String(cell.address).match(/\d+$/) || [0])[0]);
+    if (cell.value === null || cell.value === undefined || cell.value === '') {
+      const rowTag = output.match(new RegExp(`<row\\b[^>]*\\br="${row}"[^>]*>`, 'i'))?.[0];
+      if (!rowTag || /\/\s*>$/.test(rowTag)) continue;
+    }
+    output = replaceCell(output, cell.address, cell.value, cell.kind);
+  }
   return output;
+}
+
+function clearInputRows(sheetXml, firstRow, lastRow, columns) {
+  const cells = [];
+  for (let row = firstRow; row <= lastRow; row++) {
+    for (const column of columns) cells.push({ address: `${column}${row}`, value: null });
+  }
+  return patchCells(sheetXml, cells);
 }
 
 function makeMovementCells(rowNumber, row) {
@@ -323,14 +331,17 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   for (const sheetName of ['Tribe_Movement', 'Scout_Movement', 'GM Actions', 'Valid Units']) if (!paths.has(sheetName)) throw new Error(`Could not locate ${sheetName} inside the workbook archive.`);
 
   let movementXml = await zip.file(paths.get('Tribe_Movement')).async('string');
+  movementXml = clearInputRows(movementXml, 2, template.movementRows + 1, ['B', ...MOVEMENT_COLUMNS.map((_, index) => columnName(6 + index)), 'AT']);
   normalizedMovements.forEach((row, index) => { movementXml = patchCells(movementXml, makeMovementCells(index + 2, row)); });
   zip.file(paths.get('Tribe_Movement'), movementXml);
 
   let scoutXml = await zip.file(paths.get('Scout_Movement')).async('string');
+  scoutXml = clearInputRows(scoutXml, 2, template.scoutRows + 1, ['B', 'C', 'D', 'E', ...SCOUT_COLUMNS.map((_, index) => columnName(6 + index)), 'O']);
   normalizedScouts.forEach((row, index) => { scoutXml = patchCells(scoutXml, makeScoutCells(index + 2, row)); });
   zip.file(paths.get('Scout_Movement'), scoutXml);
 
   let gmXml = await zip.file(paths.get('GM Actions')).async('string');
+  gmXml = clearInputRows(gmXml, 2, template.gmRows + 1, ['A', 'B']);
   const actionCells = [];
   normalizedActions.forEach((action, index) => {
     const row = index + 2;

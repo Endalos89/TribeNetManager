@@ -90,9 +90,25 @@ try {
   assert.equal(routes.removeForUnit('048-12', '0485e1'), 1);
   assert.equal(routes.list('048-12').filter(row => row.unitCode === '0485e1').length, 0);
 
+  // Older builds could save the same planning turn without a zero-padded
+  // month. Deleting the visible split must remove that alias too, otherwise
+  // the deleted unit remains in exports and blocks recreating its code.
+  const now = new Date().toISOString();
+  turns.db.prepare(`
+    INSERT INTO planned_unit_splits(turn_key, parent_unit, unit_code, unit_type, unit_name, start_hex, creation_phase, skills_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('048-012', '0485', '0485e1', 'Element', 'Legacy alias', 'PK1711', 'before', '[]', now, now);
+  assert.equal(turns.listUnitSplits('048-12').filter(row => row.unitCode === '0485e1').length, 2);
+
   const removed = turns.deleteUnitSplit(element.id);
   assert.equal(removed.unitCode, '0485e1');
-  assert.equal(turns.listUnitSplits('048-12').length, 1);
+  assert.equal(turns.listUnitSplits('048-12').filter(row => row.unitCode === '0485e1').length, 0);
+
+  const recreated = turns.addUnitSplit('048-12', {
+    parentUnit: '0485', unitCode: '0485e1', unitType: 'Element', unitName: 'Recreated'
+  });
+  assert.equal(recreated.unitCode, '0485e1');
+  turns.deleteUnitSplit(recreated.id);
 
   const removedAll = turns.deleteAllUnitSplits('048-12');
   assert.equal(removedAll.length, 1);

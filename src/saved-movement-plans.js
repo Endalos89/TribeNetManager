@@ -451,5 +451,3 @@ applyResultTurn = async function applyResultTurnWithSavedPlans(turnKey, options 
 };
 
 savedMovementRefresh().catch(error => console.error('Could not initialise saved movement plans', error));
-setTimeout(() => savedMovementRefresh().catch(() => {}), 300);
-setTimeout(() => savedMovementRefresh().catch(() => {}), 1200);

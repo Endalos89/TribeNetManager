@@ -15,6 +15,7 @@ const { routesDb, removeRoutesForUnit } = require('./planned-routes-ipc');
 const { canonicalTurnKey, inferTurnKeyFromFilename } = require('./turn-key');
 const { patchOrdersWorkbook, saveOrderTemplate, findOrderTemplate } = require('./orders-workbook');
 const { buildOrdersExportData: assembleOrdersExportData } = require('./orders-export-data');
+const { resolveOrdersExportPath } = require('./orders-export-path');
 const {
   planningTurnKeyFromResult,
   resultTurnToStartWorkbook,
@@ -218,7 +219,15 @@ function ordersExportDraftRoutes(turnKey) {
 }
 
 function ordersExportDraftSplits(turnKey) {
-  return ordersExportDraftKeys(turnKey).map(key => turnManagerDatabase.listUnitSplits(key));
+  const groups = ordersExportDraftKeys(turnKey).map(key => turnManagerDatabase.listUnitSplits(key));
+  if (groups.length < 2) return groups;
+  const legacyRouteCodes = new Set(ordersExportDraftRoutes(turnKey)[1]
+    .map(route => String(route.unitCode || '').trim().toLowerCase()).filter(Boolean));
+  // Older builds sometimes stored drafts under the Results key. Recover a
+  // legacy split only when its route is still present; this prevents a split
+  // deleted in the planner from reappearing during export.
+  groups[1] = groups[1].filter(split => legacyRouteCodes.has(String(split.unitCode || '').trim().toLowerCase()));
+  return groups;
 }
 
 function buildOrdersExportData(turnKey) {
@@ -405,16 +414,16 @@ ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
   try {
     const templatePath = await findOrderTemplate(app.getPath('userData'), turnKey);
     if (!templatePath) return { canceled: false, error: `Import a blank Orders workbook for Turn ${turnKey} first.` };
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: 'Export completed Orders workbook',
-      defaultPath: path.join(app.getPath('documents'), `${turnKey.replace('-', '_')}_Orders Complete.xlsx`),
-      filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }]
-    });
-    if (result.canceled || !result.filePath) return { canceled: true };
-    const outputPath = path.extname(result.filePath) ? result.filePath : `${result.filePath}.xlsx`;
+    const destination = resolveOrdersExportPath(app, turnKey);
     const data = buildOrdersExportData(turnKey);
-    const exported = await patchOrdersWorkbook({ templatePath, outputPath, ...data });
-    return { canceled: false, outputFile: path.basename(exported.outputPath), outputPath: exported.outputPath };
+    const exported = await patchOrdersWorkbook({ templatePath, outputPath: destination.outputPath, ...data });
+    return {
+      canceled: false,
+      outputFile: path.basename(exported.outputPath),
+      outputPath: exported.outputPath,
+      outputFolder: path.dirname(exported.outputPath),
+      updatedExisting: destination.updatedExisting
+    };
   } catch (error) {
     console.error('Orders workbook export failed', error);
     return { canceled: false, error: error.message };
@@ -448,12 +457,20 @@ ipcMain.handle('turn-manager:add-unit-split', (_event, turnKey, split) => turnMa
 ipcMain.handle('turn-manager:list-unit-splits', (_event, turnKey) => turnManagerDatabase.listUnitSplits(turnKey));
 ipcMain.handle('turn-manager:delete-unit-split', (_event, id) => {
   const removed = turnManagerDatabase.deleteUnitSplit(id);
-  if (removed) removeRoutesForUnit(removed.turnKey, removed.unitCode);
+  if (removed) {
+    removeRoutesForUnit(removed.turnKey, removed.unitCode);
+    const baseline = resultForPlanTurn(removed.turnKey);
+    if (baseline?.turnKey && String(baseline.turnKey) !== String(removed.turnKey)) removeRoutesForUnit(baseline.turnKey, removed.unitCode);
+  }
   return removed;
 });
 ipcMain.handle('turn-manager:delete-all-unit-splits', (_event, turnKey) => {
   const removed = turnManagerDatabase.deleteAllUnitSplits(turnKey);
-  for (const split of removed) removeRoutesForUnit(split.turnKey, split.unitCode);
+  for (const split of removed) {
+    removeRoutesForUnit(split.turnKey, split.unitCode);
+    const baseline = resultForPlanTurn(split.turnKey);
+    if (baseline?.turnKey && String(baseline.turnKey) !== String(split.turnKey)) removeRoutesForUnit(baseline.turnKey, split.unitCode);
+  }
   return removed;
 });
 ipcMain.handle('turn-manager:save-context', (_event, turnKey, notes) => turnManagerDatabase.saveContext(turnKey, notes));

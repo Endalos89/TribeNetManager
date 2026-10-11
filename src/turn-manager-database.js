@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const { canonicalTurnKey } = require('./turn-key');
 
 function normalizeUnitCode(value) {
   return String(value || '').trim().toLowerCase();
@@ -235,6 +236,7 @@ class TurnManagerDatabase {
   }
 
   addUnitSplit(turnKey, split) {
+    turnKey = canonicalTurnKey(turnKey) || turnKey;
     const parentUnit = normalizeUnitCode(split?.parentUnit);
     const unitCode = normalizeUnitCode(split?.unitCode);
     const unitType = ['Tribe', 'Element', 'Fleet', 'Garrison', 'Courier'].includes(split?.unitType) ? split.unitType : null;
@@ -257,7 +259,7 @@ class TurnManagerDatabase {
     }
 
     if (startUnits.some(unit => normalizeUnitCode(unit.unit) === unitCode)) throw new Error(`${unitCode} already exists in the beginning-of-turn workbook.`);
-    const existing = this.db.prepare(`SELECT id FROM planned_unit_splits WHERE turn_key=? AND unit_code=?`).get(turnKey, unitCode);
+    const existing = this.listUnitSplits(turnKey).find(row => normalizeUnitCode(row.unitCode) === unitCode);
     if (existing) throw new Error(`${unitCode} is already planned for Turn ${turnKey}.`);
 
     this.validateCreationCapacity(turnKey, parentUnit, unitType);
@@ -292,19 +294,25 @@ class TurnManagerDatabase {
 
   listUnitSplits(turnKey) {
     if (!turnKey) return [];
+    const requested = canonicalTurnKey(turnKey) || turnKey;
     return this.db.prepare(`
       SELECT id, turn_key AS turnKey, parent_unit AS parentUnit, unit_code AS unitCode,
              unit_type AS unitType, unit_name AS unitName, start_hex AS startHex,
              creation_phase AS creationPhase, skills_json AS skillsJson,
              created_at AS createdAt, updated_at AS updatedAt
-      FROM planned_unit_splits WHERE turn_key=? ORDER BY parent_unit, unit_code
-    `).all(turnKey).map(row => ({ ...row, skills: JSON.parse(row.skillsJson || '[]') }));
+      FROM planned_unit_splits ORDER BY parent_unit, unit_code
+    `).all().filter(row => (canonicalTurnKey(row.turnKey) || row.turnKey) === requested)
+      .map(row => ({ ...row, skills: JSON.parse(row.skillsJson || '[]') }));
   }
 
   deleteUnitSplit(id) {
     const row = this.getUnitSplit(id);
     if (!row) return null;
-    this.db.prepare('DELETE FROM planned_unit_splits WHERE id=?').run(Number(id));
+    const key = canonicalTurnKey(row.turnKey) || row.turnKey;
+    const aliases = this.db.prepare('SELECT id, turn_key AS turnKey FROM planned_unit_splits WHERE lower(unit_code)=lower(?)').all(row.unitCode)
+      .filter(candidate => (canonicalTurnKey(candidate.turnKey) || candidate.turnKey) === key)
+      .map(candidate => Number(candidate.id));
+    for (const candidate of aliases) this.db.prepare('DELETE FROM planned_unit_splits WHERE id=?').run(candidate);
     return row;
   }
 
@@ -312,7 +320,11 @@ class TurnManagerDatabase {
     if (!turnKey) return [];
     const rows = this.listUnitSplits(turnKey);
     if (!rows.length) return [];
-    this.db.prepare('DELETE FROM planned_unit_splits WHERE turn_key=?').run(turnKey);
+    const key = canonicalTurnKey(turnKey) || turnKey;
+    const ids = this.db.prepare('SELECT id, turn_key AS turnKey FROM planned_unit_splits').all()
+      .filter(candidate => (canonicalTurnKey(candidate.turnKey) || candidate.turnKey) === key)
+      .map(candidate => Number(candidate.id));
+    for (const id of ids) this.db.prepare('DELETE FROM planned_unit_splits WHERE id=?').run(id);
     return rows;
   }
 

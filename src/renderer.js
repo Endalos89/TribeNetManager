@@ -177,7 +177,11 @@ function mapResourceIcon(name) {
   const filename = window.TribeNetItemIconManifest?.[key];
   if (!filename || typeof Image === 'undefined') return null;
   let image = mapResourceIconCache.get(filename);
-  if (!image) { image = new Image(); image.src = `item-icons/${filename}`; image.decoding = 'async'; image.onload = () => draw(); mapResourceIconCache.set(filename, image); }
+  if (!image) {
+    image = new Image(); image.src = `item-icons/${filename}`; image.decoding = 'async';
+    image.onload = () => typeof scheduleMapDraw === 'function' ? scheduleMapDraw() : draw();
+    mapResourceIconCache.set(filename, image);
+  }
   return image.complete && image.naturalWidth > 0 ? image : null;
 }
 function drawMapResourceIcons(point, radius, data) {
@@ -295,6 +299,17 @@ function setZoom(newScale, screenX, screenY) {
   if(typeof IsoMapper!=='undefined' && IsoMapper.enabled)IsoMapper.interact();
   const rect = canvas.getBoundingClientRect(), x = screenX ?? rect.width / 2, y = screenY ?? rect.height / 2, before = baseFromScreen(x, y);
   state.scale = clamped; const after = baseFromScreen(x, y); state.cameraX += before.x - after.x; state.cameraY += before.y - after.y; requestVisibleData(); scheduleMapDraw();
+}
+function panMapByScreen(deltaX, deltaY) {
+  if (state.mode !== 'detail') return;
+  const delta = typeof IsoMapper !== 'undefined' && IsoMapper.enabled
+    ? IsoGeometry.unproject(deltaX / state.scale, deltaY / state.scale)
+    : { x: deltaX / state.scale, y: deltaY / state.scale };
+  state.cameraX += delta.x;
+  state.cameraY += delta.y;
+  if (typeof IsoMapper !== 'undefined' && IsoMapper.enabled) IsoMapper.interact();
+  scheduleMapDraw();
+  requestVisibleData();
 }
 function goToCoordinate() {
   const parsed = parseCoordinate($('coordinateInput').value);
@@ -660,6 +675,19 @@ function bindEvents() {
   $('backupButton').addEventListener('click', async () => { const backupPath = await window.tribenet.createBackup(); $('dataPathLabel').textContent = `Backup created: ${backupPath}`; await window.tribenet.showBackup(backupPath); });
   $('updateButton').addEventListener('click', async () => { $('updateButton').disabled = true; $('updateMessage').textContent = 'Checking for updates…'; await window.tribenet.checkForUpdates(); setTimeout(() => { $('updateButton').disabled = false; }, 1000); });
   $('installUpdateButton').addEventListener('click', () => window.tribenet.installUpdate());
+  window.addEventListener('keydown', event => {
+    if (state.mode !== 'detail' || event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target;
+    if (target?.matches?.('input, textarea, select, button, [contenteditable="true"]')) return;
+    const direction = {
+      w: [0, -1], a: [-1, 0], s: [0, 1], d: [1, 0],
+      arrowup: [0, -1], arrowleft: [-1, 0], arrowdown: [0, 1], arrowright: [1, 0]
+    }[String(event.key || '').toLowerCase()];
+    if (!direction) return;
+    event.preventDefault();
+    const distance = Math.max(36, Math.min(110, state.scale * 1.5));
+    panMapByScreen(direction[0] * distance, direction[1] * distance);
+  });
   window.addEventListener('resize', () => { if (state.mode === 'detail') { resizeCanvas(); draw(); requestVisibleData(); } });
   canvas.addEventListener('mousedown', e => { state.dragging = true; state.dragStart = { x:e.clientX,y:e.clientY,cameraX:state.cameraX,cameraY:state.cameraY }; canvas.classList.add('dragging'); });
   window.addEventListener('mousemove', e => { if (!state.dragging) return; const dx=(e.clientX-state.dragStart.x)/state.scale, dy=(e.clientY-state.dragStart.y)/state.scale; const delta=typeof IsoMapper!=="undefined" && IsoMapper.enabled ? IsoGeometry.unproject(dx,dy) : {x:dx,y:dy}; state.cameraX = state.dragStart.cameraX-delta.x; state.cameraY = state.dragStart.cameraY-delta.y; if(typeof IsoMapper!=='undefined' && IsoMapper.enabled)IsoMapper.interact(); scheduleMapDraw(); requestVisibleData(); });

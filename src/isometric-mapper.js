@@ -61,7 +61,7 @@ const IsoMapper = (() => {
     const filename=window.TribeNetItemIconManifest?.[iconKey(name)];
     if(!filename || typeof Image==='undefined')return null;
     let image=resourceIconCache.get(filename);
-    if(!image){image=new Image();image.src=`item-icons/${filename}`;image.decoding='async';image.onload=()=>{if(typeof draw==='function')draw();};resourceIconCache.set(filename,image);}
+    if(!image){image=new Image();image.src=`item-icons/${filename}`;image.decoding='async';image.onload=()=>{if(typeof scheduleMapDraw==='function')scheduleMapDraw();else if(typeof draw==='function')draw();};resourceIconCache.set(filename,image);}
     return image.complete&&image.naturalWidth>0?image:null;
   }
   function drawResourceIcons(t) {

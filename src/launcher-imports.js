@@ -246,7 +246,7 @@
         if (ordersStatus) ordersStatus.textContent = `Orders export failed: ${result.error}`;
         return;
       }
-      if (ordersStatus) ordersStatus.textContent = `Orders workbook exported: ${result.outputFile}.`;
+      if (ordersStatus) ordersStatus.textContent = `${result.updatedExisting ? 'Updated' : 'Created'} Orders workbook for Turn ${turnKey}: ${result.outputFile}. Saved in the Completed Orders folder.`;
     } finally {
       setBusy(false);
       await refreshOrdersStatus();
