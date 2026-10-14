@@ -10,6 +10,8 @@ const service = fs.readFileSync(path.join(root, 'src', 'ravenpost-service.js'), 
 const ipc = fs.readFileSync(path.join(root, 'src', 'ravenpost-ipc.js'), 'utf8');
 const launcher = fs.readFileSync(path.join(root, 'src', 'ravenpost-launcher.js'), 'utf8');
 const notifications = fs.readFileSync(path.join(root, 'src', 'ravenpost-notifications.js'), 'utf8');
+const ui = fs.readFileSync(path.join(root, 'src', 'ravenpost.js'), 'utf8');
+const html = fs.readFileSync(path.join(root, 'src', 'ravenpost.html'), 'utf8');
 const viewState = fs.readFileSync(path.join(root, 'src', 'update-view-state.js'), 'utf8');
 
 assert.match(preload, /exposeInMainWorld\(['"]ravenpost['"]/, 'Ravenpost must stay behind the preload IPC bridge');
@@ -19,6 +21,11 @@ assert.doesNotMatch(preload, /refresh_token|client_secret/i, 'OAuth secrets must
 assert.match(service, /safeStorage\.encryptString/, 'OAuth credentials should use Electron protected storage where available');
 assert.match(service, /gmail\.readonly/, 'Ravenpost needs Gmail read scope');
 assert.match(service, /gmail\.send/, 'Ravenpost needs Gmail send scope');
+assert.match(service, /Cc: /, 'Reply All should emit RFC email Cc header');
+assert.match(ui, /function setReplyMode\(all\)/, 'Ravenpost must support both Reply and Reply All');
+assert.match(html, /id="rpReplyAllButton"/, 'Reply All control must be visible');
+assert.match(html, /id="rpContactDirectory"/, 'Contact Directory must be visible');
+assert.match(preload, /ravenpost:create-clan/, 'Clan creation must use IPC');
 assert.match(service, /included_addresses/, 'Ravenpost must support an approved-address inclusion list');
 assert.match(service, /nextPageToken/, 'Historical Gmail imports must follow pagination');
 assert.match(service, /'outbound' : 'inbound'/, 'Gmail history must distinguish sent and received mail');
@@ -36,6 +43,8 @@ try {
   db = new RavenpostDatabase(tempRoot);
   const now = new Date().toISOString();
 
+  db.createClan('The Ravens');
+  assert.ok(db.listClans().some(clan => clan.code === 'The Ravens'));
   db.ensureContact('Trader@example.com', 'Trader');
   db.upsertMessage({
     gmailId: 'm1',
@@ -69,6 +78,9 @@ try {
 
   db.updateContact('trader@example.com', { status: 'linked', clanCode: '0485' });
   assert.strictEqual(db.getContact('TRADER@example.com').clanCode, '0485', 'Email matching should be case-insensitive');
+  db.updateContact('trader@example.com', { status: 'linked', contactType: 'GM' });
+  assert.strictEqual(db.getContact('trader@example.com').contactType, 'GM', 'GM contact type should persist');
+  db.updateContact('trader@example.com', { status: 'linked', contactType: 'Clan', clanCode: '0485' });
   assert.strictEqual(db.listMessages('linked').length, 2, 'All mail from the linked sender should appear in linked view');
 
   db.updateContact('trader@example.com', { status: 'not_interested' });
