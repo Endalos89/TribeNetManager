@@ -104,6 +104,7 @@ function gmailMessageToRecord(message) {
     senderEmail: sender.email,
     senderName: sender.name,
     recipient: getHeader(payload, 'To'),
+    cc: getHeader(payload, 'Cc'),
     subject: getHeader(payload, 'Subject') || '(No subject)',
     snippet: String(message.snippet || ''),
     bodyText: bodyTextFromPayload(payload),
@@ -126,7 +127,7 @@ function encodedSubject(value) {
     : subject;
 }
 
-function buildRawMessage({ from, to, subject, bodyText, inReplyTo = '', references = '' }) {
+function buildRawMessage({ from, to, cc = '', subject, bodyText, inReplyTo = '', references = '' }) {
   const headers = [
     `From: ${safeHeader(from)}`,
     `To: ${safeHeader(to)}`,
@@ -135,6 +136,7 @@ function buildRawMessage({ from, to, subject, bodyText, inReplyTo = '', referenc
     'Content-Type: text/plain; charset="UTF-8"',
     'Content-Transfer-Encoding: 8bit'
   ];
+  if (cc) headers.push(`Cc: ${safeHeader(cc)}`);
   if (inReplyTo) headers.push(`In-Reply-To: ${safeHeader(inReplyTo)}`);
   if (references) headers.push(`References: ${safeHeader(references)}`);
   return base64Url(`${headers.join('\r\n')}\r\n\r\n${String(bodyText || '').replace(/\r?\n/g, '\r\n')}`);
@@ -460,11 +462,13 @@ class RavenpostService {
     return { firstSync: !initialComplete || needsHistory, newMessages, settings: this.getSettings(), counts: this.db.getCounts() };
   }
 
-  async sendMessage({ to, subject, bodyText, replyToGmailId = null }) {
+  async sendMessage({ to, cc = '', subject, bodyText, replyToGmailId = null }) {
     const recipient = String(to || '').trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(recipient)) {
       throw new Error('Enter a valid recipient email address.');
     }
+    const ccRecipients = String(cc || '').split(/[;,]/).map(value => parseAddress(value).email).filter(Boolean);
+    if (ccRecipients.some(email => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))) throw new Error('Invalid CC recipient.');
     const account = this.db.getSetting('account_email', '');
     if (!account) throw new Error('Connect Ravenpost to Gmail before sending mail.');
 
@@ -485,6 +489,7 @@ class RavenpostService {
     const raw = buildRawMessage({
       from: account,
       to: recipient,
+      cc: ccRecipients.filter(email => email !== recipient && email !== account.toLowerCase()).join(', '),
       subject: finalSubject,
       bodyText,
       inReplyTo,
@@ -504,6 +509,7 @@ class RavenpostService {
       senderEmail: account,
       senderName: 'Ravenpost',
       recipient,
+      cc: ccRecipients.join(', '),
       subject: finalSubject,
       snippet: String(bodyText || '').replace(/\s+/g, ' ').slice(0, 180),
       bodyText: String(bodyText || ''),
@@ -514,25 +520,9 @@ class RavenpostService {
   }
 
   listClans() {
-    if (!this.resultsDatabase) return [];
-    const found = new Map();
-    const turns = this.resultsDatabase.listTurns().slice().sort((a, b) => b.turnSort - a.turnSort);
-    for (const turn of turns) {
-      const detail = this.resultsDatabase.getTurn(turn.turnKey);
-      for (const unit of detail?.units || []) {
-        if (String(unit.unitType || '').toLowerCase() !== 'tribe') continue;
-        const code = String(unit.unitCode || '').trim();
-        if (!code || found.has(code)) continue;
-        found.set(code, {
-          code,
-          label: `Tribe ${code}`,
-          currentHex: unit.currentHex || null,
-          lastSeenTurn: turn.turnKey
-        });
-      }
-    }
-    return [...found.values()].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+    return this.db.listClans();
   }
+
 }
 
 module.exports = {
