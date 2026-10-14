@@ -136,6 +136,7 @@ function registerHandlers() {
     return contact;
   });
   ipcMain.handle('ravenpost:list-clans', () => requireService().listClans());
+  ipcMain.handle('ravenpost:create-clan', (_event, name) => requireDb().createClan(name));
   ipcMain.handle('ravenpost:send', (_event, payload) => requireService().sendMessage(payload || {}));
   ipcMain.handle('ravenpost:backup', () => requireDb().createBackup());
   ipcMain.handle('ravenpost:open-external', (_event, url) => {
