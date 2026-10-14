@@ -37,6 +37,13 @@
     unknownBanner: $('rpUnknownBanner'),
     ignoredBanner: $('rpIgnoredBanner'),
     clanSelect: $('rpClanSelect'),
+    contactType: $('rpContactType'),
+    newClan: $('rpNewClan'),
+    createClan: $('rpCreateClanButton'),
+    replyButton: $('rpReplyButton'),
+    replyAllButton: $('rpReplyAllButton'),
+    replyRecipients: $('rpReplyRecipients'),
+    replyCc: $('rpReplyCc'),
     linkClan: $('rpLinkClanButton'),
     ignoreSender: $('rpIgnoreSenderButton'),
     restoreSender: $('rpRestoreSenderButton'),
@@ -159,7 +166,7 @@
 
   function renderClans() {
     const current = els.clanSelect.value;
-    els.clanSelect.innerHTML = '<option value="">Choose Clan / Tribe…</option>' +
+    els.clanSelect.innerHTML = '<option value="">Choose clan…</option>' +
       state.clans.map(clan =>
         `<option value="${escapeHtml(clan.code)}">${escapeHtml(clan.label)}${clan.currentHex ? ` · ${escapeHtml(clan.currentHex)}` : ''}</option>`
       ).join('');
@@ -236,7 +243,7 @@
     els.ignoredBanner.classList.toggle('hidden', !inbound || status !== 'not_interested');
     const linked = inbound && status === 'linked' && message.clanCode;
     els.detailClan.classList.toggle('hidden', !linked);
-    els.detailClan.textContent = linked ? `Clan / Tribe ${message.clanCode}` : '';
+    els.detailClan.textContent = linked ? (message.contactType === 'Clan' ? `Clan ${message.clanCode}` : message.contactType) : '';
   }
 
   async function selectMessage(gmailId) {
@@ -256,6 +263,7 @@
     els.body.textContent = message.bodyText || message.snippet || '(No message body)';
     els.replySection.classList.toggle('hidden', outgoing);
     els.replyTo.textContent = outgoing ? '' : message.senderEmail;
+    if (!outgoing) setReplyMode(false);
     els.replyBody.value = '';
     els.replyStatus.textContent = '';
     renderContactAction(message);
@@ -417,6 +425,24 @@
     }
   }
 
+  function parseEmails(value) {
+    const matches = String(value || '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
+    return [...new Set(matches.map(email => email.toLowerCase()))];
+  }
+
+  function setReplyMode(all) {
+    const message = state.selected;
+    if (!message) return;
+    const own = String(state.settings?.accountEmail || '').toLowerCase();
+    const from = message.senderEmail.toLowerCase();
+    const otherTo = parseEmails(message.recipient).filter(email => email !== own && email !== from);
+    const cc = parseEmails(message.cc).filter(email => email !== own && email !== from && !otherTo.includes(email));
+    els.replyRecipients.value = all ? [from, ...otherTo].join(', ') : from;
+    els.replyCc.value = all ? cc.join(', ') : '';
+    els.replyButton.classList.toggle('accent', !all);
+    els.replyAllButton.classList.toggle('accent', all);
+  }
+
   async function sendReply() {
     if (!state.selected || state.selected.direction === 'outbound') return;
     const bodyText = els.replyBody.value.trim();
@@ -424,11 +450,19 @@
       els.replyStatus.textContent = 'Write a reply first.';
       return;
     }
+    const to = parseEmails(els.replyRecipients.value);
+    const cc = parseEmails(els.replyCc.value).filter(address => !to.includes(address));
+    if (to.length !== 1) {
+      els.replyStatus.textContent = 'Choose exactly one To recipient; put additional recipients in CC.';
+      return;
+    }
+    if (![...to, ...cc].length || !confirm('Send Raven to: ' + to.concat(cc).join(', ') + '?')) return;
     els.sendReply.disabled = true;
     els.replyStatus.textContent = 'Sending raven…';
     try {
       await api.sendMessage({
-        to: state.selected.senderEmail,
+        to: to[0],
+        cc: cc.join(', '),
         subject: state.selected.subject || '(No subject)',
         bodyText,
         replyToGmailId: state.selected.gmailId
@@ -488,8 +522,25 @@
   els.settingsButton.addEventListener('click', openSettings);
   els.linkClan.addEventListener('click', () => updateCurrentContact({
     status: 'linked',
+    contactType: els.contactType.value,
     clanCode: els.clanSelect.value
   }));
+  els.contactType.addEventListener('change', () => {
+    const isClan = els.contactType.value === 'Clan';
+    els.clanSelect.classList.toggle('hidden', !isClan);
+    els.newClan.classList.toggle('hidden', !isClan);
+    els.createClan.classList.toggle('hidden', !isClan);
+  });
+  els.createClan.addEventListener('click', async () => {
+    try {
+      state.clans = await api.createClan(els.newClan.value);
+      renderClans();
+      els.clanSelect.value = els.newClan.value.trim();
+      els.newClan.value = '';
+    } catch (error) { setHeaderStatus(error.message, 'error'); }
+  });
+  els.replyButton.addEventListener('click', () => setReplyMode(false));
+  els.replyAllButton.addEventListener('click', () => setReplyMode(true));
   els.ignoreSender.addEventListener('click', () => updateCurrentContact({ status: 'not_interested' }));
   els.restoreSender.addEventListener('click', () => updateCurrentContact({ status: 'unlinked' }));
   els.sendReply.addEventListener('click', sendReply);
