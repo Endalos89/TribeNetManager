@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('ravenpost', {
   listContacts: status => ipcRenderer.invoke('ravenpost:list-contacts', status || null),
   updateContact: (email, update) => ipcRenderer.invoke('ravenpost:update-contact', email, update),
   listClans: () => ipcRenderer.invoke('ravenpost:list-clans'),
+  createClan: name => ipcRenderer.invoke('ravenpost:create-clan', name),
   sendMessage: payload => ipcRenderer.invoke('ravenpost:send', payload),
   createBackup: () => ipcRenderer.invoke('ravenpost:backup'),
   openExternal: url => ipcRenderer.invoke('ravenpost:open-external', url),
