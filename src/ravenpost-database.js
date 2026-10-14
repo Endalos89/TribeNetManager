@@ -27,6 +27,10 @@ class RavenpostDatabase {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS ravenpost_clans (
+        name TEXT PRIMARY KEY COLLATE NOCASE,
+        created_at TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS ravenpost_contacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -65,6 +69,21 @@ class RavenpostDatabase {
       CREATE INDEX IF NOT EXISTS idx_ravenpost_messages_thread
         ON ravenpost_messages(thread_id, received_at ASC);
     `);
+    const contactColumns = this.db.prepare('PRAGMA table_info(ravenpost_contacts)').all().map(c => c.name);
+    if (!contactColumns.includes('contact_type')) this.db.exec("ALTER TABLE ravenpost_contacts ADD COLUMN contact_type TEXT NOT NULL DEFAULT 'Clan'");
+    const messageColumns = this.db.prepare('PRAGMA table_info(ravenpost_messages)').all().map(c => c.name);
+    if (!messageColumns.includes('cc')) this.db.exec("ALTER TABLE ravenpost_messages ADD COLUMN cc TEXT NOT NULL DEFAULT ''");
+  }
+
+  listClans() {
+    return this.db.prepare('SELECT name FROM ravenpost_clans ORDER BY name COLLATE NOCASE').all().map(row => ({ code: row.name, label: row.name }));
+  }
+
+  createClan(name) {
+    const value = String(name || '').trim();
+    if (!value || value.length > 80) throw new Error('Enter a clan name (up to 80 characters).');
+    this.db.prepare("INSERT OR IGNORE INTO ravenpost_clans(name, created_at) VALUES (?, ?)").run(value, new Date().toISOString());
+    return this.listClans();
   }
 
   clearMessages() {
@@ -116,7 +135,7 @@ class RavenpostDatabase {
     if (!normalized) return null;
     const row = this.db.prepare(`
       SELECT id, email, display_name AS displayName, status,
-             clan_code AS clanCode, created_at AS createdAt, updated_at AS updatedAt
+             clan_code AS clanCode, contact_type AS contactType, created_at AS createdAt, updated_at AS updatedAt
       FROM ravenpost_contacts
       WHERE email = ?
     `).get(normalized);
@@ -130,14 +149,16 @@ class RavenpostDatabase {
     const status = ['unlinked', 'linked', 'not_interested'].includes(update.status)
       ? update.status
       : 'unlinked';
-    const clanCode = status === 'linked' ? String(update.clanCode || '').trim() : null;
-    if (status === 'linked' && !clanCode) throw new Error('Choose a Clan / Tribe before linking this sender.');
+    const contactType = ['Clan', 'GM', 'Other'].includes(update.contactType) ? update.contactType : 'Clan';
+    const clanCode = status === 'linked' && contactType === 'Clan' ? String(update.clanCode || '').trim() : null;
+    if (status === 'linked' && contactType === 'Clan' && !clanCode) throw new Error('Choose a Clan / Tribe before linking this sender.');
+    if (clanCode) this.createClan(clanCode);
     const now = new Date().toISOString();
     this.db.prepare(`
       UPDATE ravenpost_contacts
-      SET status = ?, clan_code = ?, updated_at = ?
+      SET status = ?, clan_code = ?, contact_type = ?, updated_at = ?
       WHERE email = ?
-    `).run(status, clanCode, now, normalized);
+    `).run(status, clanCode, contactType, now, normalized);
     return this.getContact(normalized);
   }
 
@@ -150,7 +171,7 @@ class RavenpostDatabase {
     }
     return this.db.prepare(`
       SELECT c.id, c.email, c.display_name AS displayName, c.status,
-             c.clan_code AS clanCode, c.created_at AS createdAt, c.updated_at AS updatedAt,
+             c.clan_code AS clanCode, c.contact_type AS contactType, c.created_at AS createdAt, c.updated_at AS updatedAt,
              COUNT(m.gmail_id) AS messageCount,
              MAX(m.received_at) AS lastMessageAt
       FROM ravenpost_contacts c
@@ -172,15 +193,16 @@ class RavenpostDatabase {
     this.db.prepare(`
       INSERT INTO ravenpost_messages(
         gmail_id, thread_id, direction, sender_email, sender_name, recipient,
-        subject, snippet, body_text, received_at, unread, message_id_header,
+        cc, subject, snippet, body_text, received_at, unread, message_id_header,
         references_header, in_reply_to_header, synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(gmail_id) DO UPDATE SET
         thread_id = excluded.thread_id,
         direction = excluded.direction,
         sender_email = excluded.sender_email,
         sender_name = excluded.sender_name,
         recipient = excluded.recipient,
+        cc = excluded.cc,
         subject = excluded.subject,
         snippet = excluded.snippet,
         body_text = excluded.body_text,
@@ -197,6 +219,7 @@ class RavenpostDatabase {
       normalizeEmail(message.senderEmail),
       String(message.senderName || '').trim(),
       String(message.recipient || '').trim(),
+      String(message.cc || '').trim(),
       String(message.subject || ''),
       String(message.snippet || ''),
       String(message.bodyText || ''),
@@ -214,13 +237,13 @@ class RavenpostDatabase {
     const row = this.db.prepare(`
       SELECT m.gmail_id AS gmailId, m.thread_id AS threadId, m.direction,
              m.sender_email AS senderEmail, m.sender_name AS senderName,
-             m.recipient, m.subject, m.snippet, m.body_text AS bodyText,
+             m.recipient, m.cc, m.subject, m.snippet, m.body_text AS bodyText,
              m.received_at AS receivedAt, m.unread,
              m.message_id_header AS messageIdHeader,
              m.references_header AS referencesHeader,
              m.in_reply_to_header AS inReplyToHeader,
              m.synced_at AS syncedAt,
-             c.status AS contactStatus, c.clan_code AS clanCode,
+             c.status AS contactStatus, c.clan_code AS clanCode, c.contact_type AS contactType,
              c.display_name AS contactDisplayName
       FROM ravenpost_messages m
       LEFT JOIN ravenpost_contacts c ON lower(c.email) = lower(m.sender_email)
@@ -248,7 +271,7 @@ class RavenpostDatabase {
              m.sender_email AS senderEmail, m.sender_name AS senderName,
              m.recipient, m.subject, m.snippet, m.received_at AS receivedAt,
              m.unread, COALESCE(c.status, 'unlinked') AS contactStatus,
-             c.clan_code AS clanCode, c.display_name AS contactDisplayName
+             c.clan_code AS clanCode, c.contact_type AS contactType, c.display_name AS contactDisplayName
       FROM ravenpost_messages m
       LEFT JOIN ravenpost_contacts c ON lower(c.email) = lower(m.sender_email)
       WHERE ${where}
