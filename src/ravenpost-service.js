@@ -190,7 +190,16 @@ class RavenpostService {
       if (addresses.some(email => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))) {
         throw new Error('Include only valid email addresses, separated by commas or new lines.');
       }
-      this.db.setSetting('included_addresses', [...new Set(addresses)].join('\n'));
+      const next = [...new Set(addresses)].join('\n');
+      if (next !== this.db.getSetting('included_addresses', '')) {
+        // Cached messages may include mail from a prior account or prior allowlist.
+        // Rebuild the Ravenpost-only cache when the allowlist changes.
+        this.db.clearMessages();
+        this.db.deleteSetting('synced_addresses');
+        this.db.deleteSetting('last_sync_at');
+        this.db.setSetting('initial_sync_complete', '0');
+      }
+      this.db.setSetting('included_addresses', next);
     }
     if (Object.prototype.hasOwnProperty.call(input, 'clientId')) {
       this.db.setSetting('client_id', String(input.clientId || '').trim());
