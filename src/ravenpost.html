@@ -98,13 +98,14 @@
           <section id="rpUnknownBanner" class="rp-link-banner hidden">
             <div>
               <strong>This sender is not linked yet.</strong>
-              <span>Link the address to one of your known Clans / Tribes, or mark it Not Interested.</span>
+              <span>Assign this address to a named clan, GM, or Other contact. Only approved addresses are imported.</span>
             </div>
             <div class="rp-link-actions">
-              <select id="rpClanSelect">
-                <option value="">Choose Clan / Tribe…</option>
-              </select>
-              <button id="rpLinkClanButton" class="button accent">Link Sender</button>
+              <select id="rpContactType"><option value="Clan">Clan</option><option value="GM">GM</option><option value="Other">Other</option></select>
+              <select id="rpClanSelect"><option value="">Choose clan…</option></select>
+              <input id="rpNewClan" type="text" placeholder="New clan name" aria-label="New clan name" />
+              <button id="rpCreateClanButton" class="button">Create Clan</button>
+              <button id="rpLinkClanButton" class="button accent">Save Contact</button>
               <button id="rpIgnoreSenderButton" class="button">Not Interested</button>
             </div>
           </section>
@@ -124,10 +125,16 @@
               <div><p class="eyebrow">REPLY</p><h2>Send a raven back</h2></div>
               <span id="rpReplyTo"></span>
             </div>
+            <label class="field-label" for="rpReplyRecipients">Recipients (To, separated by commas)</label>
+            <input id="rpReplyRecipients" type="text" autocomplete="off" />
+            <label class="field-label" for="rpReplyCc">CC (separated by commas)</label>
+            <input id="rpReplyCc" type="text" autocomplete="off" />
             <textarea id="rpReplyBody" rows="7" placeholder="Write your reply…"></textarea>
             <div class="rp-reply-actions">
               <span id="rpReplyStatus" class="save-status"></span>
-              <button id="rpSendReplyButton" class="button accent">Send Raven</button>
+              <button id="rpReplyButton" class="button">Reply</button>
+              <button id="rpReplyAllButton" class="button">Reply All</button>
+              <button id="rpSendReplyButton" class="button accent">Send Reply</button>
             </div>
           </section>
         </article>
