@@ -239,9 +239,14 @@
   function renderContactAction(message) {
     const inbound = message.direction !== 'outbound';
     const status = message.contactStatus || 'unlinked';
-    els.unknownBanner.classList.toggle('hidden', !inbound || status !== 'unlinked');
+    els.unknownBanner.classList.toggle('hidden', !inbound || status === 'not_interested');
+    if (inbound) {
+      els.contactType.value = message.contactType || 'Clan';
+      els.clanSelect.value = message.clanCode || '';
+      els.contactType.dispatchEvent(new Event('change'));
+    }
     els.ignoredBanner.classList.toggle('hidden', !inbound || status !== 'not_interested');
-    const linked = inbound && status === 'linked' && message.clanCode;
+    const linked = inbound && status === 'linked';
     els.detailClan.classList.toggle('hidden', !linked);
     els.detailClan.textContent = linked ? (message.contactType === 'Clan' ? `Clan ${message.clanCode}` : message.contactType) : '';
   }
@@ -437,8 +442,8 @@
     const from = message.senderEmail.toLowerCase();
     const otherTo = parseEmails(message.recipient).filter(email => email !== own && email !== from);
     const cc = parseEmails(message.cc).filter(email => email !== own && email !== from && !otherTo.includes(email));
-    els.replyRecipients.value = all ? [from, ...otherTo].join(', ') : from;
-    els.replyCc.value = all ? cc.join(', ') : '';
+    els.replyRecipients.value = from;
+    els.replyCc.value = all ? [...otherTo, ...cc].join(', ') : '';
     els.replyButton.classList.toggle('accent', !all);
     els.replyAllButton.classList.toggle('accent', all);
   }
