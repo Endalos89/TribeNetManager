@@ -59,6 +59,8 @@
     clientId: $('rpClientId'),
     clientSecret: $('rpClientSecret'),
     pollSeconds: $('rpPollSeconds'),
+    includedAddresses: $('rpIncludedAddresses'),
+    saveAddresses: $('rpSaveAddressesButton'),
     notifications: $('rpNotificationsEnabled'),
     sound: $('rpSoundEnabled'),
     credentialNote: $('rpCredentialStorageNote'),
@@ -135,6 +137,7 @@
     els.clientSecret.placeholder = s.hasClientSecret
       ? 'Saved securely · leave blank to keep'
       : 'Paste OAuth client secret';
+    els.includedAddresses.value = s.includedAddresses || '';
     els.pollSeconds.value = String(s.pollSeconds || 60);
     if (!els.pollSeconds.value) els.pollSeconds.value = '60';
     els.notifications.checked = Boolean(s.notificationsEnabled);
@@ -312,7 +315,7 @@
       const result = await api.syncNow();
       const count = result.newMessages?.length || 0;
       setHeaderStatus(result.firstSync
-        ? `Initial inbox imported · ${count} messages`
+        ? `Matching Gmail history imported · ${count} messages`
         : (count ? `${count} new raven${count === 1 ? '' : 's'} arrived` : 'Ravenpost is up to date'));
       await refreshAll();
     } catch (error) {
@@ -368,6 +371,23 @@
     }
   }
 
+  async function saveIncludedAddresses() {
+    els.settingsStatus.textContent = 'Saving included addresses…';
+    try {
+      state.settings = await api.saveSettings({ includedAddresses: els.includedAddresses.value });
+      els.settingsStatus.textContent = 'Addresses saved. Importing matching history…';
+      if (state.settings.connected) {
+        const result = await api.syncNow();
+        await refreshAll();
+        els.settingsStatus.textContent = 'History imported. ' + (result.newMessages?.length || 0) + ' messages added.';
+      } else {
+        els.settingsStatus.textContent = 'Addresses saved. Connect Gmail to import their history.';
+      }
+    } catch (error) {
+      els.settingsStatus.textContent = error.message;
+    }
+  }
+
   async function connectGmail() {
     const saved = await saveOauthSettings();
     if (!saved) return;
@@ -377,7 +397,7 @@
       const result = await api.authorize();
       state.settings = result.settings;
       await refreshAll();
-      els.settingsStatus.textContent = 'Gmail connected. Your inbox has been imported quietly; future new mail will alert you.';
+      els.settingsStatus.textContent = 'Gmail connected. Approved correspondence has been imported quietly; future new mail will alert you.';
     } catch (error) {
       els.settingsStatus.textContent = error.message;
     } finally {
@@ -476,6 +496,7 @@
   els.sendCompose.addEventListener('click', sendCompose);
   els.saveSettings.addEventListener('click', saveOauthSettings);
   els.saveDelivery.addEventListener('click', saveDeliverySettings);
+  els.saveAddresses.addEventListener('click', saveIncludedAddresses);
   els.connect.addEventListener('click', connectGmail);
   els.disconnect.addEventListener('click', disconnectGmail);
   els.testRaven.addEventListener('click', testRavenCall);
