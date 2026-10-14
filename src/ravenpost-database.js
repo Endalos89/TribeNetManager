@@ -67,6 +67,10 @@ class RavenpostDatabase {
     `);
   }
 
+  clearMessages() {
+    this.db.prepare('DELETE FROM ravenpost_messages').run();
+  }
+
   getSetting(key, fallback = null) {
     const row = this.db.prepare(
       'SELECT value FROM ravenpost_settings WHERE key = ?'
