@@ -295,6 +295,13 @@ class RavenpostService {
           this.saveTokenPayload(token);
 
           const profile = await this.gmailJson('/users/me/profile');
+          const previousAccount = this.db.getSetting('account_email', '').toLowerCase();
+          const connectedAccount = String(profile.emailAddress || '').toLowerCase();
+          if (previousAccount && connectedAccount && previousAccount !== connectedAccount) {
+            this.db.clearMessages();
+            this.db.deleteSetting('synced_addresses');
+            this.db.deleteSetting('last_sync_at');
+          }
           if (profile.emailAddress) this.db.setSetting('account_email', profile.emailAddress);
           this.db.setSetting('initial_sync_complete', '0');
 
