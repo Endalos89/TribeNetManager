@@ -173,6 +173,7 @@ class RavenpostService {
       clientId: this.db.getSetting('client_id', ''),
       hasClientSecret: Boolean(this.db.getSetting('client_secret', '')),
       accountEmail,
+      includedAddresses: this.db.getSetting('included_addresses', ''),
       pollSeconds: Math.max(30, Number(this.db.getSetting('poll_seconds', '60')) || 60),
       notificationsEnabled: this.db.getSetting('notifications_enabled', '1') !== '0',
       soundEnabled: this.db.getSetting('sound_enabled', '1') !== '0',
@@ -184,6 +185,13 @@ class RavenpostService {
   }
 
   saveSettings(input = {}) {
+    if (Object.prototype.hasOwnProperty.call(input, 'includedAddresses')) {
+      const addresses = String(input.includedAddresses || '').split(/[\s,;]+/).map(v => v.trim().toLowerCase()).filter(Boolean);
+      if (addresses.some(email => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))) {
+        throw new Error('Include only valid email addresses, separated by commas or new lines.');
+      }
+      this.db.setSetting('included_addresses', [...new Set(addresses)].join('\n'));
+    }
     if (Object.prototype.hasOwnProperty.call(input, 'clientId')) {
       this.db.setSetting('client_id', String(input.clientId || '').trim());
     }
@@ -392,32 +400,48 @@ class RavenpostService {
 
   async syncInbox() {
     const initialComplete = this.db.getSetting('initial_sync_complete', '0') === '1';
-    const list = await this.gmailJson('/users/me/messages?' + new URLSearchParams({
-      labelIds: 'INBOX',
-      maxResults: initialComplete ? '75' : '100'
-    }).toString());
-    const ids = (list.messages || []).map(item => String(item.id));
-    const newMessages = [];
+    const addresses = this.db.getSetting('included_addresses', '').split(/\s+/).filter(Boolean);
+    if (!addresses.length) return { firstSync: !initialComplete, newMessages: [], settings: this.getSettings(), counts: this.db.getCounts() };
 
-    for (const id of ids.reverse()) {
-      const existing = this.db.getMessage(id);
-      if (existing) continue;
-      const full = await this.gmailJson(`/users/me/messages/${encodeURIComponent(id)}?format=full`);
-      const record = gmailMessageToRecord(full);
-      if (!record.senderEmail) continue;
-      this.db.ensureContact(record.senderEmail, record.senderName);
-      const saved = this.db.upsertMessage(record);
-      if (saved.inserted) newMessages.push(saved.message);
+    const previouslySynced = JSON.parse(this.db.getSetting('synced_addresses', '[]'));
+    const needsHistory = addresses.some(email => !previouslySynced.includes(email));
+    const searchAddresses = needsHistory ? addresses.filter(email => !previouslySynced.includes(email)) : addresses;
+    const terms = searchAddresses.flatMap(email => ['from:' + email, 'to:' + email, 'cc:' + email]);
+    let query = '{' + terms.join(' ') + '}';
+    if (!needsHistory) {
+      const lastSync = this.db.getSetting('last_sync_at', '');
+      if (lastSync) {
+        const overlap = new Date(new Date(lastSync).getTime() - 86400000);
+        if (!Number.isNaN(overlap.getTime())) query += ' after:' + Math.floor(overlap.getTime() / 1000);
+      }
     }
 
+    const newMessages = [];
+    let pageToken = '';
+    do {
+      const params = new URLSearchParams({ q: query, maxResults: '100' });
+      if (pageToken) params.set('pageToken', pageToken);
+      const list = await this.gmailJson('/users/me/messages?' + params.toString());
+      for (const item of list.messages || []) {
+        const id = String(item.id);
+        if (this.db.getMessage(id)) continue;
+        const full = await this.gmailJson('/users/me/messages/' + encodeURIComponent(id) + '?format=full');
+        const record = gmailMessageToRecord(full);
+        const recipients = [getHeader(full.payload, 'To'), getHeader(full.payload, 'Cc')].join(',').toLowerCase();
+        if (!addresses.some(email => record.senderEmail === email || recipients.split(/[,;]/).some(v => parseAddress(v).email === email))) continue;
+        const account = this.db.getSetting('account_email', '').toLowerCase();
+        record.direction = record.senderEmail === account ? 'outbound' : 'inbound';
+        if (record.direction === 'inbound') this.db.ensureContact(record.senderEmail, record.senderName);
+        const saved = this.db.upsertMessage(record);
+        if (saved.inserted) newMessages.push(saved.message);
+      }
+      pageToken = list.nextPageToken || '';
+    } while (pageToken);
+
+    this.db.setSetting('synced_addresses', JSON.stringify(addresses));
     this.db.setSetting('last_sync_at', new Date().toISOString());
     this.db.setSetting('initial_sync_complete', '1');
-    return {
-      firstSync: !initialComplete,
-      newMessages,
-      settings: this.getSettings(),
-      counts: this.db.getCounts()
-    };
+    return { firstSync: !initialComplete || needsHistory, newMessages, settings: this.getSettings(), counts: this.db.getCounts() };
   }
 
   async sendMessage({ to, subject, bodyText, replyToGmailId = null }) {
