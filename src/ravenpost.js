@@ -39,6 +39,7 @@
     clanSelect: $('rpClanSelect'),
     contactType: $('rpContactType'),
     newClan: $('rpNewClan'),
+    directory: $('rpContactDirectory'),
     createClan: $('rpCreateClanButton'),
     replyButton: $('rpReplyButton'),
     replyAllButton: $('rpReplyAllButton'),
@@ -178,6 +179,35 @@
     renderClans();
   }
 
+  async function loadDirectory() {
+    const contacts = await api.listContacts();
+    const included = new Set(String(state.settings?.includedAddresses || '').split(/\s+/).filter(Boolean));
+    els.directory.innerHTML = contacts.filter(c => included.has(c.email)).map((c, i) => `
+      <div class="rp-link-actions" style="margin:8px 0;flex-wrap:wrap">
+        <label style="min-width:180px"><strong>${escapeHtml(c.displayName || c.email)}</strong><span style="display:block;font-size:11px">${escapeHtml(c.email)}</span></label>
+        <select data-contact-type="${i}">
+          <option value="Clan" ${c.contactType === 'Clan' ? 'selected' : ''}>Clan</option>
+          <option value="GM" ${c.contactType === 'GM' ? 'selected' : ''}>GM</option>
+          <option value="Other" ${c.contactType === 'Other' ? 'selected' : ''}>Other</option>
+        </select>
+        <select data-contact-clan="${i}">
+          <option value="">Choose clan…</option>
+          ${state.clans.map(cl => `<option value="${escapeHtml(cl.code)}" ${cl.code === c.clanCode ? 'selected' : ''}>${escapeHtml(cl.label)}</option>`).join('')}
+        </select>
+        <button class="button" data-save-contact="${i}">Save</button>
+      </div>`).join('') || '<p>No approved contacts imported yet.</p>';
+    const visible = contacts.filter(c => included.has(c.email));
+    els.directory.querySelectorAll('[data-save-contact]').forEach(button => button.addEventListener('click', async () => {
+      const i = Number(button.dataset.saveContact);
+      const type = els.directory.querySelector('[data-contact-type="' + i + '"]').value;
+      const clanCode = els.directory.querySelector('[data-contact-clan="' + i + '"]').value;
+      try {
+        await api.updateContact(visible[i].email, { status: 'linked', contactType: type, clanCode });
+        await loadDirectory();
+      } catch (error) { setHeaderStatus(error.message, 'error'); }
+    }));
+  }
+
   function folderTitle(filter) {
     return ({
       inbox: 'Inbox',
@@ -285,6 +315,7 @@
 
   async function refreshAll() {
     await Promise.all([loadSettings(), loadCounts(), loadClans()]);
+    await loadDirectory();
     await loadMessages();
   }
 
@@ -347,7 +378,7 @@
   function openSettings() {
     showPanel('settings');
     els.settingsStatus.textContent = '';
-    loadSettings().catch(error => {
+    refreshAll().catch(error => {
       els.settingsStatus.textContent = error.message;
     });
   }
@@ -540,6 +571,7 @@
     try {
       state.clans = await api.createClan(els.newClan.value);
       renderClans();
+      await loadDirectory();
       els.clanSelect.value = els.newClan.value.trim();
       els.newClan.value = '';
     } catch (error) { setHeaderStatus(error.message, 'error'); }
