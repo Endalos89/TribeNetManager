@@ -50,7 +50,8 @@ function getHeader(payload, name) {
   const header = (payload?.headers || []).find(
     item => String(item?.name || '').toLowerCase() === target
   );
-  return header?.value || '';
+  const values = (payload?.headers || []).filter(item => String(item?.name || '').toLowerCase() === target).map(item => item.value).filter(Boolean);
+  return values.length ? values.join(', ') : (header?.value || '');
 }
 
 function parseAddress(value) {
@@ -202,6 +203,7 @@ class RavenpostService {
         this.db.setSetting('initial_sync_complete', '0');
       }
       this.db.setSetting('included_addresses', next);
+      this.db.deleteSetting('recipient_backfill_v1');
       for (const address of addresses) this.db.ensureContact(address);
     }
     if (Object.prototype.hasOwnProperty.call(input, 'clientId')) {
@@ -423,7 +425,7 @@ class RavenpostService {
     if (!addresses.length) return { firstSync: !initialComplete, newMessages: [], settings: this.getSettings(), counts: this.db.getCounts() };
 
     const previouslySynced = JSON.parse(this.db.getSetting('synced_addresses', '[]'));
-    const needsHistory = addresses.some(email => !previouslySynced.includes(email));
+    const needsHistory = addresses.some(email => !previouslySynced.includes(email)) || this.db.getSetting('recipient_backfill_v1', '0') !== '1';
     const searchAddresses = needsHistory ? addresses.filter(email => !previouslySynced.includes(email)) : addresses;
     const terms = searchAddresses.flatMap(email => ['from:' + email, 'to:' + email, 'cc:' + email]);
     let query = '{' + terms.join(' ') + '}';
@@ -443,13 +445,15 @@ class RavenpostService {
       const list = await this.gmailJson('/users/me/messages?' + params.toString());
       for (const item of list.messages || []) {
         const id = String(item.id);
-        if (this.db.getMessage(id)) continue;
+        const existing = this.db.getMessage(id);
+        if (existing && !needsHistory) continue;
         const full = await this.gmailJson('/users/me/messages/' + encodeURIComponent(id) + '?format=full');
         const record = gmailMessageToRecord(full);
         const recipients = [getHeader(full.payload, 'To'), getHeader(full.payload, 'Cc')].join(',').toLowerCase();
         if (!addresses.some(email => record.senderEmail === email || recipients.split(/[,;]/).some(v => parseAddress(v).email === email))) continue;
         const account = this.db.getSetting('account_email', '').toLowerCase();
         record.direction = record.senderEmail === account ? 'outbound' : 'inbound';
+        if (existing) record.unread = existing.unread;
         if (record.direction === 'inbound') this.db.ensureContact(record.senderEmail, record.senderName);
         const saved = this.db.upsertMessage(record);
         if (saved.inserted) newMessages.push(saved.message);
@@ -460,6 +464,7 @@ class RavenpostService {
     this.db.setSetting('synced_addresses', JSON.stringify(addresses));
     this.db.setSetting('last_sync_at', new Date().toISOString());
     this.db.setSetting('initial_sync_complete', '1');
+    this.db.setSetting('recipient_backfill_v1', '1');
     return { firstSync: !initialComplete || needsHistory, newMessages, settings: this.getSettings(), counts: this.db.getCounts() };
   }
 
