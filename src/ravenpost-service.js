@@ -426,7 +426,7 @@ class RavenpostService {
 
     const previouslySynced = JSON.parse(this.db.getSetting('synced_addresses', '[]'));
     const needsHistory = addresses.some(email => !previouslySynced.includes(email)) || this.db.getSetting('recipient_backfill_v1', '0') !== '1';
-    const searchAddresses = needsHistory ? addresses.filter(email => !previouslySynced.includes(email)) : addresses;
+    const searchAddresses = this.db.getSetting('recipient_backfill_v1', '0') !== '1' ? addresses : (needsHistory ? addresses.filter(email => !previouslySynced.includes(email)) : addresses);
     const terms = searchAddresses.flatMap(email => ['from:' + email, 'to:' + email, 'cc:' + email]);
     let query = '{' + terms.join(' ') + '}';
     if (!needsHistory) {
