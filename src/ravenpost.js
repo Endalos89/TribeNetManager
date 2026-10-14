@@ -33,6 +33,8 @@
     detailSender: $('rpDetailSender'),
     detailEmail: $('rpDetailEmail'),
     detailDate: $('rpDetailDate'),
+    originalTo: $('rpOriginalTo'),
+    originalCc: $('rpOriginalCc'),
     detailClan: $('rpDetailClan'),
     unknownBanner: $('rpUnknownBanner'),
     ignoredBanner: $('rpIgnoredBanner'),
@@ -297,6 +299,8 @@
     els.detailSender.textContent = outgoing ? `To ${message.recipient}` : senderLabel(message);
     els.detailEmail.textContent = outgoing ? (message.senderEmail || '') : (message.senderEmail || '');
     els.detailDate.textContent = displayDate(message.receivedAt, true);
+    els.originalTo.textContent = message.recipient || '—';
+    els.originalCc.textContent = message.cc || 'None';
     els.body.textContent = message.bodyText || message.snippet || '(No message body)';
     els.replySection.classList.toggle('hidden', outgoing);
     els.replyTo.textContent = outgoing ? '' : message.senderEmail;
