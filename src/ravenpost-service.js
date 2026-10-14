@@ -202,6 +202,7 @@ class RavenpostService {
         this.db.setSetting('initial_sync_complete', '0');
       }
       this.db.setSetting('included_addresses', next);
+      for (const address of addresses) this.db.ensureContact(address);
     }
     if (Object.prototype.hasOwnProperty.call(input, 'clientId')) {
       this.db.setSetting('client_id', String(input.clientId || '').trim());
