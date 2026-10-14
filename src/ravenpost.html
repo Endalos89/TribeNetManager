@@ -194,8 +194,14 @@
             </div>
           </section>
 
+          <section class="rp-settings-card">
+            <div class="rp-card-heading"><div><h2>Included correspondence</h2><p>Only approved player addresses are imported, including historical received and sent mail. Leave blank to import nothing.</p></div></div>
+            <label class="field-label" for="rpIncludedAddresses">Player email addresses (one per line)</label>
+            <textarea id="rpIncludedAddresses" rows="6" placeholder="player1@example.com&#10;player2@example.com"></textarea>
+            <div class="rp-inline-actions"><button id="rpSaveAddressesButton" class="button accent">Save and Import History</button></div>
+          </section>
           <section class="rp-settings-card rp-setup-guide">
-            <div class="rp-card-heading"><div><h2>One-time Google setup</h2><p>Use the dedicated ravenwake_0485 Gmail account for this connection.</p></div></div>
+            <div class="rp-card-heading"><div><h2>One-time Google setup</h2><p>Connect your main Gmail account. Ravenpost only imports correspondence involving approved addresses.</p></div></div>
             <ol>
               <li>Create or select a Google Cloud project and enable the <strong>Gmail API</strong>.</li>
               <li>Configure the Google Auth consent screen. If the app is in testing, add your Ravenpost Gmail account as a test user.</li>
