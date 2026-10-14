@@ -40,6 +40,8 @@
     contactType: $('rpContactType'),
     newClan: $('rpNewClan'),
     directory: $('rpContactDirectory'),
+    directoryClanName: $('rpDirectoryClanName'),
+    directoryCreateClan: $('rpDirectoryCreateClan'),
     createClan: $('rpCreateClanButton'),
     replyButton: $('rpReplyButton'),
     replyAllButton: $('rpReplyAllButton'),
@@ -566,6 +568,14 @@
     els.clanSelect.classList.toggle('hidden', !isClan);
     els.newClan.classList.toggle('hidden', !isClan);
     els.createClan.classList.toggle('hidden', !isClan);
+  });
+  els.directoryCreateClan.addEventListener('click', async () => {
+    try {
+      state.clans = await api.createClan(els.directoryClanName.value);
+      els.directoryClanName.value = '';
+      renderClans();
+      await loadDirectory();
+    } catch (error) { setHeaderStatus(error.message, 'error'); }
   });
   els.createClan.addEventListener('click', async () => {
     try {
