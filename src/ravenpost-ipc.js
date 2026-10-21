@@ -170,4 +170,21 @@ app.on('before-quit', () => {
   ravenService = null;
 });
 
-module.exports = { syncNow };
+function findLatestRavenpostResultsReport() {
+  return requireService().findLatestResultsReport();
+}
+
+function downloadLatestRavenpostResultsReport() {
+  return requireService().downloadLatestResultsReport();
+}
+
+function markRavenpostResultsReportImported(gmailId) {
+  return requireService().markResultsReportImported(gmailId);
+}
+
+module.exports = {
+  syncNow,
+  findLatestRavenpostResultsReport,
+  downloadLatestRavenpostResultsReport,
+  markRavenpostResultsReportImported
+};

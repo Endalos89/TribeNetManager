@@ -5,6 +5,11 @@ const { autoUpdater } = require('electron-updater');
 const { TribeNetDatabase } = require('./database');
 const { TurnManagerDatabase } = require('./turn-manager-database');
 const { ResultsDatabase } = require('./results-database');
+const {
+  findLatestRavenpostResultsReport,
+  downloadLatestRavenpostResultsReport,
+  markRavenpostResultsReportImported
+} = require('./ravenpost-ipc');
 const { parseTurnWorkbook } = require('./turn-manager-parser');
 const { parseResultDocument } = require('./result-report-parser');
 const { reprocessArchivedReports } = require('./results-reprocessor');
@@ -494,14 +499,51 @@ ipcMain.handle('results:import', async () => {
   if (result.canceled || !result.filePaths.length) return { canceled: true };
   const filePath = result.filePaths[0];
   try {
-    const parsed = await parseResultDocument(filePath);
-    resultsDatabase.archiveSource(parsed.turnKey, filePath, parsed.sourceFile);
-    const saved = resultsDatabase.saveReport(parsed);
-    syncResultBaseline(saved);
+    const saved = await importResultsReportFile(filePath);
     return { canceled: false, turn: saved, archived: true };
   } catch (error) {
     console.error('Results report import failed', error);
     return { canceled: false, error: error.message };
+  }
+});
+async function importResultsReportFile(filePath, originalFileName = path.basename(filePath)) {
+  const parsed = await parseResultDocument(filePath);
+  resultsDatabase.archiveSource(parsed.turnKey, filePath, originalFileName || parsed.sourceFile);
+  const saved = resultsDatabase.saveReport(parsed);
+  syncResultBaseline(saved);
+  return saved;
+}
+
+ipcMain.handle('results:ravenpost-latest', async () => {
+  try {
+    return await findLatestRavenpostResultsReport();
+  } catch (error) {
+    console.error('Could not check Ravenpost for a Results report', error);
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('results:ravenpost-import', async () => {
+  let stagingDirectory = null;
+  try {
+    const report = await downloadLatestRavenpostResultsReport();
+    if (!report) return { canceled: false, notFound: true };
+    const filename = path.basename(String(report.filename || 'Results.docx')).replace(/[^A-Za-z0-9._-]/g, '_');
+    if (!/results[^/]*\.docx$/i.test(filename)) throw new Error('The latest Ravenpost attachment is not a Results .docx report.');
+    stagingDirectory = fs.mkdtempSync(path.join(app.getPath('temp'), 'tribenet-ravenpost-report-'));
+    const filePath = path.join(stagingDirectory, filename);
+    fs.writeFileSync(filePath, report.data);
+    const saved = await importResultsReportFile(filePath, report.filename);
+    markRavenpostResultsReportImported(report.gmailId);
+    return { canceled: false, turn: saved, archived: true, source: 'Ravenpost' };
+  } catch (error) {
+    console.error('Ravenpost Results report import failed', error);
+    return { canceled: false, error: error.message };
+  } finally {
+    if (stagingDirectory) {
+      try { fs.rmSync(stagingDirectory, { recursive: true, force: true }); }
+      catch (error) { console.warn('Could not remove temporary Ravenpost report file:', error.message); }
+    }
   }
 });
 ipcMain.handle('results:reprocess', async () => {

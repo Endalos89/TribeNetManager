@@ -45,6 +45,8 @@
     if (exportOrdersButton) exportOrdersButton.disabled = busy || !selectedPlanningTurnKey();
     const button = fairButton();
     if (button) button.disabled = busy || !button.dataset.turnKey;
+    const ravenpostButton = document.getElementById('pickupRavenpostResultsButton');
+    if (ravenpostButton) ravenpostButton.disabled = busy;
   }
 
   function selectedPlanningTurnKey() {
@@ -129,26 +131,53 @@
     }
   }
 
+  async function finishResultsImport(result, source = 'Results') {
+    if (result?.canceled) {
+      if (status) status.textContent = `${source} import cancelled.`;
+      return false;
+    }
+    if (result?.notFound) {
+      if (status) status.textContent = 'No new Results report was found in Ravenpost.';
+      return false;
+    }
+    if (result?.error) {
+      if (status) status.textContent = `${source} import failed: ${result.error}`;
+      return false;
+    }
+    if (!result?.turn?.turnKey) {
+      if (status) status.textContent = `${source} import failed: no turn was returned.`;
+      return false;
+    }
+    const nextTurn = planningTurnKey(result.turn);
+    await refreshPlanningTurn(nextTurn);
+    if (typeof playImportedResultsTransition === 'function') {
+      await playImportedResultsTransition(result.turn.turnKey);
+    }
+    window.dispatchEvent(new CustomEvent('tribenet-import-complete'));
+    if (source === 'Ravenpost') window.dispatchEvent(new CustomEvent('tribenet-ravenpost-report-imported'));
+    if (status) status.textContent = `Turn ${canonicalTurnKey(result.turn.turnKey)} Results imported from ${source}. Planning Turn ${nextTurn} is ready.`;
+    return true;
+  }
+
   async function importResults() {
     setBusy(true);
     if (status) status.textContent = 'Importing Results…';
     try {
       const result = await window.tribenet.importResultsReport();
-      if (result?.canceled) {
-        if (status) status.textContent = 'Results import cancelled.';
-        return;
-      }
-      if (result?.error) {
-        if (status) status.textContent = `Results import failed: ${result.error}`;
-        return;
-      }
-      const nextTurn = planningTurnKey(result.turn);
-      await refreshPlanningTurn(nextTurn);
-      if (typeof playImportedResultsTransition === 'function') {
-        await playImportedResultsTransition(result.turn.turnKey);
-      }
-      window.dispatchEvent(new CustomEvent('tribenet-import-complete'));
-      if (status) status.textContent = `Turn ${canonicalTurnKey(result.turn.turnKey)} Results imported. Planning Turn ${nextTurn} is ready.`;
+      await finishResultsImport(result, 'Results');
+    } finally {
+      setBusy(false);
+      await refreshFairStatus().catch(console.error);
+    }
+  }
+
+  async function importRavenpostResults() {
+    if (busy) return;
+    setBusy(true);
+    if (status) status.textContent = 'Picking up the latest Results report from Ravenpost…';
+    try {
+      const result = await window.tribenet.importLatestRavenpostResultsReport();
+      await finishResultsImport(result, 'Ravenpost');
     } finally {
       setBusy(false);
       await refreshFairStatus().catch(console.error);
@@ -274,6 +303,7 @@
   }
 
   resultsButton?.addEventListener('click', importResults);
+  window.addEventListener('tribenet-pickup-ravenpost-report', importRavenpostResults);
   completedButton?.addEventListener('click', importCompleted);
   blankOrdersButton?.addEventListener('click', importBlankOrders);
   exportOrdersButton?.addEventListener('click', exportOrders);

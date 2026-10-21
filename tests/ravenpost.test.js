@@ -1,8 +1,16 @@
 const assert = require('assert');
 const fs = require('fs');
+const Module = require('module');
 const os = require('os');
 const path = require('path');
 const { RavenpostDatabase } = require('../src/ravenpost-database');
+const originalLoad = Module._load;
+Module._load = function loadElectronForRavenpostTests(request, parent, isMain) {
+  if (request === 'electron') return { safeStorage: { isEncryptionAvailable: () => false }, shell: {} };
+  return originalLoad.call(this, request, parent, isMain);
+};
+const { RavenpostService, RESULTS_REPORT_SENDER, findResultsReportAttachment } = require('../src/ravenpost-service');
+Module._load = originalLoad;
 
 const root = path.join(__dirname, '..');
 const preload = fs.readFileSync(path.join(root, 'src', 'preload.js'), 'utf8');
@@ -13,6 +21,7 @@ const notifications = fs.readFileSync(path.join(root, 'src', 'ravenpost-notifica
 const ui = fs.readFileSync(path.join(root, 'src', 'ravenpost.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'src', 'ravenpost.html'), 'utf8');
 const viewState = fs.readFileSync(path.join(root, 'src', 'update-view-state.js'), 'utf8');
+const main = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');
 
 assert.match(preload, /exposeInMainWorld\(['"]ravenpost['"]/, 'Ravenpost must stay behind the preload IPC bridge');
 assert.match(preload, /ipcRenderer\.invoke\(['"]ravenpost:authorize['"]/, 'Gmail authorization should go through IPC');
@@ -30,6 +39,9 @@ assert.match(service, /included_addresses/, 'Ravenpost must support an approved-
 assert.match(service, /nextPageToken/, 'Historical Gmail imports must follow pagination');
 assert.match(service, /'outbound' : 'inbound'/, 'Gmail history must distinguish sent and received mail');
 assert.doesNotMatch(service, /labelIds: 'INBOX'/, 'Ravenpost must not restrict its search to Gmail Inbox');
+assert.match(service, /from:\$\{RESULTS_REPORT_SENDER\} has:attachment filename:docx/, 'Ravenpost must find report mail even when the sender is not in the player allowlist');
+assert.match(main, /results:ravenpost-import/, 'The launcher must be able to import a Results report from Ravenpost');
+assert.match(launcher, /pickupRavenpostResultsButton/, 'A Results pickup action should appear above the Ravenpost launcher card');
 
 assert.match(ipc, /contact\?\.status === ['"]not_interested['"]/, 'Ignored senders must suppress new-mail alerts');
 assert.match(launcher, /ravenpost\.html/, 'Launcher should open Ravenpost');
@@ -123,4 +135,77 @@ try {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
 
-console.log('Ravenpost regression tests passed');
+(async () => {
+  const attachment = { filename: '0485_906_05_Results.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: { attachmentId: 'att-1' } };
+  assert.deepStrictEqual(findResultsReportAttachment({ mimeType: 'multipart/mixed', parts: [
+    { filename: 'turn-news.pdf', body: { attachmentId: 'news' } },
+    { mimeType: 'multipart/alternative', parts: [attachment] }
+  ] }), [{ filename: attachment.filename, mimeType: attachment.mimeType, attachmentId: 'att-1' }]);
+
+  const settings = new Map();
+  const db = { getSetting: (key, fallback = null) => settings.has(key) ? settings.get(key) : fallback, setSetting: (key, value) => settings.set(key, String(value)) };
+  const ravenpost = new RavenpostService(db);
+  const queryPaths = [];
+  ravenpost.gmailJson = async pathname => {
+    queryPaths.push(pathname);
+    if (pathname.startsWith('/users/me/messages?')) return { messages: [{ id: 'report-1' }] };
+    if (pathname === '/users/me/messages/report-1?format=full') return {
+      id: 'report-1',
+      internalDate: String(Date.parse('2026-10-21T10:00:00Z')),
+      payload: {
+        headers: [
+          { name: 'From', value: `TribeNet Postmaster <${RESULTS_REPORT_SENDER}>` },
+          { name: 'Subject', value: 'Your TribeNet results and news' }
+        ],
+        mimeType: 'multipart/mixed',
+        parts: [attachment]
+      }
+    };
+    if (pathname === '/users/me/messages/report-1/attachments/att-1') return { data: Buffer.from('word report').toString('base64url') };
+    throw new Error(`Unexpected Gmail request: ${pathname}`);
+  };
+  const report = await ravenpost.findLatestResultsReport();
+  assert.strictEqual(report.filename, attachment.filename);
+  assert.strictEqual(report.gmailId, 'report-1');
+  assert(queryPaths[0].includes(encodeURIComponent(RESULTS_REPORT_SENDER)));
+  const downloaded = await ravenpost.downloadLatestResultsReport();
+  assert.strictEqual(downloaded.data.toString(), 'word report');
+  ravenpost.markResultsReportImported('report-1');
+  assert.strictEqual(await ravenpost.findLatestResultsReport(), null, 'An imported report should no longer appear as pending pickup');
+
+  const syncSettings = new Map();
+  const syncDb = {
+    getSetting: (key, fallback = null) => syncSettings.has(key) ? syncSettings.get(key) : fallback,
+    setSetting: (key, value) => syncSettings.set(key, String(value)),
+    getMessage: () => null,
+    upsertMessage: message => ({ inserted: true, message }),
+    getCounts: () => ({ unread: 1, unknown: 0, ignored: 0 })
+  };
+  const syncService = new RavenpostService(syncDb);
+  const syncQueries = [];
+  syncService.gmailJson = async pathname => {
+    syncQueries.push(pathname);
+    if (pathname.startsWith('/users/me/messages?')) return { messages: [{ id: 'report-2' }] };
+    if (pathname === '/users/me/messages/report-2?format=full') return {
+      id: 'report-2', threadId: 'thread-2', internalDate: String(Date.now()),
+      labelIds: ['UNREAD'], snippet: 'Results attached',
+      payload: {
+        headers: [
+          { name: 'From', value: RESULTS_REPORT_SENDER },
+          { name: 'To', value: 'manager@example.com' },
+          { name: 'Subject', value: 'Results and news' }
+        ],
+        mimeType: 'multipart/mixed', parts: [attachment]
+      }
+    };
+    throw new Error(`Unexpected sync request: ${pathname}`);
+  };
+  const syncResult = await syncService.syncInbox();
+  assert.strictEqual(syncResult.newMessages.length, 1, 'Postmaster Results email should sync even with no approved player addresses');
+  assert(syncQueries[0].includes(encodeURIComponent(RESULTS_REPORT_SENDER)));
+})().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+}).then(() => {
+  if (!process.exitCode) console.log('Ravenpost regression tests passed');
+});
