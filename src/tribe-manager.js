@@ -88,6 +88,7 @@ async function selectTurn(turnKey, persist = true) {
   $('timelineCurrentTurn').textContent = detail.turnKey;
   $('timelineLastTurn').textContent = tmState.turns[tmState.turns.length - 1]?.turnKey || '—';
 
+  renderTurnOverview();
   if (!detail.units.some(u => u.unitCode === tmState.selectedUnitCode)) {
     tmState.selectedUnitCode = detail.units[0]?.unitCode || null;
   }
@@ -263,7 +264,7 @@ function renderMovement(unit) {
     items.push(`<div class="tm-event"><strong>Movement load</strong><span>${formatNumber(unit.movementWeight)} weight · ${formatNumber(unit.movementWalkingCapacity)} walking · ${formatNumber(unit.movementMountedCapacity)} mounted</span></div>`);
   }
   for (const scout of unit.scouts || []) {
-    const blocked = /Not enough M\.P/i.test(scout.raw || scout.report || '');
+    const blocked = /Not enough M\.P|Can't Move on Ocean/i.test(scout.raw || scout.report || '');
     items.push(`<div class="tm-event${blocked ? ' tm-event-warning' : ''}"><strong>Scout ${escapeHtml(scout.id)}</strong><span>${escapeHtml(scout.report)}</span></div>`);
   }
   host.innerHTML = items.join('') || '<div class="tm-empty">No movement or scouting details reported.</div>';
@@ -276,12 +277,52 @@ function renderEvents(unit) {
     host.innerHTML = '<div class="tm-empty">No activity events reported for this unit.</div>';
     return;
   }
-  host.innerHTML = events.map(event => `
-    <div class="tm-event">
-      <strong>${escapeHtml(event.eventType.replace(/(^|\s)\S/g, s => s.toUpperCase()))}</strong>
-      <span>${escapeHtml(event.message)}</span>
-    </div>
-  `).join('');
+  host.innerHTML = events.map(event => {
+    const actions = event.details?.actions || [];
+    const activityRows = actions.map(action => {
+      const facts = [];
+      if (action.workers != null) facts.push(`${formatNumber(action.workers)} people`);
+      if (action.quantity != null) facts.push(formatNumber(action.quantity));
+      if (action.items?.length) facts.push(action.items.map(item => `${formatNumber(item.quantity)} ${item.item}`).join(' · '));
+      if (action.inputs?.length) facts.push(`Used ${action.inputs.map(item => `${formatNumber(item.quantity)} ${item.item}`).join(' · ')}`);
+      return `<div class="tm-activity-row"><strong>${escapeHtml(action.label || action.type || 'Activity')}</strong><span>${escapeHtml(facts.join(' · ') || 'Reported')}</span></div>`;
+    }).join('');
+    const title = event.eventType.replace(/(^|\s)\S/g, s => s.toUpperCase());
+    return `<div class="tm-event"><strong>${escapeHtml(title)}</strong>${activityRows || `<span>${escapeHtml(event.message)}</span>`}${activityRows ? `<details class="tm-raw-activity"><summary>Original report line</summary><span>${escapeHtml(event.message)}</span></details>` : ''}</div>`;
+  }).join('');
+}
+
+function reportStatus(status) {
+  return ({ complete: 'Complete', partial: 'Partial', failed: 'Failed', unreported: 'Actual not reported', reported: 'Reported' })[status] || status || 'Unknown';
+}
+
+function renderTurnOverview() {
+  const host = $('turnOverview');
+  const metadata = tmState.turn?.metadata || {};
+  const finances = metadata.finances;
+  const auctions = metadata.auctions || [];
+  const transfers = (metadata.transfers || []).filter(transfer => transfer.type !== 'auction');
+  const notices = metadata.notices || [];
+  const settlements = metadata.settlements || [];
+  const hasContent = finances || metadata.goodsTribe || metadata.desiredCommodities?.length || auctions.length || transfers.length || notices.length || settlements.length;
+  if (!hasContent) { host.classList.add('hidden'); host.innerHTML = ''; return; }
+  host.classList.remove('hidden');
+
+  const financialCards = finances ? `<div class="tm-economy-cards">
+    <div class="tm-economy-card"><span>Received</span><strong>$${formatNumber(finances.received)}</strong></div>
+    <div class="tm-economy-card"><span>Cost</span><strong>$${formatNumber(finances.cost)}</strong></div>
+    <div class="tm-economy-card"><span>Credit</span><strong>$${formatNumber(finances.credit)}</strong></div>
+  </div>` : '';
+  const headerFacts = [
+    metadata.goodsTribe ? `Goods Tribe: ${escapeHtml(metadata.goodsTribe)}` : '',
+    metadata.desiredCommodities?.length ? `Desired commodities: ${metadata.desiredCommodities.map(escapeHtml).join(', ')}` : '',
+    [metadata.weather, metadata.nextTurn ? `Next turn ${metadata.nextTurn}${metadata.nextTurnSequence ? ` (#${metadata.nextTurnSequence})` : ''}` : '', metadata.nextTurnDate].filter(Boolean).map(escapeHtml).join(' · ')
+  ].filter(Boolean);
+  const auctionTable = auctions.length ? `<div class="tm-economy-block"><h3>Auction activity</h3><div class="tm-table-wrap"><table class="tm-ledger"><thead><tr><th>Direction</th><th>Item</th><th>Reported</th><th>Actual</th><th>Outcome</th><th>Ledger message</th></tr></thead><tbody>${auctions.map(row => `<tr><td>${row.direction === 'to-auction' ? 'To auction' : 'From auction'}</td><td>${escapeHtml(row.item)}</td><td>${formatNumber(row.reportedAmount)}</td><td>${row.actualAmount == null ? '—' : formatNumber(row.actualAmount)}</td><td>${escapeHtml(reportStatus(row.status))}</td><td>${escapeHtml(row.transfer?.message || 'No matching transfer row')}</td></tr>`).join('')}</tbody></table></div></div>` : '';
+  const transferTable = transfers.length ? `<div class="tm-economy-block"><h3>Direct transfers</h3><div class="tm-table-wrap"><table class="tm-ledger"><thead><tr><th>From</th><th>To</th><th>Item</th><th>Requested</th><th>Actual</th><th>Outcome</th><th>Message</th></tr></thead><tbody>${transfers.map(row => `<tr><td>${escapeHtml(row.from)}</td><td>${escapeHtml(row.to)}</td><td>${escapeHtml(row.item)}</td><td>${row.requested == null ? '—' : formatNumber(row.requested)}</td><td>${row.actual == null ? '—' : formatNumber(row.actual)}</td><td>${escapeHtml(reportStatus(row.status))}</td><td>${escapeHtml(row.message)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
+  const noticeList = notices.length ? `<div class="tm-economy-block"><h3>Report notices</h3>${notices.map(notice => `<div class="tm-notice-row">${escapeHtml(notice)}</div>`).join('')}</div>` : '';
+  const settlementList = settlements.length ? `<div class="tm-economy-block"><h3>Settlements</h3><div class="tm-table-wrap"><table class="tm-ledger"><thead><tr><th>Hex</th><th>Name</th><th>Note</th><th>Type</th><th>Subtype</th></tr></thead><tbody>${settlements.map(row => `<tr><td>${escapeHtml(row.hexCode)}</td><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.note)}</td><td>${escapeHtml(row.type)}</td><td>${escapeHtml(row.subtype)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
+  host.innerHTML = `<div class="tm-section-heading"><div><p class="eyebrow">TURN-WIDE REPORT</p><h2>Finances, auctions &amp; transfers</h2></div><span class="tm-muted">Auction entries are matched to the report transfer ledger when item and amount agree.</span></div>${financialCards}${headerFacts.length ? `<div class="tm-report-facts">${headerFacts.map(fact => `<span>${fact}</span>`).join('')}</div>` : ''}${auctionTable}${transferTable}${noticeList}${settlementList}`;
 }
 
 async function refreshReprocessStatus() {
@@ -370,6 +411,7 @@ function togglePlayback() {
       $('timelineTurnTitle').textContent = `Turn ${detail.turnKey}`;
       $('timelineSource').textContent = `${detail.sourceFile} · imported ${new Date(detail.importedAt).toLocaleString()} · shared planning baseline`;
       $('timelineCurrentTurn').textContent = detail.turnKey;
+      renderTurnOverview();
       if (!detail.units.some(u => u.unitCode === tmState.selectedUnitCode)) tmState.selectedUnitCode = detail.units[0]?.unitCode || null;
       renderUnits();
       renderSelectedUnit();

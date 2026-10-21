@@ -48,6 +48,9 @@ Received: $0, Cost: $ 5.5 Credit: $ 194.5
 Goods Tribe: No GT
 Desired Commodities: (1) Rubies, (2) Coffee
 Tribe Activities, 40 people Skin\\gut\\bone 60 Goat, 20257 people hunted 52668 provs, B/axe 50, Skins Cured 20, 100 people made 100 Sling (using 100 Leather), Skins Tanned 40 (using 100 Bark, 40 Skin), 275 herders allocated, 272 actual herders required, Bred ( Cattle 32, Goat 284, Horse 21 )
+Final Activities: Provs eaten: 2420 Fish, 17212 Provs,
+Transfer to Auction: 520 BARK, 5050 SILVER, To 0485e1: 14 HORSE,
+Receive from Auction: 25 SWORD, from 0485e1: 80 LOG,
 Movement Weight: 731,670 Walking Capacity: 1,926,360 Mounted Capacity: 0
 Tribe Movement: Move NE-GH, O NE \\
 Scout 1:Scout SE-GH, O NE, N\\SE-PR, O NE, SE, N\\S-PR, O NE\\,Not enough M.P's to move to SE into CONIFER HILLS,
@@ -58,6 +61,7 @@ Scout 5:Scout SW-PR, \\S-PR, \\SW-GH, Lcm NW,\\,Not enough M.P's to move to S in
 Scout 6:Scout NW-GH, \\N-CH, Lcm N,\\see 0485e1\\,Not enough M.P's to move to N into LOW CONIFER MOUNTAINS, Patrolled and found 0485e1
 Scout 7:Scout NW-GH, \\NW-PR, \\N-PR, Lcm NE, NW,\\N-PR, Lcm NE, SE, SW, N,\\,Not enough M.P's to move to N into LOW CONIFER MOUNTAINS,
 Scout 8:Scout SW-PR, \\SW-GH, Lcm SW,\\,Not enough M.P's to move to SW into LOW CONIFER MOUNTAINS,
+Scout 9:Scout SE-GH, Can't Move on Ocean to SE of HEX,
 0485 Status: GRASSY HILLS, O NE, 0485
 Humans
 People\t31172
@@ -143,10 +147,41 @@ function unit(report, code) {
   assert.deepStrictEqual(element3.resources.Animals, { Horse: 34 });
   assert.deepStrictEqual(element3.resources['Finished Goods'], { Provs: 240, Sling: 20, Wagon: 16 });
   assert(turn3.events.some(row => row.eventType === 'activities' && /52668 provs/.test(row.message)));
+  assert.deepStrictEqual(turn3.metadata.finances, { received: 0, cost: 5.5, credit: 194.5 });
+  assert.deepStrictEqual(turn3.metadata.desiredCommodities, ['Rubies', 'Coffee']);
+  const activityEvent = turn3.events.find(row => row.eventType === 'activities' && row.unitCode === '0485');
+  assert(activityEvent.details.actions.some(action => action.type === 'hunted' && action.workers === 20257 && action.items[0].quantity === 52668));
+  assert(activityEvent.details.actions.some(action => action.type === 'crafting' && action.inputs[0].item === 'Leather'));
+  const finalEvent = turn3.events.find(row => row.eventType === 'final activities');
+  assert.deepStrictEqual(finalEvent.details.actions[0].items, [{ item: 'Fish', quantity: 2420 }, { item: 'Provs', quantity: 17212 }]);
+  const testTransfers = [
+    ['From', 'To', 'Item', 'Requested', 'Actual', 'Message'],
+    ['0485', '1263', 'BARK', '520', '520', 'Goods transfer to usage'],
+    ['0485', '1263', 'SILVER', '5050', '', 'Goods transfer to usage'],
+    ['1263', '0485', 'SWORD', '25', '25', 'Transfer from clan 0263'],
+    ['0485', '2485', 'ACTIVES', '2000', '0', 'To tribe general info not found.'],
+    ['0485', '0485e1', 'HORSE', '14', '', 'Transfer in same hex'],
+    ['0485e1', '0485', 'LOG', '80', '', 'Transfer in same hex']
+  ];
+  const settlementRows = [
+    ['Hex Code', 'Name', 'Note', 'Type', 'Subtype'],
+    ['PK1714', 'Northstead', 'river ford', 'Village', 'Fishing']
+  ];
+  const reconciled = parseResultText(REPORT_906_03, 'results.docx', [testTransfers, settlementRows]);
+  assert.deepStrictEqual(reconciled.metadata.auctions.map(row => [row.direction, row.item, row.reportedAmount, row.actualAmount, row.status]), [
+    ['to-auction', 'BARK', 520, 520, 'complete'],
+    ['to-auction', 'SILVER', 5050, null, 'unreported'],
+    ['from-auction', 'SWORD', 25, 25, 'complete']
+  ]);
+  const failedTransfer = reconciled.metadata.transfers.find(row => row.item === 'ACTIVES');
+  assert.strictEqual(failedTransfer.status, 'failed');
+  assert.strictEqual(failedTransfer.type, 'unit-transfer');
+  assert.deepStrictEqual(reconciled.metadata.settlements, [{ hexCode: 'PK1714', name: 'Northstead', note: 'river ford', type: 'Village', subtype: 'Fishing' }]);
   assert(turn3.hexKnowledge.some(row =>
     row.terrain === 'LCM' && row.evidence.some(evidence => /Not enough M\.P/i.test(evidence))
   ));
   assert(turn3.hexKnowledge.some(row => row.coordinate === 'PK1612' && row.observedUnits.includes('0485e1')));
+  assert.strictEqual(unit(turn3, '0485').scouts.find(scout => scout.id === 9).blockedReason, 'ocean');
 })();
 
 (function databaseRegression() {
