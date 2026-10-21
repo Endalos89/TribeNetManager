@@ -136,6 +136,7 @@ contextBridge.exposeInMainWorld('tribenet', {
   openTurnFilesFolder: () => ipcRenderer.invoke('turn-files:open'),
   reportCurrentView: view => isEmbeddedFair() ? Promise.resolve(null) : ipcRenderer.invoke('app:report-view', view),
   consumeStartupView: () => ipcRenderer.invoke('app:consume-startup-view'),
+  openCompendium: (entry, key) => ipcRenderer.invoke('app:open-compendium', entry, key),
   getVersion: () => ipcRenderer.invoke('app:version'),
   getUserDataPath: () => ipcRenderer.invoke('app:userDataPath'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

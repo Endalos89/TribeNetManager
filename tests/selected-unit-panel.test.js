@@ -8,6 +8,8 @@ const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'src', 'index.html'), 'utf8');
 const panel = fs.readFileSync(path.join(root, 'src', 'selected-unit-panel.js'), 'utf8');
 const compendium = fs.readFileSync(path.join(root, 'src', 'compendium.js'), 'utf8');
+const main = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');
+const preload = fs.readFileSync(path.join(root, 'src', 'preload.js'), 'utf8');
 
 assert.deepStrictEqual(sustenance.dryTerrainRates({ ordinaryPeople:100, slaves:2, goats:3, dogs:4, cattle:5, horses:6, elephants:1 }), {
   waterPerTurn: 1295,
@@ -28,6 +30,11 @@ assert.match(panel, /months of food/);
 assert.match(html, /data-unit-pane="inventory"[\s\S]*?Carrying capacity &amp; load/);
 assert.match(panel, /data-compendium-entry/);
 assert.match(compendium, /restoreRequestedEntry/);
+assert.match(panel, /openCompendium\(entry, key\)/);
+assert.match(preload, /openCompendium: \(entry, key\) => ipcRenderer\.invoke\('app:open-compendium', entry, key\)/);
+assert.match(main, /function openCompendiumWindow\(entry, key\)/);
+assert.match(main, /parent: mainWindow/);
+assert.match(main, /compendiumWindow\.loadFile\(path\.join\(__dirname, 'compendium\.html'\), \{ query \}\)/);
 assert.doesNotMatch(html, /openTribeManagerButton|results-timeline-link/);
 
 const panelRoot = { TribeNetOrdersReferenceRaw: { skills: [{ name:'Forestry', shortname:'For' }] } };
