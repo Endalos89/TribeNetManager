@@ -1,0 +1,58 @@
+.unit-menu-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin: 8px 0 13px;
+  padding: 5px;
+  border: 1px solid #263d48;
+  border-radius: 10px;
+  background: #0a141a;
+}
+.unit-menu-tab {
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 7px 5px;
+  background: transparent;
+  color: #91a5af;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.unit-menu-tab:hover { color: #dce7eb; background: #14232b; }
+.unit-menu-tab.active { color: #f0d48c; border-color: #705c35; background: #272318; }
+.unit-menu-tab:focus-visible { outline: 2px solid #79c4d5; outline-offset: 1px; }
+.unit-menu-pane { display: none; }
+.unit-menu-pane.active { display: block; }
+.unit-menu-section-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 3px 1px 10px; color: #b9c8cf; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+.unit-menu-section-heading small { color: #82959e; font-size: 9px; font-weight: 500; letter-spacing: 0; text-align: right; }
+.unit-skills-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.unit-skill-row { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 8px 9px; border: 1px solid #263b45; border-radius: 7px; background: #0c161c; font-size: 11px; }
+.unit-skill-row span { overflow: hidden; text-overflow: ellipsis; color: #aebdc4; }
+.unit-skill-row strong { color: #f0d48c; font-variant-numeric: tabular-nums; }
+.unit-sustenance-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 8px 0; }
+.unit-supply-card { min-width: 0; display: grid; gap: 5px; align-content: start; padding: 10px; border: 1px solid #263b45; border-radius: 8px; background: #0c161c; }
+.unit-supply-card > span { color: #92a5af; font-size: 9px; text-transform: uppercase; letter-spacing: .05em; }
+.unit-supply-card > strong { color: #e5d28d; font-size: 16px; font-variant-numeric: tabular-nums; }
+.unit-supply-card > small { color: #8499a3; font-size: 9px; line-height: 1.4; }
+.unit-sustenance-stock .unit-supply-card > strong { color: #e7eef1; }
+.unit-inventory-heading { margin: 14px 0 6px; padding-bottom: 5px; border-bottom: 1px solid #263a45; color: #d6c57f; font-size: 11px; }
+.unit-inventory-heading:first-child { margin-top: 0; }
+.unit-order-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 15px; }
+.unit-order-actions[hidden] { display: none; }
+.unit-order-actions .button { min-width: 0; padding: 7px 6px; font-size: 10px; }
+.unit-orders-list { display: grid; gap: 7px; }
+.unit-order-row { display: grid; gap: 5px; padding: 9px; border: 1px solid #263b45; border-radius: 8px; background: #0c161c; }
+.unit-order-row strong { color: #e4c879; font-size: 10px; }
+.unit-order-row span { color: #b3c2c9; font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.unit-order-row.scout { border-left: 3px solid #70b4cb; }
+.unit-order-row.movement { border-left: 3px solid #8bc98e; }
+.unit-panel-empty { padding: 12px 8px; color: #82959e; font-size: 10px; line-height: 1.5; text-align: center; }
+#unitPaneInventory .inventory-list { gap: 5px; }
+#unitPaneInventory .inventory-row { grid-template-columns: minmax(0, 1fr) auto; }
+
+@media (max-width: 1000px) {
+  .unit-menu-tab { font-size: 9px; }
+  .unit-sustenance-grid { grid-template-columns: 1fr; }
+}
