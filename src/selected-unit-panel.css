@@ -28,9 +28,12 @@
 .unit-menu-section-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 3px 1px 10px; color: #b9c8cf; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
 .unit-menu-section-heading small { color: #82959e; font-size: 9px; font-weight: 500; letter-spacing: 0; text-align: right; }
 .unit-skills-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.unit-skill-row { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 8px 9px; border: 1px solid #263b45; border-radius: 7px; background: #0c161c; font-size: 11px; }
+.unit-skill-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto 16px; align-items: center; gap: 7px; padding: 8px 9px; border: 1px solid #263b45; border-radius: 7px; background: #0c161c; font-size: 11px; }
 .unit-skill-row span { overflow: hidden; text-overflow: ellipsis; color: #aebdc4; }
 .unit-skill-row strong { color: #f0d48c; font-variant-numeric: tabular-nums; }
+.unit-compendium-info { width: 16px; height: 18px; justify-self: end; padding: 0; border: 0; background: transparent; color: #ed5656; font: italic 800 14px/1 Segoe UI, sans-serif; cursor: pointer; }
+.unit-compendium-info:hover { color: #ff8787; transform: scale(1.12); }
+.unit-compendium-info:focus-visible { outline: 2px solid #79c4d5; outline-offset: 1px; border-radius: 3px; }
 .unit-sustenance-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 8px 0; }
 .unit-supply-card { min-width: 0; display: grid; gap: 5px; align-content: start; padding: 10px; border: 1px solid #263b45; border-radius: 8px; background: #0c161c; }
 .unit-supply-card > span { color: #92a5af; font-size: 9px; text-transform: uppercase; letter-spacing: .05em; }
@@ -50,7 +53,7 @@
 .unit-order-row.movement { border-left: 3px solid #8bc98e; }
 .unit-panel-empty { padding: 12px 8px; color: #82959e; font-size: 10px; line-height: 1.5; text-align: center; }
 #unitPaneInventory .inventory-list { gap: 5px; }
-#unitPaneInventory .inventory-row { grid-template-columns: minmax(0, 1fr) auto; }
+#unitPaneInventory .inventory-row { grid-template-columns: minmax(0, 1fr) auto 16px; align-items: center; }
 
 @media (max-width: 1000px) {
   .unit-menu-tab { font-size: 9px; }

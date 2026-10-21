@@ -250,6 +250,18 @@ function renderView(view,{push=false}={}){
   return showHome(push);
 }
 
+function restoreRequestedEntry(){
+  const params=new URLSearchParams(window.location.search||'');
+  const type=params.get('entry');
+  const key=String(params.get('key')||'').trim();
+  if(!key)return false;
+  if(type==='skill'&&skillByName(key)){showSkill(key,false);return true;}
+  if(type==='item'&&entityByName(key)){showEntity(key,false);return true;}
+  $('compSearch').value=key;
+  runSearch(key);
+  return true;
+}
+
 async function restoreView(){
   try{
     const snapshot=await window.tribenet.consumeStartupView();
@@ -268,6 +280,7 @@ async function init(){
   $('compBackButton').addEventListener('click',goBack);
   renderNav();
   updateBackButton();
+  if(restoreRequestedEntry())return;
   if(!(await restoreView()))showHome(false);
 }
 
