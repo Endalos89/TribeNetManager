@@ -41,6 +41,23 @@
     return Math.max(0, Math.max(explicitPeople || 0, ordinary) + slaves);
   }
 
+  function compendiumHref(type, key) {
+    const params = new URLSearchParams({ entry: type, key: String(key || '') });
+    return `compendium.html?${params.toString()}`;
+  }
+
+  function infoButton(type, key, label) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'unit-compendium-info';
+    button.textContent = 'i';
+    button.title = `Open ${label} in the Compendium`;
+    button.setAttribute('aria-label', `Open ${label} in the Compendium`);
+    button.dataset.compendiumEntry = type;
+    button.dataset.compendiumKey = key;
+    return button;
+  }
+
   function setActiveTab(key) {
     if (!paneKeys.includes(key)) return;
     activeTab = key;
@@ -106,7 +123,7 @@
       skill.textContent = name;
       const level = document.createElement('strong');
       level.textContent = displayNumber(value);
-      row.append(skill, level);
+      row.append(skill, level, infoButton('skill', name, name));
       host.appendChild(row);
     }
   }
@@ -246,7 +263,7 @@
       name.textContent = `${entry.item} × ${displayNumber(entry.quantity)}`;
       const weight = document.createElement('span');
       weight.textContent = entry.weight == null ? '' : `${displayNumber(entry.weight)} lb`;
-      row.append(name, weight);
+      row.append(name, weight, infoButton('item', entry.item, entry.item));
       host.appendChild(row);
     }
     basis.textContent = stats ? 'Inventory from the selected turn workbook.' : `Reported stock · Turn ${unit?.turnKey || root.resultsTimeline?.turn?.turnKey || '—'}`;
@@ -307,6 +324,11 @@
   }
 
   document.addEventListener('click', event => {
+    const compendiumLink = event.target.closest('[data-compendium-entry]');
+    if (compendiumLink) {
+      root.location.href = compendiumHref(compendiumLink.dataset.compendiumEntry, compendiumLink.dataset.compendiumKey);
+      return;
+    }
     const tab = event.target.closest('[data-unit-tab]');
     if (tab) setActiveTab(tab.dataset.unitTab);
     const action = event.target.closest('[data-unit-action]');
@@ -337,6 +359,6 @@
   }
 
   root.renderSelectedUnitPanel = renderPanel;
-  root.SelectedUnitPanelUtils = { resultEaters, skillNameLookup };
+  root.SelectedUnitPanelUtils = { resultEaters, skillNameLookup, compendiumHref };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.SelectedUnitPanelUtils;
 })(window);

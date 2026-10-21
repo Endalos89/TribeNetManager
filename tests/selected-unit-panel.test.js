@@ -7,6 +7,7 @@ const sustenance = require('../src/unit-sustenance');
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'src', 'index.html'), 'utf8');
 const panel = fs.readFileSync(path.join(root, 'src', 'selected-unit-panel.js'), 'utf8');
+const compendium = fs.readFileSync(path.join(root, 'src', 'compendium.js'), 'utf8');
 
 assert.deepStrictEqual(sustenance.dryTerrainRates({ ordinaryPeople:100, slaves:2, goats:3, dogs:4, cattle:5, horses:6, elephants:1 }), {
   waterPerTurn: 1295,
@@ -25,17 +26,22 @@ assert.match(panel, /dry-terrain rates|dryTerrainRates/i);
 assert.match(panel, /getUnitSupplyRequirements/);
 assert.match(panel, /months of food/);
 assert.match(html, /data-unit-pane="inventory"[\s\S]*?Carrying capacity &amp; load/);
+assert.match(panel, /data-compendium-entry/);
+assert.match(compendium, /restoreRequestedEntry/);
 assert.doesNotMatch(html, /openTribeManagerButton|results-timeline-link/);
 
 const panelRoot = { TribeNetOrdersReferenceRaw: { skills: [{ name:'Forestry', shortname:'For' }] } };
 const panelModule = { exports: {} };
 vm.runInNewContext(panel, {
   window: panelRoot,
+  URLSearchParams,
   document: { addEventListener() {}, getElementById() { return null; }, querySelectorAll() { return []; } },
   module: panelModule
 });
 assert.strictEqual(panelModule.exports.resultEaters({ people: { Warriors:100, Actives:50, Slaves:10 } }), 160);
 assert.strictEqual(panelModule.exports.resultEaters({ people: { People:200, Warriors:100, Slaves:10 } }), 210);
 assert.strictEqual(panelModule.exports.skillNameLookup()('For'), 'Forestry');
+assert.strictEqual(panelModule.exports.compendiumHref('skill', 'Forestry'), 'compendium.html?entry=skill&key=Forestry');
+assert.strictEqual(panelModule.exports.compendiumHref('item', 'Oak Wood'), 'compendium.html?entry=item&key=Oak+Wood');
 
 console.log('Selected-unit panel and dry-terrain reserve tests passed.');
