@@ -7,12 +7,39 @@
   const byId = id => document.getElementById(id);
   const appState = () => typeof state !== 'undefined' ? state : (root.state || {});
   const num = value => {
+    if (value == null || (typeof value === 'string' && value.trim() === '')) return null;
     const parsed = Number(String(value ?? '').replace(/,/g, ''));
     return Number.isFinite(parsed) ? parsed : null;
   };
   const displayNumber = value => value == null ? '—' : Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 });
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
   const canonical = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  function skillNameLookup() {
+    const rows = root.TribeNetOrdersReferenceRaw?.skills || [];
+    const byShortName = new Map();
+    const ambiguous = new Set();
+    for (const row of rows) {
+      const key = canonical(row.shortname);
+      if (!key) continue;
+      if (byShortName.has(key) && canonical(byShortName.get(key)) !== canonical(row.name)) ambiguous.add(key);
+      else byShortName.set(key, row.name);
+    }
+    return value => ambiguous.has(canonical(value)) ? value : byShortName.get(canonical(value)) || value;
+  }
+
+  function resultEaters(unit) {
+    const people = unit?.people || {};
+    const explicitPeople = num(people.People);
+    const ordinaryFields = [
+      people.Warriors, people.Actives, people.Inactives,
+      people.Hirelings, people.Mercenaries ?? people.Mercs,
+      people.Locals, people.Residents, people.Followers, people.Auxiliaries
+    ];
+    const ordinary = ordinaryFields.reduce((sum, value) => sum + (num(value) || 0), 0);
+    const slaves = num(people.Slaves ?? people.Slave) || 0;
+    return Math.max(0, Math.max(explicitPeople || 0, ordinary) + slaves);
+  }
 
   function setActiveTab(key) {
     if (!paneKeys.includes(key)) return;
@@ -65,7 +92,9 @@
       }
     }
     source.textContent = label === 'This unit' ? '' : `Shared from ${label}`;
-    const rows = Object.entries(skills).sort(([a], [b]) => a.localeCompare(b));
+    const fullSkillName = skillNameLookup();
+    const rows = Object.entries(skills).map(([name, value]) => [fullSkillName(name), value])
+      .sort(([a], [b]) => a.localeCompare(b));
     if (!rows.length) {
       host.innerHTML = '<div class="unit-panel-empty">No skills were reported for this unit.</div>';
       return;
@@ -143,19 +172,22 @@
     const provisions = findStock(unit, stats, ['Provs']) ?? num(stats?.provs);
     const plannedTurns = num(stats?.provisionTurns);
     const consumedPerTurn = provisionConsumption(code);
-    const provisionTurns = plannedTurns ?? (provisions != null && consumedPerTurn ? provisions / consumedPerTurn : null);
+    const eaters = num(stats?.eaters) ?? (unit ? resultEaters(unit) : null);
+    const provisionTurns = plannedTurns ?? (provisions != null && consumedPerTurn
+      ? provisions / consumedPerTurn
+      : provisions != null && eaters > 0 ? provisions / eaters : null);
     byId('unitProvisions').textContent = displayNumber(provisions);
     byId('unitProvisionTurns').textContent = provisionTurns == null
       ? 'Duration unavailable for this report'
-      : `${displayNumber(provisionTurns)} turns · about ${displayNumber(provisionTurns * 3)} months`;
-    byId('unitEaters').textContent = displayNumber(num(stats?.eaters));
+      : `${displayNumber(provisionTurns * 3)} months of food · ${displayNumber(provisionTurns)} turns`;
+    byId('unitEaters').textContent = displayNumber(eaters);
 
     host.innerHTML = '<div class="unit-panel-empty">Calculating dry-terrain supply reserves…</div>';
     const turnKey = root.resultsTimeline?.turn?.turnKey || appState().planImport?.turnKey;
     try {
       const requirement = turnKey ? await root.tribenet.getUnitSupplyRequirements(turnKey, code) : null;
       if (version !== selectionVersion || String(appState().selectedUnit || '') !== String(code)) return;
-      const counts = requirement?.counts;
+      const counts = requirement?.counts || null;
       const rates = counts ? root.UnitSustenance.dryTerrainRates(counts) : { waterPerTurn:null, fodderPerTurn:null };
       const water = findStock(unit, stats, ['Water']);
       const fodder = findStock(unit, stats, ['Fodder','Grain']);
@@ -166,7 +198,9 @@
       location.textContent = requirement?.endHex
         ? `${requirement.endHex} · ${requirement.terrain || 'terrain unknown'}`
         : 'Current terrain unknown';
-      byId('unitEaters').textContent = displayNumber(num(stats?.eaters) ?? counts.ordinaryPeople);
+      byId('unitEaters').textContent = displayNumber(num(stats?.eaters) ?? (counts
+        ? Number(counts.ordinaryPeople || 0) + Number(counts.slaves || 0)
+        : eaters));
       basis.textContent = 'Dry-terrain estimates assume the same unit population and herd for a full season (3 months), with no local water or fodder replenishment. Current terrain access can reduce or remove these requirements.';
     } catch (error) {
       if (version !== selectionVersion) return;
@@ -303,4 +337,6 @@
   }
 
   root.renderSelectedUnitPanel = renderPanel;
+  root.SelectedUnitPanelUtils = { resultEaters, skillNameLookup };
+  if (typeof module !== 'undefined' && module.exports) module.exports = root.SelectedUnitPanelUtils;
 })(window);
