@@ -195,8 +195,19 @@
       : provisions != null && eaters > 0 ? provisions / eaters : null);
     byId('unitProvisions').textContent = displayNumber(provisions);
     byId('unitProvisionTurns').textContent = provisionTurns == null
-      ? 'Duration unavailable for this report'
-      : `${displayNumber(provisionTurns * 3)} months of food · ${displayNumber(provisionTurns)} turns`;
+      ? 'Duration unavailable'
+      : `${displayNumber(provisionTurns)} months`;
+    byId('unitProvisionTurnCount').textContent = provisionTurns == null
+      ? 'turn count unavailable'
+      : `${displayNumber(provisionTurns)} turns`;
+    const foodCard = byId('unitFoodReserveCard');
+    if (foodCard) {
+      foodCard.classList.remove('reserve-critical', 'reserve-warning', 'reserve-healthy');
+      if (provisionTurns != null) {
+        const status = root.UnitSustenance.foodReserveStatus(provisionTurns);
+        if (status) foodCard.classList.add(`reserve-${status}`);
+      }
+    }
     byId('unitEaters').textContent = displayNumber(eaters);
 
     host.innerHTML = '<div class="unit-panel-empty">Calculating dry-terrain supply reserves…</div>';
@@ -218,7 +229,7 @@
       byId('unitEaters').textContent = displayNumber(num(stats?.eaters) ?? (counts
         ? Number(counts.ordinaryPeople || 0) + Number(counts.slaves || 0)
         : eaters));
-      basis.textContent = 'Dry-terrain estimates assume the same unit population and herd for a full season (3 months), with no local water or fodder replenishment. Current terrain access can reduce or remove these requirements.';
+    basis.textContent = 'Dry-terrain estimates assume the same unit population and herd for a full season (3 turns / 3 months), with no local water or fodder replenishment. Current terrain access can reduce or remove these requirements.';
     } catch (error) {
       if (version !== selectionVersion) return;
       host.innerHTML = '<div class="unit-panel-empty">Dry-terrain reserve calculation is unavailable for this unit.</div>';

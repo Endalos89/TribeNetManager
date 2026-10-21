@@ -12,7 +12,7 @@
     };
   }
 
-  function reserveMonths(stock, perTurn, monthsPerTurn = 3) {
+  function reserveMonths(stock, perTurn, monthsPerTurn = 1) {
     const quantity = Number(stock);
     const demand = Number(perTurn);
     const months = Number(monthsPerTurn);
@@ -21,7 +21,15 @@
     return quantity / demand * months;
   }
 
-  const api = { dryTerrainRates, reserveMonths };
+  function foodReserveStatus(months) {
+    const quantity = Number(months);
+    if (!Number.isFinite(quantity) || quantity < 0) return null;
+    if (quantity < 1) return 'critical';
+    if (quantity < 4) return 'warning';
+    return 'healthy';
+  }
+
+  const api = { dryTerrainRates, reserveMonths, foodReserveStatus };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.UnitSustenance = api;
 })(typeof window !== 'undefined' ? window : globalThis);
