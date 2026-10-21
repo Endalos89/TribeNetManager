@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="results-map.css" />
   <link rel="stylesheet" href="movement-planner.css" />
+  <link rel="stylesheet" href="selected-unit-panel.css" />
 </head>
 <body>
   <div id="app">
@@ -61,11 +62,6 @@
           <div><h2>Turn Manager</h2><p>Plan activities directly from the Results baseline. Completed Orders become authoritative when imported and replace the draft plan.</p></div>
           <span class="module-status">Open</span>
         </button>
-        <button id="openTribeManagerButton" class="module-card enabled" onclick="location.href='tribe-manager.html'">
-          <div class="module-icon">♟</div>
-          <div><h2>Tribe / Unit Management</h2><p>Review historical Results state and changes, plus end-of-turn Water/Fodder needs using planned or completed movement.</p></div>
-          <span class="module-status">Open</span>
-        </button>
       </section>
       <section class="data-panel">
         <div><strong>Your data stays local.</strong><br><span id="dataPathLabel">Loading data location…</span></div>
@@ -107,7 +103,6 @@
         <label class="results-playback-speed" title="Playback speed"><span>Speed</span><select id="mapResultPlaybackSpeed" aria-label="Results playback speed"><option value="0.5">0.5×</option><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
         <input id="mapResultSlider" class="results-turn-slider" type="range" min="0" max="0" value="0" disabled aria-label="Results turn" />
         <button id="mapResultNext" class="button square" disabled title="Next results turn">▶</button>
-        <button class="button results-timeline-link" onclick="location.href='tribe-manager.html'">Tribe Manager</button>
       </div>
 
       <section id="overviewPanel" class="overview-panel">
@@ -147,31 +142,64 @@
             <div id="selectedUnitName" class="unit-name"></div>
             <div id="unitTurnContext" class="unit-context"></div>
 
-            <div class="unit-metrics">
-              <div class="unit-metric"><span>Stored provisions</span><strong id="unitProvisions">—</strong></div>
-              <div class="unit-metric"><span>Provision turns</span><strong id="unitProvisionTurns">—</strong></div>
-              <div class="unit-metric"><span>Eaters</span><strong id="unitEaters">—</strong></div>
-              <div class="unit-metric"><span>People</span><strong id="unitPeople">—</strong></div>
+            <div class="unit-menu-tabs" role="tablist" aria-label="Selected unit details">
+              <button class="unit-menu-tab active" id="unitTabOverview" role="tab" aria-selected="true" aria-controls="unitPaneOverview" data-unit-tab="overview">Overview</button>
+              <button class="unit-menu-tab" id="unitTabSkills" role="tab" aria-selected="false" aria-controls="unitPaneSkills" data-unit-tab="skills">Skills</button>
+              <button class="unit-menu-tab" id="unitTabSustenance" role="tab" aria-selected="false" aria-controls="unitPaneSustenance" data-unit-tab="sustenance">Sustenance</button>
+              <button class="unit-menu-tab" id="unitTabInventory" role="tab" aria-selected="false" aria-controls="unitPaneInventory" data-unit-tab="inventory">Gear &amp; Cargo</button>
+              <button class="unit-menu-tab" id="unitTabOrders" role="tab" aria-selected="false" aria-controls="unitPaneOrders" data-unit-tab="orders">Orders</button>
             </div>
 
-            <section class="logistics-section">
-              <div class="logistics-heading"><span>Carrying load</span><strong id="unitLoadPercent">—</strong></div>
-              <div class="capacity-bar"><div id="unitCapacityFill" class="capacity-fill"></div></div>
-              <div id="unitLoadText" class="capacity-caption">—</div>
-              <div id="unitTransportText" class="transport-caption"></div>
+            <section class="unit-menu-pane active" id="unitPaneOverview" role="tabpanel" aria-labelledby="unitTabOverview" data-unit-pane="overview">
+              <div class="unit-metrics">
+                <div class="unit-metric"><span>People</span><strong id="unitPeople">—</strong></div>
+                <div class="unit-metric"><span>Morale</span><strong id="unitMorale">—</strong></div>
+                <div class="unit-metric"><span>Location</span><strong id="unitLocation">—</strong></div>
+                <div class="unit-metric"><span>Terrain</span><strong id="unitTerrain">—</strong></div>
+              </div>
+              <section class="logistics-section">
+                <div class="logistics-heading"><span>Carrying load</span><strong id="unitLoadPercent">—</strong></div>
+                <div class="capacity-bar"><div id="unitCapacityFill" class="capacity-fill"></div></div>
+                <div id="unitLoadText" class="capacity-caption">—</div>
+                <div id="unitTransportText" class="transport-caption"></div>
+              </section>
+              <section id="unitWarningsSection" class="unit-warnings-section hidden">
+                <h3>Warnings</h3>
+                <div id="unitWarnings" class="unit-warnings"></div>
+              </section>
+              <p id="unitCalculationBasis" class="calculation-basis"></p>
             </section>
 
-            <section id="unitWarningsSection" class="unit-warnings-section hidden">
-              <h3>Warnings</h3>
-              <div id="unitWarnings" class="unit-warnings"></div>
+            <section class="unit-menu-pane" id="unitPaneSkills" role="tabpanel" aria-labelledby="unitTabSkills" data-unit-pane="skills" hidden>
+              <div class="unit-menu-section-heading"><span>SKILL LEVELS</span><small id="unitSkillsSource"></small></div>
+              <div id="unitSkillsList" class="unit-skills-list"></div>
             </section>
 
-            <section class="inventory-section">
-              <div class="history-heading"><h3>Heaviest carried goods</h3><span>at movement</span></div>
+            <section class="unit-menu-pane" id="unitPaneSustenance" role="tabpanel" aria-labelledby="unitTabSustenance" data-unit-pane="sustenance" hidden>
+              <div class="unit-menu-section-heading"><span>FOOD &amp; ANIMAL SUPPLIES</span><small id="unitSupplyLocation"></small></div>
+              <div class="unit-sustenance-grid unit-sustenance-stock">
+                <div class="unit-supply-card"><span>Provisions</span><strong id="unitProvisions">—</strong><small id="unitProvisionTurns">Endurance unavailable</small></div>
+                <div class="unit-supply-card"><span>Eaters</span><strong id="unitEaters">—</strong><small>People and animals counted by the turn plan</small></div>
+              </div>
+              <div class="unit-sustenance-grid" id="unitSustenanceGrid"></div>
+              <p id="unitSupplyBasis" class="calculation-basis"></p>
+            </section>
+
+            <section class="unit-menu-pane" id="unitPaneInventory" role="tabpanel" aria-labelledby="unitTabInventory" data-unit-pane="inventory" hidden>
+              <div class="unit-menu-section-heading"><span>UNIT STORES</span><small id="unitInventoryBasis"></small></div>
               <div id="unitInventoryList" class="inventory-list"></div>
             </section>
 
-            <p id="unitCalculationBasis" class="calculation-basis"></p>
+            <section class="unit-menu-pane" id="unitPaneOrders" role="tabpanel" aria-labelledby="unitTabOrders" data-unit-pane="orders" hidden>
+              <div id="unitOrderActions" class="unit-order-actions">
+                <button class="button" type="button" data-unit-action="move">Move Unit</button>
+                <button class="button" type="button" data-unit-action="scout">Send Out Scout</button>
+                <button class="button" type="button" data-unit-action="split">Split Off Unit</button>
+                <button class="button" type="button" data-unit-action="open-scouts">View Scout Routes</button>
+              </div>
+              <div class="unit-menu-section-heading"><span>MOVEMENT &amp; SCOUTING</span><small id="unitOrdersBasis"></small></div>
+              <div id="unitOrdersList" class="unit-orders-list"></div>
+            </section>
           </div>
 
           <div id="selectionEditor" class="hidden">
@@ -241,6 +269,8 @@
   <script src="conditional-orders.js"></script>
   <script src="renderer.js"></script>
   <script src="unit-logistics.js"></script>
+  <script src="unit-sustenance.js"></script>
+  <script src="selected-unit-panel.js"></script>
   <script src="isometric-core.js"></script>
   <script src="results-map.js"></script>
   <script src="movement-planner.js"></script>

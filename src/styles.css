@@ -30,7 +30,7 @@ button { color: inherit; }
 .eyebrow { margin: 0 0 7px; font-size: 11px; color: var(--accent-strong); letter-spacing: .15em; font-weight: 800; }
 .hero-panel h1 { font-size: clamp(34px, 4vw, 54px); line-height: 1.02; margin: 0 0 17px; max-width: 760px; }
 .hero-copy { max-width: 760px; color: #afbec8; font-size: 17px; line-height: 1.55; }
-.module-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; max-width: 1200px; }
+.module-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; max-width: 1200px; }
 .ravenpost-report-card { grid-column: 1 / -1; min-height: 96px; }
 .module-card { min-height: 180px; border: 1px solid var(--line); border-radius: 15px; background: linear-gradient(145deg, #14212a, #0e171d); padding: 22px; text-align: left; position: relative; display: grid; grid-template-columns: 48px 1fr; gap: 14px; }
 .module-card.enabled { cursor: pointer; }
