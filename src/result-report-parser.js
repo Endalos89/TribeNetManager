@@ -142,6 +142,7 @@ function splitLines(rawText) {
 function parseNumber(value) {
   if (value == null) return null;
   const cleaned = String(value).replace(/,/g, '').trim();
+  if (!cleaned) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
@@ -193,6 +194,214 @@ function parseScoutTransport(text) {
     noOfScouts: numberAfter(/([\d,]+)\s+(?:scouts?|riders?)/i),
     noOfHorses: numberAfter(/([\d,]+)\s+horses?/i),
     noOfCarts: numberAfter(/([\d,]+)\s+(?:carts?|wagons?)/i)
+  };
+}
+
+function parseScoutOutcome(text) {
+  const value = String(text || '').replace(/[’]/g, "'");
+  const movementFailure = value.match(/Not enough M\.P'?s to move to\s+(N|NE|SE|S|SW|NW)\s+into\s+([^,]+)/i);
+  if (movementFailure) return { blockedReason: 'insufficient-movement', blockedDirection: movementFailure[1].toUpperCase(), blockedTerrain: normalizeTerrain(movementFailure[2]) };
+  const oceanFailure = value.match(/Can't Move on Ocean to\s+(N|NE|SE|S|SW|NW)\s+of HEX/i);
+  if (oceanFailure) return { blockedReason: 'ocean', blockedDirection: oceanFailure[1].toUpperCase(), blockedTerrain: 'O' };
+  return { blockedReason: null, blockedDirection: null, blockedTerrain: null };
+}
+
+function splitActivityParts(value) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  const text = String(value || '');
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === '(') depth += 1;
+    else if (text[i] === ')') depth = Math.max(0, depth - 1);
+    else if (text[i] === ',' && depth === 0) {
+      parts.push(text.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  if (text.slice(start).trim()) parts.push(text.slice(start).trim());
+  return parts;
+}
+
+function parseItemAmounts(value) {
+  const amounts = [];
+  for (const part of splitActivityParts(value)) {
+    const match = part.match(/^([\d,]+)\s+(.+?)$/);
+    if (match) amounts.push({ item: match[2].trim(), quantity: parseNumber(match[1]) });
+  }
+  return amounts;
+}
+
+function parseNamedItemAmounts(value) {
+  const amounts = [];
+  for (const part of splitActivityParts(value)) {
+    const match = part.match(/^(.+?)\s+([\d,]+)$/);
+    if (match) amounts.push({ item: match[1].trim(), quantity: parseNumber(match[2]) });
+  }
+  return amounts;
+}
+
+function parseActivityLine(line) {
+  const text = String(line || '').trim();
+  const finalMatch = text.match(/^Final Activities:\s*Provs eaten:\s*(.*)$/i);
+  if (finalMatch) return {
+    category: 'final',
+    actions: [{ type: 'consumption', label: 'Provisions eaten', items: parseItemAmounts(finalMatch[1]) }]
+  };
+  const body = text.replace(/^Tribe Activities,?\s*/i, '')
+    .replace(/([\d,]+\s+[A-Za-z/]+)\s+(?=\d+\s+people\b)/g, '$1, ');
+  const actions = [];
+  for (const part of splitActivityParts(body)) {
+    let match = part.match(/^(\d+)\s+people\s+(caught|hunted|stripped)\s+([\d,]+)\s+(.+)$/i);
+    if (match) {
+      actions.push({ type: match[2].toLowerCase(), label: match[2], workers: parseNumber(match[1]), items: [{ item: match[4].trim(), quantity: parseNumber(match[3]) }] });
+      continue;
+    }
+    match = part.match(/^(\d+)\s+people\s+furried\s*\((.*)\)$/i);
+    if (match) {
+      actions.push({ type: 'furriering', label: 'Furriering', workers: parseNumber(match[1]), items: parseItemAmounts(match[2]) });
+      continue;
+    }
+    match = part.match(/^(\d+)\s+people\s+made\s+([\d,]+)\s+(.+?)(?:\s*\(using\s+(.*)\))?$/i);
+    if (match) {
+      actions.push({ type: 'crafting', label: 'Crafting', workers: parseNumber(match[1]), items: [{ item: match[3].trim(), quantity: parseNumber(match[2]) }], inputs: parseItemAmounts(match[4] || '') });
+      continue;
+    }
+    match = part.match(/^(\d+)\s+people\s+(Skin\\gut\\bone)\s+([\d,]+)\s+(.+)$/i);
+    if (match) {
+      actions.push({ type: 'animal-processing', label: match[2], workers: parseNumber(match[1]), items: [{ item: match[4].trim(), quantity: parseNumber(match[3]) }] });
+      continue;
+    }
+    match = part.match(/^Skins\s+(Cured|Tanned)\s+([\d,]+)(?:\s*\(using\s+(.*)\))?$/i);
+    if (match) {
+      actions.push({ type: match[1].toLowerCase(), label: `Skins ${match[1]}`, items: [{ item: 'Skin', quantity: parseNumber(match[2]) }], inputs: parseItemAmounts(match[3] || '') });
+      continue;
+    }
+    match = part.match(/^B\/axe\s+([\d,]+)$/i);
+    if (match) {
+      actions.push({ type: 'production', label: 'B/axe made', items: [{ item: 'B/axe', quantity: parseNumber(match[1]) }] });
+      continue;
+    }
+    match = part.match(/^([\d,]+)\s+herders\s+allocated$/i);
+    if (match) { actions.push({ type: 'herding', label: 'Herders allocated', quantity: parseNumber(match[1]) }); continue; }
+    match = part.match(/^([\d,]+)\s+actual herders required$/i);
+    if (match) { actions.push({ type: 'herding', label: 'Actual herders required', quantity: parseNumber(match[1]) }); continue; }
+    match = part.match(/^Bred\s*\((.*)\)$/i);
+    if (match) { actions.push({ type: 'breeding', label: 'Bred', items: parseNamedItemAmounts(match[1]) }); continue; }
+    if (/^No Breeding Performed$/i.test(part)) { actions.push({ type: 'breeding', label: 'No breeding performed' }); continue; }
+    if (part) actions.push({ type: 'other', label: part });
+  }
+  return { category: 'activities', actions };
+}
+
+function parseHtmlTables(html) {
+  const tables = [];
+  for (const tableMatch of String(html || '').matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)) {
+    const rows = [];
+    for (const rowMatch of tableMatch[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+      const cells = [...rowMatch[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(cell => cell[1]
+        .replace(/<br\s*\/?>/gi, ' ')
+        .replace(/<\/(?:p|div|li)>/gi, ' ')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'")
+        .trim());
+      if (cells.length) rows.push(cells);
+    }
+    tables.push(rows);
+  }
+  return tables;
+}
+
+function transferStatus(requested, actual) {
+  if (actual == null) return 'unreported';
+  if (requested == null) return 'reported';
+  if (actual === requested) return 'complete';
+  if (actual === 0) return 'failed';
+  return 'partial';
+}
+
+function parseTransferTable(tables = []) {
+  const rows = tables.find(table => table[0]?.map(value => value.toLowerCase()).join('|').includes('from|to|item|requested|actual|message')) || [];
+  return rows.slice(1).map(cells => ({
+    from: cells[0] || '',
+    to: cells[1] || '',
+    item: cells[2] || '',
+    requested: parseNumber(cells[3]),
+    actual: parseNumber(cells[4]),
+    message: cells[5] || ''
+  })).filter(row => row.from || row.to || row.item);
+}
+
+function parseAuctionSummary(lines, transfers, homeUnitCode) {
+  const auctions = [];
+  for (const line of lines) {
+    const match = line.match(/^(Transfer to|Receive from) Auction:\s*(.*)$/i);
+    if (!match) continue;
+    const direction = /^Transfer to/i.test(match[1]) ? 'to-auction' : 'from-auction';
+    const prefix = match[2].split(/,\s*(?:To|from)\s+[A-Za-z0-9]+:/i)[0];
+    for (const part of splitActivityParts(prefix)) {
+      const itemMatch = part.match(/^([\d,]+)\s+(.+)$/);
+      if (!itemMatch) continue;
+      const quantity = parseNumber(itemMatch[1]);
+      const item = itemMatch[2].trim();
+      const outgoing = direction === 'to-auction';
+      const transferIndex = transfers.findIndex(row => row.auctionSummaryIndex == null && row.item.toUpperCase() === item.toUpperCase() && row.requested === quantity &&
+        (outgoing ? row.from === homeUnitCode : row.to === homeUnitCode));
+      const transfer = transferIndex >= 0 ? transfers[transferIndex] : null;
+      if (transfer) transfer.auctionSummaryIndex = auctions.length;
+      auctions.push({
+        direction,
+        item,
+        reportedAmount: quantity,
+        actualAmount: transfer?.actual ?? null,
+        status: transferStatus(quantity, transfer?.actual ?? null),
+        transfer: transfer ? { from: transfer.from, to: transfer.to, message: transfer.message } : null
+      });
+    }
+  }
+  return auctions;
+}
+
+function parseHeaderMetadata(lines, turnMatch, turnLine, tables) {
+  const nextTurnMatch = turnLine.match(/Next Turn\s+([^\s,(]+)(?:\s+\(#?(\d+)\))?(?:,\s*([^\s,]+))?/i);
+  const financialMatch = lines.find(line => /^Received:/i.test(line))?.match(/^Received:\s*\$?\s*([\d,.]+),\s*Cost:\s*\$?\s*([\d,.]+)\s*Credit:\s*\$?\s*([\d,.]+)/i);
+  const desiredLine = lines.find(line => /^Desired Commodities:/i.test(line)) || '';
+  const desiredCommodities = [...desiredLine.matchAll(/\(\d+\)\s*([^,]+)/g)].map(match => match[1].trim());
+  const goodsLine = lines.find(line => /^Goods Tribe:/i.test(line)) || '';
+  const homeHeader = lines.find(line => /^Tribe\s+[^,]+,/.test(line));
+  const homeCode = homeHeader?.match(/^Tribe\s+([^,\s]+)/)?.[1] || null;
+  const transfers = parseTransferTable(tables);
+  const auctions = parseAuctionSummary(lines, transfers, homeCode);
+  const settlementsTable = tables.find(table => table[0]?.map(value => value.toLowerCase()).join('|').includes('hex code|name|note|type|subtype')) || [];
+  const settlements = settlementsTable.slice(1).map(cells => ({
+    hexCode: cells[0] || '', name: cells[1] || '', note: cells[2] || '', type: cells[3] || '', subtype: cells[4] || ''
+  })).filter(row => Object.values(row).some(Boolean));
+  const notices = lines.filter(line => /^Skills Teacher\b/i.test(line) || /^Warning:/i.test(line));
+  const nextTurnDate = nextTurnMatch?.[3] || null;
+  return {
+    sequence: turnMatch?.[2] ? Number(turnMatch[2]) : null,
+    season: (turnMatch?.[3] || '').trim() || null,
+    weatherAndNextTurn: (turnMatch?.[4] || '').trim() || null,
+    weather: (turnMatch?.[4] || '').split(/\s+Next Turn\b/i)[0].replace(/\t/g, ' ').trim() || null,
+    nextTurn: nextTurnMatch?.[1] || null,
+    nextTurnSequence: nextTurnMatch?.[2] ? Number(nextTurnMatch[2]) : null,
+    nextTurnDate,
+    finances: financialMatch ? { received: parseNumber(financialMatch[1]), cost: parseNumber(financialMatch[2]), credit: parseNumber(financialMatch[3]) } : null,
+    goodsTribe: goodsLine.replace(/^Goods Tribe:\s*/i, '').trim() || null,
+    desiredCommodities,
+    auctions,
+    transfers: transfers.map((row, index) => ({
+      from: row.from, to: row.to, item: row.item, requested: row.requested, actual: row.actual,
+      status: transferStatus(row.requested, row.actual), message: row.message,
+      type: auctions[row.auctionSummaryIndex] ? 'auction' : 'unit-transfer'
+    })),
+    notices,
+    settlements
   };
 }
 
@@ -396,7 +605,7 @@ function parseUnitSection(lines, startIndex, reportTurn, knowledgeMap) {
     const turnMatch = line.match(/^Current Turn\s+([^\s,]+)/i);
     if (turnMatch) { unit.turnKey = turnMatch[1]; i += 1; continue; }
     if (/Activities/i.test(line)) {
-      events.push({ unitCode, eventType: 'activities', message: line });
+      events.push({ unitCode, eventType: /^Final Activities/i.test(line) ? 'final activities' : 'activities', message: line, details: parseActivityLine(line) });
       i += 1;
       continue;
     }
@@ -418,7 +627,7 @@ function parseUnitSection(lines, startIndex, reportTurn, knowledgeMap) {
     const scoutMatch = line.match(/^Scout\s+(\d+):\s*(.+)$/i);
     if (scoutMatch) {
       const report = scoutMatch[2].trim();
-      const scout = { id: Number(scoutMatch[1]), report, raw: line, ...parseScoutTransport(report) };
+      const scout = { id: Number(scoutMatch[1]), report, raw: line, ...parseScoutTransport(report), ...parseScoutOutcome(report) };
       unit.scouts.push(scout);
       events.push({ unitCode, eventType: 'scout', message: line, details: { scoutId: scout.id } });
       i += 1;
@@ -502,24 +711,18 @@ function parseUnitSection(lines, startIndex, reportTurn, knowledgeMap) {
   return { unit, nextIndex: i, events };
 }
 
-function parseResultText(rawText, sourceFile = 'Results.docx') {
+function parseResultText(rawText, sourceFile = 'Results.docx', tables = []) {
   const lines = splitLines(rawText);
   const turnLine = lines.find(line => /^Current Turn\s+/i.test(line));
   if (!turnLine) throw new Error('Could not find a Current Turn line in this results report.');
   const turnMatch = turnLine.match(/^Current Turn\s+([^\s,]+)(?:\s+\(#?(\d+)\))?,?\s*([^,]*)?,?\s*(.*)$/i);
   const turnKey = turnMatch?.[1];
   if (!turnKey) throw new Error('Could not determine the turn key from this results report.');
-  const nextTurnMatch = turnLine.match(/Next Turn\s+([^\s,]+)/i);
   const report = {
     turnKey,
     turnSort: turnSort(turnKey),
     sourceFile: path.basename(sourceFile || 'Results.docx'),
-    metadata: {
-      sequence: turnMatch?.[2] ? Number(turnMatch[2]) : null,
-      season: (turnMatch?.[3] || '').trim() || null,
-      weatherAndNextTurn: (turnMatch?.[4] || '').trim() || null,
-      nextTurn: nextTurnMatch?.[1] || null
-    },
+    metadata: parseHeaderMetadata(lines, turnMatch, turnLine, tables),
     units: [],
     events: [],
     hexKnowledge: []
@@ -543,8 +746,11 @@ function parseResultText(rawText, sourceFile = 'Results.docx') {
 
 async function parseResultDocument(filePath) {
   const mammoth = require('mammoth');
-  const result = await mammoth.extractRawText({ path: filePath });
-  return parseResultText(result.value, filePath);
+  const [result, html] = await Promise.all([
+    mammoth.extractRawText({ path: filePath }),
+    mammoth.convertToHtml({ path: filePath })
+  ]);
+  return parseResultText(result.value, filePath, parseHtmlTables(html.value));
 }
 
 module.exports = {
