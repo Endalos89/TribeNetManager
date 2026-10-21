@@ -9,7 +9,7 @@ Module._load = function loadElectronForRavenpostTests(request, parent, isMain) {
   if (request === 'electron') return { safeStorage: { isEncryptionAvailable: () => false }, shell: {} };
   return originalLoad.call(this, request, parent, isMain);
 };
-const { RavenpostService, RESULTS_REPORT_SENDER, findResultsReportAttachment } = require('../src/ravenpost-service');
+const { RavenpostService, RESULTS_REPORT_SENDER, ORDERS_TEMPLATE_SENDER, findResultsReportAttachment, findOrdersTemplateAttachments, turnKeyFromOrdersFilename } = require('../src/ravenpost-service');
 Module._load = originalLoad;
 
 const root = path.join(__dirname, '..');
@@ -22,6 +22,7 @@ const ui = fs.readFileSync(path.join(root, 'src', 'ravenpost.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'src', 'ravenpost.html'), 'utf8');
 const viewState = fs.readFileSync(path.join(root, 'src', 'update-view-state.js'), 'utf8');
 const main = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');
+const launcherImports = fs.readFileSync(path.join(root, 'src', 'launcher-imports.js'), 'utf8');
 
 assert.match(preload, /exposeInMainWorld\(['"]ravenpost['"]/, 'Ravenpost must stay behind the preload IPC bridge');
 assert.match(preload, /ipcRenderer\.invoke\(['"]ravenpost:authorize['"]/, 'Gmail authorization should go through IPC');
@@ -41,6 +42,12 @@ assert.match(service, /'outbound' : 'inbound'/, 'Gmail history must distinguish 
 assert.doesNotMatch(service, /labelIds: 'INBOX'/, 'Ravenpost must not restrict its search to Gmail Inbox');
 assert.match(service, /from:\$\{RESULTS_REPORT_SENDER\} has:attachment filename:docx/, 'Ravenpost must find report mail even when the sender is not in the player allowlist');
 assert.match(main, /results:ravenpost-import/, 'The launcher must be able to import a Results report from Ravenpost');
+assert.match(service, /from:\$\{ORDERS_TEMPLATE_SENDER\} has:attachment/);
+assert.match(main, /orders:template-ravenpost/);
+assert.match(main, /importOrdersTemplateFromRavenpost\(turnKey\)/, 'Orders export should automatically fetch its baseline when none is stored');
+assert.match(preload, /importRavenpostOrdersTemplate: turnKey => ipcRenderer\.invoke\('orders:template-ravenpost'/);
+assert.match(launcherImports, /importRavenpostOrdersTemplate\(turnKey\)/);
+assert.match(launcherImports, /baselineSource === 'Ravenpost'/);
 assert.match(launcher, /pickupRavenpostResultsButton/, 'A Results pickup action should appear above the Ravenpost launcher card');
 
 assert.match(ipc, /contact\?\.status === ['"]not_interested['"]/, 'Ignored senders must suppress new-mail alerts');
@@ -142,6 +149,13 @@ try {
     { mimeType: 'multipart/alternative', parts: [attachment] }
   ] }), [{ filename: attachment.filename, mimeType: attachment.mimeType, attachmentId: 'att-1' }]);
 
+  const orderAttachment = { filename: '0485_906_05_Orders.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: { attachmentId: 'orders-1' } };
+  assert.deepStrictEqual(findOrdersTemplateAttachments({ mimeType: 'multipart/mixed', parts: [
+    { filename: 'tribenet-news.pdf', body: { attachmentId: 'news-1' } },
+    { mimeType: 'multipart/alternative', parts: [orderAttachment] }
+  ] }), [{ filename: orderAttachment.filename, mimeType: orderAttachment.mimeType, attachmentId: 'orders-1' }]);
+  assert.strictEqual(turnKeyFromOrdersFilename(orderAttachment.filename), '906-05');
+
   const settings = new Map();
   const db = { getSetting: (key, fallback = null) => settings.has(key) ? settings.get(key) : fallback, setSetting: (key, value) => settings.set(key, String(value)) };
   const ravenpost = new RavenpostService(db);
@@ -172,6 +186,32 @@ try {
   assert.strictEqual(downloaded.data.toString(), 'word report');
   ravenpost.markResultsReportImported('report-1');
   assert.strictEqual(await ravenpost.findLatestResultsReport(), null, 'An imported report should no longer appear as pending pickup');
+
+  const ordersDb = { getSetting: () => '' };
+  const ordersService = new RavenpostService(ordersDb);
+  const orderQueries = [];
+  ordersService.gmailJson = async pathname => {
+    orderQueries.push(pathname);
+    if (pathname.startsWith('/users/me/messages?')) return { messages: [{ id: 'orders-mail-1' }] };
+    if (pathname === '/users/me/messages/orders-mail-1?format=full') return {
+      id: 'orders-mail-1', internalDate: String(Date.parse('2026-10-21T11:00:00Z')),
+      payload: {
+        headers: [
+          { name: 'From', value: `TribeNet Reports <${ORDERS_TEMPLATE_SENDER}>` },
+          { name: 'Subject', value: 'Blank Orders workbook for Turn 906-05' }
+        ],
+        mimeType: 'multipart/mixed', parts: [orderAttachment]
+      }
+    };
+    if (pathname === '/users/me/messages/orders-mail-1/attachments/orders-1') return { data: Buffer.from('xlsx template').toString('base64url') };
+    throw new Error(`Unexpected Orders Gmail request: ${pathname}`);
+  };
+  const foundOrders = await ordersService.findLatestOrdersTemplate({ turnKey: '906-05' });
+  assert.strictEqual(foundOrders.filename, orderAttachment.filename);
+  assert.strictEqual(foundOrders.turnKey, '906-05');
+  assert(orderQueries[0].includes(encodeURIComponent(ORDERS_TEMPLATE_SENDER)));
+  const downloadedOrders = await ordersService.downloadLatestOrdersTemplate({ turnKey: '906-05' });
+  assert.strictEqual(downloadedOrders.data.toString(), 'xlsx template');
 
   const syncSettings = new Map();
   const syncDb = {

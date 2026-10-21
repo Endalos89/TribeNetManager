@@ -8,7 +8,8 @@ const { ResultsDatabase } = require('./results-database');
 const {
   findLatestRavenpostResultsReport,
   downloadLatestRavenpostResultsReport,
-  markRavenpostResultsReportImported
+  markRavenpostResultsReportImported,
+  downloadRavenpostOrdersTemplate
 } = require('./ravenpost-ipc');
 const { parseTurnWorkbook } = require('./turn-manager-parser');
 const { parseResultDocument } = require('./result-report-parser');
@@ -439,12 +440,49 @@ ipcMain.handle('orders:template-import', async (_event, expectedTurnKey) => {
   }
 });
 
+async function importOrdersTemplateFromRavenpost(expectedTurnKey) {
+  let stagingDirectory = null;
+  try {
+    const attachment = await downloadRavenpostOrdersTemplate(expectedTurnKey);
+    if (!attachment) return { notFound: true };
+    const turnKey = canonicalTurnKey(expectedTurnKey) || canonicalTurnKey(attachment.turnKey);
+    if (!turnKey) throw new Error('Select a planning turn before picking up the blank Orders sheet from Ravenpost.');
+    const extension = path.extname(String(attachment.filename || '')).toLowerCase();
+    if (!['.xlsx', '.xlsm', '.xls'].includes(extension)) throw new Error('The Ravenpost attachment is not an Excel Orders workbook.');
+    stagingDirectory = fs.mkdtempSync(path.join(app.getPath('temp'), 'tribenet-ravenpost-orders-'));
+    const filePath = path.join(stagingDirectory, `blank-orders${extension}`);
+    fs.writeFileSync(filePath, attachment.data);
+    const saved = await saveOrderTemplate(filePath, app.getPath('userData'), turnKey);
+    return { ...saved, source: 'Ravenpost', emailSubject: attachment.subject };
+  } catch (error) {
+    console.error('Ravenpost blank Orders import failed', error);
+    return { error: error.message };
+  } finally {
+    if (stagingDirectory) {
+      try { fs.rmSync(stagingDirectory, { recursive: true, force: true }); }
+      catch (error) { console.warn('Could not remove Ravenpost Orders staging files:', error.message); }
+    }
+  }
+}
+
+ipcMain.handle('orders:template-ravenpost', async (_event, expectedTurnKey) => ({
+  canceled: false,
+  ...await importOrdersTemplateFromRavenpost(expectedTurnKey)
+}));
+
 ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
   const turnKey = canonicalTurnKey(requestedTurnKey);
   if (!turnKey) return { canceled: false, error: 'Select a planning turn before exporting Orders.' };
   try {
-    const templatePath = await findOrderTemplate(app.getPath('userData'), turnKey);
-    if (!templatePath) return { canceled: false, error: `Import a blank Orders workbook for Turn ${turnKey} first.` };
+    let templatePath = await findOrderTemplate(app.getPath('userData'), turnKey);
+    let baselineSource = 'saved';
+    if (!templatePath) {
+      const fetched = await importOrdersTemplateFromRavenpost(turnKey);
+      if (fetched.error) throw new Error(`Could not fetch the blank Orders sheet from Ravenpost: ${fetched.error}`);
+      if (fetched.notFound) throw new Error(`No blank Orders attachment for Turn ${turnKey} was found from reports@tribenet.com.au. You can choose a workbook manually.`);
+      templatePath = await findOrderTemplate(app.getPath('userData'), turnKey);
+      baselineSource = 'Ravenpost';
+    }
     const destination = resolveOrdersExportPath(app, turnKey);
     const data = buildOrdersExportData(turnKey);
     const exported = await patchOrdersWorkbook({ templatePath, outputPath: destination.outputPath, ...data });
@@ -461,7 +499,8 @@ ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
       outputFolder: path.dirname(exported.outputPath),
       updatedExisting: destination.updatedExisting,
       opened: !openError,
-      openError: openError || null
+      openError: openError || null,
+      baselineSource
     };
   } catch (error) {
     console.error('Orders workbook export failed', error);

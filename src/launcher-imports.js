@@ -3,6 +3,7 @@
   const resultsButton = document.getElementById('launcherImportResultsButton');
   const completedButton = document.getElementById('launcherImportCompletedButton');
   const blankOrdersButton = document.getElementById('launcherImportBlankOrdersButton');
+  const fetchOrdersButton = document.getElementById('launcherFetchBlankOrdersButton');
   const exportOrdersButton = document.getElementById('launcherExportOrdersButton');
   const ordersStatus = document.getElementById('launcherOrdersStatus');
   const RESULT_TURN_STORAGE_KEY = 'tribenet:selectedResultTurn';
@@ -42,6 +43,7 @@
     if (resultsButton) resultsButton.disabled = busy;
     if (completedButton) completedButton.disabled = busy;
     if (blankOrdersButton) blankOrdersButton.disabled = busy;
+    if (fetchOrdersButton) fetchOrdersButton.disabled = busy || !selectedPlanningTurnKey();
     if (exportOrdersButton) exportOrdersButton.disabled = busy || !selectedPlanningTurnKey();
     const button = fairButton();
     if (button) button.disabled = busy || !button.dataset.turnKey;
@@ -60,8 +62,9 @@
     if (ordersStatus) {
       ordersStatus.textContent = turnKey
         ? `Orders workbook actions target planning Turn ${turnKey}.`
-        : 'Import Results first, or upload a blank Orders workbook whose filename identifies the turn.';
+        : 'Import Results first to identify the planning turn. The blank Orders sheet will be fetched from Ravenpost when needed.';
     }
+    if (fetchOrdersButton) fetchOrdersButton.disabled = busy || !turnKey;
   }
 
   function planningTurnKey(resultTurn) {
@@ -257,6 +260,28 @@
     }
   }
 
+  async function fetchBlankOrders() {
+    const turnKey = selectedPlanningTurnKey();
+    if (!turnKey || busy) return;
+    setBusy(true);
+    if (ordersStatus) ordersStatus.textContent = `Getting the blank Orders sheet for Turn ${turnKey} from Ravenpost…`;
+    try {
+      const result = await window.tribenet.importRavenpostOrdersTemplate(turnKey);
+      if (result?.notFound) {
+        if (ordersStatus) ordersStatus.textContent = `No blank Orders sheet for Turn ${turnKey} was found from reports@tribenet.com.au.`;
+        return;
+      }
+      if (result?.error) {
+        if (ordersStatus) ordersStatus.textContent = `Ravenpost Orders pickup failed: ${result.error}`;
+        return;
+      }
+      if (ordersStatus) ordersStatus.textContent = `Blank Orders workbook from Ravenpost loaded for Turn ${turnKey}.`;
+    } finally {
+      setBusy(false);
+      await refreshOrdersStatus();
+    }
+  }
+
   async function exportOrders() {
     const turnKey = selectedPlanningTurnKey();
     if (!turnKey) {
@@ -275,10 +300,11 @@
         if (ordersStatus) ordersStatus.textContent = `Orders export failed: ${result.error}`;
         return;
       }
+      const baselineMessage = result.baselineSource === 'Ravenpost' ? ' Used the blank Orders sheet from Ravenpost as the baseline.' : '';
       const openMessage = result.opened === false
         ? ` Could not open it automatically: ${result.openError || 'the default spreadsheet application was unavailable'}.`
         : ' Opened automatically.';
-      if (ordersStatus) ordersStatus.textContent = `${result.updatedExisting ? 'Updated' : 'Created'} Orders workbook for Turn ${turnKey}: ${result.outputFile}. Saved in the Completed Orders folder.${openMessage}`;
+      if (ordersStatus) ordersStatus.textContent = `${result.updatedExisting ? 'Updated' : 'Created'} Orders workbook for Turn ${turnKey}: ${result.outputFile}. Saved in the Completed Orders folder.${baselineMessage}${openMessage}`;
     } finally {
       setBusy(false);
       await refreshOrdersStatus();
@@ -306,6 +332,7 @@
   window.addEventListener('tribenet-pickup-ravenpost-report', importRavenpostResults);
   completedButton?.addEventListener('click', importCompleted);
   blankOrdersButton?.addEventListener('click', importBlankOrders);
+  fetchOrdersButton?.addEventListener('click', fetchBlankOrders);
   exportOrdersButton?.addEventListener('click', exportOrders);
   window.addEventListener('tribenet-import-complete', () => {
     refreshFairStatus().catch(console.error);

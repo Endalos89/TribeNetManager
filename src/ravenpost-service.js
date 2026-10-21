@@ -7,6 +7,7 @@ const OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const OAUTH_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1';
 const RESULTS_REPORT_SENDER = 'postmaster@tribenet.com.au';
+const ORDERS_TEMPLATE_SENDER = 'reports@tribenet.com.au';
 const SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send'
@@ -102,6 +103,22 @@ function findResultsReportAttachment(part, results = []) {
   return results;
 }
 
+function findOrdersTemplateAttachments(part, results = []) {
+  if (!part) return results;
+  const filename = String(part.filename || '').trim();
+  const attachmentId = String(part.body?.attachmentId || '');
+  if (/orders/i.test(filename) && /\.(xlsx|xlsm|xls)$/i.test(filename) && attachmentId) {
+    results.push({ filename, mimeType: String(part.mimeType || ''), attachmentId });
+  }
+  for (const child of part.parts || []) findOrdersTemplateAttachments(child, results);
+  return results;
+}
+
+function turnKeyFromOrdersFilename(filename) {
+  const match = String(filename || '').match(/(?:^|[^0-9])(\d{3})[_-](\d{1,2})(?:[^0-9]|$)/);
+  return match ? `${match[1]}-${String(Number(match[2])).padStart(2, '0')}` : null;
+}
+
 function gmailMessageToRecord(message) {
   const payload = message?.payload || {};
   const sender = parseAddress(getHeader(payload, 'From'));
@@ -160,6 +177,7 @@ class RavenpostService {
     this.db = database;
     this.resultsDatabase = resultsDatabase;
     this.resultsReportCache = null;
+    this.ordersTemplateCache = null;
   }
 
   protect(value) {
@@ -534,6 +552,54 @@ class RavenpostService {
     return true;
   }
 
+  async findLatestOrdersTemplate({ turnKey = null, force = false } = {}) {
+    const requestedTurn = String(turnKey || '').trim().replace('_', '-');
+    if (!force && this.ordersTemplateCache && Date.now() - this.ordersTemplateCache.checkedAt < 30_000 && this.ordersTemplateCache.turnKey === requestedTurn) {
+      return this.ordersTemplateCache.report;
+    }
+    const query = new URLSearchParams({
+      q: `from:${ORDERS_TEMPLATE_SENDER} has:attachment {filename:xlsx filename:xlsm filename:xls}`,
+      maxResults: '20'
+    });
+    const list = await this.gmailJson('/users/me/messages?' + query.toString());
+    const candidates = [];
+    for (const item of list.messages || []) {
+      const full = await this.gmailJson('/users/me/messages/' + encodeURIComponent(item.id) + '?format=full');
+      const sender = parseAddress(getHeader(full.payload, 'From')).email;
+      if (sender !== ORDERS_TEMPLATE_SENDER) continue;
+      for (const attachment of findOrdersTemplateAttachments(full.payload)) {
+        const attachmentTurn = turnKeyFromOrdersFilename(attachment.filename);
+        if (requestedTurn && attachmentTurn && attachmentTurn !== requestedTurn) continue;
+        candidates.push({
+          gmailId: String(full.id || item.id),
+          subject: getHeader(full.payload, 'Subject') || '(No subject)',
+          receivedAt: full.internalDate ? new Date(Number(full.internalDate)).toISOString() : '',
+          turnKey: attachmentTurn,
+          ...attachment
+        });
+      }
+    }
+    candidates.sort((a, b) => Date.parse(b.receivedAt || '') - Date.parse(a.receivedAt || ''));
+    const report = requestedTurn
+      ? (candidates.find(candidate => candidate.turnKey === requestedTurn) || candidates.find(candidate => !candidate.turnKey) || null)
+      : (candidates[0] || null);
+    this.ordersTemplateCache = { checkedAt: Date.now(), turnKey: requestedTurn, report };
+    return report;
+  }
+
+  async downloadLatestOrdersTemplate({ turnKey = null } = {}) {
+    const report = await this.findLatestOrdersTemplate({ turnKey, force: true });
+    if (!report) return null;
+    const payload = await this.gmailJson(
+      '/users/me/messages/' + encodeURIComponent(report.gmailId) + '/attachments/' + encodeURIComponent(report.attachmentId)
+    );
+    const text = String(payload.data || '').replace(/-/g, '+').replace(/_/g, '/');
+    const padding = text.length % 4 ? '='.repeat(4 - (text.length % 4)) : '';
+    const data = Buffer.from(text + padding, 'base64');
+    if (!data.length) throw new Error('The blank Orders attachment from Ravenpost was empty.');
+    return { ...report, data };
+  }
+
   async sendMessage({ to, cc = '', subject, bodyText, replyToGmailId = null }) {
     const recipient = String(to || '').trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(recipient)) {
@@ -601,12 +667,15 @@ module.exports = {
   RavenpostService,
   SCOPES,
   RESULTS_REPORT_SENDER,
+  ORDERS_TEMPLATE_SENDER,
   base64Url,
   decodeBase64Url,
   stripHtml,
   parseAddress,
   bodyTextFromPayload,
   findResultsReportAttachment,
+  findOrdersTemplateAttachments,
+  turnKeyFromOrdersFilename,
   gmailMessageToRecord,
   buildRawMessage
 };

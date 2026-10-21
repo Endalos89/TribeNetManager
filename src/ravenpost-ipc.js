@@ -182,9 +182,14 @@ function markRavenpostResultsReportImported(gmailId) {
   return requireService().markResultsReportImported(gmailId);
 }
 
+function downloadRavenpostOrdersTemplate(turnKey) {
+  return requireService().downloadLatestOrdersTemplate({ turnKey });
+}
+
 module.exports = {
   syncNow,
   findLatestRavenpostResultsReport,
   downloadLatestRavenpostResultsReport,
-  markRavenpostResultsReportImported
+  markRavenpostResultsReportImported,
+  downloadRavenpostOrdersTemplate
 };
