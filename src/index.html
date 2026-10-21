@@ -157,12 +157,6 @@
                 <div class="unit-metric"><span>Location</span><strong id="unitLocation">—</strong></div>
                 <div class="unit-metric"><span>Terrain</span><strong id="unitTerrain">—</strong></div>
               </div>
-              <section class="logistics-section">
-                <div class="logistics-heading"><span>Carrying load</span><strong id="unitLoadPercent">—</strong></div>
-                <div class="capacity-bar"><div id="unitCapacityFill" class="capacity-fill"></div></div>
-                <div id="unitLoadText" class="capacity-caption">—</div>
-                <div id="unitTransportText" class="transport-caption"></div>
-              </section>
               <section id="unitWarningsSection" class="unit-warnings-section hidden">
                 <h3>Warnings</h3>
                 <div id="unitWarnings" class="unit-warnings"></div>
@@ -178,14 +172,20 @@
             <section class="unit-menu-pane" id="unitPaneSustenance" role="tabpanel" aria-labelledby="unitTabSustenance" data-unit-pane="sustenance" hidden>
               <div class="unit-menu-section-heading"><span>FOOD &amp; ANIMAL SUPPLIES</span><small id="unitSupplyLocation"></small></div>
               <div class="unit-sustenance-grid unit-sustenance-stock">
-                <div class="unit-supply-card"><span>Provisions</span><strong id="unitProvisions">—</strong><small id="unitProvisionTurns">Endurance unavailable</small></div>
-                <div class="unit-supply-card"><span>Eaters</span><strong id="unitEaters">—</strong><small>People and animals counted by the turn plan</small></div>
+                <div class="unit-supply-card"><span>Provisions</span><strong id="unitProvisions">—</strong><small id="unitProvisionTurns">Food endurance unavailable</small></div>
+                <div class="unit-supply-card"><span>Eaters</span><strong id="unitEaters">—</strong><small>People counted by the turn plan</small></div>
               </div>
               <div class="unit-sustenance-grid" id="unitSustenanceGrid"></div>
               <p id="unitSupplyBasis" class="calculation-basis"></p>
             </section>
 
             <section class="unit-menu-pane" id="unitPaneInventory" role="tabpanel" aria-labelledby="unitTabInventory" data-unit-pane="inventory" hidden>
+              <section class="logistics-section">
+                <div class="logistics-heading"><span>Carrying capacity &amp; load</span><strong id="unitLoadPercent">—</strong></div>
+                <div class="capacity-bar"><div id="unitCapacityFill" class="capacity-fill"></div></div>
+                <div id="unitLoadText" class="capacity-caption">—</div>
+                <div id="unitTransportText" class="transport-caption"></div>
+              </section>
               <div class="unit-menu-section-heading"><span>UNIT STORES</span><small id="unitInventoryBasis"></small></div>
               <div id="unitInventoryList" class="inventory-list"></div>
             </section>
@@ -270,6 +270,8 @@
   <script src="renderer.js"></script>
   <script src="unit-logistics.js"></script>
   <script src="unit-sustenance.js"></script>
+  <script src="orders-reference-data.js"></script>
+  <script src="orders-reference-skills.js"></script>
   <script src="selected-unit-panel.js"></script>
   <script src="isometric-core.js"></script>
   <script src="results-map.js"></script>

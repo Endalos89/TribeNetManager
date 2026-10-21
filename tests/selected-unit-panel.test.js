@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const sustenance = require('../src/unit-sustenance');
 
 const root = path.join(__dirname, '..');
@@ -22,6 +23,19 @@ for (const key of ['overview','skills','sustenance','inventory','orders']) {
 assert.match(html, /aria-label="Selected unit details"/);
 assert.match(panel, /dry-terrain rates|dryTerrainRates/i);
 assert.match(panel, /getUnitSupplyRequirements/);
+assert.match(panel, /months of food/);
+assert.match(html, /data-unit-pane="inventory"[\s\S]*?Carrying capacity &amp; load/);
 assert.doesNotMatch(html, /openTribeManagerButton|results-timeline-link/);
+
+const panelRoot = { TribeNetOrdersReferenceRaw: { skills: [{ name:'Forestry', shortname:'For' }] } };
+const panelModule = { exports: {} };
+vm.runInNewContext(panel, {
+  window: panelRoot,
+  document: { addEventListener() {}, getElementById() { return null; }, querySelectorAll() { return []; } },
+  module: panelModule
+});
+assert.strictEqual(panelModule.exports.resultEaters({ people: { Warriors:100, Actives:50, Slaves:10 } }), 160);
+assert.strictEqual(panelModule.exports.resultEaters({ people: { People:200, Warriors:100, Slaves:10 } }), 210);
+assert.strictEqual(panelModule.exports.skillNameLookup()('For'), 'Forestry');
 
 console.log('Selected-unit panel and dry-terrain reserve tests passed.');
