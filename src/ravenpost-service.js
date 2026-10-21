@@ -6,6 +6,7 @@ const OAUTH_AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const OAUTH_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1';
+const RESULTS_REPORT_SENDER = 'postmaster@tribenet.com.au';
 const SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send'
@@ -90,6 +91,17 @@ function bodyTextFromPayload(payload) {
   return '';
 }
 
+function findResultsReportAttachment(part, results = []) {
+  if (!part) return results;
+  const filename = String(part.filename || '').trim();
+  const attachmentId = String(part.body?.attachmentId || '');
+  if (filename && /results[^/]*\.docx$/i.test(filename) && attachmentId) {
+    results.push({ filename, mimeType: String(part.mimeType || ''), attachmentId });
+  }
+  for (const child of part.parts || []) findResultsReportAttachment(child, results);
+  return results;
+}
+
 function gmailMessageToRecord(message) {
   const payload = message?.payload || {};
   const sender = parseAddress(getHeader(payload, 'From'));
@@ -147,6 +159,7 @@ class RavenpostService {
   constructor(database, resultsDatabase = null) {
     this.db = database;
     this.resultsDatabase = resultsDatabase;
+    this.resultsReportCache = null;
   }
 
   protect(value) {
@@ -422,13 +435,12 @@ class RavenpostService {
   async syncInbox() {
     const initialComplete = this.db.getSetting('initial_sync_complete', '0') === '1';
     const addresses = this.db.getSetting('included_addresses', '').split(/\s+/).filter(Boolean);
-    if (!addresses.length) return { firstSync: !initialComplete, newMessages: [], settings: this.getSettings(), counts: this.db.getCounts() };
 
     const previouslySynced = JSON.parse(this.db.getSetting('synced_addresses', '[]'));
     const needsHistory = addresses.some(email => !previouslySynced.includes(email)) || this.db.getSetting('recipient_backfill_v1', '0') !== '1';
     const searchAddresses = this.db.getSetting('recipient_backfill_v1', '0') !== '1' ? addresses : (needsHistory ? addresses.filter(email => !previouslySynced.includes(email)) : addresses);
     const terms = searchAddresses.flatMap(email => ['from:' + email, 'to:' + email, 'cc:' + email]);
-    let query = '{' + terms.join(' ') + '}';
+    let query = terms.length ? `({${terms.join(' ')}}) OR (from:${RESULTS_REPORT_SENDER} has:attachment filename:docx)` : `from:${RESULTS_REPORT_SENDER} has:attachment filename:docx`;
     if (!needsHistory) {
       const lastSync = this.db.getSetting('last_sync_at', '');
       if (lastSync) {
@@ -449,12 +461,16 @@ class RavenpostService {
         if (existing && !needsHistory) continue;
         const full = await this.gmailJson('/users/me/messages/' + encodeURIComponent(id) + '?format=full');
         const record = gmailMessageToRecord(full);
+        const reportAttachment = record.senderEmail === RESULTS_REPORT_SENDER
+          ? findResultsReportAttachment(full.payload)[0]
+          : null;
         const recipients = [getHeader(full.payload, 'To'), getHeader(full.payload, 'Cc')].join(',').toLowerCase();
-        if (!addresses.some(email => record.senderEmail === email || recipients.split(/[,;]/).some(v => parseAddress(v).email === email))) continue;
+        const isReportMail = Boolean(reportAttachment);
+        if (!isReportMail && !addresses.some(email => record.senderEmail === email || recipients.split(/[,;]/).some(v => parseAddress(v).email === email))) continue;
         const account = this.db.getSetting('account_email', '').toLowerCase();
         record.direction = record.senderEmail === account ? 'outbound' : 'inbound';
         if (existing) record.unread = existing.unread;
-        if (record.direction === 'inbound') this.db.ensureContact(record.senderEmail, record.senderName);
+        if (record.direction === 'inbound' && !isReportMail) this.db.ensureContact(record.senderEmail, record.senderName);
         const saved = this.db.upsertMessage(record);
         if (saved.inserted) newMessages.push(saved.message);
       }
@@ -466,6 +482,56 @@ class RavenpostService {
     this.db.setSetting('initial_sync_complete', '1');
     this.db.setSetting('recipient_backfill_v1', '1');
     return { firstSync: !initialComplete || needsHistory, newMessages, settings: this.getSettings(), counts: this.db.getCounts() };
+  }
+
+  async findLatestResultsReport({ force = false } = {}) {
+    if (!force && this.resultsReportCache && Date.now() - this.resultsReportCache.checkedAt < 30_000) {
+      return this.resultsReportCache.report;
+    }
+    const query = new URLSearchParams({
+      q: `from:${RESULTS_REPORT_SENDER} has:attachment filename:docx`,
+      maxResults: '20'
+    });
+    const list = await this.gmailJson('/users/me/messages?' + query.toString());
+    const candidates = [];
+    for (const item of list.messages || []) {
+      const full = await this.gmailJson('/users/me/messages/' + encodeURIComponent(item.id) + '?format=full');
+      const sender = parseAddress(getHeader(full.payload, 'From')).email;
+      if (sender !== RESULTS_REPORT_SENDER) continue;
+      const attachment = findResultsReportAttachment(full.payload)[0];
+      if (!attachment) continue;
+      candidates.push({
+        gmailId: String(full.id || item.id),
+        subject: getHeader(full.payload, 'Subject') || '(No subject)',
+        receivedAt: full.internalDate ? new Date(Number(full.internalDate)).toISOString() : '',
+        ...attachment
+      });
+    }
+    candidates.sort((a, b) => Date.parse(b.receivedAt || '') - Date.parse(a.receivedAt || ''));
+    const latest = candidates[0] || null;
+    const report = !latest || latest.gmailId === this.db.getSetting('last_imported_results_gmail_id', '') ? null : latest;
+    this.resultsReportCache = { checkedAt: Date.now(), report };
+    return report;
+  }
+
+  async downloadLatestResultsReport() {
+    const report = await this.findLatestResultsReport({ force: true });
+    if (!report) return null;
+    const payload = await this.gmailJson(
+      '/users/me/messages/' + encodeURIComponent(report.gmailId) + '/attachments/' + encodeURIComponent(report.attachmentId)
+    );
+    const text = String(payload.data || '').replace(/-/g, '+').replace(/_/g, '/');
+    const padding = text.length % 4 ? '='.repeat(4 - (text.length % 4)) : '';
+    const data = Buffer.from(text + padding, 'base64');
+    if (!data.length) throw new Error('The Results attachment from Ravenpost was empty.');
+    return { ...report, data };
+  }
+
+  markResultsReportImported(gmailId) {
+    if (!gmailId) return false;
+    this.db.setSetting('last_imported_results_gmail_id', String(gmailId));
+    this.resultsReportCache = null;
+    return true;
   }
 
   async sendMessage({ to, cc = '', subject, bodyText, replyToGmailId = null }) {
@@ -534,11 +600,13 @@ class RavenpostService {
 module.exports = {
   RavenpostService,
   SCOPES,
+  RESULTS_REPORT_SENDER,
   base64Url,
   decodeBase64Url,
   stripHtml,
   parseAddress,
   bodyTextFromPayload,
+  findResultsReportAttachment,
   gmailMessageToRecord,
   buildRawMessage
 };
