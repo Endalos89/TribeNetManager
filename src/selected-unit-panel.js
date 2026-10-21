@@ -326,7 +326,10 @@
   document.addEventListener('click', event => {
     const compendiumLink = event.target.closest('[data-compendium-entry]');
     if (compendiumLink) {
-      root.location.href = compendiumHref(compendiumLink.dataset.compendiumEntry, compendiumLink.dataset.compendiumKey);
+      const entry = compendiumLink.dataset.compendiumEntry;
+      const key = compendiumLink.dataset.compendiumKey;
+      if (root.tribenet?.openCompendium) root.tribenet.openCompendium(entry, key);
+      else root.open?.(compendiumHref(entry, key), 'tribenet-compendium', 'popup,width=1120,height=820,resizable=yes');
       return;
     }
     const tab = event.target.closest('[data-unit-tab]');

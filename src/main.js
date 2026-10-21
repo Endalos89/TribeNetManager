@@ -38,6 +38,7 @@ const {
 } = require('./completed-turn-state');
 
 let mainWindow;
+let compendiumWindow;
 let database;
 let turnManagerDatabase;
 let resultsDatabase;
@@ -113,6 +114,30 @@ function createWindow() {
   const startupPage = pendingStartupView?.page || 'index.html';
   currentView = pendingStartupView || normalizeView({ page: startupPage });
   mainWindow.loadFile(path.join(__dirname, startupPage));
+}
+
+function openCompendiumWindow(entry, key) {
+  const safeEntry = entry === 'skill' || entry === 'item' ? entry : '';
+  const safeKey = String(key || '').trim().slice(0, 200);
+  if (!safeEntry || !safeKey) return false;
+
+  const query = { entry: safeEntry, key: safeKey };
+  if (compendiumWindow && !compendiumWindow.isDestroyed()) {
+    compendiumWindow.loadFile(path.join(__dirname, 'compendium.html'), { query });
+    compendiumWindow.show();
+    compendiumWindow.focus();
+    return true;
+  }
+
+  compendiumWindow = new BrowserWindow({
+    width: 1120, height: 820, minWidth: 760, minHeight: 560,
+    backgroundColor: '#0b1117', title: 'TribeNet Compendium',
+    parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
+  });
+  compendiumWindow.on('closed', () => { compendiumWindow = null; });
+  compendiumWindow.loadFile(path.join(__dirname, 'compendium.html'), { query });
+  return true;
 }
 
 function withCurrentLogistics(record) {
@@ -366,6 +391,7 @@ app.on('before-quit', () => {
 });
 
 ipcMain.handle('hexes:area', (_event, bounds) => database.getHexesInArea(bounds));
+ipcMain.handle('app:open-compendium', (_event, entry, key) => openCompendiumWindow(entry, key));
 ipcMain.handle('hex:get', (_event, coordinate) => database.getHex(coordinate));
 ipcMain.handle('hex:save', (_event, hex, context) => database.saveHex(hex, context));
 ipcMain.handle('hex:clear', (_event, coordinate, context) => database.clearHex(coordinate, context));
