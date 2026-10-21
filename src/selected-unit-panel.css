@@ -39,6 +39,13 @@
 .unit-supply-card > span { color: #92a5af; font-size: 9px; text-transform: uppercase; letter-spacing: .05em; }
 .unit-supply-card > strong { color: #e5d28d; font-size: 16px; font-variant-numeric: tabular-nums; }
 .unit-supply-card > small { color: #8499a3; font-size: 9px; line-height: 1.4; }
+.unit-food-reserve { border-left: 3px solid #53646b; }
+.unit-food-reserve.reserve-critical { border-color: #e05c58; background: #241313; }
+.unit-food-reserve.reserve-critical > strong { color: #ff827c; }
+.unit-food-reserve.reserve-warning { border-color: #d4a345; background: #211b10; }
+.unit-food-reserve.reserve-warning > strong { color: #f0c65f; }
+.unit-food-reserve.reserve-healthy { border-color: #68ae76; background: #101f17; }
+.unit-food-reserve.reserve-healthy > strong { color: #8ed29b; }
 .unit-sustenance-stock .unit-supply-card > strong { color: #e7eef1; }
 .unit-inventory-heading { margin: 14px 0 6px; padding-bottom: 5px; border-bottom: 1px solid #263a45; color: #d6c57f; font-size: 11px; }
 .unit-inventory-heading:first-child { margin-top: 0; }

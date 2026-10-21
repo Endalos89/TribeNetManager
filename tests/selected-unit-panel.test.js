@@ -15,9 +15,16 @@ assert.deepStrictEqual(sustenance.dryTerrainRates({ ordinaryPeople:100, slaves:2
   waterPerTurn: 1295,
   fodderPerTurn: 88
 });
-assert.strictEqual(sustenance.reserveMonths(264, 88), 9);
+assert.strictEqual(sustenance.reserveMonths(264, 88), 3);
+assert.strictEqual(sustenance.reserveMonths(88, 88), 1);
 assert.strictEqual(sustenance.reserveMonths(0, 20), 0);
 assert.strictEqual(sustenance.reserveMonths(50, 0), null);
+assert.strictEqual(sustenance.foodReserveStatus(0.99), 'critical');
+assert.strictEqual(sustenance.foodReserveStatus(1), 'warning');
+assert.strictEqual(sustenance.foodReserveStatus(2.99), 'warning');
+assert.strictEqual(sustenance.foodReserveStatus(3), 'warning');
+assert.strictEqual(sustenance.foodReserveStatus(3.99), 'warning');
+assert.strictEqual(sustenance.foodReserveStatus(4), 'healthy');
 
 for (const key of ['overview','skills','sustenance','inventory','orders']) {
   assert.match(html, new RegExp(`data-unit-tab="${key}"`), `Missing ${key} tab`);
@@ -26,7 +33,9 @@ for (const key of ['overview','skills','sustenance','inventory','orders']) {
 assert.match(html, /aria-label="Selected unit details"/);
 assert.match(panel, /dry-terrain rates|dryTerrainRates/i);
 assert.match(panel, /getUnitSupplyRequirements/);
-assert.match(panel, /months of food/);
+assert.match(panel, /provisionTurns\)\} months/);
+assert.match(panel, /foodReserveStatus\(provisionTurns\)/);
+assert.match(html, /id="unitFoodReserveCard"[\s\S]*?id="unitProvisionTurnCount"/);
 assert.match(html, /data-unit-pane="inventory"[\s\S]*?Carrying capacity &amp; load/);
 assert.match(panel, /data-compendium-entry/);
 assert.match(compendium, /restoreRequestedEntry/);
