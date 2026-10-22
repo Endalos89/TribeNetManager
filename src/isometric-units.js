@@ -34,6 +34,7 @@
   function record(code,snapshot) {
     if(snapshot)return snapshot;
     return (state.planImport?.plan?.unitStats || []).find(u=>String(u.unit)===String(code)) ||
+      (savedMovementPlansState?.unitSplits || []).find(u=>String(u.unitCode)===String(code)) ||
       (resultsTimeline.turn?.units || []).find(u=>String(u.unitCode)===String(code)) || null;
   }
   function prepare() {
@@ -54,6 +55,9 @@
     for(const u of resultsTimeline.turn?.units||[])if(!plannedOrigins.has(String(u.unitCode))){
       const position=typeof resultsPlaybackUnitPosition==='function'?resultsPlaybackUnitPosition(String(u.unitCode),u.currentHex):null;
       add(position?.coordinate||u.currentHex,u.unitCode);
+    }
+    if(state.planningVisible && !historicalResults && typeof plannedSplitMapHex==='function') {
+      for(const split of savedMovementPlansState?.unitSplits || []) add(plannedSplitMapHex(split),split.unitCode);
     }
     clearings=refs;return [...refs].sort().join('|');
   }
@@ -200,6 +204,11 @@
     if(state.planningVisible && state.planImport?.plan && !historicalResults)for(const m of state.routeCache?.movements||[]){
       const ps=m.route?.points||[];
       if(ps[0]?.coordinate===ref || ps[ps.length-1]?.coordinate===ref){const code=String(m.unit);if(!found.has(code))found.set(code,{code,snapshot:null});}
+    }
+    if(state.planningVisible && !historicalResults && typeof plannedSplitMapHex==='function') {
+      for(const split of savedMovementPlansState?.unitSplits || []) {
+        if(plannedSplitMapHex(split)===ref && !found.has(String(split.unitCode))) found.set(String(split.unitCode),{code:String(split.unitCode),snapshot:split});
+      }
     }
     return [...found.values()].sort((a,b)=>a.code.localeCompare(b.code,undefined,{numeric:true}));
   }

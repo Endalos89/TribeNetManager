@@ -81,6 +81,7 @@ assert.ok(!index.includes('movementPlannerCreateCode'), 'The mapper should assig
 assert.ok(!fs.readFileSync('src/planned-unit-splits-turn.js', 'utf8').includes('plannedUnitSplitCode'), 'Turn Manager should assign unit codes automatically instead of asking users to choose one.');
 assert.match(savedPlans, /unit\.plannedSplit && unit\.creationPhase === 'after'/, 'After-movement splits must remain stationary.');
 assert.match(fs.readFileSync('src/planned-unit-splits-map.js', 'utf8'), /savedMovementUnitMoveDestination\(split\.parentUnit\)/, 'After-movement splits must follow the source unit endpoint on the map.');
+assert.match(fs.readFileSync('src/isometric-units.js', 'utf8'), /savedMovementPlansState\?\.unitSplits/, 'Planned split units must be registered and selectable on the 3D map even when no imported unit row exists.');
 assert.match(savedPlans, /savedMovementIsStationaryUnit/, 'Stationary unit types must share one movement rule.');
 assert.match(savedPlans, /removeAllScoutRoutesForUnit/, 'Changing a unit destination must clear its scouting routes.');
 assert.match(savedPlans, /clearedScoutRoutes/, 'Movement commits must report cleared scouting routes.');
