@@ -109,11 +109,8 @@ async function savedMovementPopulateCreationForm() {
   parentSelect.innerHTML = parents.map(unit => `<option value="${savedMovementEscape(unit.unitCode)}">${savedMovementEscape(unit.unitCode)} · ${savedMovementEscape(unit.unitName || 'Tribe')}</option>`).join('');
   const selected = savedMovementSelectedUnit();
   if (selected && String(selected.unitType) === 'Tribe') parentSelect.value = selected.unitCode;
-  const type = document.getElementById('movementPlannerCreateType');
-  const code = document.getElementById('movementPlannerCreateCode');
   const phase = document.getElementById('movementPlannerCreatePhase');
   if (phase) phase.value = 'before';
-  if (type && code && !code.value) code.value = type.value === 'Tribe' ? '1485' : `${parentSelect.value || '0000'}e1`;
   await savedMovementLoadCreationSkills();
 }
 
@@ -145,18 +142,17 @@ async function savedMovementCreateUnit() {
   const parentUnit = document.getElementById('movementPlannerCreateParent')?.value;
   const unitType = document.getElementById('movementPlannerCreateType')?.value;
   const creationPhase = document.getElementById('movementPlannerCreatePhase')?.value === 'after' ? 'after' : 'before';
-  const unitCode = document.getElementById('movementPlannerCreateCode')?.value.trim().toLowerCase();
   const unitName = document.getElementById('movementPlannerCreateName')?.value.trim();
   const skills = [...document.querySelectorAll('#movementPlannerCreateSkills input[data-creation-skill]:checked')].map(input => ({
     skill: input.dataset.creationSkill,
     level: Number(input.dataset.creationLevel || 0)
   }));
-  if (!turnKey || !parentUnit || !unitType || !unitCode) {
-    if (status) status.textContent = 'Choose a source Tribe and enter a unit code.';
+  if (!turnKey || !parentUnit || !unitType) {
+    if (status) status.textContent = 'Choose a source Tribe and unit type.';
     return;
   }
   try {
-    const created = await window.tribenet.addPlannedUnitSplit(turnKey, { parentUnit, unitCode, unitType, unitName, creationPhase, skills });
+    const created = await window.tribenet.addPlannedUnitSplit(turnKey, { parentUnit, unitType, unitName, creationPhase, skills });
     savedMovementPlansState.selectedUnitCode = created.unitCode;
     state.selectedUnit = created.unitCode;
     state.selectedUnitHex = created.startHex || null;

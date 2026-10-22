@@ -69,19 +69,12 @@ function plannedSplitEnsurePanel() {
       const parent = selected();
       if (!parent || parent.type !== 'Tribe' || parent.plannedSplit || !state.turn?.turnKey || state.turn?.final) return;
       const type = document.getElementById('plannedUnitSplitType')?.value === 'Tribe' ? 'Tribe' : 'Element';
-      const code = document.getElementById('plannedUnitSplitCode')?.value.trim();
       const name = document.getElementById('plannedUnitSplitName')?.value.trim();
       const status = document.getElementById('plannedUnitSplitStatus');
-      if (!code) {
-        status.textContent = 'Enter the new unit code.';
-        status.className = 'tm-validation error';
-        return;
-      }
       try {
         create.disabled = true;
         const split = await window.tribenet.addPlannedUnitSplit(state.turn.turnKey, {
           parentUnit: parent.unit,
-          unitCode: code,
           unitType: type,
           unitName: name,
           creationPhase: document.getElementById('plannedUnitSplitPhase')?.value === 'after' ? 'after' : 'before'
@@ -119,15 +112,6 @@ function plannedSplitEnsurePanel() {
   });
 
   return panel;
-}
-
-function plannedSplitSuggestedElement(parentUnit) {
-  const existing = new Set(allUnits().map(unit => String(unit.unit).toLowerCase()));
-  for (let number = 1; number < 100; number++) {
-    const code = `${String(parentUnit).toLowerCase()}e${number}`;
-    if (!existing.has(code)) return code;
-  }
-  return `${String(parentUnit).toLowerCase()}e1`;
 }
 
 function plannedSplitRenderPanel() {
@@ -171,14 +155,11 @@ function plannedSplitRenderPanel() {
 
   origin.textContent = `Starts at ${unit.startHex || 'unknown'}`;
   const children = (state.turn.unitSplits || []).filter(split => String(split.parentUnit).toLowerCase() === String(unit.unit).toLowerCase());
-  const suggested = plannedSplitSuggestedElement(unit.unit);
-
   body.innerHTML = `
-    <p class="tm-help" style="margin-top:0">Choose whether the new unit exists before movement at ${esc(unit.unit)}'s starting hex, or after movement at the source's destination. After-movement units cannot move independently this turn. This does not invent population or goods transfers.</p>
-    <div style="display:grid;grid-template-columns:minmax(140px,.7fr) minmax(160px,1fr) minmax(180px,1.4fr) minmax(150px,1fr) auto;gap:10px;align-items:end">
+    <p class="tm-help" style="margin-top:0">Choose whether the new unit exists before movement at ${esc(unit.unit)}'s starting hex, or after movement at the source's destination. After-movement units cannot move independently this turn. The unit code is assigned automatically. This does not invent population or goods transfers.</p>
+    <div style="display:grid;grid-template-columns:minmax(140px,.7fr) minmax(150px,1fr) minmax(180px,1.4fr) minmax(180px,1.4fr) auto;gap:10px;align-items:end">
       <label><span>New unit type</span><select id="plannedUnitSplitType" class="tm-full"><option value="Element">Element</option><option value="Tribe">Tribe</option></select></label>
       <label><span>Created</span><select id="plannedUnitSplitPhase" class="tm-full"><option value="before">Before Movement</option><option value="after">After Movement</option></select></label>
-      <label><span>Unit code</span><input id="plannedUnitSplitCode" class="tm-full" value="${esc(suggested)}" /></label>
       <label><span>Name (optional)</span><input id="plannedUnitSplitName" class="tm-full" placeholder="Optional unit name" /></label>
       <button id="createPlannedUnitSplit" class="button accent">Create Split</button>
     </div>
@@ -193,17 +174,6 @@ function plannedSplitRenderPanel() {
     </div>
   `;
 
-  const typeSelect = document.getElementById('plannedUnitSplitType');
-  const codeInput = document.getElementById('plannedUnitSplitCode');
-  typeSelect?.addEventListener('change', () => {
-    if (typeSelect.value === 'Element') {
-      codeInput.value = plannedSplitSuggestedElement(unit.unit);
-      codeInput.placeholder = `${unit.unit}e1`;
-    } else {
-      codeInput.value = '';
-      codeInput.placeholder = 'e.g. 1485';
-    }
-  });
 }
 
 const plannedSplitOriginalRenderAll = renderAll;

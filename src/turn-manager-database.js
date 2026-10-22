@@ -263,13 +263,35 @@ class TurnManagerDatabase {
     }
   }
 
+  nextUnitSplitCode(turnKey, parentUnit, unitType, startUnits) {
+    const used = new Set([
+      ...startUnits.map(unit => normalizeUnitCode(unit.unit)),
+      ...this.listUnitSplits(turnKey).map(split => normalizeUnitCode(split.unitCode))
+    ]);
+    if (unitType === 'Tribe') {
+      const stem = parentUnit.slice(1);
+      for (let digit = 0; digit <= 9; digit++) {
+        const candidate = `${digit}${stem}`;
+        if (!used.has(candidate)) return candidate;
+      }
+      throw new Error(`All Tribe codes 0–9 ending in ${stem} are already in use.`);
+    }
+
+    const suffix = unitType === 'Element' ? 'e' : unitType === 'Fleet' ? 'f' : unitType === 'Garrison' ? 'g' : 'c';
+    for (let number = 1; number <= 9999; number++) {
+      const candidate = `${parentUnit}${suffix}${number}`;
+      if (!used.has(candidate)) return candidate;
+    }
+    throw new Error(`No available ${unitType} codes remain for ${parentUnit}.`);
+  }
+
   addUnitSplit(turnKey, split) {
     turnKey = canonicalTurnKey(turnKey) || turnKey;
     const parentUnit = normalizeUnitCode(split?.parentUnit);
-    const unitCode = normalizeUnitCode(split?.unitCode);
+    let unitCode = normalizeUnitCode(split?.unitCode);
     const unitType = ['Tribe', 'Element', 'Fleet', 'Garrison', 'Courier'].includes(split?.unitType) ? split.unitType : null;
     const unitName = String(split?.unitName || '').trim();
-    if (!turnKey || !parentUnit || !unitCode || !unitType) throw new Error('Turn, parent Tribe, unit code and unit type are required.');
+    if (!turnKey || !parentUnit || !unitType) throw new Error('Turn, parent Tribe and unit type are required.');
 
     const startUnits = this.beginningUnits(turnKey);
     if (!startUnits.length) throw new Error(`Import the beginning-of-turn workbook for ${turnKey} before creating a split.`);
@@ -278,6 +300,8 @@ class TurnManagerDatabase {
     if (!parent || String(parent.type || unitTypeFromCode(parent.unit)) !== 'Tribe') throw new Error('The split parent must be an existing Tribe from the beginning-of-turn workbook.');
     const startHex = String(parent.startHex || '').trim().toUpperCase();
     if (!startHex) throw new Error(`${parent.unit} has no starting hex in the beginning-of-turn workbook.`);
+
+    if (!unitCode) unitCode = this.nextUnitSplitCode(turnKey, parentUnit, unitType, startUnits);
 
     if (unitType === 'Tribe' && !/^\d{4}$/.test(unitCode)) throw new Error('A new Tribe code must be exactly four digits, for example 1485.');
     if (unitType !== 'Tribe') {

@@ -23,29 +23,37 @@ try {
 
   const element = turns.addUnitSplit('048-12', {
     parentUnit: '0485',
-    unitCode: '0485e1',
     unitType: 'Element',
     unitName: 'Forestry Party'
   });
   assert.equal(element.parentUnit, '0485');
   assert.equal(element.unitCode, '0485e1');
   assert.equal(element.unitType, 'Element');
+  assert.equal(element.unitCode, '0485e1', 'Element code should be assigned automatically');
   assert.equal(element.startHex, 'PK1711', 'split should use parent beginning-of-turn hex');
   assert.equal(element.creationPhase, 'before', 'before movement is the default creation phase');
 
   const afterElement = turns.addUnitSplit('048-12', {
-    parentUnit: '0485', unitCode: '0485e2', unitType: 'Element', creationPhase: 'after'
+    parentUnit: '0485', unitType: 'Element', creationPhase: 'after'
   });
+  assert.equal(afterElement.unitCode, '0485e2', 'The next free Element code should be assigned');
   assert.equal(afterElement.creationPhase, 'after', 'after movement timing should persist');
   turns.deleteUnitSplit(afterElement.id);
 
   const tribe = turns.addUnitSplit('048-12', {
     parentUnit: '0485',
-    unitCode: '1485',
     unitType: 'Tribe'
   });
+  assert.equal(tribe.unitCode, '1485', 'The next free numeric Tribe code should be assigned');
   assert.equal(tribe.startHex, 'PK1711');
   assert.equal(turns.getTurn('048-12').unitSplits.length, 2);
+
+  turns.saveWorkbook({ role:'start', turnKey:'050-12', sourceFile:'050_start.xlsx', importedAt:'2026-09-27T00:00:00.000Z', units:[{unit:'0485',type:'Tribe',startHex:'PK1711'}] });
+  for (const code of ['1485','2485','3485']) {
+    turns.addUnitSplit('050-12', { parentUnit:'0485', unitCode:code, unitType:'Tribe' });
+  }
+  const nextTribe = turns.addUnitSplit('050-12', { parentUnit:'0485', unitType:'Tribe' });
+  assert.equal(nextTribe.unitCode, '4485', 'Automatic Tribe codes must skip codes already planned for the turn.');
 
   assert.throws(() => turns.addUnitSplit('048-12', {
     parentUnit: '0485', unitCode: '9999e1', unitType: 'Element'
@@ -70,13 +78,17 @@ try {
     },
     units: [{ unit: '0490', type: 'Tribe', startHex: 'PK1711' }]
   });
-  assert.equal(turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '0490e1', unitType: 'Element', skills: [] }).unitType, 'Element');
+  const generatedElement = turns.addUnitSplit('049-12', { parentUnit: '0490', unitType: 'Element', skills: [] });
+  assert.equal(generatedElement.unitCode, '0490e1');
   assert.throws(() => turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '0490f1', unitType: 'Fleet' }), /Administration 2 allows 1/i);
   assert.equal(turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '1490', unitType: 'Tribe', skills: [{ skill: 'Woodworking' }] }).skills[0].level, 3);
   assert.throws(() => turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '2490', unitType: 'Tribe' }), /Diplomacy 2 allows 2/i);
-  assert.equal(turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '0490c1', unitType: 'Courier' }).unitType, 'Courier');
+  const generatedCourier = turns.addUnitSplit('049-12', { parentUnit: '0490', unitType: 'Courier' });
+  assert.equal(generatedCourier.unitCode, '0490c1');
+  assert.equal(generatedCourier.unitType, 'Courier');
   assert.throws(() => turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '0490c2', unitType: 'Courier' }), /Courier 1 allows 1/i);
-  assert.equal(turns.addUnitSplit('049-12', { parentUnit: '0490', unitCode: '0490g1', unitType: 'Garrison' }).unitType, 'Garrison');
+  const generatedGarrison = turns.addUnitSplit('049-12', { parentUnit: '0490', unitType: 'Garrison' });
+  assert.equal(generatedGarrison.unitCode, '0490g1');
 
   routes.save({
     turnKey: '048-12',

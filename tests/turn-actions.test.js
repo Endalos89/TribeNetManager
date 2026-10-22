@@ -77,6 +77,8 @@ assert.match(actions, /turnActionState\.pendingOcean = ocean/, 'Follow Ocean mus
 assert.match(actions, /orderForFeature/, 'Scout coastal traces must infer FOL/FOR.');
 assert.match(savedPlans, /garrison.*fleet.*courier|fleet.*courier.*garrison/i, 'Garrisons, fleets and couriers must be handled as stationary units.');
 assert.match(index, /id="movementPlannerCreatePhase"/, 'The mapper split dialog must let users choose the creation phase.');
+assert.ok(!index.includes('movementPlannerCreateCode'), 'The mapper should assign unit codes automatically instead of asking users to choose one.');
+assert.ok(!fs.readFileSync('src/planned-unit-splits-turn.js', 'utf8').includes('plannedUnitSplitCode'), 'Turn Manager should assign unit codes automatically instead of asking users to choose one.');
 assert.match(savedPlans, /unit\.plannedSplit && unit\.creationPhase === 'after'/, 'After-movement splits must remain stationary.');
 assert.match(fs.readFileSync('src/planned-unit-splits-map.js', 'utf8'), /savedMovementUnitMoveDestination\(split\.parentUnit\)/, 'After-movement splits must follow the source unit endpoint on the map.');
 assert.match(savedPlans, /savedMovementIsStationaryUnit/, 'Stationary unit types must share one movement rule.');

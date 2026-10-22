@@ -892,12 +892,7 @@ window.addEventListener('keyup', async event => {
 window.addEventListener('blur', () => { movementPlannerState.shiftHeld = false; });
 
 document.getElementById('movementPlannerCreateParent')?.addEventListener('change', savedMovementLoadCreationSkills);
-document.getElementById('movementPlannerCreateType')?.addEventListener('change', async () => {
-  const parent = document.getElementById('movementPlannerCreateParent')?.value || '0000';
-  const code = document.getElementById('movementPlannerCreateCode');
-  if (code) code.value = document.getElementById('movementPlannerCreateType')?.value === 'Tribe' ? '1485' : `${parent}e1`;
-  await savedMovementLoadCreationSkills();
-});
+document.getElementById('movementPlannerCreateType')?.addEventListener('change', savedMovementLoadCreationSkills);
 document.getElementById('movementPlannerCreateSubmit')?.addEventListener('click', savedMovementCreateUnit);
 
 turnActionsBindHover();
