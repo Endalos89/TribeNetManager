@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 9655)
-Total output lines: 702
-
 // Tabbed, mapper-native details for the currently selected unit.
 (function installSelectedUnitPanel(root) {
   const paneKeys = ['overview', 'skills', 'sustenance', 'inventory', 'orders'];
@@ -240,7 +237,253 @@ Total output lines: 702
     const cacheKey = `${turnKey}:${tribe}`;
     const normalized = attempts.map((row, index) => ({ ...row, order: index + 1 }));
     const state = { ...getSkillState(tribe), attempts: normalized, loaded: true };
-    skillStudyByTribe.set(cacheKey…3655 tokens truncated…ter == null ? null : root.UnitSustenance.reserveMonths(water, rates.waterPerTurn);
+    skillStudyByTribe.set(cacheKey, state);
+    renderSkillAttemptStrip();
+    renderSkills(activeSkillContext.unit, activeSkillContext.code);
+    try {
+      if (root.tribenet?.saveSkillAttempts) {
+        const saved = await root.tribenet.saveSkillAttempts(turnKey, tribe, normalized);
+        skillStudyByTribe.set(cacheKey, { ...state, attempts: saved || normalized });
+      }
+    } catch (error) {
+      const host = byId('unitSkillAttempts');
+      if (host) host.insertAdjacentHTML('beforeend', `<p class="unit-skill-attempts-error">Could not save skill attempts: ${esc(error?.message || error)}</p>`);
+    }
+  }
+
+  async function addSkillAttempt(skill) {
+    if (!activeSkillContext) return;
+    const { tribe, unit } = activeSkillContext;
+    const state = getSkillState(tribe);
+    if (!state.loaded) return;
+    const key = root.SkillAttemptRules?.key(skill.name) || canonical(skill.name).replace(/\s/g, '');
+    if (state.attempts.some(row => (root.SkillAttemptRules?.key(row.skill) || '') === key)) return;
+    if (state.attempts.length >= 3) return;
+    const attempt = { order: state.attempts.length + 1, skill: skill.name, group: skill.group, baselineLevel: levelForSkill(skill.name, unit?.skills || {}) };
+    const next = root.SkillAttemptRules?.teacherPromote([...state.attempts, attempt]) || [...state.attempts, attempt];
+    skillSearchOpen = false;
+    await saveSkillAttempts(next);
+    const input = byId('unitSkillSearch');
+    const results = byId('unitSkillSearchResults');
+    if (input) input.value = '';
+    if (results) { results.hidden = true; results.replaceChildren(); }
+  }
+
+  function updateSkillFilter(tribe, group) {
+    const next = getSkillFilter(tribe) === group ? null : group;
+    skillFilterByTribe.set(tribe, next);
+    try { if (next) root.localStorage?.setItem(filterKey(tribe), next); else root.localStorage?.removeItem(filterKey(tribe)); } catch {}
+    if (activeSkillContext?.tribe === tribe) renderSkills(activeSkillContext.unit, activeSkillContext.code);
+  }
+
+  function renderOverview(unit, code) {
+    const snapshot = unit || {};
+    const people = snapshot.people || snapshot.resources?.Humans || {};
+    const stats = (appState().planImport?.plan?.unitStats || []).find(row => String(row.unit) === String(code)) || null;
+    const peopleCount = num(people.People) ?? num(stats?.totalPeople)
+      ?? ['Warriors','Actives','Inactives','Slaves','Locals'].reduce((sum, key) => sum + (num(people[key]) || 0), 0);
+    byId('unitPeople').textContent = displayNumber(peopleCount);
+    byId('unitMorale').textContent = displayNumber(num(snapshot.morale));
+    byId('unitLocation').textContent = snapshot.currentHex || appState().selectedUnitHex || 'Unknown';
+    byId('unitTerrain').textContent = snapshot.statusTerrain && snapshot.statusTerrain !== 'UNKNOWN' ? snapshot.statusTerrain : 'Unknown terrain';
+  }
+
+  function renderSkills(unit, code) {
+    const host = byId('unitSkillsList');
+    const source = byId('unitSkillsSource');
+    host.replaceChildren();
+    const tribeUnit = resultUnit(rootTribeCode(code));
+    // Skills are shared across a Tribe, including its clan units. Prefer the
+    // Tribe record whenever it has a skill matrix so study choices and levels
+    // do not depend on which member unit happened to be selected.
+    let skills = Object.keys(tribeUnit?.skills || {}).length ? tribeUnit.skills : (unit?.skills || {});
+    let label = skills === tribeUnit?.skills ? `Tribe ${tribeUnit.unitCode}` : 'This unit';
+    source.textContent = label === 'This unit' ? '' : `Shared from ${label}`;
+    const fullSkillName = skillNameLookup();
+    const tribe = rootTribeCode(code);
+    const turnKey = skillTurnKey();
+    activeSkillContext = { turnKey, tribe, unit: { ...(unit || {}), skills }, code };
+    const studyState = getSkillState(tribe);
+    if (turnKey && !studyState.loaded) loadSkillState(turnKey, tribe).catch(() => {});
+    const catalog = skillCatalog();
+    const catalogByName = new Map(catalog.map(row => [root.SkillAttemptRules.key(row.name), row]));
+    const rows = skillLevelEntries(skills).filter(([name]) => name).map(([name, value]) => {
+      const fullName = fullSkillName(name);
+      const metadata = catalogByName.get(root.SkillAttemptRules.key(fullName)) || catalogByName.get(root.SkillAttemptRules.key(name)) || {};
+      const level = Number(value ?? 0);
+      return { name: fullName, level: Number.isFinite(level) ? Math.max(0, level) : 0, group: metadata.group || 'C' };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+    const selectedFilter = getSkillFilter(tribe);
+    for (const button of document.querySelectorAll('[data-skill-group-filter]')) {
+      const active = button.dataset.skillGroupFilter === selectedFilter;
+      button.setAttribute('aria-pressed', String(active));
+    }
+    const hint = byId('unitSkillFilterHint');
+    if (hint) hint.textContent = selectedFilter ? `Group ${selectedFilter}` : 'All groups';
+    const visibleRows = selectedFilter ? rows.filter(row => row.group === selectedFilter) : rows;
+    if (!rows.length) {
+      host.innerHTML = '<div class="unit-panel-empty">No skills were reported for this unit. Use Add skill attempt to choose a skill to learn.</div>';
+    } else if (!visibleRows.length) {
+      host.innerHTML = `<div class="unit-panel-empty">No Group ${esc(selectedFilter)} skills are currently reported.</div>`;
+    }
+    const currentAttempts = studyState.attempts || [];
+    const calculated = root.SkillAttemptRules.calculate(currentAttempts, studyState.streaks || []);
+    const calcBySkill = new Map(calculated.map(attempt => [root.SkillAttemptRules.key(attempt.skill), attempt]));
+    const silver = skillAvailability(unit, code);
+    for (const entry of visibleRows) {
+      const row = document.createElement('div');
+      row.className = 'unit-skill-row';
+      const skill = document.createElement('span');
+      skill.className = 'unit-skill-name';
+      skill.title = `Group ${entry.group}`;
+      skill.dataset.group = entry.group;
+      skill.textContent = entry.name;
+      const level = document.createElement('strong');
+      level.className = 'unit-skill-level';
+      level.textContent = displayNumber(entry.level);
+      const key = root.SkillAttemptRules.key(entry.name);
+      const attempt = calcBySkill.get(key);
+      let streak = null;
+      if (entry.level === 9) {
+        const streakRow = (studyState.streaks || []).find(item => root.SkillAttemptRules.key(item.skill) === key);
+        streak = document.createElement('label');
+        streak.className = 'unit-skill-streak-editor';
+        streak.title = 'Prior consecutive first-attempt failures at level 9. Set this once to seed existing history; later results update it automatically.';
+        streak.innerHTML = `<span>streak</span><input type="number" min="0" max="11" step="1" value="${Number(streakRow?.failureCount || 0)}" data-skill-streak="${esc(entry.name)}" aria-label="Consecutive first-attempt failures for ${esc(entry.name)}" />`;
+      }
+      const teacher = Boolean(attempt?.teacher);
+      const unaffordable = teacher && silver != null && silver < attempt.cost;
+      const control = document.createElement('button');
+      control.type = 'button';
+      control.className = `unit-skill-study${attempt ? ' selected' : ''}${teacher ? ' teacher' : ''}${unaffordable ? ' unaffordable' : ''}`;
+      control.dataset.skillStudy = entry.name;
+      control.setAttribute('aria-label', attempt ? `Remove ${entry.name} from study attempts` : `Add ${entry.name} to study attempts`);
+      control.disabled = !studyState.loaded || (!attempt && (entry.level >= 10 || currentAttempts.length >= 3));
+      if (teacher) {
+        control.innerHTML = `<span aria-hidden="true">🪙</span><span>${attempt.cost.toLocaleString()}</span><small class="study-chance${attempt.chance == null ? ' unavailable' : ''}">(${chanceText(attempt.chance)})</small>`;
+        control.title = unaffordable ? `Teacher costs ${attempt.cost.toLocaleString()} silver; only ${silver.toLocaleString()} is available.` : `Teacher · ${attempt.cost.toLocaleString()} silver`;
+      } else {
+        const chance = attempt?.chance;
+        control.innerHTML = `<span aria-hidden="true">📖</span>${attempt ? `<small class="study-chance${chance == null ? ' unavailable' : ''}">(${chanceText(chance)})</small>` : ''}`;
+        control.title = attempt ? `Attempt ${attempt.order} · ${chance == null ? 'chance unavailable' : `${chanceText(chance)} chance`}` : 'Add this skill to study attempts';
+      }
+      row.append(skill, level, infoButton('skill', entry.name, entry.name));
+      if (entry.level === 9) row.append(streak);
+      row.append(control);
+      host.appendChild(row);
+    }
+
+    const ruleNote = byId('unitSkillRuleNote');
+    if (ruleNote) ruleNote.textContent = 'Base success chance is (11 − target level) × 10%. Attempt 2 is usually half chance, or quarter chance when it repeats attempt 1’s group. Attempt 3 is a Group A teacher attempt, allowed only after two Group B/C attempts and below level 7.';
+
+    const search = byId('unitSkillSearch');
+    const searchResults = byId('unitSkillSearchResults');
+    if (search && searchResults) {
+      const query = canonical(search.value);
+      const present = new Set(rows.map(row => root.SkillAttemptRules.key(row.name)));
+      const chosen = new Set(currentAttempts.map(row => root.SkillAttemptRules.key(row.skill)));
+        skillSearchResults = catalog
+        .filter(row => !present.has(root.SkillAttemptRules.key(row.name)) && !chosen.has(root.SkillAttemptRules.key(row.name)))
+        .filter(row => !selectedFilter || row.group === selectedFilter)
+        .filter(row => !query || canonical(row.name).includes(query) || canonical(row.shortname).includes(query));
+      searchResults.hidden = !skillSearchOpen || !skillSearchResults.length;
+      searchResults.innerHTML = skillSearchResults.map((row, index) => `<button type="button" class="unit-skill-search-result" data-skill-search-index="${index}"><span>${esc(row.name)}</span><small>Group ${esc(row.group)} · Level ${levelForSkill(row.name, skills)}</small></button>`).join('');
+    }
+    renderSkillAttemptStrip();
+  }
+
+  function findStock(unit, stats, names) {
+    const targets = new Set(names.map(canonical));
+    let total = 0;
+    let found = false;
+    for (const [section, items] of Object.entries(unit?.resources || {})) {
+      if (section === 'Humans') continue;
+      for (const [name, quantity] of Object.entries(items || {})) {
+        if (!targets.has(canonical(name))) continue;
+        const value = num(quantity);
+        if (value == null) continue;
+        total += value;
+        found = true;
+      }
+    }
+    if (!found) {
+      for (const row of stats?.inventory || []) {
+        if (!targets.has(canonical(row.item))) continue;
+        const value = num(row.quantity);
+        if (value == null) continue;
+        total += value;
+        found = true;
+      }
+    }
+    return found ? total : null;
+  }
+
+  function provisionConsumption(code) {
+    const events = root.resultsTimeline?.turn?.events || [];
+    let total = 0;
+    let found = false;
+    for (const event of events) {
+      if (String(event.unitCode || '') !== String(code) || event.eventType !== 'final activities') continue;
+      for (const action of event.details?.actions || []) {
+        if (action.type !== 'consumption') continue;
+        for (const item of action.items || []) {
+          if (canonical(item.item) !== 'provs') continue;
+          const amount = num(item.quantity);
+          if (amount != null) { total += amount; found = true; }
+        }
+      }
+    }
+    return found && total > 0 ? total : null;
+  }
+
+  function supplyCard(title, stock, perTurn, reserveMonths, note) {
+    const duration = reserveMonths == null
+      ? (perTurn === 0 ? 'No demand' : stock == null ? 'Stock not reported' : 'Rate unavailable')
+      : `${displayNumber(reserveMonths)} months`;
+    const stockText = stock == null ? 'Stock ?' : `${displayNumber(stock)} lb in stores`;
+    const rateText = perTurn == null ? 'Dry-terrain rate unavailable' : `${displayNumber(perTurn)} lb per turn in dry terrain`;
+    return `<article class="unit-supply-card"><span>${esc(title)}</span><strong>${esc(duration)}</strong><small>${esc(stockText)} · ${esc(rateText)}${note ? ` · ${esc(note)}` : ''}</small></article>`;
+  }
+
+  async function renderSustenance(unit, code, version) {
+    const host = byId('unitSustenanceGrid');
+    const location = byId('unitSupplyLocation');
+    const basis = byId('unitSupplyBasis');
+    const stats = (appState().planImport?.plan?.unitStats || []).find(row => String(row.unit) === String(code)) || null;
+    const provisions = findStock(unit, stats, ['Provs']) ?? num(stats?.provs);
+    const plannedTurns = num(stats?.provisionTurns);
+    const consumedPerTurn = provisionConsumption(code);
+    const eaters = num(stats?.eaters) ?? (unit ? resultEaters(unit) : null);
+    const provisionTurns = plannedTurns ?? (provisions != null && consumedPerTurn
+      ? provisions / consumedPerTurn
+      : provisions != null && eaters > 0 ? provisions / eaters : null);
+    byId('unitProvisions').textContent = displayNumber(provisions);
+    byId('unitProvisionTurns').textContent = provisionTurns == null
+      ? 'Duration unavailable'
+      : `${displayNumber(provisionTurns)} months`;
+    byId('unitProvisionTurnCount').textContent = provisionTurns == null
+      ? 'turn count unavailable'
+      : `${displayNumber(provisionTurns)} turns`;
+    const foodCard = byId('unitFoodReserveCard');
+    if (foodCard) {
+      foodCard.classList.remove('reserve-critical', 'reserve-warning', 'reserve-healthy');
+      if (provisionTurns != null) {
+        const status = root.UnitSustenance.foodReserveStatus(provisionTurns);
+        if (status) foodCard.classList.add(`reserve-${status}`);
+      }
+    }
+    byId('unitEaters').textContent = displayNumber(eaters);
+
+    host.innerHTML = '<div class="unit-panel-empty">Calculating dry-terrain supply reserves…</div>';
+    const turnKey = root.resultsTimeline?.turn?.turnKey || appState().planImport?.turnKey;
+    try {
+      const requirement = turnKey ? await root.tribenet.getUnitSupplyRequirements(turnKey, code) : null;
+      if (version !== selectionVersion || String(appState().selectedUnit || '') !== String(code)) return;
+      const counts = requirement?.counts || null;
+      const rates = counts ? root.UnitSustenance.dryTerrainRates(counts) : { waterPerTurn:null, fodderPerTurn:null };
+      const water = findStock(unit, stats, ['Water']);
+      const fodder = findStock(unit, stats, ['Fodder','Grain']);
+      const waterMonths = water == null ? null : root.UnitSustenance.reserveMonths(water, rates.waterPerTurn);
       const fodderMonths = fodder == null ? null : root.UnitSustenance.reserveMonths(fodder, rates.fodderPerTurn);
       host.innerHTML = supplyCard('Water reserve', water, rates.waterPerTurn, waterMonths)
         + supplyCard('Fodder / Grain reserve', fodder, rates.fodderPerTurn, fodderMonths, 'Grain counts 1:1');
