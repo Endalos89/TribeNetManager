@@ -169,6 +169,19 @@ function savedMovementUnitMove(unitCode) {
   return savedMovementPlansState.routes.find(route => route.routeType === 'unit' && String(route.unitCode).toLowerCase() === String(unitCode).toLowerCase()) || null;
 }
 
+function savedMovementUnitMoveDestination(unitCode) {
+  const savedMove = savedMovementUnitMove(unitCode);
+  if (savedMove?.destinationHex) return savedMove.destinationHex;
+
+  // Completed Orders imports are represented in routeCache, not in the draft
+  // route store. They still define where a scout must start for this turn.
+  const importedMove = (state?.routeCache?.movements || []).find(row =>
+    String(row.unit || row.unitCode || '').toLowerCase() === String(unitCode || '').toLowerCase()
+  );
+  const points = importedMove?.route?.points || importedMove?.route?.path || [];
+  return points[points.length - 1]?.coordinate || points[points.length - 1]?.hex || null;
+}
+
 function savedMovementIsStationaryUnit(unit) {
   return ['garrison', 'fleet', 'courier'].includes(String(unit?.unitType || unit?.type || '').trim().toLowerCase());
 }
@@ -177,15 +190,15 @@ function savedMovementOriginFor(unitCode = savedMovementPlansState.selectedUnitC
   const unit = savedMovementUnits().find(row => String(row.unitCode).toLowerCase() === String(unitCode).toLowerCase());
   if (!unit) return null;
   if (routeType === 'scout') {
-    const unitMove = savedMovementUnitMove(unitCode);
-    if (unitMove?.destinationHex) return unitMove.destinationHex;
+    const movementDestination = savedMovementUnitMoveDestination(unitCode);
+    if (movementDestination) return movementDestination;
   }
   return unit.currentHex || null;
 }
 
 function savedMovementScoutUsesUnitMove() {
   return savedMovementPlansState.routeType === 'scout'
-    && Boolean(savedMovementUnitMove(savedMovementPlansState.selectedUnitCode)?.destinationHex);
+    && Boolean(savedMovementUnitMoveDestination(savedMovementPlansState.selectedUnitCode));
 }
 
 function savedMovementCanMoveUnit(unit = savedMovementSelectedUnit()) {

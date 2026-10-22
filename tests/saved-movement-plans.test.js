@@ -116,6 +116,27 @@ assert.strictEqual(
   'The old optional scout-origin argument should not change the automatic after-movement origin.'
 );
 
+vm.runInContext(`
+  savedMovementPlansState.routes = [];
+  savedMovementPlansState.routeType = 'scout';
+  state.routeCache = {
+    movements: [{
+      unit: '0485',
+      route: { points: [{ coordinate: 'AA0101' }, { coordinate: 'AB0202' }, { coordinate: 'AD0404' }] }
+    }]
+  };
+`, context);
+assert.strictEqual(
+  vm.runInContext(`savedMovementOriginFor('0485', 'scout')`, context),
+  'AD0404',
+  'Scouting should start at the endpoint of a movement imported from Completed Orders.'
+);
+assert.strictEqual(
+  vm.runInContext(`savedMovementScoutUsesUnitMove()`, context),
+  true,
+  'Imported Completed Orders movement should be recognised when validating the scout origin.'
+);
+
 assert.ok(!source.includes('Smart Scout') && !source.includes('smartScout'), 'Smart Scout should be removed from saved movement planning.');
 assert.ok(source.includes('savedMovementCanMoveUnit'), 'Unit movement must respect the timing of a planned split.');
 assert.ok(source.includes('savedMovementResetAllUnitChanges'), 'Unit changes must remain resettable.');
