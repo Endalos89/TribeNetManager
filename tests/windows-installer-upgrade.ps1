@@ -7,7 +7,8 @@ if (-not $env:APP_TEST_VERSION) {
   throw 'APP_TEST_VERSION must be set to the next version used for repeated-update testing.'
 }
 
-$firstInstallerPath = Join-Path $env:RUNNER_TEMP "TribeNet Manager Setup $env:APP_VERSION.exe"
+$stagedRelease = Join-Path $env:RUNNER_TEMP "TribeNetManager-release-$env:APP_VERSION"
+$firstInstallerPath = Join-Path $stagedRelease "TribeNet Manager Setup $env:APP_VERSION.exe"
 $secondInstallerPath = Join-Path $PWD "release/TribeNet Manager Setup $env:APP_TEST_VERSION.exe"
 foreach ($installerPath in @($firstInstallerPath, $secondInstallerPath)) {
   if (-not (Test-Path $installerPath)) {
