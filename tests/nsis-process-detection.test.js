@@ -42,5 +42,6 @@ const publishIndex = releaseWorkflow.indexOf('npm run dist -- --publish always')
 assert(tagIndex >= 0 && publishIndex > tagIndex, 'The tested version tag must exist before electron-builder publishes a stable release.');
 assert(upgradeTest.includes('TribeNet Manager Setup $env:APP_VERSION.exe'), 'The upgrade regression must target the built installer filename.');
 assert(upgradeTest.includes('^TribeNet(?:-Manager-Setup-| Manager Setup ).+\\.exe$'), 'The upgrade regression must locate both legacy and current release installer names.');
+assert(upgradeTest.includes('/releases?per_page=100'), 'The upgrade regression must search past incomplete releases that contain no setup executable.');
 
 console.log(`NSIS process detection and update cleanup retries are configured for electron-builder ${appBuilderVersion}.`);
