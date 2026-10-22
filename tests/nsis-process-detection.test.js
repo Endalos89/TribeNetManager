@@ -1,5 +1,6 @@
 const assert = require('assert');
 const fs = require('fs');
+const path = require('path');
 
 const appBuilderVersion = require('electron-builder/package.json').version;
 const packageBuilderVersion = require('../package.json').devDependencies['electron-builder'];
@@ -20,4 +21,22 @@ assert(nsisProcessCheck.includes('findstr.exe'), 'The non-PowerShell fallback mu
 assert(nsisProcessCheck.includes('/B /I /C:'), 'The process-name match must be anchored to the start of the CSV row.');
 assert(nsisProcessCheck.includes('Get-CimInstance -ClassName Win32_Process'), 'PowerShell process checks should inspect executable paths.');
 
-console.log(`NSIS process detection is exact in electron-builder ${appBuilderVersion}.`);
+const cleanupMacro = customProcessCheck.match(/!macro customRemoveFiles([\s\S]*?)!macroend/);
+assert(cleanupMacro, 'The updater must provide its own previous-installation cleanup macro.');
+const cleanup = cleanupMacro[1];
+const removeIndex = cleanup.indexOf('Call un.atomicRMDir');
+const restoreIndex = cleanup.indexOf('Call un.restoreFiles');
+const retryIndex = cleanup.indexOf('Goto TribeNetRetryRemoveFiles');
+assert(removeIndex >= 0, 'The update cleanup must use electron-builder’s atomic directory removal.');
+assert(restoreIndex > removeIndex, 'A failed cleanup attempt must restore moved files.');
+assert(retryIndex > restoreIndex, 'A retry must happen only after restoring the installation.');
+assert(cleanup.includes('$R4 < 6'), 'The update cleanup must retry several times before aborting.');
+assert(cleanup.includes('Sleep 1000'), 'The update cleanup must allow transient file locks time to clear between attempts.');
+
+const releaseWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github/workflows/release.yml'), 'utf8');
+const upgradeTest = fs.readFileSync(path.join(__dirname, 'windows-installer-upgrade.ps1'), 'utf8');
+assert(releaseWorkflow.includes('TribeNet Manager Setup $env:APP_VERSION.exe'), 'Release publishing must use electron-builder’s actual installer filename.');
+assert(upgradeTest.includes('TribeNet Manager Setup $env:APP_VERSION.exe'), 'The upgrade regression must target the built installer filename.');
+assert(upgradeTest.includes('^TribeNet(?:-Manager-Setup-| Manager Setup ).+\\.exe$'), 'The upgrade regression must locate both legacy and current release installer names.');
+
+console.log(`NSIS process detection and update cleanup retries are configured for electron-builder ${appBuilderVersion}.`);

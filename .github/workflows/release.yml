@@ -39,15 +39,24 @@ jobs:
           node tests/skill-overhaul-category-c5-final.test.js
 
       - name: Assign release version
-        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $version = "0.1.${{ github.run_number }}"
           npm version $version --no-git-tag-version
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Build and publish Windows installer
-        if: github.event_name != 'pull_request'
-        run: npm run dist -- --publish always
+      - name: Build Windows installer
+        run: npm run dist -- --publish never
+
+      - name: Test upgrade from the latest released installer
+        shell: pwsh
+        run: ./tests/windows-installer-upgrade.ps1
+
+      - name: Publish tested Windows installer
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        shell: pwsh
+        run: |
+          $installer = "release/TribeNet Manager Setup $env:APP_VERSION.exe"
+          npx electron-builder publish --files $installer --files "$installer.blockmap" --files release/latest.yml --version $env:APP_VERSION --policy always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
