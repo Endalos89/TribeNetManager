@@ -28,6 +28,7 @@ try {
   fs.writeFileSync(path.join(legacy, 'Completed Orders', '~$906_04_Orders Complete.xlsx'), 'Excel lock file');
   const migration = migrateLegacyLibrary(legacy, documents);
   assert.equal(migration.moved, 1);
+  assert.equal(migration.remaining, 1, 'an Excel lock file must keep the legacy installation data marked as pending.');
   assert.equal(fs.readFileSync(path.join(documents, 'Completed Orders', '906_04_Orders Complete.xlsx'), 'utf8'), 'legacy workbook');
   assert.equal(fs.existsSync(path.join(legacy, 'Completed Orders', '906_04_Orders Complete.xlsx')), false);
   assert.equal(fs.existsSync(path.join(legacy, 'Completed Orders', '~$906_04_Orders Complete.xlsx')), true, 'Excel lock files must not be copied or moved.');
