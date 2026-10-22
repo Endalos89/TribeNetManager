@@ -4,14 +4,14 @@ if (-not $env:APP_VERSION) {
   throw 'APP_VERSION must be set to the version of the installer being tested.'
 }
 
-$installerPath = Join-Path $PWD "release/TribeNet-Manager-Setup-$env:APP_VERSION.exe"
+$installerPath = Join-Path $PWD "release/TribeNet Manager Setup $env:APP_VERSION.exe"
 if (-not (Test-Path $installerPath)) {
   throw "Built installer not found: $installerPath"
 }
 
 $release = Invoke-RestMethod -Headers @{ 'User-Agent' = 'TribeNetManager-Installer-Regression' } `
   -Uri 'https://api.github.com/repos/Endalos89/TribeNetManager/releases/latest'
-$previousInstaller = $release.assets | Where-Object { $_.name -match '^TribeNet-Manager-Setup-.+\.exe$' } | Select-Object -First 1
+$previousInstaller = $release.assets | Where-Object { $_.name -match '^TribeNet(?:-Manager-Setup-| Manager Setup ).+\.exe$' } | Select-Object -First 1
 if (-not $previousInstaller) {
   throw "Latest release $($release.tag_name) has no TribeNet Manager setup executable."
 }
