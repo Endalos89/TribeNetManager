@@ -7,6 +7,7 @@ const sustenance = require('../src/unit-sustenance');
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'src', 'index.html'), 'utf8');
 const panel = fs.readFileSync(path.join(root, 'src', 'selected-unit-panel.js'), 'utf8');
+const panelCss = fs.readFileSync(path.join(root, 'src', 'selected-unit-panel.css'), 'utf8');
 const compendium = fs.readFileSync(path.join(root, 'src', 'compendium.js'), 'utf8');
 const main = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');
 const preload = fs.readFileSync(path.join(root, 'src', 'preload.js'), 'utf8');
@@ -35,7 +36,13 @@ assert.match(html, /data-skill-group-filter="A"/);
 assert.match(html, /data-skill-group-filter="B"/);
 assert.match(html, /data-skill-group-filter="C"/);
 assert.match(html, /id="unitSkillSearch"/);
+assert.match(html, /placeholder="Browse all skills or search/);
 assert.match(html, /id="unitSkillAttempts"/);
+assert.match(panel, /document\.addEventListener\('focusin'/);
+assert.match(panel, /searchResults\.hidden = !skillSearchOpen/);
+assert.doesNotMatch(panel, /\.slice\(0,\s*8\)/, 'Browsing skills should not be limited to the first eight results');
+assert.match(panelCss, /grid-template-columns: 17px minmax\(0,1fr\) auto 53px/);
+assert.match(panelCss, /flex: 0 0 16px; width: 16px; height: 19px/);
 assert.match(panel, /dry-terrain rates|dryTerrainRates/i);
 assert.match(panel, /getUnitSupplyRequirements/);
 assert.match(panel, /provisionTurns\)\} months/);
@@ -52,7 +59,10 @@ assert.match(main, /parent: mainWindow/);
 assert.match(main, /compendiumWindow\.loadFile\(path\.join\(__dirname, 'compendium\.html'\), \{ query \}\)/);
 assert.doesNotMatch(html, /openTribeManagerButton|results-timeline-link/);
 
-const panelRoot = { TribeNetOrdersReferenceRaw: { skills: [{ name:'Forestry', shortname:'For' }] } };
+const panelRoot = { TribeNetOrdersReferenceRaw: { skills: [
+  { name:'Forestry', shortname:'For' },
+  { name:'Diplomacy', shortname:'Dip' }
+] } };
 const panelModule = { exports: {} };
 vm.runInNewContext(panel, {
   window: panelRoot,
@@ -63,6 +73,13 @@ vm.runInNewContext(panel, {
 assert.strictEqual(panelModule.exports.resultEaters({ people: { Warriors:100, Actives:50, Slaves:10 } }), 160);
 assert.strictEqual(panelModule.exports.resultEaters({ people: { People:200, Warriors:100, Slaves:10 } }), 210);
 assert.strictEqual(panelModule.exports.skillNameLookup()('For'), 'Forestry');
+assert.strictEqual(panelModule.exports.levelForSkill('Diplomacy', [{ skill:'Diplomacy', level:4 }]), 4);
+assert.strictEqual(panelModule.exports.levelForSkill('Diplomacy', { Diplomacy:4 }), 4);
+assert.strictEqual(panelModule.exports.levelForSkill('Diplomacy', { Dip:{ level:4 } }), 4);
+const skillAttempts = require('../src/skill-attempts');
+const diplomacyAttempt = skillAttempts.calculate([{ order:1, skill:'Diplomacy', group:'B', baselineLevel:panelModule.exports.levelForSkill('Diplomacy', [{ skill:'Diplomacy', level:4 }]) }])[0];
+assert.strictEqual(diplomacyAttempt.targetLevel, 5);
+assert.strictEqual(diplomacyAttempt.chance, 60);
 assert.strictEqual(panelModule.exports.compendiumHref('skill', 'Forestry'), 'compendium.html?entry=skill&key=Forestry');
 assert.strictEqual(panelModule.exports.compendiumHref('item', 'Oak Wood'), 'compendium.html?entry=item&key=Oak+Wood');
 

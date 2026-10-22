@@ -8,6 +8,7 @@
   const skillFilterByTribe = new Map();
   const skillStudyLoads = new Map();
   let skillSearchResults = [];
+  let skillSearchOpen = false;
 
   const byId = id => document.getElementById(id);
   const appState = () => typeof state !== 'undefined' ? state : (root.state || {});
@@ -140,10 +141,27 @@
     return loading;
   }
 
+  function skillLevelEntries(skills) {
+    if (Array.isArray(skills)) {
+      return skills
+        .filter(row => row && typeof row === 'object')
+        .map(row => [row.skill || row.name || row.shortname, row.level ?? row.value]);
+    }
+    return Object.entries(skills || {}).map(([name, value]) => [
+      name,
+      value && typeof value === 'object' ? (value.level ?? value.value) : value
+    ]);
+  }
+
   function levelForSkill(skillName, skills) {
     const wanted = root.SkillAttemptRules?.key(skillName) || canonical(skillName).replace(/\s/g, '');
-    const match = Object.entries(skills || {}).find(([name]) => (root.SkillAttemptRules?.key(name) || canonical(name).replace(/\s/g, '')) === wanted);
-    return match ? Math.max(0, Number(match[1] || 0)) : 0;
+    const lookup = skillNameLookup();
+    const match = skillLevelEntries(skills).find(([name]) => {
+      const fullName = lookup(name);
+      return (root.SkillAttemptRules?.key(fullName) || canonical(fullName).replace(/\s/g, '')) === wanted;
+    });
+    const level = Number(match?.[1] ?? 0);
+    return Number.isFinite(level) ? Math.max(0, level) : 0;
   }
 
   function skillCatalog() {
@@ -220,6 +238,7 @@
     if (state.attempts.length >= 3) return;
     const attempt = { order: state.attempts.length + 1, skill: skill.name, group: skill.group, baselineLevel: levelForSkill(skill.name, unit?.skills || {}) };
     const next = root.SkillAttemptRules?.teacherPromote([...state.attempts, attempt]) || [...state.attempts, attempt];
+    skillSearchOpen = false;
     await saveSkillAttempts(next);
     const input = byId('unitSkillSearch');
     const results = byId('unitSkillSearchResults');
@@ -265,10 +284,11 @@
     if (turnKey && !studyState.loaded) loadSkillState(turnKey, tribe).catch(() => {});
     const catalog = skillCatalog();
     const catalogByName = new Map(catalog.map(row => [root.SkillAttemptRules.key(row.name), row]));
-    const rows = Object.entries(skills).map(([name, value]) => {
+    const rows = skillLevelEntries(skills).filter(([name]) => name).map(([name, value]) => {
       const fullName = fullSkillName(name);
       const metadata = catalogByName.get(root.SkillAttemptRules.key(fullName)) || catalogByName.get(root.SkillAttemptRules.key(name)) || {};
-      return { name: fullName, level: Math.max(0, Number(value || 0)), group: metadata.group || 'C' };
+      const level = Number(value ?? 0);
+      return { name: fullName, level: Number.isFinite(level) ? Math.max(0, level) : 0, group: metadata.group || 'C' };
     }).sort((a, b) => a.name.localeCompare(b.name));
     const selectedFilter = getSkillFilter(tribe);
     for (const button of document.querySelectorAll('[data-skill-group-filter]')) {
@@ -339,12 +359,11 @@
       const query = canonical(search.value);
       const present = new Set(rows.map(row => root.SkillAttemptRules.key(row.name)));
       const chosen = new Set(currentAttempts.map(row => root.SkillAttemptRules.key(row.skill)));
-      skillSearchResults = query.length < 2 ? [] : catalog
+        skillSearchResults = catalog
         .filter(row => !present.has(root.SkillAttemptRules.key(row.name)) && !chosen.has(root.SkillAttemptRules.key(row.name)))
         .filter(row => !selectedFilter || row.group === selectedFilter)
-        .filter(row => canonical(row.name).includes(query) || canonical(row.shortname).includes(query))
-        .slice(0, 8);
-      searchResults.hidden = !query || !skillSearchResults.length;
+        .filter(row => !query || canonical(row.name).includes(query) || canonical(row.shortname).includes(query));
+      searchResults.hidden = !skillSearchOpen || !skillSearchResults.length;
       searchResults.innerHTML = skillSearchResults.map((row, index) => `<button type="button" class="unit-skill-search-result" data-skill-search-index="${index}"><span>${esc(row.name)}</span><small>Group ${esc(row.group)} · Level ${levelForSkill(row.name, skills)}</small></button>`).join('');
     }
     renderSkillAttemptStrip();
@@ -556,6 +575,11 @@
   }
 
   document.addEventListener('click', event => {
+    if (!event.target.closest('.unit-skill-add')) {
+      skillSearchOpen = false;
+      const searchResults = byId('unitSkillSearchResults');
+      if (searchResults) searchResults.hidden = true;
+    }
     const compendiumLink = event.target.closest('[data-compendium-entry]');
     if (compendiumLink) {
       const entry = compendiumLink.dataset.compendiumEntry;
@@ -605,6 +629,11 @@
       document.querySelector(`#turnActionBar [data-turn-action="${action.dataset.unitAction}"]`)?.click();
     }
   });
+  document.addEventListener('focusin', event => {
+    if (event.target?.id !== 'unitSkillSearch' || !activeSkillContext) return;
+    skillSearchOpen = true;
+    renderSkills(activeSkillContext.unit, activeSkillContext.code);
+  });
   document.addEventListener('input', event => {
     if (event.target?.id === 'unitSkillSearch' && activeSkillContext) renderSkills(activeSkillContext.unit, activeSkillContext.code);
   });
@@ -645,6 +674,6 @@
   }
 
   root.renderSelectedUnitPanel = renderPanel;
-  root.SelectedUnitPanelUtils = { resultEaters, skillNameLookup, compendiumHref };
+  root.SelectedUnitPanelUtils = { resultEaters, skillNameLookup, compendiumHref, levelForSkill };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.SelectedUnitPanelUtils;
 })(window);
