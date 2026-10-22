@@ -10,20 +10,16 @@ const { applyWagonAnimalRules } = require('./logistics-rules');
 const { resultTurnToStartWorkbook } = require('./turn-workflow');
 const { routesDb } = require('./planned-routes-ipc');
 const { canonicalTurnKey, inferTurnKeyFromFilename } = require('./turn-key');
+const { preferredLibraryRoot, legacyLibraryRoot, migrateLegacyLibrary } = require('./tribenet-files-path');
 
 let syncPromise = null;
-
-function preferredLibraryRoot() {
-  const parent = app.isPackaged ? path.dirname(process.execPath) : process.cwd();
-  return path.join(parent, 'TribeNet Files');
-}
 
 function fallbackLibraryRoot() {
   return path.join(app.getPath('userData'), 'TribeNet Files');
 }
 
 function ensureLibraryFolders() {
-  const preferred = preferredLibraryRoot();
+  const preferred = preferredLibraryRoot(app);
   let root = preferred;
   let fallback = false;
   try {
@@ -38,12 +34,17 @@ function ensureLibraryFolders() {
     fs.mkdirSync(path.join(root, 'Results'), { recursive: true });
     fs.mkdirSync(path.join(root, 'Completed Orders'), { recursive: true });
   }
+  const migration = migrateLegacyLibrary(legacyLibraryRoot(app), root);
+  fs.mkdirSync(path.join(root, 'Results'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'Completed Orders'), { recursive: true });
   return {
     root,
     preferredRoot: preferred,
     resultsDir: path.join(root, 'Results'),
     completedDir: path.join(root, 'Completed Orders'),
-    fallback
+    fallback,
+    migratedFiles: migration.moved,
+    legacyFilesPending: migration.remaining
   };
 }
 
