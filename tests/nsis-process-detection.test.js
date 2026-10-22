@@ -35,7 +35,8 @@ assert(cleanup.includes('Sleep 1000'), 'The update cleanup must allow transient 
 
 const releaseWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github/workflows/release.yml'), 'utf8');
 const upgradeTest = fs.readFileSync(path.join(__dirname, 'windows-installer-upgrade.ps1'), 'utf8');
-assert(releaseWorkflow.includes('TribeNet Manager Setup $env:APP_VERSION.exe'), 'Release publishing must use electron-builder’s actual installer filename.');
+assert(releaseWorkflow.includes('npm run dist -- --publish always'), 'The release workflow must use the configured build publisher after the upgrade test passes.');
+assert(!releaseWorkflow.includes('electron-builder publish --files'), 'The release workflow must not use the unsupported separate publish subcommand.');
 assert(upgradeTest.includes('TribeNet Manager Setup $env:APP_VERSION.exe'), 'The upgrade regression must target the built installer filename.');
 assert(upgradeTest.includes('^TribeNet(?:-Manager-Setup-| Manager Setup ).+\\.exe$'), 'The upgrade regression must locate both legacy and current release installer names.');
 
