@@ -1,6 +1,5 @@
 !include "getProcessInfo.nsh"
 Var pid
-Var /GLOBAL TribeNetRemoveAttempt
 
 !macro FIND_TRIBENET_PROCESS _RETURN
   nsExec::Exec `"$SYSDIR\cmd.exe" /C tasklist /FI "USERNAME eq %USERNAME%" /FI "IMAGENAME eq ${APP_EXECUTABLE_FILENAME}" /FO CSV /NH | "$SYSDIR\findstr.exe" /B /I /C:"\"${APP_EXECUTABLE_FILENAME}\""`
@@ -71,7 +70,7 @@ Var /GLOBAL TribeNetRemoveAttempt
 !macro customRemoveFiles
   ${if} ${isUpdated}
     CreateDirectory "$PLUGINSDIR\old-install"
-    StrCpy $TribeNetRemoveAttempt 0
+    StrCpy $R4 0
 
     TribeNetRetryRemoveFiles:
       Push ""
@@ -86,8 +85,8 @@ Var /GLOBAL TribeNetRemoveAttempt
       Call un.restoreFiles
       Pop $R0
 
-      IntOp $TribeNetRemoveAttempt $TribeNetRemoveAttempt + 1
-      ${if} $TribeNetRemoveAttempt < 6
+      IntOp $R4 $R4 + 1
+      ${if} $R4 < 6
         DetailPrint "Installed files are still in use; retrying removal."
         Sleep 1000
         Goto TribeNetRetryRemoveFiles

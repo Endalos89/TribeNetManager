@@ -29,7 +29,7 @@ const retryIndex = cleanup.indexOf('Goto TribeNetRetryRemoveFiles');
 assert(removeIndex >= 0, 'The update cleanup must use electron-builder’s atomic directory removal.');
 assert(restoreIndex > removeIndex, 'A failed cleanup attempt must restore moved files.');
 assert(retryIndex > restoreIndex, 'A retry must happen only after restoring the installation.');
-assert(cleanup.includes('TribeNetRemoveAttempt < 6'), 'The update cleanup must retry several times before aborting.');
+assert(cleanup.includes('$R4 < 6'), 'The update cleanup must retry several times before aborting.');
 assert(cleanup.includes('Sleep 1000'), 'The update cleanup must allow transient file locks time to clear between attempts.');
 
 console.log(`NSIS process detection and update cleanup retries are configured for electron-builder ${appBuilderVersion}.`);
