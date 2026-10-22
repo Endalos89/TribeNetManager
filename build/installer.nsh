@@ -1,5 +1,6 @@
 !include "getProcessInfo.nsh"
 Var pid
+Var /GLOBAL TribeNetRemoveAttempt
 
 !macro FIND_TRIBENET_PROCESS _RETURN
   nsExec::Exec `"$SYSDIR\cmd.exe" /C tasklist /FI "USERNAME eq %USERNAME%" /FI "IMAGENAME eq ${APP_EXECUTABLE_FILENAME}" /FO CSV /NH | "$SYSDIR\findstr.exe" /B /I /C:"\"${APP_EXECUTABLE_FILENAME}\""`
@@ -60,4 +61,43 @@ Var pid
       TribeNetNotRunning:
     ${endIf}
   ${endIf}
+!macroend
+
+; electron-builder's default update uninstaller aborts the first time a file
+; cannot be renamed out of the install directory. Windows can briefly keep
+; executable or data files open after the app exits (for example, during
+; antivirus scanning), so restore the files and retry before failing the
+; update. The installer's own outer retry then remains a final fallback.
+!macro customRemoveFiles
+  ${if} ${isUpdated}
+    CreateDirectory "$PLUGINSDIR\old-install"
+    StrCpy $TribeNetRemoveAttempt 0
+
+    TribeNetRetryRemoveFiles:
+      Push ""
+      Call un.atomicRMDir
+      Pop $R0
+
+      ${if} $R0 == 0
+        Goto TribeNetRemoveFilesDone
+      ${endIf}
+
+      Push ""
+      Call un.restoreFiles
+      Pop $R0
+
+      IntOp $TribeNetRemoveAttempt $TribeNetRemoveAttempt + 1
+      ${if} $TribeNetRemoveAttempt < 6
+        DetailPrint "Installed files are still in use; retrying removal."
+        Sleep 1000
+        Goto TribeNetRetryRemoveFiles
+      ${endIf}
+
+      Abort `Can't rename "$INSTDIR" to "$PLUGINSDIR\old-install".`
+
+    TribeNetRemoveFilesDone:
+  ${endIf}
+
+  SetOutPath $TEMP
+  RMDir /r $INSTDIR
 !macroend

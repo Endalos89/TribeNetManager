@@ -20,4 +20,16 @@ assert(nsisProcessCheck.includes('findstr.exe'), 'The non-PowerShell fallback mu
 assert(nsisProcessCheck.includes('/B /I /C:'), 'The process-name match must be anchored to the start of the CSV row.');
 assert(nsisProcessCheck.includes('Get-CimInstance -ClassName Win32_Process'), 'PowerShell process checks should inspect executable paths.');
 
-console.log(`NSIS process detection is exact in electron-builder ${appBuilderVersion}.`);
+const cleanupMacro = customProcessCheck.match(/!macro customRemoveFiles([\s\S]*?)!macroend/);
+assert(cleanupMacro, 'The updater must provide its own previous-installation cleanup macro.');
+const cleanup = cleanupMacro[1];
+const removeIndex = cleanup.indexOf('Call un.atomicRMDir');
+const restoreIndex = cleanup.indexOf('Call un.restoreFiles');
+const retryIndex = cleanup.indexOf('Goto TribeNetRetryRemoveFiles');
+assert(removeIndex >= 0, 'The update cleanup must use electron-builder’s atomic directory removal.');
+assert(restoreIndex > removeIndex, 'A failed cleanup attempt must restore moved files.');
+assert(retryIndex > restoreIndex, 'A retry must happen only after restoring the installation.');
+assert(cleanup.includes('TribeNetRemoveAttempt < 6'), 'The update cleanup must retry several times before aborting.');
+assert(cleanup.includes('Sleep 1000'), 'The update cleanup must allow transient file locks time to clear between attempts.');
+
+console.log(`NSIS process detection and update cleanup retries are configured for electron-builder ${appBuilderVersion}.`);
