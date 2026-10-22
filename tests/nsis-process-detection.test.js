@@ -30,7 +30,7 @@ const retryIndex = cleanup.indexOf('Goto TribeNetRetryRemoveFiles');
 assert(removeIndex >= 0, 'The update cleanup must use electron-builder’s atomic directory removal.');
 assert(restoreIndex > removeIndex, 'A failed cleanup attempt must restore moved files.');
 assert(retryIndex > restoreIndex, 'A retry must happen only after restoring the installation.');
-assert(cleanup.includes('$R4 < 6'), 'The update cleanup must retry several times before aborting.');
+assert(cleanup.includes('$R4 < 6'), 'The update cleanup must retry several times before failing.');
 assert(cleanup.includes('Sleep 1000'), 'The update cleanup must allow transient file locks time to clear between attempts.');
 
 const releaseWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github/workflows/release.yml'), 'utf8');
@@ -42,5 +42,8 @@ assert(!releaseWorkflow.includes('npm run dist -- --publish always'), 'The relea
 assert(!releaseWorkflow.includes('electron-builder publish --files'), 'The release workflow must not use the unsupported separate publish subcommand.');
 assert(upgradeTest.includes('TribeNet Manager Setup $env:APP_VERSION.exe'), 'The upgrade regression must target the built installer filename.');
 assert(upgradeTest.includes('^TribeNet(?:-Manager-Setup-| Manager Setup ).+\\.exe$'), 'The upgrade regression must locate both legacy and current release installer names.');
+assert(upgradeTest.includes("'--updated', '/S', '--force-run'"), 'The upgrade regression must invoke the installer using electron-updater flags.');
+assert(upgradeTest.includes('Applying a second updater-style install in the same Windows session'), 'The upgrade regression must cover a second update without rebooting.');
+assert(upgradeTest.includes('Close-InstalledApp $appPath'), 'The upgrade regression must close each relaunched app before the next update.');
 
 console.log(`NSIS process detection and update cleanup retries are configured for electron-builder ${appBuilderVersion}.`);
