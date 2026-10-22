@@ -23,7 +23,8 @@ const data = buildOrdersExportData({
   ],
   skillAttempts: [
     { tribe:'1485', order:2, topic:'Engineering', group:'C', baselineLevel:3 },
-    { tribe:'0485', order:1, topic:'Diplomacy', group:'B', baselineLevel:2 }
+    { tribe:'0485', order:1, topic:'Diplomacy', group:'B', baselineLevel:2 },
+    { tribe:'2485', order:1, topic:'Intelligence', group:'B', baselineLevel:1 }
   ]
 });
 
@@ -39,8 +40,9 @@ assert.deepEqual(data.gmActions.map(row => row.text), [
   'Skill Woodworking 3 should be moved from Tribe 0485 to Tribe 1485'
 ]);
 assert.deepEqual(data.skillAttempts.map(row => [row.tribe, row.order, row.topic]), [
-  ['0485', 1, 'Diplomacy'],
-  ['1485', 2, 'Engineering']
+  ['0485', 1, 'DIPLOMACY'],
+  ['1485', 2, 'ENGINEERING'],
+  ['2485', 1, 'Intelligence']
 ]);
 
 console.log('orders export data tests passed');
