@@ -69,6 +69,8 @@ jobs:
       - name: Test upgrade from the latest released installer
         shell: pwsh
         run: ./tests/windows-installer-upgrade.ps1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Restore release candidate assets
         shell: pwsh

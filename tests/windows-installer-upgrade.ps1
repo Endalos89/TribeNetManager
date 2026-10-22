@@ -17,7 +17,11 @@ foreach ($installerPath in @($firstInstallerPath, $secondInstallerPath)) {
 }
 
 $setupPattern = '^TribeNet(?:-Manager-Setup-| Manager Setup ).+\.exe$'
-$releases = Invoke-RestMethod -Headers @{ 'User-Agent' = 'TribeNetManager-Installer-Regression' } `
+$githubHeaders = @{ 'User-Agent' = 'TribeNetManager-Installer-Regression' }
+if ($env:GITHUB_TOKEN) {
+  $githubHeaders.Authorization = "Bearer $env:GITHUB_TOKEN"
+}
+$releases = Invoke-RestMethod -Headers $githubHeaders `
   -Uri 'https://api.github.com/repos/Endalos89/TribeNetManager/releases?per_page=100'
 $release = $releases | Where-Object {
   @($_.assets | Where-Object { $_.name -match $setupPattern }).Count -gt 0
