@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
 const JSZip = require('jszip');
+const { workbookValueForSkill } = require('./skill-workbook-values');
 
 const MOVEMENT_COLUMNS = Array.from({ length: 40 }, (_, index) => `MOVEMENT_${index + 1}`);
 const SCOUT_COLUMNS = Array.from({ length: 9 }, (_, index) => `Movement${index + 1}`);
@@ -191,13 +192,18 @@ function normalizeScoutRows(rows, maxRows) {
 }
 
 function normalizeSkillAttemptRows(rows, maxRows) {
-  const normalized = (rows || []).filter(row => row?.tribe && row?.topic).map(row => ({
-    tribe: String(row.tribe).trim().slice(0, 4),
-    order: Number(row.order),
-    topic: String(row.topic).trim(),
-    group: String(row.group || '').trim().toUpperCase(),
-    baselineLevel: Math.max(0, Math.floor(Number(row.baselineLevel || 0)))
-  })).sort((a, b) => compareUnitCodes(a.tribe, b.tribe) || a.order - b.order);
+  const normalized = (rows || []).filter(row => row?.tribe && row?.topic).map(row => {
+    const displaySkill = String(row.topic || row.skill).trim();
+    const topic = workbookValueForSkill(displaySkill);
+    if (!topic) throw new Error(`No workbook skill value is mapped for “${displaySkill}”.`);
+    return {
+      tribe: String(row.tribe).trim().slice(0, 4),
+      order: Number(row.order),
+      topic,
+      group: String(row.group || '').trim().toUpperCase(),
+      baselineLevel: Math.max(0, Math.floor(Number(row.baselineLevel || 0)))
+    };
+  }).sort((a, b) => compareUnitCodes(a.tribe, b.tribe) || a.order - b.order);
   if (normalized.length > maxRows) throw new Error(`The blank workbook has room for ${maxRows} skill attempts, but ${normalized.length} are planned.`);
   const byTribe = new Map();
   for (const row of normalized) {
