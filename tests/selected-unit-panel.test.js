@@ -77,7 +77,10 @@ assert.strictEqual(panelModule.exports.levelForSkill('Diplomacy', [{ skill:'Dipl
 assert.strictEqual(panelModule.exports.levelForSkill('Diplomacy', { Diplomacy:4 }), 4);
 assert.strictEqual(panelModule.exports.levelForSkill('Diplomacy', { Dip:{ level:4 } }), 4);
 const skillAttempts = require('../src/skill-attempts');
-const diplomacyAttempt = skillAttempts.calculate([{ order:1, skill:'Diplomacy', group:'B', baselineLevel:panelModule.exports.levelForSkill('Diplomacy', [{ skill:'Diplomacy', level:4 }]) }])[0];
+const staleAttempt = { order:1, skill:'Diplomacy', group:'B', baselineLevel:0 };
+const refreshedAttempt = panelModule.exports.refreshSkillAttemptLevels([staleAttempt], [{ skill:'Diplomacy', level:4 }])[0];
+assert.strictEqual(refreshedAttempt.baselineLevel, 4);
+const diplomacyAttempt = skillAttempts.calculate([refreshedAttempt])[0];
 assert.strictEqual(diplomacyAttempt.targetLevel, 5);
 assert.strictEqual(diplomacyAttempt.chance, 60);
 assert.strictEqual(panelModule.exports.compendiumHref('skill', 'Forestry'), 'compendium.html?entry=skill&key=Forestry');
