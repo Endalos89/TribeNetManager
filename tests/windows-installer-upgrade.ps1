@@ -3,10 +3,16 @@ $ErrorActionPreference = 'Stop'
 if (-not $env:APP_VERSION) {
   throw 'APP_VERSION must be set to the version of the installer being tested.'
 }
+if (-not $env:APP_TEST_VERSION) {
+  throw 'APP_TEST_VERSION must be set to the next version used for repeated-update testing.'
+}
 
-$installerPath = Join-Path $PWD "release/TribeNet Manager Setup $env:APP_VERSION.exe"
-if (-not (Test-Path $installerPath)) {
-  throw "Built installer not found: $installerPath"
+$firstInstallerPath = Join-Path $env:RUNNER_TEMP "TribeNet Manager Setup $env:APP_VERSION.exe"
+$secondInstallerPath = Join-Path $PWD "release/TribeNet Manager Setup $env:APP_TEST_VERSION.exe"
+foreach ($installerPath in @($firstInstallerPath, $secondInstallerPath)) {
+  if (-not (Test-Path $installerPath)) {
+    throw "Built installer not found: $installerPath"
+  }
 }
 
 $setupPattern = '^TribeNet(?:-Manager-Setup-| Manager Setup ).+\.exe$'
@@ -82,12 +88,12 @@ if (-not (Test-Path $appPath)) {
 }
 
 Write-Host "Applying first updater-style install to $env:APP_VERSION..."
-Install-ThroughUpdater $installerPath $installDirectory
+Install-ThroughUpdater $firstInstallerPath $installDirectory
 Wait-ForInstalledApp $appPath | Out-Null
 Close-InstalledApp $appPath
 
-Write-Host "Applying a second updater-style install in the same Windows session..."
-Install-ThroughUpdater $installerPath $installDirectory
+Write-Host "Applying next-version updater-style install to $env:APP_TEST_VERSION in the same Windows session..."
+Install-ThroughUpdater $secondInstallerPath $installDirectory
 Wait-ForInstalledApp $appPath | Out-Null
 Close-InstalledApp $appPath
 
@@ -98,4 +104,4 @@ if (-not (Test-Path (Join-Path $installDirectory 'Uninstall TribeNet Manager.exe
   throw 'Repeated updates did not leave a usable uninstaller in the installation directory.'
 }
 
-Write-Host "Repeated updater regression passed: $($release.tag_name) -> $env:APP_VERSION twice, without rebooting."
+Write-Host "Repeated updater regression passed: $($release.tag_name) -> $env:APP_VERSION -> $env:APP_TEST_VERSION, without rebooting."
