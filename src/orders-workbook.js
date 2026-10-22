@@ -256,6 +256,18 @@ function sheetPathsFromWorkbookXml(workbookXml, relsXml) {
   return result;
 }
 
+function forceWorkbookRecalculation(workbookXml) {
+  const xml = String(workbookXml || '');
+  const match = xml.match(/<calcPr\b[^>]*(?:\/>|>[\s\S]*?<\/calcPr>)/);
+  const attributes = match ? parseAttributes(match[0]) : {};
+  Object.assign(attributes, { calcMode: 'auto', fullCalcOnLoad: '1', forceFullCalc: '1' });
+  const replacement = `<calcPr ${Object.entries(attributes).map(([key, value]) => `${key}="${xmlEscape(value)}"`).join(' ')} />`;
+  if (match) return xml.replace(match[0], replacement);
+  if (!/<\/workbook>\s*$/.test(xml)) throw new Error('Could not find the workbook closing element to enable recalculation.');
+  if (/<extLst\b/.test(xml)) return xml.replace(/<extLst\b/, `${replacement}<extLst`);
+  return xml.replace(/<\/workbook>\s*$/, `${replacement}</workbook>`);
+}
+
 function replaceCell(sheetXml, address, value, kind = 'text') {
   const escapedAddress = address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`<c\\b(?=[^>]*\\br="${escapedAddress}")(?:[^>]*?\\/>|[^>]*>[\\s\\S]*?<\\/c>)`, 'i');
@@ -414,6 +426,11 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   skillAttemptsXml = clearInputRows(skillAttemptsXml, 2, template.skillAttemptRows + 1, ['A', 'B', 'C']);
   skillAttemptsXml = patchCells(skillAttemptsXml, skillAttemptCells(normalizedSkillAttempts));
   zip.file(paths.get('Skill_Attempts'), skillAttemptsXml);
+
+  // The Orders workbook contains formulas beside the values we write. Electron
+  // does not evaluate those formulas, so tell Excel to recalculate everything
+  // when the completed workbook is opened (even if the template was manual).
+  zip.file('xl/workbook.xml', forceWorkbookRecalculation(workbookXml));
 
   await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.promises.writeFile(outputPath, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));

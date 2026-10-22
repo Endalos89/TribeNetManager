@@ -219,7 +219,7 @@
     const error = root.SkillAttemptRules?.validationError(state.attempts) || '';
     host.hidden = attempts.length === 0;
     if (!attempts.length) { host.replaceChildren(); return; }
-    host.innerHTML = `<div class="unit-skill-attempts-title">Research attempts · ${esc(tribe)}</div>${attempts.map((attempt, index) => {
+    host.innerHTML = `<div class="unit-skill-attempts-title">Skill Attempts · ${esc(tribe)}</div>${attempts.map((attempt, index) => {
       const unaffordable = attempt.teacher && silver != null && silver < attempt.cost;
       const chance = chanceText(attempt.chance);
       const details = attempt.teacher
