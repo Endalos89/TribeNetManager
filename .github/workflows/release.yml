@@ -48,9 +48,35 @@ jobs:
       - name: Build Windows installer
         run: npm run dist -- --publish never
 
+      - name: Stage release candidate and build the next version for repeat-update testing
+        shell: pwsh
+        run: |
+          $stagedRelease = Join-Path $env:RUNNER_TEMP "TribeNetManager-release-$env:APP_VERSION"
+          New-Item -ItemType Directory -Path $stagedRelease -Force | Out-Null
+          foreach ($asset in @("TribeNet Manager Setup $env:APP_VERSION.exe", "TribeNet Manager Setup $env:APP_VERSION.exe.blockmap", 'latest.yml')) {
+            $assetPath = Join-Path 'release' $asset
+            if (!(Test-Path $assetPath)) { throw "First candidate asset not found: $assetPath" }
+            Copy-Item $assetPath $stagedRelease -Force
+          }
+
+          $nextVersion = "0.1.$([int]${{ github.run_number }} + 1)"
+          npm version $nextVersion --no-git-tag-version
+          "APP_TEST_VERSION=$nextVersion" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build next-version Windows installer for repeat-update testing
+        run: npm run dist -- --publish never
+
       - name: Test upgrade from the latest released installer
         shell: pwsh
         run: ./tests/windows-installer-upgrade.ps1
+
+      - name: Restore release candidate assets
+        shell: pwsh
+        run: |
+          $stagedRelease = Join-Path $env:RUNNER_TEMP "TribeNetManager-release-$env:APP_VERSION"
+          Copy-Item (Join-Path $stagedRelease "TribeNet Manager Setup $env:APP_VERSION.exe") release -Force
+          Copy-Item (Join-Path $stagedRelease "TribeNet Manager Setup $env:APP_VERSION.exe.blockmap") release -Force
+          Copy-Item (Join-Path $stagedRelease 'latest.yml') release -Force
 
       - name: Tag tested release
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
