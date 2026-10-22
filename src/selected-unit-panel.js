@@ -140,10 +140,27 @@
     return loading;
   }
 
+  function skillLevelEntries(skills) {
+    if (Array.isArray(skills)) {
+      return skills
+        .filter(row => row && typeof row === 'object')
+        .map(row => [row.skill || row.name || row.shortname, row.level ?? row.value]);
+    }
+    return Object.entries(skills || {}).map(([name, value]) => [
+      name,
+      value && typeof value === 'object' ? (value.level ?? value.value) : value
+    ]);
+  }
+
   function levelForSkill(skillName, skills) {
     const wanted = root.SkillAttemptRules?.key(skillName) || canonical(skillName).replace(/\s/g, '');
-    const match = Object.entries(skills || {}).find(([name]) => (root.SkillAttemptRules?.key(name) || canonical(name).replace(/\s/g, '')) === wanted);
-    return match ? Math.max(0, Number(match[1] || 0)) : 0;
+    const lookup = skillNameLookup();
+    const match = skillLevelEntries(skills).find(([name]) => {
+      const fullName = lookup(name);
+      return (root.SkillAttemptRules?.key(fullName) || canonical(fullName).replace(/\s/g, '')) === wanted;
+    });
+    const level = Number(match?.[1] ?? 0);
+    return Number.isFinite(level) ? Math.max(0, level) : 0;
   }
 
   function skillCatalog() {
@@ -265,10 +282,11 @@
     if (turnKey && !studyState.loaded) loadSkillState(turnKey, tribe).catch(() => {});
     const catalog = skillCatalog();
     const catalogByName = new Map(catalog.map(row => [root.SkillAttemptRules.key(row.name), row]));
-    const rows = Object.entries(skills).map(([name, value]) => {
+    const rows = skillLevelEntries(skills).filter(([name]) => name).map(([name, value]) => {
       const fullName = fullSkillName(name);
       const metadata = catalogByName.get(root.SkillAttemptRules.key(fullName)) || catalogByName.get(root.SkillAttemptRules.key(name)) || {};
-      return { name: fullName, level: Math.max(0, Number(value || 0)), group: metadata.group || 'C' };
+      const level = Number(value ?? 0);
+      return { name: fullName, level: Number.isFinite(level) ? Math.max(0, level) : 0, group: metadata.group || 'C' };
     }).sort((a, b) => a.name.localeCompare(b.name));
     const selectedFilter = getSkillFilter(tribe);
     for (const button of document.querySelectorAll('[data-skill-group-filter]')) {
@@ -645,6 +663,6 @@
   }
 
   root.renderSelectedUnitPanel = renderPanel;
-  root.SelectedUnitPanelUtils = { resultEaters, skillNameLookup, compendiumHref };
+  root.SelectedUnitPanelUtils = { resultEaters, skillNameLookup, compendiumHref, levelForSkill };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.SelectedUnitPanelUtils;
 })(window);
