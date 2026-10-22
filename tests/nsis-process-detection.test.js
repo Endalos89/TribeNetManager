@@ -41,9 +41,11 @@ assert(releaseWorkflow.includes('git push origin $tag'), 'The release workflow m
 assert(!releaseWorkflow.includes('npm run dist -- --publish always'), 'The release workflow must not invoke electron-builder’s concurrent publisher.');
 assert(!releaseWorkflow.includes('electron-builder publish --files'), 'The release workflow must not use the unsupported separate publish subcommand.');
 assert(upgradeTest.includes('TribeNet Manager Setup $env:APP_VERSION.exe'), 'The upgrade regression must target the built installer filename.');
+assert(upgradeTest.includes('TribeNet Manager Setup $env:APP_TEST_VERSION.exe'), 'The upgrade regression must apply a distinct next-version installer.');
 assert(upgradeTest.includes('^TribeNet(?:-Manager-Setup-| Manager Setup ).+\\.exe$'), 'The upgrade regression must locate both legacy and current release installer names.');
 assert(upgradeTest.includes("'--updated', '/S', '--force-run'"), 'The upgrade regression must invoke the installer using electron-updater flags.');
-assert(upgradeTest.includes('Applying a second updater-style install in the same Windows session'), 'The upgrade regression must cover a second update without rebooting.');
+assert(upgradeTest.includes('next-version updater-style install') && upgradeTest.includes('same Windows session'), 'The upgrade regression must cover a second update without rebooting.');
 assert(upgradeTest.includes('Close-InstalledApp $appPath'), 'The upgrade regression must close each relaunched app before the next update.');
+assert(releaseWorkflow.includes('Build next-version Windows installer for repeat-update testing'), 'Pull request and release checks must build two distinct consecutive installer versions.');
 
 console.log(`NSIS process detection and update cleanup retries are configured for electron-builder ${appBuilderVersion}.`);
