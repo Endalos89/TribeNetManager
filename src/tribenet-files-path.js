@@ -43,7 +43,11 @@ function migrateLegacyLibrary(sourceRoot, destinationRoot, fsApi = fs) {
     }
 
     for (const entry of entries) {
-      if (entry.name === '.write-test' || /^~\$/.test(entry.name)) continue;
+      if (entry.name === '.write-test') continue;
+      if (/^~\$/.test(entry.name)) {
+        remaining += 1;
+        continue;
+      }
       const oldPath = path.join(sourceDirectory, entry.name);
       const newPath = path.join(destinationDirectory, entry.name);
       if (entry.isDirectory()) {
