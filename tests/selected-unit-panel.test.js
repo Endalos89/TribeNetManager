@@ -52,7 +52,10 @@ assert.match(main, /parent: mainWindow/);
 assert.match(main, /compendiumWindow\.loadFile\(path\.join\(__dirname, 'compendium\.html'\), \{ query \}\)/);
 assert.doesNotMatch(html, /openTribeManagerButton|results-timeline-link/);
 
-const panelRoot = { TribeNetOrdersReferenceRaw: { skills: [{ name:'Forestry', shortname:'For' }] } };
+const panelRoot = { TribeNetOrdersReferenceRaw: { skills: [
+  { name:'Forestry', shortname:'For' },
+  { name:'Diplomacy', shortname:'Dip' }
+] } };
 const panelModule = { exports: {} };
 vm.runInNewContext(panel, {
   window: panelRoot,
@@ -63,6 +66,13 @@ vm.runInNewContext(panel, {
 assert.strictEqual(panelModule.exports.resultEaters({ people: { Warriors:100, Actives:50, Slaves:10 } }), 160);
 assert.strictEqual(panelModule.exports.resultEaters({ people: { People:200, Warriors:100, Slaves:10 } }), 210);
 assert.strictEqual(panelModule.exports.skillNameLookup()('For'), 'Forestry');
+assert.strictEqual(panelModule.exports.levelForSkill('Diplomacy', [{ skill:'Diplomacy', level:4 }]), 4);
+assert.strictEqual(panelModule.exports.levelForSkill('Diplomacy', { Diplomacy:4 }), 4);
+assert.strictEqual(panelModule.exports.levelForSkill('Diplomacy', { Dip:{ level:4 } }), 4);
+const skillAttempts = require('../src/skill-attempts');
+const diplomacyAttempt = skillAttempts.calculate([{ order:1, skill:'Diplomacy', group:'B', baselineLevel:panelModule.exports.levelForSkill('Diplomacy', [{ skill:'Diplomacy', level:4 }]) }])[0];
+assert.strictEqual(diplomacyAttempt.targetLevel, 5);
+assert.strictEqual(diplomacyAttempt.chance, 60);
 assert.strictEqual(panelModule.exports.compendiumHref('skill', 'Forestry'), 'compendium.html?entry=skill&key=Forestry');
 assert.strictEqual(panelModule.exports.compendiumHref('item', 'Oak Wood'), 'compendium.html?entry=item&key=Oak+Wood');
 
