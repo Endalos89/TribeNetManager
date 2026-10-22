@@ -37,6 +37,7 @@ const releaseWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github/work
 const upgradeTest = fs.readFileSync(path.join(__dirname, 'windows-installer-upgrade.ps1'), 'utf8');
 assert(releaseWorkflow.includes('gh release create $tag $downloadInstaller $downloadBlockmap $latestYml'), 'The release workflow must upload the installer, blockmap, and updater manifest together.');
 assert(releaseWorkflow.includes('gh release view $tag --repo Endalos89/TribeNetManager --json assets'), 'The release workflow must verify the published asset list.');
+assert(releaseWorkflow.includes('git push origin $tag'), 'The release workflow must create the tested version tag before publishing.');
 assert(!releaseWorkflow.includes('npm run dist -- --publish always'), 'The release workflow must not invoke electron-builder’s concurrent publisher.');
 assert(!releaseWorkflow.includes('electron-builder publish --files'), 'The release workflow must not use the unsupported separate publish subcommand.');
 assert(upgradeTest.includes('TribeNet Manager Setup $env:APP_VERSION.exe'), 'The upgrade regression must target the built installer filename.');

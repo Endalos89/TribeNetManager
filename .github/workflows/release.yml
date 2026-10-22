@@ -52,6 +52,21 @@ jobs:
         shell: pwsh
         run: ./tests/windows-installer-upgrade.ps1
 
+      - name: Tag tested release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        shell: pwsh
+        run: |
+          $tag = "v$env:APP_VERSION"
+          $existingTag = git tag --list $tag
+          if ($existingTag) {
+            $tagCommit = git rev-parse "$tag^{}"
+            $headCommit = git rev-parse HEAD
+            if ($tagCommit -ne $headCommit) { throw "Tag $tag already points to $tagCommit, not $headCommit." }
+          } else {
+            git tag $tag
+          }
+          git push origin $tag
+
       - name: Publish tested Windows installer assets
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: pwsh
