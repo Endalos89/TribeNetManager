@@ -1,3 +1,5 @@
+const { workbookValueForSkill } = require('./skill-workbook-values');
+
 function exportUnitKey(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -92,13 +94,18 @@ function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGrou
     }));
   const normalizedSkillAttempts = (skillAttempts || [])
     .filter(row => row?.tribe && row?.topic && Number(row.order) >= 1 && Number(row.order) <= 3)
-    .map(row => ({
-      tribe: String(row.tribe).trim().slice(0, 4),
-      order: Number(row.order),
-      topic: String(row.topic).trim(),
-      group: row.group || null,
-      baselineLevel: Number(row.baselineLevel || 0)
-    }))
+    .map(row => {
+      const displaySkill = String(row.topic || row.skill).trim();
+      const workbookSkill = workbookValueForSkill(displaySkill);
+      if (!workbookSkill) throw new Error(`No workbook skill value is mapped for “${displaySkill}”.`);
+      return {
+        tribe: String(row.tribe).trim().slice(0, 4),
+        order: Number(row.order),
+        topic: workbookSkill,
+        group: row.group || null,
+        baselineLevel: Number(row.baselineLevel || 0)
+      };
+    })
     .sort((a, b) => a.tribe.localeCompare(b.tribe) || a.order - b.order);
   const scouts = routes
     .filter(route => route.routeType === 'scout')
