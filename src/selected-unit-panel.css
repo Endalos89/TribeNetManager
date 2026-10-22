@@ -46,14 +46,14 @@
 .unit-skill-attempts { margin: 0 0 10px; padding: 8px; border: 1px solid #344b55; border-radius: 8px; background: #0a141a; }
 .unit-skill-attempts[hidden] { display: none; }
 .unit-skill-attempts-title { margin-bottom: 5px; color: #8197a1; font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
-.unit-skill-attempt { display: grid; grid-template-columns: 23px minmax(0,1fr) auto 22px; gap: 5px; align-items: center; min-height: 26px; border-top: 1px solid #1d3039; }
+.unit-skill-attempt { min-width: 0; display: grid; grid-template-columns: 17px minmax(0,1fr) auto 53px; gap: 4px; align-items: center; min-height: 26px; border-top: 1px solid #1d3039; }
 .unit-skill-attempt:first-of-type { border-top: 0; }
 .unit-skill-attempt-number { color: #e3cd89; font-size: 9px; font-weight: 800; }
 .unit-skill-attempt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cad5da; font-size: 9px; }
 .unit-skill-attempt-details { color: #8da2ac; font-size: 8px; white-space: nowrap; }
 .unit-skill-attempt-details.unaffordable, .unit-skill-attempts-error { color: #e57e74; }
-.unit-skill-attempt-actions { display: flex; gap: 2px; }
-.unit-skill-attempt-actions button { width: 19px; height: 19px; border: 1px solid #2a414c; border-radius: 4px; background: #0c171d; color: #a9bbc3; font: inherit; font-size: 10px; line-height: 1; cursor: pointer; }
+.unit-skill-attempt-actions { min-width: 0; display: flex; justify-content: flex-end; gap: 2px; }
+.unit-skill-attempt-actions button { box-sizing: border-box; flex: 0 0 16px; width: 16px; height: 19px; padding: 0; border: 1px solid #2a414c; border-radius: 4px; background: #0c171d; color: #a9bbc3; font: inherit; font-size: 10px; line-height: 1; cursor: pointer; }
 .unit-skill-attempt-actions button:hover:not(:disabled) { color: #fff; border-color: #64816f; }
 .unit-skill-attempt-actions button:disabled { opacity: .3; cursor: default; }
 .unit-skill-attempts-error { margin: 6px 0 0; font-size: 9px; line-height: 1.4; }
@@ -65,9 +65,9 @@
 .unit-skill-filters span { margin-left: 3px; color: #71858f; font-size: 8px; }
 .unit-skill-add { position: relative; display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 6px; margin: 0 0 8px; }
 .unit-skill-add label { color: #9aadb5; font-size: 8px; white-space: nowrap; }
-.unit-skill-add input { min-width: 0; width: 100%; border: 1px solid #304751; border-radius: 6px; padding: 6px 8px; background: #091319; color: #dce6ea; font: inherit; font-size: 9px; }
+.unit-skill-add input { box-sizing: border-box; min-width: 0; width: 100%; border: 1px solid #304751; border-radius: 6px; padding: 6px 8px; background: #091319; color: #dce6ea; font: inherit; font-size: 9px; }
 .unit-skill-add input:focus { border-color: #678879; outline: 1px solid #678879; }
-.unit-skill-search-results { position: absolute; z-index: 5; top: calc(100% + 3px); right: 0; left: 0; display: grid; max-height: 210px; overflow: auto; border: 1px solid #354d57; border-radius: 7px; background: #0b161c; box-shadow: 0 8px 20px rgba(0,0,0,.35); }
+.unit-skill-search-results { position: absolute; z-index: 5; top: calc(100% + 3px); right: 0; left: 0; display: grid; max-height: 210px; overflow: auto; overscroll-behavior: contain; border: 1px solid #354d57; border-radius: 7px; background: #0b161c; box-shadow: 0 8px 20px rgba(0,0,0,.35); }
 .unit-skill-search-results[hidden] { display: none; }
 .unit-skill-search-result { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 0; border-bottom: 1px solid #1e3039; padding: 7px 9px; background: transparent; color: #d0dde1; text-align: left; font: inherit; font-size: 9px; cursor: pointer; }
 .unit-skill-search-result:last-child { border-bottom: 0; }
