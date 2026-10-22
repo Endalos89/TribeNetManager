@@ -77,7 +77,7 @@
   }
 
   function render(info, snapshots = []) {
-    pathHost.textContent = `${info.root}  ·  Results/  ·  Completed Orders/${info.fallback ? '  (installation folder was not writable, so the local app-data fallback is being used)' : ''}`;
+    pathHost.textContent = `${info.root}  ·  Results/  ·  Completed Orders/${info.fallback ? '  (Documents was not writable, so the local app-data fallback is being used)' : ''}${info.legacyFilesPending ? `  ·  ${info.legacyFilesPending} legacy file${info.legacyFilesPending === 1 ? '' : 's'} still need to move; close any open workbook and reopen the app to finish` : ''}`;
 
     const rows = new Map((info.history || []).map(row => [String(row.turnKey), { ...row }]));
     const snapshotMap = new Map((snapshots || []).map(row => [String(row.turnKey), row]));
