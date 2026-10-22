@@ -15,9 +15,10 @@ savedMovementUnits = function savedMovementUnitsWithPlannedSplits() {
       unitCode: split.unitCode,
       unitType: split.unitType,
       unitName: split.unitName || '',
-      currentHex: split.startHex,
+      currentHex: plannedSplitMapHex(split),
       startHex: split.startHex,
       parentUnit: split.parentUnit,
+      creationPhase: split.creationPhase === 'after' ? 'after' : 'before',
       plannedSplit: true
     });
   }
@@ -47,7 +48,7 @@ savedMovementPopulateUnits = function savedMovementPopulateUnitsWithSplitHints()
   const selected = savedMovementSelectedUnit();
   const hint = document.getElementById('movementPlannerOriginHint');
   if (selected?.plannedSplit && hint && savedMovementPlansState.routeType === 'unit') {
-    hint.textContent = `${selected.unitCode} · planned ${selected.unitType} split from ${selected.parentUnit} · starts at ${selected.startHex} (parent Tribe's beginning-of-turn location)`;
+    hint.textContent = `${selected.unitCode} · planned ${selected.unitType} split from ${selected.parentUnit} · ${selected.creationPhase === 'after' ? `created after movement at ${selected.currentHex}` : `starts before movement at ${selected.startHex}`}`;
   }
 };
 
@@ -55,13 +56,19 @@ function plannedSplitDrawStartingUnits() {
   if (state.mode !== 'detail' || !state.planningVisible) return;
   const slots = new Map();
   for (const split of savedMovementPlansState.unitSplits || []) {
-    const point = parseCoordinate(split.startHex);
+    const point = parseCoordinate(plannedSplitMapHex(split));
     if (!point) continue;
     const key = point.coordinate;
     const slot = slots.get(key) || 0;
     drawUnitLabel(point, split.unitCode, split.unitType, slot, 'new');
     slots.set(key, slot + 1);
   }
+}
+
+function plannedSplitMapHex(split) {
+  if (split?.creationPhase !== 'after') return split?.startHex || null;
+  const parent = plannedSplitOriginalSavedMovementUnits().find(unit => String(unit.unitCode).toLowerCase() === String(split.parentUnit).toLowerCase());
+  return savedMovementUnitMoveDestination(split.parentUnit) || parent?.currentHex || split.startHex || null;
 }
 
 const plannedSplitOriginalDraw = draw;

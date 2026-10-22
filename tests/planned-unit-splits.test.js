@@ -31,6 +31,13 @@ try {
   assert.equal(element.unitCode, '0485e1');
   assert.equal(element.unitType, 'Element');
   assert.equal(element.startHex, 'PK1711', 'split should use parent beginning-of-turn hex');
+  assert.equal(element.creationPhase, 'before', 'before movement is the default creation phase');
+
+  const afterElement = turns.addUnitSplit('048-12', {
+    parentUnit: '0485', unitCode: '0485e2', unitType: 'Element', creationPhase: 'after'
+  });
+  assert.equal(afterElement.creationPhase, 'after', 'after movement timing should persist');
+  turns.deleteUnitSplit(afterElement.id);
 
   const tribe = turns.addUnitSplit('048-12', {
     parentUnit: '0485',

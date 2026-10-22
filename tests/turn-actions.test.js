@@ -76,7 +76,9 @@ assert.match(actions, /Now select the land or unexplored hex to set the directio
 assert.match(actions, /turnActionState\.pendingOcean = ocean/, 'Follow Ocean must keep the ocean selection pending.');
 assert.match(actions, /orderForFeature/, 'Scout coastal traces must infer FOL/FOR.');
 assert.match(savedPlans, /garrison.*fleet.*courier|fleet.*courier.*garrison/i, 'Garrisons, fleets and couriers must be handled as stationary units.');
-assert.match(savedPlans, /plannedSplit && savedMovementUnitMove\(unit\.parentUnit\)/, 'A split created after parent movement must remain stationary.');
+assert.match(index, /id="movementPlannerCreatePhase"/, 'The mapper split dialog must let users choose the creation phase.');
+assert.match(savedPlans, /unit\.plannedSplit && unit\.creationPhase === 'after'/, 'After-movement splits must remain stationary.');
+assert.match(fs.readFileSync('src/planned-unit-splits-map.js', 'utf8'), /savedMovementUnitMoveDestination\(split\.parentUnit\)/, 'After-movement splits must follow the source unit endpoint on the map.');
 assert.match(savedPlans, /savedMovementIsStationaryUnit/, 'Stationary unit types must share one movement rule.');
 assert.match(savedPlans, /removeAllScoutRoutesForUnit/, 'Changing a unit destination must clear its scouting routes.');
 assert.match(savedPlans, /clearedScoutRoutes/, 'Movement commits must report cleared scouting routes.');

@@ -18,7 +18,7 @@ const data = buildOrdersExportData({
     ]
   ],
   splitGroups: [
-    [{ unitCode: '1485', unitType: 'Tribe', unitName: 'New Tribe', parentUnit: '0485', startHex: 'AA0101', skills: [{ skill: 'Woodworking', level: 3 }] }],
+    [{ unitCode: '1485', unitType: 'Tribe', unitName: 'New Tribe', parentUnit: '0485', startHex: 'AA0101', creationPhase: 'after', skills: [{ skill: 'Woodworking', level: 3 }] }],
     [{ unitCode: '1485', unitType: 'Tribe', unitName: 'Stale Legacy', parentUnit: '0485', startHex: 'AA0101' }]
   ],
   skillAttempts: [
@@ -39,6 +39,11 @@ assert.deepEqual(data.gmActions.map(row => row.text), [
   'Create Tribe 1485 from 0485 after movement',
   'Skill Woodworking 3 should be moved from Tribe 0485 to Tribe 1485'
 ]);
+
+const beforeMovement = buildOrdersExportData({
+  splitGroups: [[{ unitCode: '0485e2', unitType: 'Element', parentUnit: '0485', creationPhase: 'before' }]]
+});
+assert.equal(beforeMovement.gmActions[0].text, 'Create Element 0485e2 from 0485', 'Before Movement must be exported explicitly even when the child has no route.');
 assert.deepEqual(data.skillAttempts.map(row => [row.tribe, row.order, row.topic]), [
   ['0485', 1, 'DIPLOMACY'],
   ['1485', 2, 'ENGINEERING'],

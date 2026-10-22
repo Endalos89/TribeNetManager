@@ -119,10 +119,10 @@ function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGrou
     }));
   const gmActions = [];
   for (const split of splits.sort((a, b) => String(a.unitCode).localeCompare(String(b.unitCode), undefined, { numeric: true }))) {
-    const moved = unitRoutes.has(exportUnitKey(split.unitCode));
+    const afterMovement = split.creationPhase === 'after';
     gmActions.push({
       unit: split.parentUnit,
-      text: `Create ${split.unitType} ${split.unitCode} from ${split.parentUnit}${moved ? '' : ' after movement'}`
+      text: `Create ${split.unitType} ${split.unitCode} from ${split.parentUnit}${afterMovement ? ' after movement' : ''}`
     });
     if (split.unitType === 'Tribe') {
       for (const skill of split.skills || []) {

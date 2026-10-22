@@ -1,5 +1,5 @@
 // Turn Manager planned unit splits.
-// A split is structural only: it creates the new Tribe/Element at the parent Tribe's starting hex.
+// A split is structural only: it creates the new unit at the selected movement phase.
 // Population/goods transfers remain explicit and are not guessed here.
 
 const plannedSplitOriginalAllUnits = allUnits;
@@ -17,6 +17,7 @@ allUnits = function allUnitsWithPlannedSplits() {
         unitName: split.unitName || `Planned split from ${split.parentUnit}`,
         type: split.unitType,
         parentTribe: split.unitType === 'Element' ? split.parentUnit : split.unitCode,
+        creationPhase: split.creationPhase === 'after' ? 'after' : 'before',
         startHex: split.startHex,
         warrior: 0,
         active: 0,
@@ -82,7 +83,8 @@ function plannedSplitEnsurePanel() {
           parentUnit: parent.unit,
           unitCode: code,
           unitType: type,
-          unitName: name
+          unitName: name,
+          creationPhase: document.getElementById('plannedUnitSplitPhase')?.value === 'after' ? 'after' : 'before'
         });
         state.selectedUnit = split.unitCode;
         await loadTurn(state.turn.turnKey);
@@ -150,7 +152,7 @@ function plannedSplitRenderPanel() {
       <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
         <div>
           <strong>${esc(unit.unit)} · planned ${esc(unit.type)}</strong>
-          <div class="tm-muted" style="margin-top:4px">Splits from ${esc(unit.splitParentUnit)} at ${esc(unit.startHex || 'unknown')} before movement for this turn.</div>
+          <div class="tm-muted" style="margin-top:4px">Created ${unit.creationPhase === 'after' ? 'after' : 'before'} movement from ${esc(unit.splitParentUnit)}. ${unit.creationPhase === 'after' ? 'It follows the source Tribe and cannot move this turn.' : `It starts at ${esc(unit.startHex || 'unknown')} and may move independently.`}</div>
         </div>
         <button class="button danger" data-remove-unit-split="${unit.splitId}">Remove Split</button>
       </div>
@@ -172,9 +174,10 @@ function plannedSplitRenderPanel() {
   const suggested = plannedSplitSuggestedElement(unit.unit);
 
   body.innerHTML = `
-    <p class="tm-help" style="margin-top:0">The new unit is created at ${esc(unit.unit)}'s Results-baseline location (${esc(unit.startHex || 'unknown')}) and may then be moved separately. This does not invent population or goods transfers.</p>
-    <div style="display:grid;grid-template-columns:minmax(140px,.7fr) minmax(160px,1fr) minmax(180px,1.4fr) auto;gap:10px;align-items:end">
+    <p class="tm-help" style="margin-top:0">Choose whether the new unit exists before movement at ${esc(unit.unit)}'s starting hex, or after movement at the source's destination. After-movement units cannot move independently this turn. This does not invent population or goods transfers.</p>
+    <div style="display:grid;grid-template-columns:minmax(140px,.7fr) minmax(160px,1fr) minmax(180px,1.4fr) minmax(150px,1fr) auto;gap:10px;align-items:end">
       <label><span>New unit type</span><select id="plannedUnitSplitType" class="tm-full"><option value="Element">Element</option><option value="Tribe">Tribe</option></select></label>
+      <label><span>Created</span><select id="plannedUnitSplitPhase" class="tm-full"><option value="before">Before Movement</option><option value="after">After Movement</option></select></label>
       <label><span>Unit code</span><input id="plannedUnitSplitCode" class="tm-full" value="${esc(suggested)}" /></label>
       <label><span>Name (optional)</span><input id="plannedUnitSplitName" class="tm-full" placeholder="Optional unit name" /></label>
       <button id="createPlannedUnitSplit" class="button accent">Create Split</button>
@@ -183,7 +186,7 @@ function plannedSplitRenderPanel() {
       ${children.length ? children.map(split => `
         <div class="tm-activity" style="margin-top:8px">
           <div class="tm-activity-head"><strong>${esc(split.unitCode)} · ${esc(split.unitType)}</strong><span>${esc(split.startHex)}</span></div>
-          <div class="tm-activity-meta">From ${esc(split.parentUnit)}${split.unitName ? ` · ${esc(split.unitName)}` : ''}</div>
+          <div class="tm-activity-meta">From ${esc(split.parentUnit)} · created ${split.creationPhase === 'after' ? 'After Movement' : 'Before Movement'}${split.unitName ? ` · ${esc(split.unitName)}` : ''}</div>
           <div class="tm-activity-actions"><button class="button danger tm-mini" data-remove-unit-split="${split.id}">Remove</button></div>
         </div>
       `).join('') : '<div class="history-empty">No planned splits from this Tribe yet.</div>'}

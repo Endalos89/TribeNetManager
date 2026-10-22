@@ -589,6 +589,8 @@ function turnActionsOpenSplit() {
   if (turnActionState.active) return;
   const dialog = document.getElementById('unitSplitDialog');
   if (!dialog) return;
+  const phase = document.getElementById('movementPlannerCreatePhase');
+  if (phase) phase.value = 'before';
   savedMovementPopulateCreationForm();
   dialog.showModal();
 }
