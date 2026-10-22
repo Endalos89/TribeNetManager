@@ -1,14 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { canonicalTurnKey, inferTurnKeyFromFilename } = require('./turn-key');
-
-function preferredRoot(appLike) {
-  const parent = appLike.isPackaged ? path.dirname(process.execPath) : process.cwd();
-  return path.join(parent, 'TribeNet Files');
-}
+const { preferredLibraryRoot } = require('./tribenet-files-path');
 
 function completedOrdersDirectory(appLike, options = {}) {
-  const preferred = options.preferredRoot || preferredRoot(appLike);
+  const preferred = options.preferredRoot || preferredLibraryRoot(appLike);
   try {
     const directory = path.join(preferred, 'Completed Orders');
     fs.mkdirSync(directory, { recursive: true });
