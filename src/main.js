@@ -263,10 +263,18 @@ function ordersExportDraftSplits(turnKey) {
 
 function buildOrdersExportData(turnKey) {
   const baseline = ordersExportBaseline(turnKey);
+  const skillAttempts = turnManagerDatabase.getSkillAttempts(turnKey).map(row => ({
+    tribe: row.tribe,
+    order: Number(row.order),
+    topic: row.skill,
+    group: row.group,
+    baselineLevel: Number(row.baselineLevel || 0)
+  }));
   return assembleOrdersExportData({
     baselineUnits: baseline?.units || [],
     routeGroups: ordersExportDraftRoutes(turnKey),
-    splitGroups: ordersExportDraftSplits(turnKey)
+    splitGroups: ordersExportDraftSplits(turnKey),
+    skillAttempts
   });
 }
 
@@ -552,6 +560,10 @@ ipcMain.handle('turn-manager:delete-all-unit-splits', (_event, turnKey) => {
   return removed;
 });
 ipcMain.handle('turn-manager:save-context', (_event, turnKey, notes) => turnManagerDatabase.saveContext(turnKey, notes));
+ipcMain.handle('turn-manager:get-skill-attempts', (_event, turnKey, tribe) => turnManagerDatabase.getSkillAttempts(turnKey, tribe));
+ipcMain.handle('turn-manager:save-skill-attempts', (_event, turnKey, tribe, attempts) => turnManagerDatabase.saveSkillAttempts(turnKey, tribe, attempts));
+ipcMain.handle('turn-manager:get-skill-streaks', (_event, tribe) => turnManagerDatabase.getSkillStreaks(tribe));
+ipcMain.handle('turn-manager:set-skill-streak', (_event, tribe, skill, count, turnKey) => turnManagerDatabase.setSkillStreak(tribe, skill, count, turnKey));
 ipcMain.handle('turn-manager:catalog', () => ACTIVITY_CATALOG);
 ipcMain.handle('turn-manager:backup', () => turnManagerDatabase.createBackup());
 
@@ -575,6 +587,13 @@ async function importResultsReportFile(filePath, originalFileName = path.basenam
   const parsed = await parseResultDocument(filePath);
   resultsDatabase.archiveSource(parsed.turnKey, filePath, originalFileName || parsed.sourceFile);
   const saved = resultsDatabase.saveReport(parsed);
+  const skillsByTribe = {};
+  for (const unit of parsed.units || []) {
+    const tribe = String(unit.unitCode || '').trim();
+    if (!/^\d{4}$/.test(tribe)) continue;
+    skillsByTribe[tribe] = Object.entries(unit.skills || {}).map(([skill, level]) => ({ skill, level: Number(level || 0) }));
+  }
+  turnManagerDatabase.reconcileSkillAttemptResults(parsed.turnKey, skillsByTribe);
   syncResultBaseline(saved);
   return saved;
 }

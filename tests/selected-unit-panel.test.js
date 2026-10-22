@@ -31,10 +31,16 @@ for (const key of ['overview','skills','sustenance','inventory','orders']) {
   assert.match(html, new RegExp(`data-unit-pane="${key}"`), `Missing ${key} panel`);
 }
 assert.match(html, /aria-label="Selected unit details"/);
+assert.match(html, /data-skill-group-filter="A"/);
+assert.match(html, /data-skill-group-filter="B"/);
+assert.match(html, /data-skill-group-filter="C"/);
+assert.match(html, /id="unitSkillSearch"/);
+assert.match(html, /id="unitSkillAttempts"/);
 assert.match(panel, /dry-terrain rates|dryTerrainRates/i);
 assert.match(panel, /getUnitSupplyRequirements/);
 assert.match(panel, /provisionTurns\)\} months/);
 assert.match(panel, /foodReserveStatus\(provisionTurns\)/);
+assert.doesNotMatch(panel, /activeTab = 'overview';\s*setActiveTab\(activeTab\)/, 'Changing units should preserve the selected tab');
 assert.match(html, /id="unitFoodReserveCard"[\s\S]*?id="unitProvisionTurnCount"/);
 assert.match(html, /data-unit-pane="inventory"[\s\S]*?Carrying capacity &amp; load/);
 assert.match(panel, /data-compendium-entry/);
