@@ -52,23 +52,37 @@ jobs:
         shell: pwsh
         run: ./tests/windows-installer-upgrade.ps1
 
-      - name: Tag tested release
+      - name: Publish tested Windows installer assets
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $tag = "v$env:APP_VERSION"
-          $existingTag = git tag --list $tag
-          if ($existingTag) {
-            $tagCommit = git rev-parse "$tag^{}"
-            $headCommit = git rev-parse HEAD
-            if ($tagCommit -ne $headCommit) { throw "Tag $tag already points to $tagCommit, not $headCommit." }
-          } else {
-            git tag $tag
-          }
-          git push origin $tag
+          $installer = "release/TribeNet Manager Setup $env:APP_VERSION.exe"
+          $blockmap = "$installer.blockmap"
+          $latestYml = "release/latest.yml"
 
-      - name: Rebuild and publish tested Windows installer
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: npm run dist -- --publish always
+          if (!(Test-Path $installer)) { throw "Built installer not found: $installer" }
+          if (!(Test-Path $blockmap)) { throw "Built blockmap not found: $blockmap" }
+          if (!(Test-Path $latestYml)) { throw "Updater manifest not found: $latestYml" }
+
+          $manifest = Get-Content $latestYml -Raw
+          $pathMatch = [regex]::Match($manifest, '(?m)^path:\s*(.+?)\s*$')
+          if (!$pathMatch.Success) { throw "Updater manifest does not declare its installer path." }
+          $downloadName = $pathMatch.Groups[1].Value.Trim('"', "'")
+          if ([IO.Path]::GetFileName($downloadName) -ne $downloadName) { throw "Unsafe installer path in updater manifest: $downloadName" }
+
+          $downloadInstaller = "release/$downloadName"
+          $downloadBlockmap = "$downloadInstaller.blockmap"
+          Copy-Item $installer $downloadInstaller -Force
+          Copy-Item $blockmap $downloadBlockmap -Force
+
+          gh release create $tag $downloadInstaller $downloadBlockmap $latestYml --repo Endalos89/TribeNetManager --title $env:APP_VERSION --verify-tag --latest
+          if ($LASTEXITCODE -ne 0) { throw "GitHub release asset upload failed." }
+
+          $assetNames = gh release view $tag --repo Endalos89/TribeNetManager --json assets --jq '.assets[].name'
+          if ($LASTEXITCODE -ne 0) { throw "Could not verify published GitHub release assets." }
+          foreach ($requiredAsset in @($downloadName, "$downloadName.blockmap", "latest.yml")) {
+            if ($assetNames -notcontains $requiredAsset) { throw "Release $tag is missing required asset $requiredAsset." }
+          }
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
