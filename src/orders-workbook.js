@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 6583)
+Total output lines: 477
+
 const fs = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
@@ -234,42 +237,7 @@ function skillAttemptCells(rows) {
     const sheetRow = index + 2;
     cells.push({ address: `A${sheetRow}`, value: row.tribe });
     cells.push({ address: `B${sheetRow}`, value: row.order, kind: 'number' });
-    cells.push({ address: `C${sheetRow}`, value: row.topic });
-  }
-  return cells;
-}
-
-function sheetPathsFromWorkbookXml(workbookXml, relsXml) {
-  const relationships = new Map();
-  for (const match of String(relsXml || '').matchAll(/<Relationship\b[^>]*>/g)) {
-    const attributes = parseAttributes(match[0]);
-    if (attributes.Id && attributes.Target) relationships.set(attributes.Id, attributes.Target);
-  }
-  const result = new Map();
-  for (const match of String(workbookXml || '').matchAll(/<sheet\b[^>]*>/g)) {
-    const attributes = parseAttributes(match[0]);
-    const target = relationships.get(attributes['r:id']);
-    if (!attributes.name || !target) continue;
-    const relative = target.replace(/^\//, '').replace(/^xl\//, '');
-    result.set(attributes.name, `xl/${relative}`);
-  }
-  return result;
-}
-
-function replaceCell(sheetXml, address, value, kind = 'text') {
-  const escapedAddress = address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`<c\\b(?=[^>]*\\br="${escapedAddress}")(?:[^>]*?\\/>|[^>]*>[\\s\\S]*?<\\/c>)`, 'i');
-  const match = sheetXml.match(pattern);
-  const cellBody = value === null || value === undefined || value === ''
-    ? ''
-    : kind === 'number'
-      ? `<v>${Number(value)}</v>`
-      : `<is><t xml:space="preserve">${xmlEscape(value)}</t></is>`;
-  const makeCell = original => {
-    const opening = String(original || `<c r="${address}">`).match(/^<c\b[^>]*>/i)?.[0] || `<c r="${address}">`;
-    const attributes = parseAttributes(opening);
-    delete attributes.t;
-    const attributeText = Object.entries(attributes).map(([key, item]) => `${key}="${xmlEscape(item)}"`).join(' ');
+    cells.push({ address: `C${sheetRow}`, value: row.topic…583 tokens truncated…ey, item]) => `${key}="${xmlEscape(item)}"`).join(' ');
     const typeAttribute = value === null || value === undefined || value === '' ? '' : kind === 'number' ? ' t="n"' : ' t="inlineStr"';
     return `<c${attributeText ? ` ${attributeText}` : ''}${typeAttribute}>${cellBody}</c>`;
   };
@@ -414,6 +382,11 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   skillAttemptsXml = clearInputRows(skillAttemptsXml, 2, template.skillAttemptRows + 1, ['A', 'B', 'C']);
   skillAttemptsXml = patchCells(skillAttemptsXml, skillAttemptCells(normalizedSkillAttempts));
   zip.file(paths.get('Skill_Attempts'), skillAttemptsXml);
+
+  // The Orders workbook contains formulas beside the values we write. Electron
+  // does not evaluate those formulas, so tell Excel to recalculate everything
+  // when the completed workbook is opened (even if the template was manual).
+  zip.file('xl/workbook.xml', forceWorkbookRecalculation(workbookXml));
 
   await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.promises.writeFile(outputPath, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));

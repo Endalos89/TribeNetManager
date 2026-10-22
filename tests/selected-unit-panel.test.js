@@ -38,6 +38,8 @@ assert.match(html, /data-skill-group-filter="C"/);
 assert.match(html, /id="unitSkillSearch"/);
 assert.match(html, /placeholder="Browse all skills or search/);
 assert.match(html, /id="unitSkillAttempts"/);
+assert.match(panel, /Skill Attempts · \$\{esc\(tribe\)\}/);
+assert.doesNotMatch(panel, /Research attempts ·/);
 assert.match(panel, /document\.addEventListener\('focusin'/);
 assert.match(panel, /searchResults\.hidden = !skillSearchOpen/);
 assert.doesNotMatch(panel, /\.slice\(0,\s*8\)/, 'Browsing skills should not be limited to the first eight results');
