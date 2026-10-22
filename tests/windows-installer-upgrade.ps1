@@ -29,27 +29,73 @@ if (Test-Path $installDirectory) {
   Remove-Item -LiteralPath $installDirectory -Recurse -Force
 }
 
-function Install-Silently([string] $Path, [string] $Destination) {
-  $process = Start-Process -FilePath $Path -ArgumentList @('/S', "/D=$Destination") -Wait -PassThru
+function Install-ThroughUpdater([string] $Path, [string] $Destination) {
+  # Match electron-updater's NsisUpdater.doInstall arguments. --updated selects
+  # electron-builder's in-place update/uninstall path; --force-run mirrors
+  # quitAndInstall(true, true), which starts the app when installation ends.
+  $process = Start-Process -FilePath $Path -ArgumentList @('--updated', '/S', '--force-run', "/D=$Destination") -Wait -PassThru
   if ($process.ExitCode -ne 0) {
-    throw "Installer '$Path' exited with code $($process.ExitCode)."
+    throw "Updater installer '$Path' exited with code $($process.ExitCode)."
   }
 }
 
+function Wait-ForInstalledApp([string] $AppPath) {
+  $deadline = (Get-Date).AddSeconds(30)
+  do {
+    $app = Get-CimInstance Win32_Process -Filter "Name='TribeNet Manager.exe'" |
+      Where-Object { $_.ExecutablePath -eq $AppPath } |
+      Select-Object -First 1
+    if ($app) { return $app }
+    Start-Sleep -Milliseconds 500
+  } while ((Get-Date) -lt $deadline)
+  throw "Updater did not launch the installed app at $AppPath"
+}
+
+function Close-InstalledApp([string] $AppPath) {
+  $app = Get-CimInstance Win32_Process -Filter "Name='TribeNet Manager.exe'" |
+    Where-Object { $_.ExecutablePath -eq $AppPath } |
+    Select-Object -First 1
+  if (-not $app) { return }
+
+  $process = Get-Process -Id $app.ProcessId
+  if ($process.MainWindowHandle -ne 0) {
+    [void] $process.CloseMainWindow()
+    if ($process.WaitForExit(15000)) { return }
+  }
+
+  # Ensure no app process can keep files open when the following update begins.
+  Stop-Process -Id $app.ProcessId -Force -ErrorAction SilentlyContinue
+  $process.WaitForExit(10000)
+  $stillRunning = Get-CimInstance Win32_Process -Filter "Name='TribeNet Manager.exe'" |
+    Where-Object { $_.ExecutablePath -eq $AppPath }
+  if ($stillRunning) { throw "Could not stop installed app process $($app.ProcessId) before the next update." }
+}
+
 Write-Host "Installing previous released build $($previousInstaller.name)..."
-Install-Silently $oldInstallerPath $installDirectory
+$oldInstallProcess = Start-Process -FilePath $oldInstallerPath -ArgumentList @('/S', "/D=$installDirectory") -Wait -PassThru
+if ($oldInstallProcess.ExitCode -ne 0) {
+  throw "Previous installer '$oldInstallerPath' exited with code $($oldInstallProcess.ExitCode)."
+}
 $appPath = Join-Path $installDirectory 'TribeNet Manager.exe'
 if (-not (Test-Path $appPath)) {
   throw "Previous release did not install the app at $appPath"
 }
 
-Write-Host "Upgrading that installation to $env:APP_VERSION..."
-Install-Silently $installerPath $installDirectory
+Write-Host "Applying first updater-style install to $env:APP_VERSION..."
+Install-ThroughUpdater $installerPath $installDirectory
+Wait-ForInstalledApp $appPath | Out-Null
+Close-InstalledApp $appPath
+
+Write-Host "Applying a second updater-style install in the same Windows session..."
+Install-ThroughUpdater $installerPath $installDirectory
+Wait-ForInstalledApp $appPath | Out-Null
+Close-InstalledApp $appPath
+
 if (-not (Test-Path $appPath)) {
-  throw "Upgrade removed the app executable from $installDirectory"
+  throw "Repeated updates removed the app executable from $installDirectory"
 }
 if (-not (Test-Path (Join-Path $installDirectory 'Uninstall TribeNet Manager.exe'))) {
-  throw 'Upgrade did not leave a usable uninstaller in the installation directory.'
+  throw 'Repeated updates did not leave a usable uninstaller in the installation directory.'
 }
 
-Write-Host "Installer upgrade regression passed: $($release.tag_name) -> $env:APP_VERSION"
+Write-Host "Repeated updater regression passed: $($release.tag_name) -> $env:APP_VERSION twice, without rebooting."
