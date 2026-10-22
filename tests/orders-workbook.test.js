@@ -4,8 +4,16 @@ const os = require('os');
 const path = require('path');
 const XLSX = require('xlsx');
 const JSZip = require('jszip');
-const { patchOrdersWorkbook, compareUnitCodes, validateOrdersTemplate, skillTransferText } = require('../src/orders-workbook');
+const { patchOrdersWorkbook, compareUnitCodes, validateOrdersTemplate, skillTransferText, normalizeSkillAttemptRows } = require('../src/orders-workbook');
 const { parseOrdersWorkbook } = require('../src/planner');
+
+assert.deepEqual(normalizeSkillAttemptRows([
+  { tribe:'0485', order:1, topic:'Diplomacy', group:'B', baselineLevel:4 },
+  { tribe:'0485', order:2, topic:'Intelligence', group:'B', baselineLevel:1 }
+], 10).map(row => row.topic), ['DIPLOMACY', 'Intelligence'], 'skill topics must use their stored workbook values, including mixed-case values');
+assert.throws(() => normalizeSkillAttemptRows([
+  { tribe:'0485', order:1, topic:'Unknown Skill', group:'C', baselineLevel:0 }
+], 10), /No workbook skill value is mapped/);
 
 const blank = path.join(__dirname, '..', '..', 'upload', '0485_906_4_Orders.xlsx');
 if (!fs.existsSync(blank)) {
