@@ -167,7 +167,20 @@
 
             <section class="unit-menu-pane" id="unitPaneSkills" role="tabpanel" aria-labelledby="unitTabSkills" data-unit-pane="skills" hidden>
               <div class="unit-menu-section-heading"><span>SKILL LEVELS</span><small id="unitSkillsSource"></small></div>
+              <div id="unitSkillAttempts" class="unit-skill-attempts" hidden></div>
+              <div class="unit-skill-filters" role="group" aria-label="Filter skills by group">
+                <button type="button" class="unit-skill-filter" data-skill-group-filter="A" aria-pressed="false">A</button>
+                <button type="button" class="unit-skill-filter" data-skill-group-filter="B" aria-pressed="false">B</button>
+                <button type="button" class="unit-skill-filter" data-skill-group-filter="C" aria-pressed="false">C</button>
+                <span id="unitSkillFilterHint">All groups</span>
+              </div>
+              <div class="unit-skill-add">
+                <label for="unitSkillSearch">Add skill attempt</label>
+                <input id="unitSkillSearch" type="search" autocomplete="off" placeholder="Search all skills…" aria-label="Search skills to add to study attempts" />
+                <div id="unitSkillSearchResults" class="unit-skill-search-results" hidden></div>
+              </div>
               <div id="unitSkillsList" class="unit-skills-list"></div>
+              <p id="unitSkillRuleNote" class="unit-skill-rule-note"></p>
             </section>
 
             <section class="unit-menu-pane" id="unitPaneSustenance" role="tabpanel" aria-labelledby="unitTabSustenance" data-unit-pane="sustenance" hidden>
@@ -273,6 +286,7 @@
   <script src="unit-sustenance.js"></script>
   <script src="orders-reference-data.js"></script>
   <script src="orders-reference-skills.js"></script>
+  <script src="skill-attempts.js"></script>
   <script src="selected-unit-panel.js"></script>
   <script src="isometric-core.js"></script>
   <script src="results-map.js"></script>

@@ -39,7 +39,7 @@ function mergeDraftSplits(splitGroups = []) {
   return merged;
 }
 
-function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGroups = [] } = {}) {
+function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGroups = [], skillAttempts = [] } = {}) {
   const unitsByCode = new Map();
   for (const unit of baselineUnits || []) {
     const unitCode = String(unit?.unit || unit?.unitCode || '').trim();
@@ -90,6 +90,16 @@ function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGrou
         ? unitRoutes.get(exportUnitKey(unit.unitCode)).directions
         : ['Still']
     }));
+  const normalizedSkillAttempts = (skillAttempts || [])
+    .filter(row => row?.tribe && row?.topic && Number(row.order) >= 1 && Number(row.order) <= 3)
+    .map(row => ({
+      tribe: String(row.tribe).trim().slice(0, 4),
+      order: Number(row.order),
+      topic: String(row.topic).trim(),
+      group: row.group || null,
+      baselineLevel: Number(row.baselineLevel || 0)
+    }))
+    .sort((a, b) => a.tribe.localeCompare(b.tribe) || a.order - b.order);
   const scouts = routes
     .filter(route => route.routeType === 'scout')
     .map(route => ({
@@ -120,6 +130,7 @@ function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGrou
     movements,
     scouts,
     gmActions,
+    skillAttempts: normalizedSkillAttempts,
     validUnits: units.map(unit => ({ unitCode: unit.unitCode, unitName: unit.unitName || '' }))
   };
 }

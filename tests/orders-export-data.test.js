@@ -20,6 +20,10 @@ const data = buildOrdersExportData({
   splitGroups: [
     [{ unitCode: '1485', unitType: 'Tribe', unitName: 'New Tribe', parentUnit: '0485', startHex: 'AA0101', skills: [{ skill: 'Woodworking', level: 3 }] }],
     [{ unitCode: '1485', unitType: 'Tribe', unitName: 'Stale Legacy', parentUnit: '0485', startHex: 'AA0101' }]
+  ],
+  skillAttempts: [
+    { tribe:'1485', order:2, topic:'Engineering', group:'C', baselineLevel:3 },
+    { tribe:'0485', order:1, topic:'Diplomacy', group:'B', baselineLevel:2 }
   ]
 });
 
@@ -33,6 +37,10 @@ assert.ok(data.validUnits.some(row => row.unitCode === '1485' && row.unitName ==
 assert.deepEqual(data.gmActions.map(row => row.text), [
   'Create Tribe 1485 from 0485 after movement',
   'Skill Woodworking 3 should be moved from Tribe 0485 to Tribe 1485'
+]);
+assert.deepEqual(data.skillAttempts.map(row => [row.tribe, row.order, row.topic]), [
+  ['0485', 1, 'Diplomacy'],
+  ['1485', 2, 'Engineering']
 ]);
 
 console.log('orders export data tests passed');

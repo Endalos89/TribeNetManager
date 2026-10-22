@@ -68,7 +68,8 @@ function validateOrdersTemplate(filePath) {
     'GM Actions': ['Unit', 'What does the GM need to do?'],
     Tribe_Movement: ['TRIBE', 'MOVEMENT_1', 'MOVEMENT_40', 'Processed'],
     Scout_Movement: ['TRIBE', 'No_of_Scouts', 'No_of_Horses', 'Mission', 'Movement1', 'Movement9', 'Processed'],
-    'Valid Units': ['Unit', 'Description']
+    'Valid Units': ['Unit', 'Description'],
+    Skill_Attempts: ['TRIBE', 'ORDER', 'TOPIC']
   };
   for (const [sheetName, headers] of Object.entries(required)) {
     if (!workbook.Sheets[sheetName]) throw new Error(`The Orders workbook is missing the ${sheetName} sheet.`);
@@ -85,7 +86,8 @@ function validateOrdersTemplate(filePath) {
     sheetNames: [...workbook.SheetNames],
     movementRows: rowCapacity(workbook.Sheets.Tribe_Movement) - 1,
     scoutRows: rowCapacity(workbook.Sheets.Scout_Movement) - 1,
-    gmRows: rowCapacity(workbook.Sheets['GM Actions']) - 1
+    gmRows: rowCapacity(workbook.Sheets['GM Actions']) - 1,
+    skillAttemptRows: rowCapacity(workbook.Sheets.Skill_Attempts) - 1
   };
 }
 
@@ -186,6 +188,49 @@ function normalizeScoutRows(rows, maxRows) {
       directions: directions.length ? directions : ['EMPTY']
     };
   });
+}
+
+function normalizeSkillAttemptRows(rows, maxRows) {
+  const normalized = (rows || []).filter(row => row?.tribe && row?.topic).map(row => ({
+    tribe: String(row.tribe).trim().slice(0, 4),
+    order: Number(row.order),
+    topic: String(row.topic).trim(),
+    group: String(row.group || '').trim().toUpperCase(),
+    baselineLevel: Math.max(0, Math.floor(Number(row.baselineLevel || 0)))
+  })).sort((a, b) => compareUnitCodes(a.tribe, b.tribe) || a.order - b.order);
+  if (normalized.length > maxRows) throw new Error(`The blank workbook has room for ${maxRows} skill attempts, but ${normalized.length} are planned.`);
+  const byTribe = new Map();
+  for (const row of normalized) {
+    if (!/^\d{4}$/.test(row.tribe)) throw new Error(`Skill attempt has invalid Tribe “${row.tribe}”.`);
+    if (!Number.isInteger(row.order) || ![1, 2, 3].includes(row.order)) throw new Error(`Skill attempt for ${row.tribe} has invalid order number “${row.order}”.`);
+    if (!row.topic) throw new Error(`Skill attempt for ${row.tribe} is missing a topic.`);
+    if (row.baselineLevel >= 10) throw new Error(`Tribe ${row.tribe} cannot attempt ${row.topic}: it is already at the maximum level 10.`);
+    if (!byTribe.has(row.tribe)) byTribe.set(row.tribe, []);
+    byTribe.get(row.tribe).push(row);
+  }
+  for (const [tribe, attempts] of byTribe) {
+    if (attempts.length > 3) throw new Error(`Tribe ${tribe} has more than three skill attempts.`);
+    if (attempts.some((row, index) => row.order !== index + 1)) throw new Error(`Tribe ${tribe} skill attempts must be ordered consecutively, starting at 1.`);
+    if (new Set(attempts.map(row => row.topic.toLowerCase())).size !== attempts.length) throw new Error(`Tribe ${tribe} cannot attempt the same skill more than once.`);
+    if (attempts.length === 3) {
+      const [first, second, third] = attempts;
+      if (third.group !== 'A') throw new Error(`Tribe ${tribe}'s third skill attempt must be a Group A skill.`);
+      if (third.baselineLevel >= 7) throw new Error(`Tribe ${tribe} can only use a teacher for Group A skills below level 7.`);
+      if (first.group === 'A' || second.group === 'A') throw new Error(`Tribe ${tribe} may only hire a teacher when attempts 1 and 2 are Group B or C.`);
+    }
+  }
+  return normalized;
+}
+
+function skillAttemptCells(rows) {
+  const cells = [];
+  for (const [index, row] of (rows || []).entries()) {
+    const sheetRow = index + 2;
+    cells.push({ address: `A${sheetRow}`, value: row.tribe });
+    cells.push({ address: `B${sheetRow}`, value: row.order, kind: 'number' });
+    cells.push({ address: `C${sheetRow}`, value: row.topic });
+  }
+  return cells;
 }
 
 function sheetPathsFromWorkbookXml(workbookXml, relsXml) {
@@ -306,10 +351,13 @@ function validatePatchedWorkbook(sourceXml, outputPath, expected) {
   if (scouts.length !== expected.scouts.length) throw new Error('Workbook validation failed: scouting rows were not written.');
   const actions = readRows('GM Actions').map(row => String(row['What does the GM need to do?'] || '')).filter(Boolean);
   for (const action of expected.gmActions) if (!actions.includes(action.text)) throw new Error('Workbook validation failed: a GM Action was not written.');
+  const attempts = readRows('Skill_Attempts').filter(row => row.TRIBE && row.TOPIC).map(row => ({ tribe: String(row.TRIBE).padStart(4, '0'), order: Number(row.ORDER), topic: String(row.TOPIC) }));
+  const expectedAttempts = expected.skillAttempts.map(row => ({ tribe: row.tribe, order: row.order, topic: row.topic }));
+  if (JSON.stringify(attempts) !== JSON.stringify(expectedAttempts)) throw new Error('Workbook validation failed: Skill_Attempts rows do not match the selected study attempts.');
   return output;
 }
 
-async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], scouts = [], gmActions = [], validUnits = [] }) {
+async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], scouts = [], gmActions = [], validUnits = [], skillAttempts = [] }) {
   const template = validateOrdersTemplate(templatePath);
   const normalizedMovements = normalizeMovementRows(movements, template.movementRows);
   const normalizedScouts = normalizeScoutRows(scouts, template.scoutRows);
@@ -319,6 +367,7 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
     .filter((row, index, rows) => rows.findIndex(item => item.unitCode.toLowerCase() === row.unitCode.toLowerCase()) === index);
   const normalizedActions = (gmActions || []).filter(action => action?.text).map(action => ({ unit: String(action.unit || '').trim(), text: String(action.text).trim() }));
   if (normalizedActions.length > template.gmRows) throw new Error(`The blank workbook has room for ${template.gmRows} GM Action rows, but ${normalizedActions.length} are planned.`);
+  const normalizedSkillAttempts = normalizeSkillAttemptRows(skillAttempts, template.skillAttemptRows);
   const sourceReal = path.resolve(templatePath);
   const outputReal = path.resolve(outputPath);
   if (sourceReal === outputReal) throw new Error('Choose a different output file so the blank template remains available.');
@@ -328,7 +377,7 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   const workbookXml = await zip.file('xl/workbook.xml').async('string');
   const relsXml = await zip.file('xl/_rels/workbook.xml.rels').async('string');
   const paths = sheetPathsFromWorkbookXml(workbookXml, relsXml);
-  for (const sheetName of ['Tribe_Movement', 'Scout_Movement', 'GM Actions', 'Valid Units']) if (!paths.has(sheetName)) throw new Error(`Could not locate ${sheetName} inside the workbook archive.`);
+  for (const sheetName of ['Tribe_Movement', 'Scout_Movement', 'GM Actions', 'Valid Units', 'Skill_Attempts']) if (!paths.has(sheetName)) throw new Error(`Could not locate ${sheetName} inside the workbook archive.`);
 
   let movementXml = await zip.file(paths.get('Tribe_Movement')).async('string');
   movementXml = clearInputRows(movementXml, 2, template.movementRows + 1, ['B', ...MOVEMENT_COLUMNS.map((_, index) => columnName(6 + index)), 'AT']);
@@ -355,10 +404,15 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   validUnitsXml = patchCells(validUnitsXml, validUnitCells(template.workbook, normalizedValidUnits));
   zip.file(paths.get('Valid Units'), validUnitsXml);
 
+  let skillAttemptsXml = await zip.file(paths.get('Skill_Attempts')).async('string');
+  skillAttemptsXml = clearInputRows(skillAttemptsXml, 2, template.skillAttemptRows + 1, ['A', 'B', 'C']);
+  skillAttemptsXml = patchCells(skillAttemptsXml, skillAttemptCells(normalizedSkillAttempts));
+  zip.file(paths.get('Skill_Attempts'), skillAttemptsXml);
+
   await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.promises.writeFile(outputPath, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
-  validatePatchedWorkbook(buffer, outputPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits });
-  return { outputPath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits };
+  validatePatchedWorkbook(buffer, outputPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts });
+  return { outputPath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts };
 }
 
 function templateDirectory(userDataPath) {
@@ -392,6 +446,7 @@ module.exports = {
   rootTribe,
   compareUnitCodes,
   skillTransferText,
+  normalizeSkillAttemptRows,
   validateOrdersTemplate,
   patchOrdersWorkbook,
   saveOrderTemplate,

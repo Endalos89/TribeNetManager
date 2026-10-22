@@ -91,6 +91,34 @@ class TurnManagerDatabase {
         notes TEXT NOT NULL DEFAULT '',
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS planned_skill_attempts (
+        turn_key TEXT NOT NULL,
+        tribe TEXT NOT NULL,
+        order_number INTEGER NOT NULL CHECK(order_number BETWEEN 1 AND 3),
+        skill TEXT NOT NULL,
+        skill_group TEXT,
+        baseline_level INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(turn_key, tribe, order_number),
+        UNIQUE(turn_key, tribe, skill)
+      );
+      CREATE INDEX IF NOT EXISTS idx_skill_attempts_turn ON planned_skill_attempts(turn_key, tribe, order_number);
+
+      CREATE TABLE IF NOT EXISTS skill_attempt_streaks (
+        tribe TEXT NOT NULL,
+        skill_key TEXT NOT NULL,
+        skill TEXT NOT NULL,
+        level INTEGER NOT NULL DEFAULT 9,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        last_turn_key TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(tribe, skill_key)
+      );
+      CREATE TABLE IF NOT EXISTS skill_attempt_reconciled_turns (
+        turn_key TEXT PRIMARY KEY,
+        reconciled_at TEXT NOT NULL
+      );
     `);
 
     const columns = new Set(this.db.prepare('PRAGMA table_info(planned_unit_splits)').all().map(row => row.name));
@@ -326,6 +354,121 @@ class TurnManagerDatabase {
       .map(candidate => Number(candidate.id));
     for (const id of ids) this.db.prepare('DELETE FROM planned_unit_splits WHERE id=?').run(id);
     return rows;
+  }
+
+  saveSkillAttempts(turnKey, tribe, attempts = []) {
+    turnKey = canonicalTurnKey(turnKey) || turnKey;
+    tribe = String(tribe || '').trim().slice(0, 4);
+    if (!turnKey || !/^\d{4}$/.test(tribe)) throw new Error('A planning turn and four-digit Tribe are required for skill attempts.');
+    const normalized = (attempts || []).map((row, index) => ({
+      order: Number(row?.order ?? row?.orderNumber ?? index + 1),
+      skill: String(row?.skill || '').trim(),
+      group: String(row?.group || '').trim().toUpperCase() || null,
+      baselineLevel: Math.max(0, Math.min(10, Math.floor(Number(row?.baselineLevel || 0))))
+    })).filter(row => row.skill).sort((a, b) => a.order - b.order);
+    if (normalized.length > 3) throw new Error('A Tribe can select no more than three skill attempts per turn.');
+    if (new Set(normalized.map(row => row.order)).size !== normalized.length || normalized.some(row => ![1, 2, 3].includes(row.order))) {
+      throw new Error('Skill attempt order must use each of 1, 2 and 3 at most once.');
+    }
+    if (new Set(normalized.map(row => skillKey(row.skill))).size !== normalized.length) throw new Error('A Tribe cannot attempt the same skill more than once in a turn.');
+    const now = new Date().toISOString();
+    const write = this.db.prepare(`
+      INSERT INTO planned_skill_attempts(turn_key, tribe, order_number, skill, skill_group, baseline_level, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    this.db.prepare('DELETE FROM planned_skill_attempts WHERE turn_key=? AND tribe=?').run(turnKey, tribe);
+    for (const row of normalized) write.run(turnKey, tribe, row.order, row.skill, row.group, row.baselineLevel, now);
+    return this.getSkillAttempts(turnKey, tribe);
+  }
+
+  getSkillAttempts(turnKey, tribe = null) {
+    if (!turnKey) return [];
+    const key = canonicalTurnKey(turnKey) || turnKey;
+    return this.db.prepare(`
+      SELECT turn_key AS turnKey, tribe, order_number AS "order", skill, skill_group AS "group",
+             baseline_level AS baselineLevel, updated_at AS updatedAt
+      FROM planned_skill_attempts WHERE turn_key=? ORDER BY tribe, order_number
+    `).all(key).filter(row => !tribe || row.tribe === String(tribe).trim().slice(0, 4));
+  }
+
+  getSkillStreaks(tribe) {
+    const code = String(tribe || '').trim().slice(0, 4);
+    if (!/^\d{4}$/.test(code)) return [];
+    return this.db.prepare(`
+      SELECT tribe, skill_key AS skillKey, skill, level, failure_count AS failureCount,
+             last_turn_key AS lastTurnKey, updated_at AS updatedAt
+      FROM skill_attempt_streaks WHERE tribe=? ORDER BY skill
+    `).all(code);
+  }
+
+  setSkillStreak(tribe, skill, failureCount, lastTurnKey = null) {
+    const code = String(tribe || '').trim().slice(0, 4);
+    const name = String(skill || '').trim();
+    if (!/^\d{4}$/.test(code) || !name) throw new Error('A Tribe and skill are required to set a skill streak.');
+    const count = Math.max(0, Math.min(11, Math.floor(Number(failureCount || 0))));
+    const now = new Date().toISOString();
+    const key = skillKey(name);
+    if (!count) this.db.prepare('DELETE FROM skill_attempt_streaks WHERE tribe=? AND skill_key=?').run(code, key);
+    else this.db.prepare(`
+      INSERT INTO skill_attempt_streaks(tribe, skill_key, skill, level, failure_count, last_turn_key, updated_at)
+      VALUES (?, ?, ?, 9, ?, ?, ?)
+      ON CONFLICT(tribe, skill_key) DO UPDATE SET skill=excluded.skill, level=9,
+        failure_count=excluded.failure_count, last_turn_key=excluded.last_turn_key, updated_at=excluded.updated_at
+    `).run(code, key, name, count, lastTurnKey, now);
+    return this.getSkillStreaks(code);
+  }
+
+  reconcileSkillAttemptResults(turnKey, skillsByTribe = {}) {
+    turnKey = canonicalTurnKey(turnKey) || turnKey;
+    if (!turnKey) return { reconciled: false, updated: 0 };
+    if (this.db.prepare('SELECT 1 FROM skill_attempt_reconciled_turns WHERE turn_key=?').get(turnKey)) return { reconciled: false, updated: 0 };
+    const attempts = this.getSkillAttempts(turnKey);
+    const byTribe = new Map();
+    for (const row of attempts) {
+      if (!byTribe.has(row.tribe)) byTribe.set(row.tribe, []);
+      byTribe.get(row.tribe).push(row);
+    }
+    const allTribes = new Set([
+      ...this.db.prepare('SELECT DISTINCT tribe FROM skill_attempt_streaks').all().map(row => row.tribe),
+      ...byTribe.keys()
+    ]);
+    let updated = 0;
+    const thisTurn = turnKey.match(/^(\d{3})-(\d{1,2})$/);
+    const previousKey = thisTurn ? (() => {
+      let year = Number(thisTurn[1]); let month = Number(thisTurn[2]) - 1;
+      if (month < 1) { month = 12; year -= 1; }
+      return `${String(year).padStart(3, '0')}-${String(month).padStart(2, '0')}`;
+    })() : null;
+    const currentLevel = (tribe, skill) => {
+      const rows = skillsByTribe?.[tribe] || [];
+      const wanted = skillKey(skill);
+      const row = rows.find(item => skillKey(item.skill) === wanted || skillKey(item.shortname) === wanted);
+      return Number(row?.level || 0);
+    };
+    for (const tribe of allTribes) {
+      const first = (byTribe.get(tribe) || []).find(row => Number(row.order) === 1);
+      const target = first && Number(first.baselineLevel) === 9 ? first : null;
+      const resultingLevel = target ? currentLevel(tribe, target.skill) : null;
+      if (target && resultingLevel === 9) {
+        this.db.prepare('DELETE FROM skill_attempt_streaks WHERE tribe=? AND skill_key<>?').run(tribe, skillKey(target.skill));
+        const previous = this.db.prepare('SELECT failure_count AS failureCount, last_turn_key AS lastTurnKey FROM skill_attempt_streaks WHERE tribe=? AND skill_key=?').get(tribe, skillKey(target.skill));
+        const continues = previous && previous.lastTurnKey === previousKey;
+        const failureCount = Math.min(11, (continues ? Number(previous.failureCount) : 0) + 1);
+        const now = new Date().toISOString();
+        this.db.prepare(`
+          INSERT INTO skill_attempt_streaks(tribe, skill_key, skill, level, failure_count, last_turn_key, updated_at)
+          VALUES (?, ?, ?, 9, ?, ?, ?)
+          ON CONFLICT(tribe, skill_key) DO UPDATE SET skill=excluded.skill, level=9,
+            failure_count=excluded.failure_count, last_turn_key=excluded.last_turn_key, updated_at=excluded.updated_at
+        `).run(tribe, skillKey(target.skill), target.skill, failureCount, turnKey, now);
+        updated += 1;
+      } else {
+        // A miss, different first attempt, or successful increase ends a consecutive streak.
+        updated += this.db.prepare('DELETE FROM skill_attempt_streaks WHERE tribe=?').run(tribe).changes;
+      }
+    }
+    this.db.prepare('INSERT INTO skill_attempt_reconciled_turns(turn_key, reconciled_at) VALUES (?, ?)').run(turnKey, new Date().toISOString());
+    return { reconciled: true, updated };
   }
 
   getContext(turnKey) {
