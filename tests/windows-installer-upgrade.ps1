@@ -9,12 +9,16 @@ if (-not (Test-Path $installerPath)) {
   throw "Built installer not found: $installerPath"
 }
 
-$release = Invoke-RestMethod -Headers @{ 'User-Agent' = 'TribeNetManager-Installer-Regression' } `
-  -Uri 'https://api.github.com/repos/Endalos89/TribeNetManager/releases/latest'
-$previousInstaller = $release.assets | Where-Object { $_.name -match '^TribeNet(?:-Manager-Setup-| Manager Setup ).+\.exe$' } | Select-Object -First 1
-if (-not $previousInstaller) {
-  throw "Latest release $($release.tag_name) has no TribeNet Manager setup executable."
+$setupPattern = '^TribeNet(?:-Manager-Setup-| Manager Setup ).+\.exe$'
+$releases = Invoke-RestMethod -Headers @{ 'User-Agent' = 'TribeNetManager-Installer-Regression' } `
+  -Uri 'https://api.github.com/repos/Endalos89/TribeNetManager/releases?per_page=100'
+$release = $releases | Where-Object {
+  @($_.assets | Where-Object { $_.name -match $setupPattern }).Count -gt 0
+} | Select-Object -First 1
+if (-not $release) {
+  throw 'No published TribeNet Manager setup installer was found in the latest 100 releases.'
 }
+$previousInstaller = $release.assets | Where-Object { $_.name -match $setupPattern } | Select-Object -First 1
 
 $oldInstallerPath = Join-Path $env:RUNNER_TEMP $previousInstaller.name
 Invoke-WebRequest -Headers @{ 'User-Agent' = 'TribeNetManager-Installer-Regression' } `

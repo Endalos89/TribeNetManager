@@ -37,7 +37,11 @@ const releaseWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github/work
 const upgradeTest = fs.readFileSync(path.join(__dirname, 'windows-installer-upgrade.ps1'), 'utf8');
 assert(releaseWorkflow.includes('npm run dist -- --publish always'), 'The release workflow must use the configured build publisher after the upgrade test passes.');
 assert(!releaseWorkflow.includes('electron-builder publish --files'), 'The release workflow must not use the unsupported separate publish subcommand.');
+const tagIndex = releaseWorkflow.indexOf('git push origin $tag');
+const publishIndex = releaseWorkflow.indexOf('npm run dist -- --publish always');
+assert(tagIndex >= 0 && publishIndex > tagIndex, 'The tested version tag must exist before electron-builder publishes a stable release.');
 assert(upgradeTest.includes('TribeNet Manager Setup $env:APP_VERSION.exe'), 'The upgrade regression must target the built installer filename.');
 assert(upgradeTest.includes('^TribeNet(?:-Manager-Setup-| Manager Setup ).+\\.exe$'), 'The upgrade regression must locate both legacy and current release installer names.');
+assert(upgradeTest.includes('/releases?per_page=100'), 'The upgrade regression must search past incomplete releases that contain no setup executable.');
 
 console.log(`NSIS process detection and update cleanup retries are configured for electron-builder ${appBuilderVersion}.`);
