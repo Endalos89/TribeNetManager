@@ -7,6 +7,12 @@ assert.strictEqual(appBuilderVersion, packageBuilderVersion, 'The installed elec
 
 const nsisProcessCheckPath = require.resolve('app-builder-lib/templates/nsis/include/allowOnlyOneInstallerInstance.nsh');
 const nsisProcessCheck = fs.readFileSync(nsisProcessCheckPath, 'utf8');
+const customProcessCheck = fs.readFileSync(require.resolve('../build/installer.nsh'), 'utf8');
+
+assert(customProcessCheck.includes('!macro customCheckAppRunning'), 'The installer must use its app-specific process check.');
+assert(customProcessCheck.includes('findstr.exe'), 'The app-specific process check must use exact image-name matching.');
+assert(customProcessCheck.includes('/B /I /C:'), 'The app-specific process check must anchor process-name matches.');
+assert(!customProcessCheck.includes('StartsWith('), 'The app-specific check must not flag arbitrary processes launched from the installation directory.');
 
 assert(!nsisProcessCheck.includes('find.exe'), 'NSIS process detection must not use substring matching via find.exe.');
 assert(!nsisProcessCheck.includes('${nsProcess::FindProcess}'), 'NSIS process detection must not invoke prefix matching via nsProcess::FindProcess.');
