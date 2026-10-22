@@ -129,7 +129,23 @@
         api?.getSkillAttempts ? api.getSkillAttempts(turnKey, tribe) : [],
         api?.getSkillStreaks ? api.getSkillStreaks(tribe) : []
       ]);
-      const next = { attempts: attempts || [], streaks: streaks || [], loaded: true };
+      let currentAttempts = attempts || [];
+      const context = activeSkillContext?.turnKey === turnKey && activeSkillContext?.tribe === tribe
+        ? activeSkillContext : null;
+      if (context) {
+        const refreshed = refreshSkillAttemptLevels(currentAttempts, context.unit?.skills || {});
+        const changed = refreshed.some((row, index) => Number(currentAttempts[index]?.baselineLevel || 0) !== row.baselineLevel);
+        if (changed) {
+          currentAttempts = refreshed;
+          try {
+            const saved = await api?.saveSkillAttempts?.(turnKey, tribe, refreshed);
+            if (saved) currentAttempts = saved;
+          } catch (error) {
+            console.error('Could not refresh saved skill attempt levels', error);
+          }
+        }
+      }
+      const next = { attempts: currentAttempts, streaks: streaks || [], loaded: true };
       skillStudyByTribe.set(cacheKey, next);
       if (activeSkillContext?.turnKey === turnKey && activeSkillContext?.tribe === tribe) {
         renderSkillAttemptStrip();
@@ -162,6 +178,13 @@
     });
     const level = Number(match?.[1] ?? 0);
     return Number.isFinite(level) ? Math.max(0, level) : 0;
+  }
+
+  function refreshSkillAttemptLevels(attempts, skills) {
+    return (attempts || []).map(attempt => ({
+      ...attempt,
+      baselineLevel: levelForSkill(attempt.skill, skills)
+    }));
   }
 
   function skillCatalog() {
@@ -674,6 +697,6 @@
   }
 
   root.renderSelectedUnitPanel = renderPanel;
-  root.SelectedUnitPanelUtils = { resultEaters, skillNameLookup, compendiumHref, levelForSkill };
+  root.SelectedUnitPanelUtils = { resultEaters, skillNameLookup, compendiumHref, levelForSkill, refreshSkillAttemptLevels };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.SelectedUnitPanelUtils;
 })(window);
