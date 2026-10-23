@@ -589,13 +589,15 @@ selectHex = async function selectHexWithTurnActions(globalCol, globalRow) {
 
 async function turnActionsRenderPlannedUnitManagement() {
   const host = document.getElementById('plannedUnitManagementList');
-  if (!host) return;
   const splits = savedMovementPlansState.unitSplits || [];
+  const count = document.getElementById('plannedUnitManagementCount');
+  if (count) count.textContent = String(splits.length);
+  if (!host) return;
   host.innerHTML = splits.length ? splits.map(split => `
     <div class="planned-unit-management-row">
       <span>${savedMovementEscape(split.unitCode)} · ${savedMovementEscape(split.unitType)} · ${split.creationPhase === 'after' ? 'After Movement' : 'Before Movement'}</span>
       <button type="button" class="button danger" data-remove-planned-unit="${Number(split.id)}">Remove</button>
-    </div>`).join('') : '<span>No units created this turn.</span>';
+    </div>`).join('') : '<p class="turn-action-dialog-empty">No units have been created this turn.</p>';
   host.querySelectorAll('[data-remove-planned-unit]').forEach(button => button.addEventListener('click', async () => {
     const split = splits.find(row => Number(row.id) === Number(button.dataset.removePlannedUnit));
     if (!split || !window.confirm(`Cancel creation of ${split.unitCode}? Any transfers to or from this unit will also be removed.`)) return;
@@ -627,6 +629,14 @@ async function turnActionsOpenSplit() {
   await savedMovementPopulateCreationForm();
   await turnActionsRenderPlannedUnitManagement();
   dialog.showModal();
+}
+
+async function turnActionsOpenPlannedUnitManagement() {
+  const dialog = document.getElementById('plannedUnitManagementDialog');
+  if (!dialog) return;
+  await savedMovementRefresh();
+  await turnActionsRenderPlannedUnitManagement();
+  if (!dialog.open) dialog.showModal();
 }
 
 async function turnActionsResetMovement() {
@@ -959,6 +969,9 @@ window.addEventListener('blur', () => { movementPlannerState.shiftHeld = false; 
 document.getElementById('movementPlannerCreateParent')?.addEventListener('change', savedMovementLoadCreationSkills);
 document.getElementById('movementPlannerCreateType')?.addEventListener('change', savedMovementLoadCreationSkills);
 document.getElementById('movementPlannerCreateSubmit')?.addEventListener('click', savedMovementCreateUnit);
+document.getElementById('openPlannedUnitManagement')?.addEventListener('click', turnActionsOpenPlannedUnitManagement);
+document.getElementById('plannedUnitManagementClose')?.addEventListener('click', () => document.getElementById('plannedUnitManagementDialog')?.close());
+document.getElementById('plannedUnitManagementDone')?.addEventListener('click', () => document.getElementById('plannedUnitManagementDialog')?.close());
 
 turnActionsBindHover();
 turnActionsRender();

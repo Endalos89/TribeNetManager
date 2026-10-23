@@ -204,27 +204,17 @@
   font-size: 9px;
 }
 
-.planned-unit-management {
-  grid-column: 1 / -1;
-  border-top: 1px solid rgba(150, 190, 160, .2);
-  padding-top: 8px;
-}
+.planned-unit-management-open { justify-self: end; }
 
-.planned-unit-management h3 {
-  margin: 0 0 6px;
-  color: #8fb69a;
-  font-size: 8px;
-  font-weight: 750;
-  text-transform: uppercase;
-}
+.planned-unit-management-dialog { width: min(430px, calc(100vw - 32px)); }
 
 .planned-unit-management-list {
   display: grid;
-  gap: 4px;
-  max-height: 100px;
+  gap: 7px;
+  max-height: min(360px, 55vh);
   overflow: auto;
   color: #b8d8bf;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .planned-unit-management-row {
@@ -235,8 +225,8 @@
 }
 
 .planned-unit-management-row button {
-  padding: 2px 6px;
-  font-size: 8px;
+  padding: 4px 8px;
+  font-size: 9px;
 }
 
 .movement-planner-create-skills span {
@@ -760,9 +750,12 @@
 .transfer-roster-delta.outgoing { color:#e8c276; }
 .transfer-roster-arrow { display:grid; place-items:center; color:#d3bb73; font-size:24px; }
 .transfer-roster-empty { grid-column:1/-1; margin:6px; color:#91a89a; font-size:10px; }
-.transfer-item-editor { display:grid; gap:8px; width:min(360px,calc(100% - 28px)); margin:0 auto; padding:12px; border:1px solid #87ae78; border-radius:10px; background:#13251a; box-shadow:0 10px 32px rgba(0,0,0,.5); }
-.transfer-item-editor[hidden] { display:none; }
+.transfer-item-editor { display:grid; gap:8px; width:min(360px,calc(100vw - 36px)); max-width:none; max-height:calc(100vh - 36px); margin:auto; padding:14px; border:1px solid #87ae78; border-radius:10px; background:#13251a; color:#e7f3ea; box-shadow:0 10px 32px rgba(0,0,0,.5); }
+.transfer-item-editor::backdrop { background:rgba(1,7,5,.34); }
 .transfer-item-editor h3 { margin:0; color:#fff0bd; font-size:13px; }
+.transfer-provision-mode { display:flex; gap:6px; }
+.transfer-provision-mode button { flex:1; padding:6px 10px; }
+.transfer-provision-mode button.active { border-color:#8bc992; background:#234b2d; color:#e7f3ea; }
 .transfer-item-available { margin:0; color:#9ab8a1; font-size:9px; }
 #transferQuantitySlider { width:100%; accent-color:#8dcb8e; padding:0; }
 .transfer-overview-dialog { width:min(1050px,calc(100vw - 28px)); max-height:calc(100vh - 28px); }

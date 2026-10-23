@@ -1,5 +1,6 @@
 let transferScreenSession = null;
 let transferScreenItemDraft = null;
+let transferScreenProvisionMode = 'amount';
 
 function transferScreenEsc(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -134,11 +135,12 @@ function transferScreenSetQuantity(from, to, item, quantity) {
   }
 }
 
-function transferScreenBalance(unitCode, item) {
+function transferScreenBalance(unitCode, item, excludedRow = null) {
   const key = transferScreenKey(item);
   const base = transferScreenStock(unitCode);
   let amount = base?.get(key) ?? 0;
   for (const row of transferScreenSession?.draftRows || []) {
+    if (row === excludedRow) continue;
     if (transferScreenKey(row.item) !== key) continue;
     if (String(row.to).toLowerCase() === String(unitCode).toLowerCase()) amount += Number(row.quantity || 0);
     if (String(row.from).toLowerCase() === String(unitCode).toLowerCase()) amount -= Number(row.quantity || 0);
@@ -151,7 +153,16 @@ const transferScreenEaterItems = new Set(['WARRIORS', 'ACTIVES', 'INACTIVES', 'S
 
 function transferScreenUnitStats(unitCode) {
   const stats = state?.planImport?.plan?.unitStats || [];
-  return stats.find(row => String(row?.unitCode || row?.unit || '').trim().toLowerCase() === String(unitCode || '').trim().toLowerCase()) || null;
+  const code = String(unitCode || '').trim().toLowerCase();
+  const imported = stats.find(row => String(row?.unitCode || row?.unit || '').trim().toLowerCase() === code);
+  if (imported) return imported;
+  const planned = (savedMovementUnits?.() || []).find(row => row.plannedSplit && transferScreenCode(row).toLowerCase() === code);
+  if (!planned) return null;
+  return {
+    unit: transferScreenCode(planned), totalPeople:0, eaters:0, warrior:0, active:0, inactive:0, locals:0,
+    horseCount:0, cattleCount:0, elephantCount:0, camelCount:0, wagonCount:0, backpacks:0, saddlebags:0,
+    carriedWeight:0, inventory:[]
+  };
 }
 
 function transferScreenAdjustedStat(unitCode, field, itemKeys = []) {
@@ -290,6 +301,7 @@ function transferScreenOpenItemEditor(from, to, item) {
   const balance = transferScreenBalance(from, key);
   const max = balance.known ? Math.max(0, balance.amount + Number(current?.quantity || 0)) : Math.max(10000, Number(current?.quantity || 0));
   transferScreenItemDraft = { from, to, item:key };
+  transferScreenProvisionMode = 'amount';
   const qty = Number(current?.quantity || 0);
   document.getElementById('transferItemEditorTitle').textContent = `${key}: ${transferScreenUnitLabel(from)} → ${transferScreenUnitLabel(to)}`;
   document.getElementById('transferItemAvailable').textContent = balance.known
@@ -297,18 +309,127 @@ function transferScreenOpenItemEditor(from, to, item) {
     : 'No quantity is available in the imported baseline; enter the amount to transfer.';
   const number = document.getElementById('transferQuantity');
   const slider = document.getElementById('transferQuantitySlider');
+  const modePicker = document.getElementById('transferProvisionMode');
+  const monthsHint = document.getElementById('transferMonthsHint');
+  const amountMode = document.getElementById('transferProvisionAmountMode');
+  const monthsMode = document.getElementById('transferProvisionMonthsMode');
+  const quantityLabel = document.getElementById('transferQuantityLabel');
+  const isProvisions = key === 'PROVS' || key === 'PROVISION' || key === 'PROVISIONS';
+  if (modePicker) modePicker.hidden = !isProvisions;
+  if (monthsHint) monthsHint.hidden = true;
+  if (amountMode) { amountMode.classList.add('active'); amountMode.setAttribute('aria-pressed', 'true'); }
+  if (monthsMode) {
+    const context = isProvisions ? transferScreenProvisionContext() : null;
+    monthsMode.disabled = !context?.monthlyConsumption;
+    monthsMode.title = context?.monthlyConsumption ? '' : 'Transfer people first so monthly consumption can be calculated.';
+    monthsMode.classList.remove('active');
+    monthsMode.setAttribute('aria-pressed', 'false');
+  }
+  if (quantityLabel) quantityLabel.textContent = 'Quantity';
+  number.step = '1';
+  slider.step = '1';
   number.max = String(max);
   number.value = String(Math.min(qty, max));
   slider.max = String(max);
   slider.value = String(Math.min(qty, max));
   slider.disabled = max <= 0;
-  editor.hidden = false;
+  if (!editor.open) editor.showModal();
   number.focus();
+}
+
+function transferScreenCloseItemEditor() {
+  const editor = document.getElementById('transferItemEditor');
+  if (editor?.open) editor.close();
+  transferScreenItemDraft = null;
+  transferScreenProvisionMode = 'amount';
+}
+
+function transferScreenProvisionContext() {
+  const draft = transferScreenItemDraft;
+  if (!draft || !['PROVS', 'PROVISION', 'PROVISIONS'].includes(transferScreenKey(draft.item))) return null;
+  const current = transferScreenFindRow(transferScreenSession?.draftRows || [], draft.from, draft.to, draft.item);
+  const fromBalance = transferScreenBalance(draft.from, draft.item);
+  const maxTransfer = fromBalance.known
+    ? Math.max(0, fromBalance.amount + Number(current?.quantity || 0))
+    : Math.max(10000, Number(current?.quantity || 0));
+  const destinationBefore = transferScreenBalance(draft.to, draft.item, current).amount;
+  const receiver = transferScreenLiveLogistics(draft.to);
+  const monthlyConsumption = Math.max(0, Number(receiver?.eaters || 0));
+  const maxMonths = monthlyConsumption > 0 ? (destinationBefore + maxTransfer) / monthlyConsumption : 0;
+  const currentMonths = monthlyConsumption > 0
+    ? (destinationBefore + Number(current?.quantity || 0)) / monthlyConsumption
+    : 0;
+  return { current, maxTransfer, destinationBefore, monthlyConsumption, maxMonths, currentMonths };
+}
+
+function transferScreenSetProvisionMode(mode) {
+  const monthsMode = mode === 'months';
+  const context = transferScreenProvisionContext();
+  if (monthsMode && !context?.monthlyConsumption) return;
+  transferScreenProvisionMode = monthsMode ? 'months' : 'amount';
+  const number = document.getElementById('transferQuantity');
+  const slider = document.getElementById('transferQuantitySlider');
+  const label = document.getElementById('transferQuantityLabel');
+  const hint = document.getElementById('transferMonthsHint');
+  const amountButton = document.getElementById('transferProvisionAmountMode');
+  const monthsButton = document.getElementById('transferProvisionMonthsMode');
+  amountButton?.classList.toggle('active', !monthsMode);
+  amountButton?.setAttribute('aria-pressed', String(!monthsMode));
+  monthsButton?.classList.toggle('active', monthsMode);
+  monthsButton?.setAttribute('aria-pressed', String(monthsMode));
+  if (label) label.textContent = monthsMode ? 'Months of provisions' : 'Quantity';
+  if (monthsMode) {
+    number.step = '0.1';
+    number.max = String(context.maxMonths);
+    number.value = String(Math.min(context.currentMonths, context.maxMonths));
+    slider.step = '0.1';
+    slider.max = String(context.maxMonths);
+    slider.value = number.value;
+    slider.disabled = context.maxMonths <= 0;
+    if (hint) hint.hidden = false;
+    transferScreenUpdateMonthsHint(number.value, context);
+  } else {
+    const key = transferScreenItemDraft?.item;
+    const current = transferScreenFindRow(transferScreenSession?.draftRows || [], transferScreenItemDraft?.from, transferScreenItemDraft?.to, key);
+    const balance = transferScreenBalance(transferScreenItemDraft?.from, key);
+    const max = balance.known ? Math.max(0, balance.amount + Number(current?.quantity || 0)) : Math.max(10000, Number(current?.quantity || 0));
+    number.step = '1';
+    number.max = String(max);
+    number.value = String(Math.min(Number(current?.quantity || 0), max));
+    slider.step = '1';
+    slider.max = String(max);
+    slider.value = number.value;
+    slider.disabled = max <= 0;
+    if (hint) hint.hidden = true;
+  }
+  number.focus();
+}
+
+function transferScreenUpdateMonthsHint(value, context = transferScreenProvisionContext()) {
+  const hint = document.getElementById('transferMonthsHint');
+  if (!hint || !context?.monthlyConsumption) return;
+  const months = Math.max(0, Number(value) || 0);
+  const target = Math.ceil(months * context.monthlyConsumption);
+  const transfer = Math.min(context.maxTransfer, Math.max(0, target - context.destinationBefore));
+  const actualMonths = (context.destinationBefore + transfer) / context.monthlyConsumption;
+  const capped = target > context.destinationBefore + context.maxTransfer;
+  hint.textContent = `Consumption: ${context.monthlyConsumption.toLocaleString()} Provs/month · transfer ${transfer.toLocaleString()} Provs${capped ? ` (source limit: ${actualMonths.toFixed(1)} months)` : ''}.`;
 }
 
 function transferScreenQuantityChanged(value, source) {
   const number = document.getElementById('transferQuantity');
   const slider = document.getElementById('transferQuantitySlider');
+  if (transferScreenProvisionMode === 'months') {
+    const context = transferScreenProvisionContext();
+    const months = Math.max(0, Math.min(Number(context?.maxMonths || 0), Number(value) || 0));
+    if (source === 'slider') number.value = String(months);
+    else {
+      number.value = String(months);
+      slider.value = String(months);
+    }
+    transferScreenUpdateMonthsHint(months, context);
+    return;
+  }
   let amount = Math.max(0, Math.floor(Number(value) || 0));
   const max = Number(number.max || slider.max || 0);
   if (transferScreenItemDraft && transferScreenBalance(transferScreenItemDraft.from, transferScreenItemDraft.item).known) amount = Math.min(amount, max);
@@ -439,8 +560,7 @@ async function transferScreenSave() {
 
 async function transferScreenCancel() {
   const session = transferScreenSession;
-  transferScreenItemDraft = null;
-  document.getElementById('transferItemEditor').hidden = true;
+  transferScreenCloseItemEditor();
   document.getElementById('transferDialog').close();
   transferScreenSession = null;
   if (session?.createdSplitId) {
@@ -472,17 +592,23 @@ document.getElementById('transferTo')?.addEventListener('change', transferScreen
 document.getElementById('transferTiming')?.addEventListener('change', transferScreenSelectionChanged);
 document.getElementById('transferQuantity')?.addEventListener('input', event => transferScreenQuantityChanged(event.target.value, 'number'));
 document.getElementById('transferQuantitySlider')?.addEventListener('input', event => transferScreenQuantityChanged(event.target.value, 'slider'));
-document.getElementById('transferItemCancel')?.addEventListener('click', () => { transferScreenItemDraft = null; document.getElementById('transferItemEditor').hidden = true; });
+document.getElementById('transferItemCancel')?.addEventListener('click', transferScreenCloseItemEditor);
+document.getElementById('transferItemEditor')?.addEventListener('cancel', event => { event.preventDefault(); transferScreenCloseItemEditor(); });
+document.getElementById('transferProvisionAmountMode')?.addEventListener('click', () => transferScreenSetProvisionMode('amount'));
+document.getElementById('transferProvisionMonthsMode')?.addEventListener('click', () => transferScreenSetProvisionMode('months'));
 document.getElementById('transferItemApply')?.addEventListener('click', () => {
   if (!transferScreenItemDraft) return;
-  const qty = Number(document.getElementById('transferQuantity').value);
+  const inputValue = Number(document.getElementById('transferQuantity').value);
+  const provisionContext = transferScreenProvisionMode === 'months' ? transferScreenProvisionContext() : null;
+  const qty = provisionContext
+    ? Math.min(provisionContext.maxTransfer, Math.max(0, Math.ceil(inputValue * provisionContext.monthlyConsumption - provisionContext.destinationBefore)))
+    : Math.max(0, Math.floor(inputValue || 0));
   const balance = transferScreenBalance(transferScreenItemDraft.from, transferScreenItemDraft.item);
   const current = transferScreenFindRow(transferScreenSession.draftRows, transferScreenItemDraft.from, transferScreenItemDraft.to, transferScreenItemDraft.item);
   const max = balance.known ? balance.amount + Number(current?.quantity || 0) : qty;
   if (qty > max) { document.getElementById('transferItemAvailable').textContent = `Only ${max.toLocaleString()} are available in the imported baseline.`; return; }
   transferScreenSetQuantity(transferScreenItemDraft.from, transferScreenItemDraft.to, transferScreenItemDraft.item, qty);
-  transferScreenItemDraft = null;
-  document.getElementById('transferItemEditor').hidden = true;
+  transferScreenCloseItemEditor();
   transferScreenRenderRosters();
 });
 document.getElementById('transferSave')?.addEventListener('click', transferScreenSave);
