@@ -146,6 +146,94 @@ function transferScreenBalance(unitCode, item) {
   return { known:Boolean(base?.has(key)), amount:Math.max(0, amount), baseline:base?.get(key) ?? 0 };
 }
 
+const transferScreenPeopleItems = ['WARRIORS', 'ACTIVES', 'INACTIVES'];
+const transferScreenEaterItems = new Set(['WARRIORS', 'ACTIVES', 'INACTIVES', 'SLAVE', 'SLAVES', 'HIRELINGS', 'MERCENARIES', 'RESIDENTS', 'FOLLOWERS', 'AUXILIARIES']);
+
+function transferScreenUnitStats(unitCode) {
+  const stats = state?.planImport?.plan?.unitStats || [];
+  return stats.find(row => String(row?.unitCode || row?.unit || '').trim().toLowerCase() === String(unitCode || '').trim().toLowerCase()) || null;
+}
+
+function transferScreenAdjustedStat(unitCode, field, itemKeys = []) {
+  let amount = Number(transferScreenUnitStats(unitCode)?.[field] || 0);
+  const keys = new Set(itemKeys.map(transferScreenKey));
+  for (const row of transferScreenSession?.draftRows || []) {
+    if (!keys.has(transferScreenKey(row.item))) continue;
+    if (String(row.to).toLowerCase() === String(unitCode).toLowerCase()) amount += Number(row.quantity || 0);
+    if (String(row.from).toLowerCase() === String(unitCode).toLowerCase()) amount -= Number(row.quantity || 0);
+  }
+  return Math.max(0, amount);
+}
+
+function transferScreenItemWeight(item) {
+  const key = transferScreenKey(item);
+  if (transferScreenEaterItems.has(key) || ['LOCALS', 'CATTLE', 'DOG', 'DOGS', 'ELEPHANT', 'ELEPHANTS', 'GOAT', 'GOATS', 'HORSE', 'HORSES', 'CAMEL', 'CAMELS'].includes(key)) return 0;
+  const goods = window.TribeNetOrdersReferenceRaw?.goods || [];
+  const match = goods.find(row => transferScreenKey(row.rawName || row.name) === key || transferScreenKey(row.name) === key);
+  if (match && Number.isFinite(Number(match.weight))) return Number(match.weight);
+  for (const unit of state?.planImport?.plan?.unitStats || []) {
+    const row = (unit.inventory || []).find(entry => transferScreenKey(entry.item) === key);
+    if (row && row.weightEach != null && Number.isFinite(Number(row.weightEach))) return Number(row.weightEach);
+  }
+  return null;
+}
+
+function transferScreenLiveLogistics(unitCode) {
+  const stats = transferScreenUnitStats(unitCode);
+  if (!stats) return null;
+  const totalPeople = transferScreenAdjustedStat(unitCode, 'totalPeople', ['WARRIORS', 'ACTIVES', 'INACTIVES', 'SLAVE', 'SLAVES', 'HIRELINGS', 'MERCENARIES', 'RESIDENTS', 'FOLLOWERS', 'AUXILIARIES', 'LOCALS']) || Math.max(0,
+    transferScreenAdjustedStat(unitCode, 'eaters', [...transferScreenEaterItems]) + transferScreenAdjustedStat(unitCode, 'locals', ['LOCALS']));
+  const eaters = transferScreenAdjustedStat(unitCode, 'eaters', [...transferScreenEaterItems]);
+  const horses = transferScreenAdjustedStat(unitCode, 'horseCount', ['HORSE', 'HORSES']);
+  const cattle = transferScreenAdjustedStat(unitCode, 'cattleCount', ['CATTLE']);
+  const elephants = transferScreenAdjustedStat(unitCode, 'elephantCount', ['ELEPHANT', 'ELEPHANTS']);
+  const camels = transferScreenAdjustedStat(unitCode, 'camelCount', ['CAMEL', 'CAMELS']);
+  const wagons = transferScreenAdjustedStat(unitCode, 'wagonCount', ['WAGON', 'WAGONS']);
+  const backpacks = transferScreenAdjustedStat(unitCode, 'backpacks', ['BACKPACK', 'BACKPACKS']);
+  const saddlebags = transferScreenAdjustedStat(unitCode, 'saddlebags', ['SADDLEBAG', 'SADDLEBAGS']);
+  const elephantsCarrying = Math.min(elephants, wagons);
+  const wagonsNeedingDraft = Math.max(0, wagons - elephantsCarrying);
+  const draftNeeded = wagonsNeedingDraft * 2;
+  const cattlePulling = Math.min(cattle, draftNeeded);
+  const horsePulling = Math.min(horses, Math.max(0, draftNeeded - cattlePulling));
+  const loadHorses = Math.max(0, horses - horsePulling);
+  const fullyMounted = wagonsNeedingDraft === 0 && totalPeople > 0 && loadHorses >= totalPeople;
+  const riddenHorses = fullyMounted ? Math.min(totalPeople, loadHorses) : 0;
+  const packHorses = Math.max(0, loadHorses - riddenHorses);
+  const capacity = (fullyMounted ? 0 : totalPeople * 30) + riddenHorses * 100 + packHorses * 300 + wagons * 3000
+    + Math.min(backpacks, fullyMounted ? 0 : transferScreenAdjustedStat(unitCode, 'warrior', ['WARRIORS']) + transferScreenAdjustedStat(unitCode, 'active', ['ACTIVES'])) * 32
+    + Math.min(saddlebags, loadHorses + camels) * 104;
+
+  let weight = Number(stats.carriedWeight || 0);
+  let weightKnown = true;
+  for (const row of transferScreenSession?.draftRows || []) {
+    const key = transferScreenKey(row.item);
+    const perItem = transferScreenItemWeight(key);
+    if (perItem == null) {
+      weightKnown = false;
+      continue;
+    }
+    if (String(row.from).toLowerCase() === String(unitCode).toLowerCase()) weight -= Number(row.quantity || 0) * perItem;
+    if (String(row.to).toLowerCase() === String(unitCode).toLowerCase()) weight += Number(row.quantity || 0) * perItem;
+  }
+  weight = Math.max(0, weight);
+  const provisions = transferScreenBalance(unitCode, 'PROVS').amount;
+  const months = eaters > 0 ? provisions / eaters : null;
+  return { capacity, weight, weightKnown, loadPercent:capacity > 0 ? weight / capacity * 100 : null, provisions, eaters, months };
+}
+
+function transferScreenRenderLogistics(unitCode, elementId) {
+  const host = document.getElementById(elementId);
+  const stats = transferScreenLiveLogistics(unitCode);
+  if (!host) return;
+  if (!stats) { host.innerHTML = ''; return; }
+  const pct = stats.loadPercent == null ? 0 : Math.max(0, Math.min(100, stats.loadPercent));
+  const loadText = stats.loadPercent == null || !stats.weightKnown ? 'Weight unavailable' : `${Math.round(stats.loadPercent)}% · ${Math.round(stats.weight).toLocaleString()} / ${Math.round(stats.capacity).toLocaleString()} lb`;
+  const monthsText = stats.months == null ? 'No consumers' : `${stats.months.toFixed(1)} months · ${Math.round(stats.provisions).toLocaleString()} Provs`;
+  const monthsPct = stats.months == null ? 0 : Math.max(0, Math.min(100, stats.months / 12 * 100));
+  host.innerHTML = `<div class="transfer-logistics-stat"><div class="transfer-logistics-label"><span>Carrying capacity</span><strong>${transferScreenEsc(loadText)}</strong></div><div class="transfer-logistics-track" role="meter" aria-label="Carrying capacity used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.max(0, Math.round(stats.loadPercent || 0))}"><i class="${stats.loadPercent > 100 ? 'over' : ''}" style="width:${pct}%"></i></div></div><div class="transfer-logistics-stat"><div class="transfer-logistics-label"><span>Sustenance</span><strong>${transferScreenEsc(monthsText)}</strong></div><div class="transfer-logistics-track sustenance" role="meter" aria-label="Months of provisions" aria-valuemin="0" aria-valuemax="12" aria-valuenow="${Math.min(12, stats.months || 0)}"><i style="width:${monthsPct}%"></i></div></div>`;
+}
+
 function transferScreenIcon(item) {
   const filename = window.TribeNetItemIconManifest?.[transferScreenIconKey(item)];
   return filename
@@ -160,17 +248,20 @@ function transferScreenRenderRoster(side) {
   const host = document.getElementById(left ? 'transferRosterLeft' : 'transferRosterRight');
   const title = document.getElementById(left ? 'transferLeftTitle' : 'transferRightTitle');
   title.textContent = transferScreenUnitLabel(unitCode);
-  const itemKeys = new Set([...(transferScreenStock(unitCode)?.keys() || []), ...(transferScreenStock(otherCode)?.keys() || [])]);
+  const itemKeys = new Set([...transferScreenPeopleItems, ...(transferScreenStock(unitCode)?.keys() || []), ...(transferScreenStock(otherCode)?.keys() || [])]);
   for (const row of transferScreenSession.draftRows) itemKeys.add(transferScreenKey(row.item));
-  const entries = [...itemKeys].sort((a, b) => a.localeCompare(b)).map(item => {
+  const renderItem = item => {
     const balance = transferScreenBalance(unitCode, item);
+    if (!transferScreenPeopleItems.includes(item) && balance.amount <= 0) return '';
     const delta = balance.amount - balance.baseline;
     const deltaText = delta ? `<small class="transfer-roster-delta ${delta > 0 ? 'incoming' : 'outgoing'}">${delta > 0 ? '+' : '−'}${Math.abs(delta).toLocaleString()} ${delta > 0 ? 'pending' : 'staged'}</small>` : '';
-    return `<button type="button" class="transfer-roster-item${delta ? ' has-transfer' : ''}" data-transfer-side="${left ? 'left' : 'right'}" data-transfer-item="${transferScreenEsc(item)}" title="${transferScreenEsc(item)}" aria-label="${transferScreenEsc(item)}, ${balance.amount.toLocaleString()}">
+    return `<button type="button" class="transfer-roster-item${transferScreenPeopleItems.includes(item) ? ' transfer-roster-person' : ''}${delta ? ' has-transfer' : ''}" data-transfer-side="${left ? 'left' : 'right'}" data-transfer-item="${transferScreenEsc(item)}" title="${transferScreenEsc(item)}" aria-label="${transferScreenEsc(item)}, ${balance.amount.toLocaleString()}">
       <span class="transfer-roster-icon">${transferScreenIcon(item)}<strong>${balance.amount.toLocaleString()}</strong></span><span class="transfer-roster-name">${transferScreenEsc(item)}</span>${deltaText}
     </button>`;
-  });
-  host.innerHTML = entries.length ? entries.join('') : '<p class="transfer-roster-empty">No items listed in the imported baseline.</p>';
+  };
+  const people = transferScreenPeopleItems.map(renderItem).join('');
+  const goods = [...itemKeys].filter(item => !transferScreenPeopleItems.includes(item)).sort((a, b) => a.localeCompare(b)).map(renderItem).join('');
+  host.innerHTML = `<div class="transfer-roster-section"><h4>People</h4><div class="transfer-roster-people">${people}</div></div><div class="transfer-roster-section"><h4>Goods &amp; animals</h4><div class="transfer-roster-goods">${goods || '<p class="transfer-roster-empty">No goods or animals in this unit.</p>'}</div></div>`;
   host.querySelectorAll('[data-transfer-side]').forEach(button => button.addEventListener('click', () => {
     const from = button.dataset.transferSide === 'left' ? transferScreenSession.from : transferScreenSession.to;
     const to = button.dataset.transferSide === 'left' ? transferScreenSession.to : transferScreenSession.from;
@@ -188,6 +279,8 @@ function transferScreenRenderRosters() {
   if (!transferScreenSession) return;
   transferScreenRenderRoster('left');
   transferScreenRenderRoster('right');
+  transferScreenRenderLogistics(transferScreenSession.from, 'transferLogisticsLeft');
+  transferScreenRenderLogistics(transferScreenSession.to, 'transferLogisticsRight');
 }
 
 function transferScreenOpenItemEditor(from, to, item) {

@@ -697,9 +697,22 @@
 .transfer-rosters { display:grid; grid-template-columns:minmax(0,1fr) 34px minmax(0,1fr); gap:8px; min-height:250px; }
 .transfer-roster-panel { min-width:0; padding:10px; border:1px solid rgba(130,160,139,.27); border-radius:10px; background:rgba(11,25,20,.42); }
 .transfer-roster-panel h3 { margin:0 0 8px; overflow:hidden; color:#e2f0e4; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
-.transfer-roster-items { display:grid; grid-template-columns:repeat(auto-fill,minmax(83px,1fr)); gap:7px; max-height:min(45vh,420px); overflow:auto; align-content:start; }
+.transfer-roster-metrics { display:grid; gap:7px; margin:0 0 10px; }
+.transfer-logistics-stat { display:grid; gap:4px; }
+.transfer-logistics-label { display:flex; justify-content:space-between; gap:8px; color:#9eb5a2; font-size:8px; }
+.transfer-logistics-label strong { overflow:hidden; color:#d5e4d6; font-size:8px; font-variant-numeric:tabular-nums; text-overflow:ellipsis; white-space:nowrap; }
+.transfer-logistics-track { height:6px; overflow:hidden; border:1px solid rgba(130,160,139,.24); border-radius:99px; background:#08140d; }
+.transfer-logistics-track i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#75ad6e,#c4d779); }
+.transfer-logistics-track i.over { background:#dd735a; }
+.transfer-logistics-track.sustenance i { background:linear-gradient(90deg,#8da85a,#c1ca74); }
+.transfer-roster-items { display:grid; gap:10px; max-height:min(45vh,420px); overflow:auto; align-content:start; }
+.transfer-roster-section { display:grid; gap:5px; }
+.transfer-roster-section h4 { margin:0; color:#96ad99; font-size:8px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+.transfer-roster-people { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+.transfer-roster-goods { display:grid; grid-template-columns:repeat(auto-fill,minmax(83px,1fr)); gap:7px; }
 .transfer-roster-item { display:grid; justify-items:center; align-content:start; gap:4px; min-height:93px; padding:5px 3px; border:1px solid rgba(130,160,139,.2); border-radius:8px; background:#102019; color:#c6d5c9; cursor:pointer; }
 .transfer-roster-item:hover,.transfer-roster-item.has-transfer { border-color:#80bf89; background:#173022; }
+.transfer-roster-person { min-height:86px; }
 .transfer-roster-icon { position:relative; display:grid; place-items:center; width:52px; height:52px; border:1px solid #314c39; border-radius:8px; background:#09150e; image-rendering:pixelated; }
 .transfer-roster-icon img { width:40px; height:40px; object-fit:contain; image-rendering:pixelated; }
 .transfer-roster-icon > strong { position:absolute; right:-5px; bottom:-5px; max-width:51px; padding:2px 4px; border:1px solid #789c72; border-radius:7px; background:#07130c; color:#f2edcc; font-size:9px; font-variant-numeric:tabular-nums; line-height:1.1; }
