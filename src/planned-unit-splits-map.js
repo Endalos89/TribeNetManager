@@ -10,8 +10,11 @@ savedMovementUnits = function savedMovementUnitsWithPlannedSplits() {
 
   for (const split of savedMovementPlansState.unitSplits || []) {
     const key = String(split.unitCode || '').toLowerCase();
-    if (!key || byCode.has(key) || !parseCoordinate(split.startHex)) continue;
+    if (!key || !parseCoordinate(split.startHex)) continue;
+    const existing = byCode.get(key);
+    if (existing && !existing.plannedSplit) continue;
     byCode.set(key, {
+      ...(existing || {}),
       unitCode: split.unitCode,
       unitType: split.unitType,
       unitName: split.unitName || '',
@@ -19,7 +22,8 @@ savedMovementUnits = function savedMovementUnitsWithPlannedSplits() {
       startHex: split.startHex,
       parentUnit: split.parentUnit,
       creationPhase: split.creationPhase === 'after' ? 'after' : 'before',
-      plannedSplit: true
+      plannedSplit: true,
+      splitId: split.id
     });
   }
 

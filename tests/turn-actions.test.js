@@ -9,6 +9,7 @@ const mapperStyles = fs.readFileSync('src/movement-planner.css', 'utf8');
 const movementPlanner = fs.readFileSync('src/movement-planner.js', 'utf8');
 const renderer = fs.readFileSync('src/renderer.js', 'utf8');
 const transferScreen = fs.readFileSync('src/transfer-screen.js', 'utf8');
+const plannedSplitsMap = fs.readFileSync('src/planned-unit-splits-map.js', 'utf8');
 
 assert.match(index, /id="turnActionBar"/, 'The mapper must expose the selected-unit action bar.');
 assert.match(index, /id="turnActionHoverCard"/, 'Move Unit must expose a hover cost readout.');
@@ -136,6 +137,38 @@ assert.deepEqual(
   Array.from(vm.runInContext(`transferScreenEligibleTargets('0485', 'AM').map(unit => unit.unitCode)`, transferContext)),
   ['2485', '0485e1'],
   'After Movement targets should share the source movement endpoint and include units created there.'
+);
+const afterSplit = { id:7,unitCode:'0485e3',unitType:'Element',parentUnit:'0485',unitName:'After move party',startHex:'AA0101',creationPhase:'after' };
+const phaseTransferContext = vm.createContext({
+  document: { getElementById: () => null },
+  window: { tribenet:{ listPlannedUnitSplits: async () => [afterSplit] } },
+  state: { mode:'detail',planningVisible:true,planImport:{plan:{}} },
+  resultsTimeline: { turn:{isPlanningTurn:true} },
+  savedMovementPlansState: { unitSplits:[],routes:[],selectedUnitCode:'' },
+  savedMovementCurrentTurnKey: () => '906-05',
+  savedMovementUnits: () => [
+    {unitCode:'0485',unitType:'Tribe',currentHex:'AA0101',startHex:'AA0101'},
+    {unitCode:'0485e3',unitType:'Element',currentHex:'AA0101',startHex:'AA0101',parentUnit:'0485',plannedSplit:true}
+  ],
+  savedMovementUnitMoveDestination: code => code === '0485' ? 'BB0202' : null,
+  savedMovementCompareUnits: (a,b) => String(a.unitCode).localeCompare(String(b.unitCode)),
+  savedMovementRefresh: async () => [],
+  savedMovementPopulateUnits: () => {},
+  parseCoordinate: value => /^[A-Z]{2}\d{4}$/.test(value || '') ? {coordinate:value} : null,
+  draw: () => {},
+  drawUnitLabel: () => {},
+  console
+});
+vm.runInContext(plannedSplitsMap, phaseTransferContext);
+vm.runInContext(`savedMovementPlansState.unitSplits=[${JSON.stringify(afterSplit)}]`, phaseTransferContext);
+vm.runInContext(transferScreen, phaseTransferContext);
+const afterSplitUnit = vm.runInContext(`savedMovementUnits().find(unit=>unit.unitCode==='0485e3')`, phaseTransferContext);
+assert.equal(afterSplitUnit.creationPhase, 'after', 'The normalized created unit must retain its creation phase when already present in the base unit list.');
+assert.equal(afterSplitUnit.currentHex, 'BB0202', 'An after-movement created unit must be placed at its parent movement endpoint in the unit list.');
+assert.deepEqual(
+  Array.from(vm.runInContext(`transferScreenEligibleTargets('0485', 'AM').map(unit=>unit.unitCode)`, phaseTransferContext)),
+  ['0485e3'],
+  'An after-movement created unit must be available as an AM transfer target at its parent movement endpoint.'
 );
 assert.match(transferScreen, /const transferScreenPeopleItems = \['WARRIORS', 'ACTIVES', 'INACTIVES'\]/, 'Warriors, actives and inactives must always have separate roster entries.');
 assert.match(transferScreen, /!transferScreenPeopleItems\.includes\(item\) && balance\.amount <= 0/, 'Zero quantity goods should be omitted from the transfer roster.');
