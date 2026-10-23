@@ -78,21 +78,7 @@ function savedMovementUnits() {
   for (const unit of state?.planImport?.plan?.units || []) add(unit, 1);
   for (const movement of state?.planImport?.plan?.movements || []) add(movement, 2);
   for (const unit of resultsTimeline?.turn?.units || []) add(unit, 3);
-  for (const split of savedMovementPlansState.unitSplits || []) add({
-    unitCode: split.unitCode,
-    unitType: split.unitType,
-    unitName: split.unitName,
-    currentHex: split.startHex,
-    startHex: split.startHex,
-    parentUnit: split.parentUnit,
-    plannedSplit: true
-  }, 4);
-
   return [...byCode.values()].map(row => row.unit).sort(savedMovementCompareUnits);
-}
-
-function savedMovementSelectableUnits() {
-  return savedMovementUnits();
 }
 
 function savedMovementSelectedUnit() {
@@ -219,9 +205,6 @@ function savedMovementCanMoveUnit(unit = savedMovementSelectedUnit()) {
   return true;
 }
 
-// Kept as a compatibility hook for lifecycle and split modules. The mapper
-// no longer creates a planner card or a second unit selector.
-function savedMovementEnsureCardControls() {}
 function savedMovementPopulateUnits() {
   if (typeof turnActionsRefresh === 'function') turnActionsRefresh();
 }
