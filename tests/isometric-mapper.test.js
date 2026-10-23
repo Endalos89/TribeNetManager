@@ -120,3 +120,14 @@ const scoutingOnly=U.layout({coordinate:'AA0101',globalCol:0,globalRow:0},'0485'
 assert.equal(scoutingOnly.models[0].x,still.models[0].x);
 assert.equal(scoutingOnly.models[0].y,still.models[0].y);
 console.log('Moving edge midpoint, scouting-centre and stationary centre checks passed');
+
+// Separate installations and discovery orders produce identical scenery.
+const vm=require('node:vm'),fs=require('node:fs');
+function installation(){const context={module:{exports:{}}};vm.runInNewContext(fs.readFileSync(require.resolve('../src/isometric-core'),'utf8'),context);return context.module.exports;}
+const first=installation(),second=installation();
+first.sceneryDetails('AA0101');second.sceneryDetails('ZZ3021');
+assert.equal(JSON.stringify(first.sceneryDetails('PK1613')),JSON.stringify(second.sceneryDetails('pk1613')));
+assert.notDeepEqual(G.sceneryDetails('PK1613'),G.sceneryDetails('PK1614'));
+assert.deepEqual(G.sceneryDetails('PK1613')[0],{x:-0.21691800735890865,y:0.23783399775624275,size:1.2555440784431995,variant:0.0227246368303895});
+assert.equal(G.scenerySeed,'tribenet-world:scenery-v1');
+console.log('Versioned scenery seed is stable across installations and discovery order');

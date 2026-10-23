@@ -11,6 +11,13 @@
     let n = seed(reference);
     return () => { n += 0x6D2B79F5; let t=n; t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296; };
   }
+  // Published visual seed/version: never use installation IDs, clocks or discovery order.
+  const scenerySeed='tribenet-world:scenery-v1';
+  function sceneryRandom(reference) { return random(`${scenerySeed}:${reference}`); }
+  function sceneryDetails(reference) {
+    const rand=sceneryRandom(reference);
+    return Array.from({length:9},()=>({x:(rand()-.5)*.96,y:(rand()-.5)*.96,size:.7+rand()*.6,variant:rand()}));
+  }
   function project(x,y,z=0) { return {x, y:y*.62-z*.78}; }
   function unproject(x,y,z=0) { return {x, y:(y+z*.78)/.62}; }
   function rivers(data) {
@@ -66,6 +73,6 @@
   function sceneryVisible(x,y,neighbours) {
     return neighbours.every((known,i)=>known || x*Math.cos((i+.5)*Math.PI/3)+y*Math.sin((i+.5)*Math.PI/3)<Math.sqrt(3)/2*.67-.04);
   }
-  const api={sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
+  const api={scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
   if(typeof module!=='undefined' && module.exports) module.exports=api; else root.IsoGeometry=api;
 })(typeof window!=='undefined'?window:globalThis);

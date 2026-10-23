@@ -53,7 +53,7 @@ const IsoMapper = (() => {
   function offset(c,p,r=1,z=0){return {x:c.x+p.x*r,y:c.y+p.y*r,z};}
   function details(ref) {
     if(detailCache.has(ref))return detailCache.get(ref);
-    const rand=G.random(ref),items=Array.from({length:9},()=>({x:(rand()-.5)*.96,y:(rand()-.5)*.96,size:.7+rand()*.6,variant:rand()}));
+    const items=G.sceneryDetails(ref);
     if(detailCache.size>6000) detailCache.clear();detailCache.set(ref,items);return items;
   }
   function iconKey(name) { return String(name || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -124,28 +124,36 @@ const IsoMapper = (() => {
     }
     return null;
   }
-  function tree(p,size,conifer,shade) {
-    const base=p.z??.14;
-    line([{...p,z:base},{...p,z:base+.4*size}],'#665238',Math.max(1.3,state.scale*.037));
-    if(!conifer){
-      const ring=G.corners.map(v=>offset(p,v,.24*size,base+.4*size)),top={...p,z:base+.75*size},bottom={...p,z:base+.14*size};
-      for(let i=0;i<6;i++){mesh([ring[i],ring[(i+1)%6],top],i<3?shade:G.mix([shade,'#244a32']));mesh([ring[i],ring[(i+1)%6],bottom],G.mix([shade,'#244a32']));}
-      return;
+  // Bevelled, irregular tiers suggest carved/voxel forms without exposed cubes.
+  // All dimensions are world units; zoom changes detail, never the composition.
+  function tier(p,size,levels,shade,variant=0) {
+    const rings=levels.map(([radius,height])=>G.corners.map((v,i)=>{
+      const r=radius*size*(1+.09*Math.sin(i*2.1+variant*6));
+      return {...offset(p,v,r,(p.z??.14)+height*size),x:p.x+v.x*r+height*size*.08};
+    }));
+    const dark=G.mix([shade,'#293d38']),light=G.mix([shade,shade,'#d4d6a6']);
+    for(let k=0;k<rings.length-1;k++)for(let i=0;i<6;i++){
+      const j=(i+1)%6;
+      mesh([rings[k][i],rings[k][j],rings[k+1][j],rings[k+1][i]],i<2?dark:i<4?shade:light);
     }
-    const count=2;
-    for(let k=0;k<count;k++){
-      const z=base+.19+k*.22*size,r=(conifer?.19:.24)*size*(1-k*.25),peak={...p,z:z+(conifer?.47:.38)*size};
-      const ring=G.corners.map(v=>offset(p,v,r,z));
-      for(let i=0;i<6;i++)mesh([ring[i],ring[(i+1)%6],peak],i<3?shade:G.mix([shade,'#163b30']));
+    mesh(rings[rings.length-1],light);
+  }
+  function tree(p,size,conifer,shade,variant=0) {
+    const base=p.z??.14;
+    line([{...p,z:base},{...p,z:base+.38*size}],'#68553e',Math.max(1.3,state.scale*.033*size));
+    if(conifer){
+      tier(p,size,[[.10,.17],[.23,.22],[.19,.30],[.075,.48]],shade,variant);
+      tier(p,size,[[.16,.38],[.13,.45],[.025,.70]],shade,variant);
+    } else {
+      tier(p,size,[[.12,.25],[.26,.34],[.25,.48],[.16,.62],[.07,.65]],shade,variant);
+      if(state.scale>=48)tier({...p,x:p.x-.11*size,y:p.y+.06*size},size,[[.11,.27],[.18,.36],[.14,.49],[.06,.53]],shade,variant+.3);
     }
   }
-  function mountain(p,size,snow,volcanic) {
-    const base=p.z??.14,ring=G.corners.map(v=>offset(p,v,.38*size,base+.02)),peak={...p,z:base+.02+.95*size};
-    for(let i=0;i<6;i++) {
-      const a=ring[i],b=ring[(i+1)%6];mesh([a,b,peak],i<3?'#8f9581':'#666f61');
-      if(snow){const lerp=v=>({x:peak.x+(v.x-peak.x)*.32,y:peak.y+(v.y-peak.y)*.32,z:peak.z+(v.z-peak.z)*.32});mesh([lerp(a),lerp(b),peak],i<3?'#eff5e9':'#cfdfdc');}
-    }
-    if(volcanic)line([{...p,x:p.x-.06,z:peak.z-.09},peak,{...p,x:p.x+.08,z:peak.z-.11}],'#cb704d',2);
+  function mountain(p,size,snow,volcanic,variant=0) {
+    // Broad shoulders and modest stepped ridges keep neighbouring hexes legible.
+    tier(p,size,[[.45,.01],[.38,.14],[.28,.20],[.26,.35],[.17,.41],[.14,.59],[.06,.70]],volcanic?'#777568':'#8b9280',variant);
+    if(snow)tier(p,size,[[.15,.56],[.12,.63],[.06,.71]],'#e2e9dc',variant);
+    if(volcanic)tier(p,size,[[.055,.70],[.035,.715]],'#bd7852',variant);
   }
   function sceneryVisible(t,x,y) {
     return !IsoUnits.occupies(t.ref,x-t.c.x,y-t.c.y) && G.sceneryVisible(x-t.c.x,y-t.c.y,t.n.map(known));
@@ -153,10 +161,10 @@ const IsoMapper = (() => {
   function scenery(t,jobs) {
     if(!t.known)return;
     const terrain=t.data.terrain,items=details(t.ref),{c}=t;
-    const plant=(x,y,size)=>{
+    const plant=(x,y,size,variant=0)=>{
       if(!sceneryVisible(t,x,y))return;
       const p=sample(x,y);if(p.water)return;
-      jobs.push({y:p.y,draw:()=>tree(p,size,terrain==='CH'||terrain==='LCM',terrain.startsWith('J')?'#3c8851':'#688e40')});
+      jobs.push({y:p.y,draw:()=>tree(p,size,terrain==='CH'||terrain==='LCM',terrain.startsWith('J')?'#487c59':'#63834e',variant)});
     };
     if(t.water){
       if(state.scale>20)for(const a of items.slice(0,3))line([{x:c.x+a.x,y:c.y+a.y,z:.015},{x:c.x+a.x+.16,y:c.y+a.y,z:.015}],'#76b0be66',1);
@@ -165,14 +173,18 @@ const IsoMapper = (() => {
     if(state.scale<22)return;
     if(/ALPS|HSM|L.M/.test(terrain))for(const a of items.slice(0,2)){
       const p=sample(c.x+a.x*.7,c.y+a.y*.7);if(!sceneryVisible(t,p.x,p.y))continue;
-      jobs.push({y:p.y,draw:()=>mountain(p,a.size*(terrain==='ALPS'?1.1:.8),/ALPS|HSM|LSM/.test(terrain),terrain==='LVM')});
+      jobs.push({y:p.y,draw:()=>mountain(p,a.size*(terrain==='ALPS'?1.05:.8),/ALPS|HSM|LSM/.test(terrain),terrain==='LVM',a.variant)});
+    }
+    if(G.isHill(terrain) && state.scale>=32)for(const a of items.slice(0,2)){
+      const p=sample(c.x+a.x,c.y+a.y);if(p.water||!sceneryVisible(t,p.x,p.y))continue;
+      jobs.push({y:p.y,draw:()=>tier(p,a.size,[[.17,0],[.16,.06],[.10,.14],[.05,.16]],'#92937b',a.variant)});
     }
     if(G.isForest(terrain)) {
-      for(const a of items.slice(0,terrain==='JG'?8:6))plant(c.x+a.x,c.y+a.y,a.size*.85);
+      for(const a of items.slice(0,terrain==='JG'?8:6))plant(c.x+a.x,c.y+a.y,a.size*.85,a.variant);
       // Populate the corridor right up to a matching neighbour. The opposite
       // bank fills its half, giving continuous canopy without duplicate trees.
       for(let i=0;i<6;i++)if(t.n[i]?.terrain===terrain){
-        const a=G.corners[i],b=G.corners[(i+1)%6],rand=G.random(`${t.ref}:forest:${i}`);
+        const a=G.corners[i],b=G.corners[(i+1)%6],rand=G.sceneryRandom(`${t.ref}:forest:${i}`);
         for(let k=0;k<3;k++){
           const u=.18+k*.29+(rand()-.5)*.10,r=.86+rand()*.12;
           plant(c.x+(a.x*(1-u)+b.x*u)*r,c.y+(a.y*(1-u)+b.y*u)*r,.65+rand()*.3);

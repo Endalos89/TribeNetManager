@@ -49,3 +49,9 @@ In the 3D view, a simple click anywhere on an occupied hex selects the first uni
 Reported units open their selected-turn population/inventory and reported weight/capacities even without a planning workbook. Unknown logistics are shown as unavailable rather than inferred from another turn. Planned-only units retain movement-time logistics. The selected unit label is highlighted.
 
 Wagons face diagonally with a raised bed and vertical wheel discs projected in the axle plane. Rear wheels render behind the bed, with the near wheels in front.
+
+## Light voxel terrain styling
+
+Scenery uses broad bevelled canopies, layered conifers, stepped rock shoulders and modest hill outcrops. There is no cube grid. Mountains have moderate height to preserve adjacent hex readability. The existing fog, surface geometry, shore transitions, hit testing and order overlays are retained.
+
+`IsoGeometry.scenerySeed` is the shared, published seed `tribenet-world:scenery-v1`. Scenery is derived from that seed and the hex reference (or a named edge stream), never an installation ID, current turn, time or discovery order. Preserve this version unless deliberately replacing the visual world. Unit formation randomness is separate. Reports still supply terrain types; no hidden terrain is invented. Unknown tiles generate no scenery. Surface blending and edge trees can respond to newly revealed neighbours; installations with the same known terrain render the same landscape.
