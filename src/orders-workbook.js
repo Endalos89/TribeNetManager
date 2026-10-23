@@ -349,6 +349,38 @@ function makeScoutCells(rowNumber, row) {
   return cells;
 }
 
+function normalizeTransferRows(rows, maxRows) {
+  const normalized = (rows || []).filter(row => row?.from && row?.to && row?.item).map(row => {
+    const quantity = Number(row.quantity);
+    const from = String(row.from).trim(); const to = String(row.to).trim();
+    if (from.toLowerCase() === to.toLowerCase()) throw new Error('A transfer must go between two different units.');
+    if (!Number.isInteger(quantity) || quantity <= 0) throw new Error(`Transfer ${from} → ${to} needs a positive whole-number quantity.`);
+    return { from, to, item: String(row.item).trim(), quantity, timing: String(row.timing || 'BM').toUpperCase() === 'AM' ? 'AM' : 'BM', notes: String(row.notes || '').trim() };
+  });
+  if (normalized.length > maxRows) throw new Error(`The blank workbook has room for ${maxRows} transfer rows, but ${normalized.length} are planned.`);
+  return normalized;
+}
+
+function transferColumnMap(workbook) {
+  const headers = sheetHeaders(workbook, 'Transfers');
+  const aliases = {
+    from: ['FROM'], to: ['TO'], item: ['ITEM', 'WHAT'], quantity: ['QUANTITY', 'NUMBER', 'AMOUNT'],
+    timing: ['TRANSFER_TIMING', 'TRANSFER TIMING', 'WHEN', 'TIMING'], notes: ['NOTES', 'DESCRIPTION']
+  };
+  const map = {};
+  headers.forEach((value, index) => {
+    const key = String(value || '').trim().toUpperCase();
+    for (const [field, choices] of Object.entries(aliases)) if (choices.includes(key)) map[field] = index + 1;
+  });
+  return map;
+}
+
+function makeTransferCells(rowNumber, row, columns) {
+  const values = { from: row.from, to: row.to, item: row.item, quantity: row.quantity, timing: row.timing, notes: row.notes };
+  return Object.entries(values).filter(([key, value]) => columns[key] && value !== '')
+    .map(([key, value]) => ({ address: `${columnName(columns[key])}${rowNumber}`, value, ...(key === 'quantity' ? { kind: 'number' } : {}) }));
+}
+
 function validatePatchedWorkbook(sourceXml, outputPath, expected) {
   const output = XLSX.readFile(outputPath, { cellFormula: true, cellStyles: true, bookVBA: true });
   const source = XLSX.readFile(expected.templatePath, { cellFormula: true, cellStyles: true, bookVBA: true });
@@ -372,10 +404,20 @@ function validatePatchedWorkbook(sourceXml, outputPath, expected) {
   const attempts = readRows('Skill_Attempts').filter(row => row.TRIBE && row.TOPIC).map(row => ({ tribe: String(row.TRIBE).padStart(4, '0'), order: Number(row.ORDER), topic: String(row.TOPIC) }));
   const expectedAttempts = expected.skillAttempts.map(row => ({ tribe: row.tribe, order: row.order, topic: row.topic }));
   if (JSON.stringify(attempts) !== JSON.stringify(expectedAttempts)) throw new Error('Workbook validation failed: Skill_Attempts rows do not match the selected study attempts.');
+  if (expected.transfers.length) {
+    const actual = readRows('Transfers').filter(row => row.From && row.To && row.Item);
+    if (actual.length !== expected.transfers.length) throw new Error('Workbook validation failed: Transfers rows were not written.');
+    for (const [index, row] of expected.transfers.entries()) {
+      const found = actual[index];
+      if (String(found.From) !== row.from || String(found.To) !== row.to || String(found.Item) !== row.item || Number(found.Quantity) !== row.quantity || String(found.Transfer_Timing).toUpperCase() !== row.timing) {
+        throw new Error('Workbook validation failed: Transfers rows do not match the planned transfers.');
+      }
+    }
+  }
   return output;
 }
 
-async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], scouts = [], gmActions = [], validUnits = [], skillAttempts = [] }) {
+async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], scouts = [], gmActions = [], validUnits = [], skillAttempts = [], transfers = [] }) {
   const template = validateOrdersTemplate(templatePath);
   const normalizedMovements = normalizeMovementRows(movements, template.movementRows);
   const normalizedScouts = normalizeScoutRows(scouts, template.scoutRows);
@@ -386,6 +428,13 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   const normalizedActions = (gmActions || []).filter(action => action?.text).map(action => ({ unit: String(action.unit || '').trim(), text: String(action.text).trim() }));
   if (normalizedActions.length > template.gmRows) throw new Error(`The blank workbook has room for ${template.gmRows} GM Action rows, but ${normalizedActions.length} are planned.`);
   const normalizedSkillAttempts = normalizeSkillAttemptRows(skillAttempts, template.skillAttemptRows);
+  const transferSheetExists = Boolean(template.workbook.Sheets.Transfers);
+  if (transfers.length && !transferSheetExists) throw new Error('The blank Orders workbook is missing the Transfers sheet.');
+  const transferColumns = transferSheetExists ? transferColumnMap(template.workbook) : {};
+  const missingTransferColumns = ['from', 'to', 'item', 'quantity', 'timing'].filter(key => !transferColumns[key]);
+  if (transfers.length && missingTransferColumns.length) throw new Error(`Transfers is missing required column(s): ${missingTransferColumns.join(', ')}.`);
+  const transferRowsAvailable = transferSheetExists ? Math.max(0, rowCapacity(template.workbook.Sheets.Transfers) - 1) : 0;
+  const normalizedTransfers = normalizeTransferRows(transfers, transferRowsAvailable);
   const sourceReal = path.resolve(templatePath);
   const outputReal = path.resolve(outputPath);
   if (sourceReal === outputReal) throw new Error('Choose a different output file so the blank template remains available.');
@@ -427,6 +476,16 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   skillAttemptsXml = patchCells(skillAttemptsXml, skillAttemptCells(normalizedSkillAttempts));
   zip.file(paths.get('Skill_Attempts'), skillAttemptsXml);
 
+  if (transferSheetExists) {
+    const transferPath = paths.get('Transfers');
+    if (!transferPath) throw new Error('Could not locate Transfers inside the workbook archive.');
+    const editableColumns = Object.values(transferColumns).map(columnName);
+    let transferXml = await zip.file(transferPath).async('string');
+    transferXml = clearInputRows(transferXml, 2, transferRowsAvailable + 1, editableColumns);
+    normalizedTransfers.forEach((row, index) => { transferXml = patchCells(transferXml, makeTransferCells(index + 2, row, transferColumns)); });
+    zip.file(transferPath, transferXml);
+  }
+
   // The Orders workbook contains formulas beside the values we write. Electron
   // does not evaluate those formulas, so tell Excel to recalculate everything
   // when the completed workbook is opened (even if the template was manual).
@@ -434,8 +493,8 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
 
   await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.promises.writeFile(outputPath, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
-  validatePatchedWorkbook(buffer, outputPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts });
-  return { outputPath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts };
+  validatePatchedWorkbook(buffer, outputPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, transfers: normalizedTransfers });
+  return { outputPath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, transfers: normalizedTransfers };
 }
 
 function templateDirectory(userDataPath) {
@@ -469,6 +528,7 @@ module.exports = {
   rootTribe,
   compareUnitCodes,
   skillTransferText,
+  normalizeTransferRows,
   normalizeSkillAttemptRows,
   validateOrdersTemplate,
   patchOrdersWorkbook,

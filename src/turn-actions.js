@@ -116,6 +116,7 @@ function turnActionsRender() {
     <div class="turn-action-buttons">
       ${!stationary ? `<button class="turn-action-button${turnActionState.active === 'unit' ? ' active' : ''}" data-turn-action="move"${!canMove && !active ? ' disabled' : ''} aria-label="Move Unit" title="Move Unit · M">${TURN_ACTION_ICONS.move}</button>` : ''}
       <button class="turn-action-button${turnActionState.active === 'split' ? ' active' : ''}" data-turn-action="split"${active ? ' disabled' : ''} aria-label="Split Off Unit" title="Split Off Unit · X">${TURN_ACTION_ICONS.split}</button>
+      <button class="turn-action-button" data-turn-action="transfer"${active ? ' disabled' : ''} aria-label="Transfer" title="Transfer goods or people">⇄</button>
       <button class="turn-action-button${turnActionState.active === 'scout' ? ' active' : ''}" data-turn-action="scout"${active ? ' disabled' : ''} aria-label="Send Out Scout" title="Send Out Scout · C">${TURN_ACTION_ICONS.scout}</button>
       ${turnActionState.active === 'scout' ? `<button class="turn-action-button route-action${turnActionState.followOceanMode ? ' active' : ''}" data-turn-action="follow-ocean" aria-label="Follow Ocean" title="Follow Ocean · F">${TURN_ACTION_ICONS.followOcean}</button>` : ''}
       ${unitScoutRoutes.length ? `<button class="turn-action-button route-action" data-turn-action="open-scouts" aria-label="View scouting routes" title="View scouting routes · V">${TURN_ACTION_ICONS.routes}</button>` : ''}
@@ -785,6 +786,7 @@ async function turnActionsHandle(action) {
   if (action === 'move') return turnActionsStart('unit');
   if (action === 'scout') return turnActionsStart('scout');
   if (action === 'split') return turnActionsOpenSplit();
+  if (action === 'transfer') return typeof transferScreenOpen === 'function' ? transferScreenOpen({ from: savedMovementSelectedUnit()?.unitCode }) : false;
   if (action === 'cancel') return turnActionsCancel();
   if (action === 'edit-scout') return turnActionsEditSelectedScout();
   if (action === 'cancel-scout') return turnActionsCancelSelectedScout();

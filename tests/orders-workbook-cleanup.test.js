@@ -45,6 +45,11 @@ const skillAttemptsSheet = XLSX.utils.aoa_to_sheet([
 ]);
 skillAttemptsSheet.E2 = { t: 'n', f: 'IF(C2<>"",1,0)', v: 0 };
 XLSX.utils.book_append_sheet(workbook, skillAttemptsSheet, 'Skill_Attempts');
+XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+  ['From', 'To', 'Item', 'Quantity', 'Transfer_Timing', 'Notes', 'Processed', 'Description of Transfer units'],
+  [null, null, null, null, null, null, 0, 'Existing transfer'],
+  [null, null, null, null, null, null, 0, 'Existing transfer']
+]), 'Transfers');
 XLSX.writeFile(workbook, templatePath);
 
 (async () => {
@@ -65,7 +70,8 @@ XLSX.writeFile(workbook, templatePath);
         { tribe: '0485', order: 1, topic: 'Diplomacy', group: 'B', baselineLevel: 0 },
         { tribe: '0485', order: 2, topic: 'Engineering', group: 'C', baselineLevel: 0 },
         { tribe: '0485', order: 3, topic: 'Fishing', group: 'A', baselineLevel: 0 }
-      ]
+      ],
+      transfers: [{ from:'0485', to:'0485e1', item:'WARRIORS', quantity:20, timing:'BM', notes:'New unit allocation' }]
     });
     const output = XLSX.readFile(outputPath);
     const movement = XLSX.utils.sheet_to_json(output.Sheets.Tribe_Movement, { defval: null });
@@ -80,6 +86,8 @@ XLSX.writeFile(workbook, templatePath);
       .filter(row => row.TRIBE && row.TOPIC)
       .map(row => [String(row.TRIBE).padStart(4, '0'), Number(row.ORDER), row.TOPIC]);
     assert.deepEqual(attempts, [['0485', 1, 'DIPLOMACY'], ['0485', 2, 'ENGINEERING'], ['0485', 3, 'FISHING']]);
+    const transfers = XLSX.utils.sheet_to_json(output.Sheets.Transfers, { defval: null }).filter(row => row.From);
+    assert.deepEqual(transfers.map(row => [row.From, row.To, row.Item, row.Quantity, row.Transfer_Timing, row.Notes]), [['0485', '0485e1', 'WARRIORS', 20, 'BM', 'New unit allocation']]);
     const outputZip = await JSZip.loadAsync(fs.readFileSync(outputPath));
     const outputWorkbookXml = await outputZip.file('xl/workbook.xml').async('string');
     const calcPr = outputWorkbookXml.match(/<calcPr\b[^>]*\/>/)?.[0] || '';

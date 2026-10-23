@@ -31,6 +31,32 @@ try {
   assert.equal(element.unitType, 'Element');
   assert.equal(element.unitCode, '0485e1', 'Element code should be assigned automatically');
   assert.equal(element.startHex, 'PK1711', 'split should use parent beginning-of-turn hex');
+  const transfer = turns.addTransfer('048-12', { from:'0485', to:'0485e1', item:'WARRIORS', quantity:20, timing:'BM' });
+  assert.equal(transfer.from, '0485');
+  assert.equal(transfer.timing, 'BM');
+  assert.equal(turns.listTransfers('048-12').length, 1);
+  assert.equal(turns.deleteTransfer(transfer.id).item, 'WARRIORS');
+  assert.throws(() => turns.addTransfer('048-12', { from:'0485', to:'0485', item:'WAGON', quantity:1 }), /different units/);
+  turns.addTransfer('048-12', { from:'0485', to:'0485e1', item:'LOG', quantity:80, timing:'BM' });
+  turns.addTransfer('048-12', { from:'0485e1', to:'0485', item:'WAGON', quantity:2, timing:'BM' });
+  turns.addTransfer('048-12', { from:'0485', to:'0485e1', item:'PROVS', quantity:12, timing:'AM' });
+  turns.addTransfer('048-12', { from:'0485', to:'1485', item:'ACTIVES', quantity:5, timing:'BM' });
+  const replacedTransfers = turns.replaceTransferGroup('048-12', '0485', '0485e1', 'BM', [
+    { from:'0485', to:'0485e1', item:'LOG', quantity:100, timing:'BM' },
+    { from:'0485e1', to:'0485', item:'WAGON', quantity:1, timing:'BM' }
+  ]);
+  assert.equal(replacedTransfers.length, 2, 'Saving a transfer session should replace both directions for the selected pair and phase.');
+  const transferRows = rows => rows.map(row => [row.from, row.to, row.item, row.quantity, row.timing]).sort((a, b) => a.join('|').localeCompare(b.join('|')));
+  assert.deepEqual(transferRows(turns.listTransfers('048-12')), transferRows([
+    ['0485', '0485e1', 'LOG', 100, 'BM'],
+    ['0485e1', '0485', 'WAGON', 1, 'BM'],
+    ['0485', '0485e1', 'PROVS', 12, 'AM'],
+    ['0485', '1485', 'ACTIVES', 5, 'BM']
+  ].map(([from, to, item, quantity, timing]) => ({ from, to, item, quantity, timing }))), 'Transfers in another phase or between another pair must remain intact.');
+  turns.replaceTransferGroup('048-12', '0485', '0485e1', 'BM', []);
+  assert.equal(turns.listTransfers('048-12').length, 2, 'Saving an empty group should clear only that pair and phase.');
+  assert.equal(turns.deleteAllTransfers('048-12').length, 2, 'The turn-wide cancel action should remove every remaining transfer.');
+  assert.equal(turns.listTransfers('048-12').length, 0);
   assert.equal(element.creationPhase, 'before', 'before movement is the default creation phase');
 
   const afterElement = turns.addUnitSplit('048-12', {

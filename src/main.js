@@ -173,6 +173,7 @@ function clearDraftPlanning(turnKey) {
   for (const split of turnManagerDatabase.listUnitSplits(turnKey)) {
     turnManagerDatabase.deleteUnitSplit(split.id);
   }
+  turnManagerDatabase.deleteAllTransfers(turnKey);
   for (const route of routesDb().list(turnKey)) {
     routesDb().remove(route.id);
   }
@@ -274,6 +275,7 @@ function buildOrdersExportData(turnKey) {
     baselineUnits: baseline?.units || [],
     routeGroups: ordersExportDraftRoutes(turnKey),
     splitGroups: ordersExportDraftSplits(turnKey),
+    transferGroups: ordersExportDraftKeys(turnKey).map(key => turnManagerDatabase.listTransfers(key)),
     skillAttempts
   });
 }
@@ -541,6 +543,11 @@ ipcMain.handle('turn-manager:update-activity', (_event, id, activity) => turnMan
 ipcMain.handle('turn-manager:delete-activity', (_event, id) => turnManagerDatabase.deleteActivity(id));
 ipcMain.handle('turn-manager:add-unit-split', (_event, turnKey, split) => turnManagerDatabase.addUnitSplit(turnKey, split));
 ipcMain.handle('turn-manager:list-unit-splits', (_event, turnKey) => turnManagerDatabase.listUnitSplits(turnKey));
+ipcMain.handle('turn-manager:add-transfer', (_event, turnKey, transfer) => turnManagerDatabase.addTransfer(turnKey, transfer));
+ipcMain.handle('turn-manager:list-transfers', (_event, turnKey) => turnManagerDatabase.listTransfers(turnKey));
+ipcMain.handle('turn-manager:delete-transfer', (_event, id) => turnManagerDatabase.deleteTransfer(id));
+ipcMain.handle('turn-manager:replace-transfer-group', (_event, turnKey, unitA, unitB, timing, transfers) => turnManagerDatabase.replaceTransferGroup(turnKey, unitA, unitB, timing, transfers));
+ipcMain.handle('turn-manager:delete-all-transfers', (_event, turnKey) => turnManagerDatabase.deleteAllTransfers(turnKey));
 ipcMain.handle('turn-manager:delete-unit-split', (_event, id) => {
   const removed = turnManagerDatabase.deleteUnitSplit(id);
   if (removed) {
