@@ -351,6 +351,7 @@ async function importOrdersWorkbook() {
 }
 function updatePlanUI() {
   const active = Boolean(state.planImport?.plan); $('planningToggle').disabled = !active; $('scoutingToggle').disabled = !active || !state.planningVisible;
+  if (typeof turnActionsRenderScoutOverviewButton === 'function') turnActionsRenderScoutOverviewButton();
   $('planStatus').textContent = active ? `Turn ${state.planImport.turnKey}` : 'Import an orders workbook to plan on the map.';
   if (!active) return;
   renderPlanWarnings();

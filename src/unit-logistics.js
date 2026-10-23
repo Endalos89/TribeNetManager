@@ -182,7 +182,14 @@ function showUnitLogistics(unit, snapshot = null) {
   if(snapshot){
     $('selectedUnitType').textContent=snapshot.unitType || 'Unit';
     $('selectedUnitName').textContent=snapshot.unitName || '';
-    $('unitTurnContext').textContent=`Turn ${snapshot.turnKey || resultsTimeline.turn?.turnKey || '—'} · reported state`;
+    const contextTurn = snapshot.turnKey || resultsTimeline.turn?.turnKey || savedMovementCurrentTurnKey?.() || '—';
+    if (snapshot.plannedSplit) {
+      const phase = snapshot.creationPhase === 'after' ? 'After Movement' : 'Before Movement';
+      const location = typeof plannedSplitMapHex === 'function' ? plannedSplitMapHex(snapshot) : snapshot.currentHex || snapshot.startHex;
+      $('unitTurnContext').textContent = `Turn ${contextTurn} · created this turn from ${snapshot.parentUnit || '—'} · ${phase} · ${location || 'location unknown'}`;
+    } else {
+      $('unitTurnContext').textContent=`Turn ${contextTurn} · reported state`;
+    }
     const people=snapshot.people||{},counts=IsoUnits.composition(snapshot);
     $('unitPeople').textContent=logisticsNumber(people.People ?? (counts.warriors+counts.actives+counts.inactives+Number(people.Slaves||0)+Number(people.Locals||0)));
     for(const id of ['unitProvisions','unitProvisionTurns','unitEaters','unitLoadPercent'])$(id).textContent='—';

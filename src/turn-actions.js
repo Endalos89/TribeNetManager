@@ -177,9 +177,27 @@ function turnActionsRenderScoutTools() {
   requestAnimationFrame(turnActionsPositionScoutTools);
 }
 
-function turnActionsRenderScoutOverviewButton(routes = savedMovementPlansState.routes) {
+function turnActionsScoutOverviewRoutes() {
+  const imported = (state.planImport?.plan?.scouts || []).map((route, index) => ({
+    source: 'workbook',
+    unitCode: route.unitCode || route.unit || route.TRIBE,
+    scoutNumber: route.scoutNumber || route.id || index + 1,
+    noOfScouts: route.noOfScouts ?? route.scoutCount ?? route.No_of_Scouts,
+    noOfHorses: route.noOfHorses ?? route.horseCount ?? route.No_of_Horses,
+    mission: route.mission || route.Mission || 'PATROL',
+    directions: route.directions || route.orders || []
+  })).filter(route => route.unitCode);
+  const planned = (savedMovementPlansState.routes || []).filter(route => route.routeType === 'scout')
+    .map(route => ({ ...route, source:'planned' }));
+  return [...imported, ...planned].sort((a, b) =>
+    String(a.unitCode).localeCompare(String(b.unitCode), undefined, { numeric:true })
+    || Number(a.scoutNumber || 0) - Number(b.scoutNumber || 0)
+    || String(a.source).localeCompare(String(b.source)));
+}
+
+function turnActionsRenderScoutOverviewButton() {
   const count = document.getElementById('scoutOverviewCount');
-  if (count) count.textContent = String((routes || []).filter(route => route.routeType === 'scout').length);
+  if (count) count.textContent = String(turnActionsScoutOverviewRoutes().length);
 }
 
 function turnActionsOpenScoutOverview() {
@@ -187,8 +205,7 @@ function turnActionsOpenScoutOverview() {
   const host = document.getElementById('scoutOverviewRows');
   if (!dialog || !host) return false;
   const turnKey = savedMovementCurrentTurnKey();
-  const routes = savedMovementPlansState.routes.filter(route => route.routeType === 'scout')
-    .slice().sort((a, b) => String(a.unitCode).localeCompare(String(b.unitCode), undefined, { numeric:true }) || Number(a.scoutNumber || 0) - Number(b.scoutNumber || 0));
+  const routes = turnActionsScoutOverviewRoutes();
   const directions = route => (route.directions || []).slice(0, 9);
   const movementCell = value => value ? (String(value).toUpperCase() === 'STILL' ? 'Still' : String(value).toUpperCase()) : '—';
   document.getElementById('scoutOverviewTurn').textContent = turnKey
@@ -196,17 +213,66 @@ function turnActionsOpenScoutOverview() {
     : 'No planning turn is selected.';
   host.innerHTML = routes.length ? routes.map(route => {
     const moves = directions(route);
-    return `<tr data-scout-overview-route="${turnActionsEscape(savedMovementRouteKey(route))}" title="Select to highlight this route on the map">
+    const key = route.source === 'planned' ? savedMovementRouteKey(route) : '';
+    return `<tr data-scout-overview-source="${route.source}" data-scout-overview-route="${turnActionsEscape(key)}" data-scout-overview-unit="${turnActionsEscape(route.unitCode)}" title="Select to highlight this unit's scouting on the map">
       <td>${turnActionsEscape(route.unitCode)}</td><td>S${turnActionsEscape(route.scoutNumber || '?')}</td>
       <td>${Number(route.noOfScouts || 0)}</td><td>${Number(route.noOfHorses || 0)}</td><td>${turnActionsEscape(route.mission || 'PATROL')}</td>
       ${Array.from({length:9}, (_, index) => `<td>${turnActionsEscape(movementCell(moves[index]))}</td>`).join('')}
     </tr>`;
   }).join('') : '<tr><td class="transfer-overview-empty" colspan="14">No scouting orders planned for this turn.</td></tr>';
   host.querySelectorAll('[data-scout-overview-route]').forEach(row => row.addEventListener('click', () => {
-    savedMovementSelectSavedRoute(row.dataset.scoutOverviewRoute);
+    if (row.dataset.scoutOverviewSource === 'planned') savedMovementSelectSavedRoute(row.dataset.scoutOverviewRoute);
+    else {
+      state.selectedUnit = row.dataset.scoutOverviewUnit;
+      state.selectedRouteId = null;
+      savedMovementPlansState.selectedUnitCode = state.selectedUnit;
+      turnActionsRender();
+      draw();
+    }
     dialog.close();
   }));
   turnActionsBindDialogDrag(dialog, 'scout-overview');
+  if (!dialog.open) dialog.showModal();
+  return true;
+}
+
+function turnActionsRenderUnitCreationOverviewButton() {
+  const count = document.getElementById('unitCreationOverviewCount');
+  if (count) count.textContent = String((savedMovementPlansState.unitSplits || []).length);
+}
+
+function turnActionsOpenUnitCreationOverview() {
+  const dialog = document.getElementById('unitCreationOverviewDialog');
+  const host = document.getElementById('unitCreationOverviewRows');
+  if (!dialog || !host) return false;
+  const turnKey = savedMovementCurrentTurnKey();
+  const splits = (savedMovementPlansState.unitSplits || []).slice().sort((a, b) =>
+    String(a.unitCode).localeCompare(String(b.unitCode), undefined, { numeric:true }));
+  document.getElementById('unitCreationOverviewTurn').textContent = turnKey
+    ? `Turn ${turnKey} · ${splits.length} created unit${splits.length === 1 ? '' : 's'}`
+    : 'No planning turn is selected.';
+  host.innerHTML = splits.length ? splits.map(split => {
+    const location = plannedSplitMapHex(split) || split.startHex || '';
+    return `<tr data-created-unit="${turnActionsEscape(split.unitCode)}" data-created-unit-location="${turnActionsEscape(location)}" title="Select to view this unit on the map">
+      <td>${turnActionsEscape(split.unitCode)}</td><td>${turnActionsEscape(split.unitType)}</td><td>${turnActionsEscape(split.unitName || '—')}</td>
+      <td>${turnActionsEscape(split.parentUnit)}</td><td>${split.creationPhase === 'after' ? 'After Movement' : 'Before Movement'}</td><td>${turnActionsEscape(location || 'Unknown')}</td>
+    </tr>`;
+  }).join('') : '<tr><td class="transfer-overview-empty" colspan="6">No units have been created this turn.</td></tr>';
+  host.querySelectorAll('[data-created-unit]').forEach(row => row.addEventListener('click', () => {
+    const unitCode = row.dataset.createdUnit;
+    const split = splits.find(item => String(item.unitCode) === unitCode);
+    if (!split) return;
+    state.selectedUnit = unitCode;
+    state.selectedUnitHex = row.dataset.createdUnitLocation || split.startHex || null;
+    savedMovementPlansState.selectedUnitCode = unitCode;
+    turnActionsRender();
+    draw();
+    if (typeof showUnitLogistics === 'function') {
+      showUnitLogistics(unitCode, { ...split, currentHex:state.selectedUnitHex, plannedSplit:true });
+    }
+    dialog.close();
+  }));
+  turnActionsBindDialogDrag(dialog, 'unit-creation-overview');
   if (!dialog.open) dialog.showModal();
   return true;
 }
@@ -721,6 +787,7 @@ async function turnActionsRenderPlannedUnitManagement() {
   const splits = savedMovementPlansState.unitSplits || [];
   const count = document.getElementById('plannedUnitManagementCount');
   if (count) count.textContent = String(splits.length);
+  turnActionsRenderUnitCreationOverviewButton();
   if (!host) return;
   host.innerHTML = splits.length ? splits.map(split => `
     <div class="planned-unit-management-row">
@@ -1112,6 +1179,10 @@ document.getElementById('openScoutOverviewButton')?.addEventListener('click', tu
 document.getElementById('scoutOverviewClose')?.addEventListener('click', () => document.getElementById('scoutOverviewDialog').close());
 document.getElementById('scoutOverviewDone')?.addEventListener('click', () => document.getElementById('scoutOverviewDialog').close());
 turnActionsRenderScoutOverviewButton();
+document.getElementById('openUnitCreationOverviewButton')?.addEventListener('click', turnActionsOpenUnitCreationOverview);
+document.getElementById('unitCreationOverviewClose')?.addEventListener('click', () => document.getElementById('unitCreationOverviewDialog').close());
+document.getElementById('unitCreationOverviewDone')?.addEventListener('click', () => document.getElementById('unitCreationOverviewDialog').close());
+turnActionsRenderUnitCreationOverviewButton();
 
 document.getElementById('movementPlannerCreateParent')?.addEventListener('change', savedMovementLoadCreationSkills);
 document.getElementById('movementPlannerCreateType')?.addEventListener('change', savedMovementLoadCreationSkills);

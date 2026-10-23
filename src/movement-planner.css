@@ -748,6 +748,7 @@
 .transfer-map-button:hover { background:rgba(24,49,37,.96); border-color:#a6d4ac; }
 .scout-overview-dialog .turn-action-dialog-form { max-height:calc(100vh - 28px); overflow:auto; }
 .scout-overview-table { min-width:1120px; }
+.unit-creation-overview-table { min-width:640px; }
 .transfer-from-value { display:block; min-height:34px; padding:9px 10px; overflow:hidden; border:1px solid rgba(130,160,139,.27); border-radius:7px; background:rgba(11,25,20,.42); color:#e2f0e4; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
 .transfer-area-hint { margin:0 0 10px; }
 #transferDialog { width:min(900px,calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:visible; }

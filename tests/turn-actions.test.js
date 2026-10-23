@@ -23,6 +23,9 @@ assert.match(index, /id="openTransferOverviewButton" class="transfer-map-button"
 assert.match(index, /id="openScoutOverviewButton" class="transfer-map-button"/, 'The map-corner actions must include a scout overview.');
 assert.match(index, /id="scoutOverviewDialog"/, 'The scout overview must be available independently of the selected unit.');
 assert.match(index, /id="scoutOverviewRows"/, 'The scout overview must show workbook-style scouting rows.');
+assert.match(index, /id="openUnitCreationOverviewButton"/, 'Created units must have an overview entry beside Scout and Transfers.');
+assert.match(index, /id="unitCreationOverviewDialog"/, 'The map must provide a created-unit overview.');
+assert.match(index, /id="unitCreationOverviewRows"/, 'Created units must be listed with their source and creation phase.');
 assert.match(index, /<h2>Transfers<\/h2>/, 'The overview dialog should be titled Transfers.');
 assert.match(index, /id="transferFromLabel"/, 'The transfer source should be displayed as the initiating unit.');
 assert.ok(!/id="transferFrom"/.test(index), 'The source unit must not be editable in the transfer dialog.');
@@ -78,8 +81,15 @@ assert.match(actions, /data-turn-action="scout-fol"[\s\S]*?>FOL<\/button>[\s\S]*
 assert.match(actions, /function turnActionsAddScoutConditional\(order\)/, 'FOL/FOR buttons must insert conditional commands into the pending route.');
 assert.match(actions, /if \(existingConditional === order\)/, 'Clicking an active FOL/FOR option again must remove that command from the draft.');
 assert.match(actions, /function turnActionsOpenScoutOverview\(\)/, 'The scout overview must list scouting orders across all units.');
+assert.match(actions, /function turnActionsScoutOverviewRoutes\(\)[\s\S]*state\.planImport\?\.plan\?\.scouts/, 'The scout overview must include scouting rows imported from the workbook, which are also drawn on the map.');
+assert.match(actions, /source: 'workbook'/, 'Workbook scout rows must remain distinguishable from saved scout drafts.');
+assert.match(renderer, /turnActionsRenderScoutOverviewButton\(\)/, 'The Scout count must refresh when an orders workbook is imported.');
 assert.match(actions, /Movement1|length:9/, 'The scout overview must expose the workbook scouting command columns.');
 assert.match(actions, /if \(turnActionState\.active && !event\?\.detail\?\.unitCode\)/, 'Clicking an empty destination hex must not cancel the active route overlay.');
+assert.match(actions, /function turnActionsOpenUnitCreationOverview\(\)/, 'The map overview must list units created during the current turn.');
+assert.match(actions, /data-created-unit-location/, 'Created-unit overview rows must expose the current phase-specific map location.');
+assert.match(fs.readFileSync('src/planned-unit-splits-map.js', 'utf8'), /turnActionsRenderUnitCreationOverviewButton/, 'The created-unit count must refresh when planned creations load.');
+assert.match(fs.readFileSync('src/unit-logistics.js', 'utf8'), /created this turn from/, 'Selecting a created unit must identify its parent and creation timing in the unit details.');
 assert.match(actions, /turnActionState\.active === 'unit' && turnActionState\.shiftChainStarted/, 'Only movement routes may auto-commit when Shift is released.');
 assert.match(actions, /pendingMapClick/, 'Shift release must wait for the map click to finish appending its route.');
 assert.match(actions, /await turnActionState\.pendingMapClick/, 'Shift release must await the pending map click before committing.');

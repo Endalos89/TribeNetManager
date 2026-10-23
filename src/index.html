@@ -119,6 +119,7 @@
           <div class="map-corner-actions">
             <button id="openTransferOverviewButton" class="transfer-map-button" type="button" aria-label="Open transfers">Transfers <span id="transferOverviewCount" class="transfer-count-badge">0</span></button>
             <button id="openScoutOverviewButton" class="transfer-map-button" type="button" aria-label="Open scout overview">Scout <span id="scoutOverviewCount" class="transfer-count-badge">0</span></button>
+            <button id="openUnitCreationOverviewButton" class="transfer-map-button" type="button" aria-label="Open created units overview">Units <span id="unitCreationOverviewCount" class="transfer-count-badge">0</span></button>
           </div>
           <canvas id="mapCanvas"></canvas>
           <div class="map-hint">Drag to pan · Mouse wheel to zoom · Click a hex to cycle units, then inspect the land · Click a unit label for logistics</div>
@@ -341,6 +342,18 @@
         <p id="scoutOverviewTurn" class="turn-action-dialog-copy"></p>
         <div class="transfer-overview-table-wrap"><table class="transfer-overview-table scout-overview-table"><thead><tr><th>TRIBE</th><th>No_of_Scouts</th><th>No_of_Horses</th><th>Mission</th><th>Movement1</th><th>Movement2</th><th>Movement3</th><th>Movement4</th><th>Movement5</th><th>Movement6</th><th>Movement7</th><th>Movement8</th><th>Movement9</th></tr></thead><tbody id="scoutOverviewRows"></tbody></table></div>
         <div class="turn-action-dialog-actions transfer-overview-actions"><button id="scoutOverviewDone" type="button" class="button">Close</button></div>
+      </div>
+    </dialog>
+
+    <dialog id="unitCreationOverviewDialog" class="turn-action-dialog transfer-overview-dialog scout-overview-dialog">
+      <div class="turn-action-dialog-form">
+        <div class="turn-action-dialog-heading" data-drag-handle="unit-creation-overview">
+          <div><p class="eyebrow">TURN ORDERS</p><h2>Units created this turn</h2></div>
+          <button id="unitCreationOverviewClose" type="button" class="button square" aria-label="Close">×</button>
+        </div>
+        <p id="unitCreationOverviewTurn" class="turn-action-dialog-copy"></p>
+        <div class="transfer-overview-table-wrap"><table class="transfer-overview-table unit-creation-overview-table"><thead><tr><th>UNIT</th><th>TYPE</th><th>NAME</th><th>FROM</th><th>CREATION</th><th>LOCATION</th></tr></thead><tbody id="unitCreationOverviewRows"></tbody></table></div>
+        <div class="turn-action-dialog-actions transfer-overview-actions"><button id="unitCreationOverviewDone" type="button" class="button">Close</button></div>
       </div>
     </dialog>
 

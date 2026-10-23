@@ -43,7 +43,9 @@ savedMovementRefresh = async function savedMovementRefreshWithPlannedSplits() {
     console.error('Could not load planned unit splits', error);
     savedMovementPlansState.unitSplits = [];
   }
-  return plannedSplitOriginalSavedMovementRefresh();
+  const refreshed = await plannedSplitOriginalSavedMovementRefresh();
+  if (typeof turnActionsRenderUnitCreationOverviewButton === 'function') turnActionsRenderUnitCreationOverviewButton();
+  return refreshed;
 };
 
 const plannedSplitOriginalPopulateUnits = savedMovementPopulateUnits;
