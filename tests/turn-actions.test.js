@@ -30,6 +30,9 @@ assert.match(transferScreen, /TribeNetItemIconManifest/, 'Transfer roster items 
 assert.match(transferScreen, /replacePlannedTransferGroup/, 'Transfer editor must save the complete selected pair and timing group.');
 assert.match(transferScreen, /deleteAllPlannedTransfers/, 'Transfer overview must provide turn-wide cancellation.');
 assert.match(transferScreen, /transferScreenEligibleTargets/, 'Transfer targets must be filtered to units at the phase-specific location.');
+assert.match(actions, /unit\.plannedSplit \? `<button class="turn-action-utility danger" data-turn-action="cancel-unit-creation"/, 'Selecting a unit created this turn must expose a cancel-creation button.');
+assert.match(actions, /deletePlannedUnitSplit\(split\.id\)/, 'Cancelling a created unit must delete its planned creation record.');
+assert.match(actions, /Any transfers to or from this unit will also be removed/, 'Cancellation must warn that transfers linked to the created unit will be removed.');
 assert.match(actions, /Move Unit/, 'Move Unit action is missing.');
 assert.match(actions, /Split Off Unit/, 'Split Off Unit action is missing.');
 assert.match(actions, /Send Out Scout/, 'Send Out Scout action is missing.');

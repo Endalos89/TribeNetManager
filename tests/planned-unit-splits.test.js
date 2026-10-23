@@ -64,7 +64,13 @@ try {
   });
   assert.equal(afterElement.unitCode, '0485e2', 'The next free Element code should be assigned');
   assert.equal(afterElement.creationPhase, 'after', 'after movement timing should persist');
+  turns.addTransfer('048-12', { from:'0485', to:afterElement.unitCode, item:'PROVS', quantity:12, timing:'AM' });
+  turns.addTransfer('048-12', { from:afterElement.unitCode, to:'0485', item:'WAGON', quantity:1, timing:'BM' });
+  turns.addTransfer('048-12', { from:'0485', to:'1485', item:'ACTIVES', quantity:3, timing:'BM' });
   turns.deleteUnitSplit(afterElement.id);
+  assert.equal(turns.listTransfers('048-12').some(row => row.from === afterElement.unitCode || row.to === afterElement.unitCode), false, 'Cancelling a created unit must remove transfers to and from that unit.');
+  assert.equal(turns.listTransfers('048-12').length, 1, 'Cancelling a created unit must preserve transfers between other units.');
+  turns.deleteAllTransfers('048-12');
 
   const tribe = turns.addUnitSplit('048-12', {
     parentUnit: '0485',

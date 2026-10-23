@@ -120,6 +120,7 @@ function turnActionsRender() {
       <button class="turn-action-button${turnActionState.active === 'scout' ? ' active' : ''}" data-turn-action="scout"${active ? ' disabled' : ''} aria-label="Send Out Scout" title="Send Out Scout · C">${TURN_ACTION_ICONS.scout}</button>
       ${turnActionState.active === 'scout' ? `<button class="turn-action-button route-action${turnActionState.followOceanMode ? ' active' : ''}" data-turn-action="follow-ocean" aria-label="Follow Ocean" title="Follow Ocean · F">${TURN_ACTION_ICONS.followOcean}</button>` : ''}
       ${unitScoutRoutes.length ? `<button class="turn-action-button route-action" data-turn-action="open-scouts" aria-label="View scouting routes" title="View scouting routes · V">${TURN_ACTION_ICONS.routes}</button>` : ''}
+      ${unit.plannedSplit ? `<button class="turn-action-utility danger" data-turn-action="cancel-unit-creation" aria-label="Cancel unit creation" title="Cancel creation of ${turnActionsEscape(unit.unitCode)} and remove its linked transfers">Cancel unit creation</button>` : ''}
       ${active ? `<button class="turn-action-button secondary" data-turn-action="cancel" aria-label="Cancel action" title="Cancel action · Esc">${TURN_ACTION_ICONS.cancel}</button>` : ''}
       ${selectedScout && !active ? `<span class="turn-action-route-selection">Scout S${selectedScout.scoutNumber} selected</span><button class="turn-action-button route-action" data-turn-action="edit-scout" aria-label="Edit scouting" title="Edit scouting · C">${TURN_ACTION_ICONS.edit}</button><button class="turn-action-button secondary route-action" data-turn-action="cancel-scout" aria-label="Cancel scouting" title="Cancel scouting">${TURN_ACTION_ICONS.remove}</button>` : ''}
     </div>
@@ -795,6 +796,36 @@ async function turnActionsHandle(action) {
   if (action === 'reset-movement') return turnActionsResetMovement();
   if (action === 'reset-scouting') return turnActionsResetScouting();
   if (action === 'reset-splits') return turnActionsResetSplits();
+  if (action === 'cancel-unit-creation') return turnActionsCancelUnitCreation();
+}
+
+async function turnActionsCancelUnitCreation() {
+  const unit = turnActionsUnit();
+  if (!unit?.plannedSplit) return false;
+  const split = (savedMovementPlansState.unitSplits || []).find(row => String(row.unitCode).toLowerCase() === String(unit.unitCode).toLowerCase());
+  if (!split?.id) {
+    turnActionsSetStatus(`Could not find the saved creation record for ${unit.unitCode}.`);
+    return false;
+  }
+  if (!window.confirm(`Cancel creation of ${unit.unitCode}? Any transfers to or from this unit will also be removed.`)) return false;
+  try {
+    const removed = await window.tribenet.deletePlannedUnitSplit(split.id);
+    if (!removed) {
+      turnActionsSetStatus(`Could not cancel creation of ${unit.unitCode}.`);
+      return false;
+    }
+    state.selectedUnit = null;
+    state.selectedUnitHex = null;
+    state.selectedRouteId = null;
+    savedMovementPlansState.selectedUnitCode = '';
+    turnActionState.status = `Creation of ${unit.unitCode} cancelled; linked transfers removed.`;
+    await savedMovementRefresh();
+    draw();
+    return true;
+  } catch (error) {
+    turnActionsSetStatus(error.message || String(error));
+    return false;
+  }
 }
 
 function turnActionsSyncSelection() {
