@@ -12,6 +12,7 @@ const transferScreen = fs.readFileSync('src/transfer-screen.js', 'utf8');
 const plannedSplitsMap = fs.readFileSync('src/planned-unit-splits-map.js', 'utf8');
 
 assert.match(index, /id="turnActionBar"/, 'The mapper must expose the selected-unit action bar.');
+assert.match(index, /id="turnActionScoutTools"/, 'Scouting must expose a floating route control toolbar.');
 assert.match(index, /id="turnActionHoverCard"/, 'Move Unit must expose a hover cost readout.');
 assert.match(index, /id="turnActionTooltip"/, 'Action controls must expose an immediate tooltip surface.');
 assert.match(index, /id="scoutRoutesDialog"/, 'Scouting orders must have a dedicated edit dialog.');
@@ -67,8 +68,13 @@ assert.match(actions, /move\.svg|split\.svg|scout\.svg|follow-ocean\.svg/, 'Acti
 for (const icon of ['move.svg', 'split.svg', 'scout.svg', 'follow-ocean.svg', 'cancel.svg', 'reset.svg', 'edit.svg', 'remove-route.svg', 'routes.svg']) {
   assert.ok(fs.existsSync(`src/action-icons/${icon}`), `Missing dedicated action icon: ${icon}`);
 }
-assert.match(actions, /event\.key !== 'Shift'/, 'Shift release must be the chain commit boundary.');
+assert.match(actions, /event\.key !== 'Shift'/, 'Shift release must be the chain input boundary.');
 assert.match(actions, /turnActionsCommit\(\)/, 'Turn actions must commit after a completed click/chain.');
+assert.match(actions, /data-turn-action="scout-confirm"[\s\S]*?data-turn-action="scout-cancel"|data-turn-action="scout-cancel"[\s\S]*?data-turn-action="scout-confirm"/, 'Scouting must expose explicit confirm and cancel controls.');
+assert.match(actions, /data-turn-action="scout-fol"[\s\S]*?>FOL<\/button>[\s\S]*?data-turn-action="scout-for"[\s\S]*?>FOR<\/button>/, 'The floating scout controls must offer FOL and FOR commands.');
+assert.match(actions, /function turnActionsAddScoutConditional\(order\)/, 'FOL/FOR buttons must insert conditional commands into the pending route.');
+assert.match(actions, /if \(existingConditional === order\)/, 'Clicking an active FOL/FOR option again must remove that command from the draft.');
+assert.match(actions, /turnActionState\.active === 'unit' && turnActionState\.shiftChainStarted/, 'Only movement routes may auto-commit when Shift is released.');
 assert.match(actions, /pendingMapClick/, 'Shift release must wait for the map click to finish appending its route.');
 assert.match(actions, /await turnActionState\.pendingMapClick/, 'Shift release must await the pending map click before committing.');
 assert.match(actions, /turnActionsPreviewHover/, 'Move Unit must calculate a route preview while hovering.');
