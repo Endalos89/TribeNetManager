@@ -34,8 +34,8 @@ assert.equal(left.color,right.color,'matching ground has no per-tile colour bord
 assert.equal(G.surface(mid.x,mid.y,flat,palette).color,palette(),'dry land should have no blue border tint');
 const wet=(c,r)=>c===30&&r===20?{terrain:'O'}:{terrain:'PR'};
 assert.equal(G.surface(p.x,p.y,wet,palette).water,true);
-assert.equal(G.surface(mid.x,mid.y,wet,palette).water,true,'water covers full ocean including edge');
-assert.equal(G.surface(mid.x,mid.y+.1,wet,palette).water,true,'coastal water extends into land');
+// Visual coasts may cross hex edges; centres retain authoritative terrain.
+assert.equal(G.surface(p.x,p.y,wet,palette).z,0,'reported ocean centre remains at sea level');
 assert.equal(G.surface(n.x,n.y,wet,palette).water,false,'coastal band does not consume whole land hex');
 console.log('North-up projection, continuous hills and dry/coastal boundary checks passed');
 // Fog only excludes scenery whose BASE is concealed, never clipping its crown.
@@ -160,3 +160,69 @@ assert.equal(G.treeSite('D',site,()=>({...site,water:true})),false,'avoid shorel
 assert.equal(G.treeSite('D',{...site,water:true},gentle),false);
 assert.equal(G.surface(p.x,p.y,wet,palette).z,0,'water remains level beside relief');
 console.log('Connected low/high mountain relief, shared seed, seams and slope-aware wooded placement passed');
+
+// Layered terrain replaces hill props; exposed stone occurs in both families.
+let hillStone=0,mountainStone=0,hillRange=[9,0],mountainRange=[9,0];
+for(let x=20;x<25;x+=.17)for(let y=30;y<35;y+=.19){
+ const h=G.surface(x,y,()=>({terrain:'GH'}),palette),m=G.surface(x,y,()=>({terrain:'LCM'}),palette);
+ hillStone=Math.max(hillStone,h.rock);mountainStone=Math.max(mountainStone,m.rock);
+ hillRange=[Math.min(hillRange[0],h.z),Math.max(hillRange[1],h.z)];
+ mountainRange=[Math.min(mountainRange[0],m.z),Math.max(mountainRange[1],m.z)];
+}
+assert.ok(hillStone>.4&&mountainStone>.5,'stone is present in the ground itself');
+assert.ok(hillRange[1]-hillRange[0]>.3,'hills have visible rises and valleys');
+assert.ok(mountainRange[1]>hillRange[1]+.25,'mountain silhouettes are taller');
+assert.equal(G.treeSite('LCM',{...site,rock:.8},gentle),false,'trees avoid exposed stone');
+// Every reported hex centre keeps its land/water identity despite irregular coasts.
+const coastline=(c,r)=>({terrain:c<30?'GH':'O'});
+for(let c=27;c<33;c++)for(let r=18;r<25;r++){
+ const p=center(c,r),s=G.surface(p.x,p.y,coastline,palette);
+ assert.equal(s.water,c>=30);
+}
+// Sample a long coast; shoreline offsets vary and the ground meets level water
+// continuously rather than dropping from a hill through a narrow painted rim.
+const crossings=[];
+for(let y=33;y<40;y+=.31){
+ let last=null;
+ for(let x=43;x<47;x+=.01){
+  const p=G.surface(x,y,coastline,palette);
+  if(last){assert.ok(Math.abs(p.z-G.surface(x-1e-6,y,coastline,palette).z)<.001,'coast must not have discontinuous height jumps');
+   if(p.water!==last.water)crossings.push(x);}
+  last=p;
+ }
+}
+assert.ok(crossings.length>10);
+assert.ok(Math.max(...crossings)-Math.min(...crossings)>.2,'coast has varied headlands and inlets');
+require('./isometric-ground.test');
+
+// Central hexes, two-owner edge connectors and three-owner corner connectors.
+const core=center(30,20),edgeNeighbour=neighbour(30,20,0),next=center(...edgeNeighbour);
+const edgePoint={x:(core.x+next.x)/2,y:(core.y+next.y)/2};
+const vertex={x:core.x+G.corners[0].x,y:core.y+G.corners[0].y};
+const coreRegion=G.regionAt(core.x,core.y),edgeRegion=G.regionAt(edgePoint.x,edgePoint.y),cornerRegion=G.regionAt(vertex.x,vertex.y);
+assert.equal(coreRegion.kind,'core');assert.equal(coreRegion.owners.length,1);
+assert.equal(edgeRegion.kind,'edge');assert.equal(edgeRegion.owners.length,2);
+assert.equal(cornerRegion.kind,'corner');assert.equal(cornerRegion.owners.length,3);
+const discoveries=new Map([['30:20',{terrain:'GH'}]]),lookup=(c,r)=>discoveries.get(`${c}:${r}`);
+const coreBefore=G.surface(core.x,core.y,lookup,palette);
+assert.ok(!coreBefore.fog);
+assert.equal(G.surface(edgePoint.x,edgePoint.y,lookup,palette).fog,true);
+assert.equal(G.surface(vertex.x,vertex.y,lookup,palette).fog,true);
+discoveries.set(`${edgeNeighbour[0]}:${edgeNeighbour[1]}`,{terrain:'O'});
+assert.ok(!G.surface(edgePoint.x,edgePoint.y,lookup,palette).fog,'edge unlocks with two owners');
+assert.equal(G.surface(vertex.x,vertex.y,lookup,palette).fog,true,'corner still needs third owner');
+for(const owner of cornerRegion.owners)if(!lookup(owner.col,owner.row))discoveries.set(`${owner.col}:${owner.row}`,{terrain:'HSM'});
+assert.ok(!G.surface(vertex.x,vertex.y,lookup,palette).fog,'corner unlocks with all three owners');
+assert.deepEqual(G.surface(core.x,core.y,lookup,palette),coreBefore,'core generation cannot change when neighbours are discovered');
+// The entire core retains its own terrain, including near its six edges.
+for(let x=-.6;x<=.6;x+=.08)for(let y=-.6;y<=.6;y+=.08){
+ const p={x:core.x+x,y:core.y+y};if(G.regionAt(p.x,p.y).kind!=='core')continue;
+ const land=G.surface(p.x,p.y,(c,r)=>({terrain:c===30&&r===20?'GH':'O'}),palette);
+ const sea=G.surface(p.x,p.y,(c,r)=>({terrain:c===30&&r===20?'O':'HSM'}),palette);
+ assert.equal(land.water,false);assert.equal(sea.water,true);
+}
+for(const steps of [2,4,8]){
+ const area=G.regionMesh(steps).reduce((sum,f)=>sum+Math.abs(f.points.reduce((a,p,i)=>{const q=f.points[(i+1)%f.points.length];return a+p.x*q.y-p.y*q.x;},0))/2,0);
+ assert.ok(Math.abs(area-3*Math.sqrt(3)/2)<1e-9,'segmented mesh covers each hex exactly once');
+}
+console.log('Core/edge/corner discovery, immutable core terrain and gap-free segmented meshes passed');

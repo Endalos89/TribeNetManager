@@ -3,18 +3,24 @@
 const IsoMapper = (() => {
   const G=IsoGeometry, WATER='#337f98', FOG='#253640';
   let enabled=false, labels=true, grid=false;
-  const detailCache=new Map(), surfaceCache=new Map(), groundCache=new Map(), resourceIconCache=new Map();
+  const detailCache=new Map(), cellCache=new Map(), surfaceCache=new Map(), groundCache=new Map(), resourceIconCache=new Map();
   let interactive=false, settleTimer=null, hitScale=1, sceneBuilds=0;
   let unitSignature='', terrainSignature='', frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
   function mapData(ref) {
     const target=state.hexCache.get(ref);
     return typeof resultsPlaybackMapData==='function' ? resultsPlaybackMapData(ref,target) : target;
   }
+  function surfaceData(col,row) {
+    if(col<0||row<0||col>=TOTAL_COLS||row>=TOTAL_ROWS)return null;
+    const key=col*TOTAL_ROWS+row;
+    if(!cellCache.has(key))cellCache.set(key,mapData(coordinateFor(col,row)));
+    return cellCache.get(key);
+  }
   function sample(x,y) {
     // Quantisation gives the two owners of a shared edge exactly the same vertex.
     x=Math.round(x*1e6)/1e6;y=Math.round(y*1e6)/1e6;
     const key=`${x}:${y}`;
-    if(!surfaceCache.has(key))surfaceCache.set(key,G.surface(x,y,(col,row)=>col<0||row<0||col>=TOTAL_COLS||row>=TOTAL_ROWS?null:mapData(coordinateFor(col,row)),color));
+    if(!surfaceCache.has(key))surfaceCache.set(key,G.surface(x,y,surfaceData,color));
     return surfaceCache.get(key);
   }
   function prepareSurface() {
@@ -22,7 +28,7 @@ const IsoMapper = (() => {
     const playbackSignature=typeof resultsPlaybackMapData==='function' && playbackState?.active
       ? `:playback:${playbackState.baselineTurnKey||'baseline'}:${playbackState.renderRevision||0}` : '';
     const signature=Array.from(state.hexCache,([ref,data])=>`${ref}:${data.terrain}:${data.notes||''}`).join('|')+playbackSignature;
-    if(signature!==terrainSignature){terrainSignature=signature;surfaceCache.clear();groundCache.clear();landscape=null;}
+    if(signature!==terrainSignature){terrainSignature=signature;cellCache.clear();surfaceCache.clear();groundCache.clear();landscape=null;}
   }
   const isWater=t=>t==='O'||t==='L';
   const known=d=>d && d.terrain && d.terrain!=='UNKNOWN';
@@ -86,29 +92,25 @@ const IsoMapper = (() => {
     return {ref,data,c,n,col,row,known:known(data),water:isWater(data?.terrain),p:project(c)};
   }
   function groundFaces(t) {
-    // A fixed mesh keeps ridge silhouettes and shared edges stable through zoom.
-    const steps=4,key=`${t.ref}:${steps}`;
+    // One resolution per frame avoids mismatched shared edges; distant ground
+    // uses fewer faces once individual facets are below a few screen pixels.
+    const steps=state.scale<28?2:state.scale<43?4:G.groundSubdivisions,key=`${t.ref}:${steps}`;
     if(groundCache.has(key))return groundCache.get(key);
     const faces=[];
-    if(!t.known){faces.push({points:G.corners.map(p=>({...offset(t.c,p),z:sample(t.c.x+p.x,t.c.y+p.y).z})),color:FOG});}
-    else if(t.water){faces.push({points:G.corners.map(p=>offset(t.c,p,1,0)),color:WATER});}
-    else {
-      const vertex=(a,b,u,v)=>sample(t.c.x+(a.x*u+b.x*v)/steps,t.c.y+(a.y*u+b.y*v)/steps);
-      const add=points=>{
-        const [a,b,c]=points,ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z,vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
-        const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,len=Math.hypot(nx,ny,nz)||1;
-        const light=Math.max(.78,Math.min(1.13,(.94+(-nx*.35-ny*.28)/len)));
-        const mixed=G.mix(points.map(p=>p.color));
-        const shade=points.every(p=>p.water)?WATER:'#'+[1,3,5].map(i=>Math.min(255,Math.round(parseInt(mixed.slice(i,i+2),16)*light)).toString(16).padStart(2,'0')).join('');
-        faces.push({points,color:t.known?shade:FOG});
-      };
-      for(let i=0;i<6;i++){
-        const a=G.corners[i],b=G.corners[(i+1)%6];
-        for(let u=0;u<steps;u++)for(let v=0;v<steps-u;v++){
-          add([vertex(a,b,u,v),vertex(a,b,u+1,v),vertex(a,b,u,v+1)]);
-          if(u+v<steps-1)add([vertex(a,b,u+1,v),vertex(a,b,u+1,v+1),vertex(a,b,u,v+1)]);
-        }
-      }
+    if(!t.known || (t.water&&t.n.every(n=>known(n)&&isWater(n.terrain)))){
+      faces.push({points:G.corners.map(p=>offset(t.c,p,1,t.known?0:.14)),color:t.known?WATER:FOG});
+      groundCache.set(key,faces);return faces;
+    }
+    for(const face of G.regionMesh(steps)){
+      const visible=G.regionOwners(t.col,t.row,face.kind,face.index).every(o=>known(surfaceData(o.col,o.row)));
+      const points=face.points.map(p=>sample(t.c.x+p.x,t.c.y+p.y));
+      if(!visible){faces.push({points,color:FOG});continue;}
+      const [a,b,c]=points,ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z,vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
+      const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,len=Math.hypot(nx,ny,nz)||1;
+      const light=Math.max(.78,Math.min(1.13,.94+(-nx*.35-ny*.28)/len));
+      const mixed=G.mix(points.map(p=>p.color));
+      const shade=points.every(p=>p.water)?WATER:'#'+[1,3,5].map(i=>Math.min(255,Math.round(parseInt(mixed.slice(i,i+2),16)*light)).toString(16).padStart(2,'0')).join('');
+      faces.push({points,color:shade});
     }
     groundCache.set(key,faces);return faces;
   }
@@ -151,7 +153,7 @@ const IsoMapper = (() => {
     }
   }
   function sceneryVisible(t,x,y) {
-    return !IsoUnits.occupies(t.ref,x-t.c.x,y-t.c.y) && G.sceneryVisible(x-t.c.x,y-t.c.y,t.n.map(known));
+    return !sample(x,y).fog && !IsoUnits.occupies(t.ref,x-t.c.x,y-t.c.y) && G.sceneryVisible(x-t.c.x,y-t.c.y,t.n.map(known));
   }
   function scenery(t,jobs) {
     if(!t.known)return;
@@ -162,14 +164,13 @@ const IsoMapper = (() => {
       jobs.push({y:p.y,draw:()=>tree(p,size,terrain==='CH'||terrain==='LCM',(terrain.startsWith('J')||terrain==='LJM')?'#487c59':'#63834e',variant)});
     };
     if(t.water){
-      if(state.scale>20)for(const a of items.slice(0,3))line([{x:c.x+a.x,y:c.y+a.y,z:.015},{x:c.x+a.x+.16,y:c.y+a.y,z:.015}],'#76b0be66',1);
+      if(state.scale>20)for(const a of items.slice(0,3)){
+        const x=c.x+a.x,y=c.y+a.y;
+        if(sample(x,y).water&&sample(x+.16,y).water)line([{x,y,z:.015},{x:x+.16,y,z:.015}],'#76b0be66',1);
+      }
       return;
     }
     if(state.scale<22)return;
-    if(G.isHill(terrain) && state.scale>=32)for(const a of items.slice(0,2)){
-      const p=sample(c.x+a.x,c.y+a.y);if(p.water||!sceneryVisible(t,p.x,p.y))continue;
-      jobs.push({y:p.y,draw:()=>tier(p,a.size,[[.17,0],[.16,.06],[.10,.14],[.05,.16]],'#92937b',a.variant)});
-    }
     if(G.isForest(terrain)) {
       for(const a of items.slice(0,terrain==='JG'?8:6))plant(c.x+a.x,c.y+a.y,a.size*.85,a.variant);
       // Populate the corridor right up to a matching neighbour. The opposite
@@ -190,30 +191,18 @@ const IsoMapper = (() => {
       }
     }
   }
-  function edges(t,fogOnly=false) {
+  function edges(t) {
     if(!t.known)return;
     const local=G.rivers(t.data);
     for(let i=0;i<6;i++) {
       const a=G.corners[i],b=G.corners[(i+1)%6],neighbour=t.n[i];
       const edgePoint=(u,r=1)=>sample(t.c.x+(a.x*(1-u)+b.x*u)*r,t.c.y+(a.y*(1-u)+b.y*u)*r);
-      if(!known(neighbour) && fogOnly){
-        // A filled, relief-sampled strip becomes non-convex at a steep
-        // coastline and produces the dark triangular spikes seen during
-        // playback.  A single shared-edge stroke gives the fog a clean seam
-        // without painting a second polygon over the terrain.
-        const points=Array.from({length:9},(_,k)=>edgePoint(k/8));
-        line(points,FOG,Math.max(2,state.scale*.055));
-      } else if(!fogOnly && known(neighbour) && t.water!==isWater(neighbour.terrain)) {
-        // Land and water use different relief planes.  Draw their shared
-        // coastline explicitly so the transition remains a deliberate shore
-        // instead of exposing small gaps/triangles between the two meshes.
-        const points=Array.from({length:9},(_,k)=>edgePoint(k/8));
-        line(points,'#1f3940',Math.max(2,state.scale*.085));
-        line(points,t.water?'#5fa5b6':'#87a85b',Math.max(1,state.scale*.035));
-      } else if(!fogOnly && known(neighbour) && (local.has(G.directions[i]) || G.rivers(neighbour).has(G.directions[(i+3)%6]))) {
-        if(t.water)continue;
-        const points=Array.from({length:9},(_,k)=>edgePoint(k/8));
-        line(points,'#7e9983',Math.max(3,state.scale*.12));line(points,WATER,Math.max(2,state.scale*.075));line(points,'#8bc5cc',Math.max(.7,state.scale*.016));
+      if(known(neighbour) && (local.has(G.directions[i]) || G.rivers(neighbour).has(G.directions[(i+3)%6]))) {
+        if(t.water||isWater(neighbour.terrain))continue;
+        const points=Array.from({length:17},(_,k)=>edgePoint(k/16));
+        let segment=[];
+        const flush=()=>{if(segment.length>1){line(segment,'#7e9983',Math.max(3,state.scale*.12));line(segment,WATER,Math.max(2,state.scale*.075));line(segment,'#8bc5cc',Math.max(.7,state.scale*.016));}segment=[];};
+        for(const p of points){if(p.fog)flush();else segment.push(p);}flush();
       }
     }
   }
@@ -254,7 +243,7 @@ const IsoMapper = (() => {
       for(const f of faces){const points=f.points.map(p=>project(p,p.z));polygon(points,f.color,f.color);hitFaces.push({points,col:f.col,row:f.row});}
       const jobs=[];
       // Fog is ground cover. Visible trees and mountains are drawn above it.
-      for(const t of tiles){edges(t);edges(t,true);scenery(t,jobs);}
+      for(const t of tiles){edges(t);scenery(t,jobs);}
       jobs.sort((a,b)=>a.y-b.y);for(const job of jobs)job.draw();
       landscape={canvas:buffer,cameraX:state.cameraX,cameraY:state.cameraY,scale:state.scale,width:rect.width,height:rect.height,dpr,padding};
       dx=0;dy=0;

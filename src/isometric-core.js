@@ -38,22 +38,37 @@
   const isForest=t=>['D','DH','CH','JG','JH','LCM','LJM'].includes(t);
   const isLowMountain=t=>['LAM','LCM','LJM','LSM','LVM'].includes(t);
   const isHighMountain=t=>t==='HSM'||t==='ALPS';
-  // Independent versioned relief stream keeps existing tree positions stable.
-  const reliefSeed='tribenet-world:relief-v1';
-  const reliefPhase=random(reliefSeed)()*Math.PI*2;
-  function relief(x,y) {
-    // World-space waves join across every hex and submap boundary.
-    const broad=.5+.25*Math.sin(x*.83+y*.47+reliefPhase)+.25*Math.cos(y*.91-x*.31-reliefPhase);
-    const ridge=1-Math.abs(Math.sin(x*1.12-y*.68+reliefPhase));
-    return {broad,ridge};
+  // Layered terrain v2: independent of scenery, reports and installation state.
+  const reliefSeed='tribenet-world:relief-v2';
+  const reliefHash=seed(reliefSeed);
+  const groundSubdivisions=8; // 6 * 8² = 384 ground faces, previously 96.
+  function noise(x,y,salt=0) {
+    const ix=Math.floor(x),iy=Math.floor(y),u=smooth(x-ix),v=smooth(y-iy);
+    const value=(a,b)=>{
+      let h=Math.imul(a,374761393)^Math.imul(b,668265263)^reliefHash^salt;
+      h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;
+    };
+    const a=value(ix,iy)*(1-u)+value(ix+1,iy)*u;
+    const b=value(ix,iy+1)*(1-u)+value(ix+1,iy+1)*u;
+    return a*(1-v)+b*v;
   }
-  function terrace(height) {
-    const level=height/.16,whole=Math.floor(level),fraction=level-whole;
-    // Shallow shelves with bevelled ramps, never discontinuous vertical jumps.
-    return (whole+smooth((fraction-.18)/.64))*.16;
+  function relief(x,y) {
+    // Rounded hill volumes and narrower warped mountain ridges. The field is
+    // world-aligned, so adjoining hexes share shoulders rather than tile bumps.
+    const broad=noise(x*.72,y*.72);
+    const warp=noise(x*.36+31,y*.36-17,73)-.5;
+    const ridge=1-Math.abs(2*noise(x*1.18+warp,y*1.18-warp,137)-1);
+    const detail=noise(x*3.2,y*3.2,271);
+    return {broad,ridge,detail};
+  }
+  function layeredHeight(height,layer) {
+    const n=height/layer,whole=Math.floor(n),fraction=n-whole;
+    // Solid strata with broad tops and bevelled transitions instead of cubes.
+    const bevel=smooth((fraction-.26)/.48);
+    return layer*(whole+bevel*.86+fraction*.14);
   }
   function treeSite(terrain,p,sample) {
-    if(!isForest(terrain)||p.water||p.z>1.2)return false;
+    if(!isForest(terrain)||p.fog||p.water||p.z>1.2||p.rock>.55)return false;
     const delta=.09;
     const neighbours=[[delta,0],[-delta,0],[0,delta],[0,-delta]].map(([x,y])=>sample(p.x+x,p.y+y));
     if(neighbours.some(q=>q.water))return false;
@@ -62,51 +77,144 @@
   }
   const water=t=>t==='O'||t==='L';
   const smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
-  // A continuous world-space surface. Shared vertices are independent of tile ownership.
-  function surface(x,y,lookup,palette) {
-    const col=Math.round((x-1)/1.5), rgb=[0,0,0];
-    let total=0,hills=0,low=0,high=0,snow=0,wetDistance=Infinity;
-    for(let c=col-2;c<=col+2;c++) {
-      const row=Math.round(y/Math.sqrt(3)-.5-(c%2?.5:0));
-      for(let r=row-2;r<=row+2;r++) {
-        const data=lookup(c,r),terrain=data?.terrain;
-        if(!terrain||terrain==='UNKNOWN')continue;
-        const dx=x-(1+c*1.5),dy=y-(Math.sqrt(3)/2+Math.sqrt(3)*(r+(c%2?.5:0))),d2=dx*dx+dy*dy;
-        if(d2>6.25)continue;
-        if(water(terrain)){
-          let distance=-Infinity;
-          for(let i=0;i<6;i++){const a=(i+.5)*Math.PI/3;distance=Math.max(distance,dx*Math.cos(a)+dy*Math.sin(a)-Math.sqrt(3)/2);}
-          wetDistance=Math.min(wetDistance,distance);continue;
-        }
-        const w=Math.pow(1-d2/6.25,3),color=palette(terrain);
-        total+=w;hills+=isHill(terrain)?w:0;low+=isLowMountain(terrain)?w:0;high+=isHighMountain(terrain)?w:0;snow+=['LSM','HSM','ALPS'].includes(terrain)?w:0;
-        [1,3,5].forEach((p,i)=>rgb[i]+=parseInt(color.slice(p,p+2),16)*w);
+  const coreRadius=.62,apothem=Math.sqrt(3)/2;
+  const normals=Array.from({length:6},(_,i)=>({x:Math.cos((i+.5)*Math.PI/3),y:Math.sin((i+.5)*Math.PI/3)}));
+  const center=(col,row)=>({x:1+col*1.5,y:apothem+Math.sqrt(3)*(row+(col%2?.5:0))});
+  function neighbour(col,row,index) {
+    const odd=col%2?1:0;
+    const [c,r]=[[col+1,row+odd],[col,row+1],[col-1,row+odd],[col-1,row+odd-1],[col,row-1],[col+1,row+odd-1]][index];
+    return {col:c,row:r};
+  }
+  function regionOwners(col,row,kind,index=0) {
+    const own={col,row};
+    if(kind==='core')return [own];
+    if(kind==='edge')return [own,neighbour(col,row,index)];
+    return [own,neighbour(col,row,(index+5)%6),neighbour(col,row,index)];
+  }
+  function regionAt(x,y) {
+    const guess=Math.round((x-1)/1.5);let col=guess,row=0,best=Infinity;
+    for(let c=guess-1;c<=guess+1;c++){
+      const r=Math.round(y/Math.sqrt(3)-.5-(c%2?.5:0)),p=center(c,r),d=(p.x-x)**2+(p.y-y)**2;
+      if(d<best){best=d;col=c;row=r;}
+    }
+    const origin=center(col,row),dx=x-origin.x,dy=y-origin.y;
+    let kind='core',index=0,weights=[1];
+    if(normals.some(n=>dx*n.x+dy*n.y>apothem*coreRadius+3e-6)){
+      index=normals.findIndex(n=>dx*n.x+dy*n.y>=apothem*coreRadius-3e-6&&Math.abs(-dx*n.y+dy*n.x)<=coreRadius/2+3e-6);
+      if(index>=0){
+        kind='edge';const n=normals[index],t=smooth((dx*n.x+dy*n.y-apothem*coreRadius)/(2*apothem*(1-coreRadius)));
+        weights=[1-t,t];
+      }else{
+        kind='corner';index=0;
+        for(let i=1;i<6;i++)if(dx*corners[i].x+dy*corners[i].y>dx*corners[index].x+dy*corners[index].y)index=i;
+        const junction={x:origin.x+corners[index].x,y:origin.y+corners[index].y};
+        const vertices=regionOwners(col,row,kind,index).map(o=>{const c=center(o.col,o.row);return {x:c.x+(junction.x-c.x)*coreRadius,y:c.y+(junction.y-c.y)*coreRadius};});
+        const [a,b,c]=vertices,den=(b.y-c.y)*(a.x-c.x)+(c.x-b.x)*(a.y-c.y);
+        const u=((b.y-c.y)*(x-c.x)+(c.x-b.x)*(y-c.y))/den,v=((c.y-a.y)*(x-c.x)+(a.x-c.x)*(y-c.y))/den;
+        weights=[u,v,1-u-v].map(smooth);const sum=weights.reduce((a,b)=>a+b,0);weights=weights.map(w=>w/sum);
       }
     }
-    if(wetDistance<=.13)return {x,y,z:0,color:'#337f98',water:true};
-    const shore=smooth((wetDistance-.13)/.24);
-    const {broad,ridge}=relief(x,y);
-    const hillHeight=.26+.30*broad;
-    const lowHeight=.57+.30*broad+.16*ridge;
-    const highHeight=1.35+.35*broad+.60*ridge*ridge;
-    const elevation=total?(hills*hillHeight+low*lowHeight+high*highHeight)/total:0;
-    const raw=.14+elevation;
-    const z=(raw*.35+terrace(raw)*.65)*shore;
+    // Canonical addition order makes samples identical on shared boundaries.
+    const owners=regionOwners(col,row,kind,index).map((o,i)=>({...o,weight:weights[i]})).sort((a,b)=>a.col-b.col||a.row-b.row);
+    return {kind,index,col,row,owners};
+  }
+  const meshCache=new Map();
+  function regionMesh(steps) {
+    if(meshCache.has(steps))return meshCache.get(steps);
+    const inner=corners.map(p=>({x:p.x*coreRadius,y:p.y*coreRadius}));
+    const projected=(i,end)=>{const p=inner[(i+end)%6],n=normals[i];return {x:p.x+n.x*apothem*(1-coreRadius),y:p.y+n.y*apothem*(1-coreRadius)};};
+    const regions=[{kind:'core',index:0,points:inner}];
+    for(let i=0;i<6;i++){
+      regions.push({kind:'edge',index:i,points:[inner[i],projected(i,0),projected(i,1),inner[(i+1)%6]]});
+      regions.push({kind:'corner',index:i,points:[inner[i],projected((i+5)%6,1),corners[i],projected(i,0)]});
+    }
+    const cross=(a,b,p)=>(b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x);
+    function clip(poly,boundary){
+      for(let i=0;i<boundary.length&&poly.length;i++){
+        const a=boundary[i],b=boundary[(i+1)%boundary.length],out=[];
+        for(let j=0;j<poly.length;j++){
+          const p=poly[j],q=poly[(j+1)%poly.length],dp=cross(a,b,p),dq=cross(a,b,q);
+          if(dp>=-1e-10)out.push(p);
+          if((dp>=-1e-10)!==(dq>=-1e-10)){const t=dp/(dp-dq);out.push({x:p.x+(q.x-p.x)*t,y:p.y+(q.y-p.y)*t});}
+        }
+        poly=out;
+      }
+      return poly.filter((p,i)=>i===0||Math.hypot(p.x-poly[i-1].x,p.y-poly[i-1].y)>1e-8);
+    }
+    const faces=[];
+    function add(triangle){for(const region of regions){
+      const points=clip(triangle,region.points);
+      const area=Math.abs(points.reduce((s,p,i)=>{const q=points[(i+1)%points.length];return s+p.x*q.y-p.y*q.x;},0))/2;
+      if(area>1e-10)faces.push({kind:region.kind,index:region.index,points});
+    }}
+    for(let i=0;i<6;i++){
+      const a=corners[i],b=corners[(i+1)%6],v=(u,w)=>({x:(a.x*u+b.x*w)/steps,y:(a.y*u+b.y*w)/steps});
+      for(let u=0;u<steps;u++)for(let w=0;w<steps-u;w++){
+        add([v(u,w),v(u+1,w),v(u,w+1)]);
+        if(u+w<steps-1)add([v(u+1,w),v(u+1,w+1),v(u,w+1)]);
+      }
+    }
+    meshCache.set(steps,faces);return faces;
+  }
+  // A continuous world-space surface. Shared vertices are independent of tile ownership.
+  function surface(x,y,lookup,palette) {
+    const region=regionAt(x,y),rgb=[0,0,0];
+    const owners=region.owners.map(o=>({...o,data:lookup(o.col,o.row)}));
+    if(owners.some(o=>!o.data?.terrain||o.data.terrain==='UNKNOWN'))return {x,y,z:.14,color:'#253640',water:false,rock:0,fog:true};
+    let total=0,hills=0,low=0,high=0,snow=0,coastLand=0,coastWater=0;
+    for(const owner of owners){
+      const terrain=owner.data.terrain,w=owner.weight;
+      if(water(terrain)){coastWater+=w;continue;}
+      coastLand+=w;total+=w;hills+=isHill(terrain)?w:0;low+=isLowMountain(terrain)?w:0;high+=isHighMountain(terrain)?w:0;snow+=['LSM','HSM','ALPS'].includes(terrain)?w:0;
+      const color=palette(terrain);[1,3,5].forEach((p,i)=>rgb[i]+=parseInt(color.slice(p,p+2),16)*w);
+    }
+    // One signed land/water field forms the coastline across hex ownership.
+    // Bounded world-space erosion creates angular headlands/inlets; both land
+    // and water hex centres retain their reported identity. Unknown is ignored.
+    const shoreline=(noise(x*1.4,y*1.4,419)-.5)*.44+(noise(x*4.3,y*4.3,557)-.5)*.12;
+    const coastTotal=coastLand+coastWater;
+    const landFraction=coastTotal?coastLand/coastTotal:1;
+    const coastField=landFraction-.5+shoreline*4*landFraction*(1-landFraction);
+    if(coastField<=0)return {x,y,z:0,color:'#337f98',water:true,rock:0};
+    const weights=total?{hill:hills/total,low:low/total,high:high/total,snow:snow/total}:{hill:0,low:0,high:0,snow:0};
+    const {broad,ridge,detail}=relief(x,y);
+    // Distinct silhouette families, even with identical ground colours.
+    const hillHeight=.18+.53*smooth(broad);
+    const lowHeight=.60+.16*broad+.34*ridge*ridge;
+    const highHeight=1.27+.23*broad+.83*Math.pow(ridge,3);
+    const raw=.14+weights.hill*hillHeight+weights.low*lowHeight+weights.high*highHeight;
+    // Coast is part of the volume. A broad, height-limited slope approaches
+    // sea level; it does not squeeze the entire hill into a thin edge strip.
+    // Shared strips have a fixed physical width. The height limit widens
+    // inland as the land owner takes over, joining its unchanged core relief.
+    const distance=coastField>=.499?3:.32*coastField/(.5-coastField);
+    const coastHeight=.66*distance+.24*distance*distance;
+    const coastalRaw=Math.min(raw,coastHeight);
+    const layer=.10+weights.hill*.025+weights.low*.035+weights.high*.065;
+    const z=layeredHeight(coastalRaw,layer);
     let land=total?rgb.map(n=>n/total):[37,54,64];
-    // Rock shoulders and snowy upper ridges are part of the ground mesh.
-    const rock=total?smooth((z-.7)/.8)*high/total:0;
-    land=land.map((v,i)=>v*(1-rock)+[133,143,139][i]*rock);
-    const snowCover=total?snow/total*smooth((z-(high>low?1.35:.65))/.48):0;
+    // Strata exposure belongs to the ground, never separate boulder props.
+    // Broken patches expose some hill stone; mountain shoulders expose more.
+    const band=coastalRaw/layer-Math.floor(coastalRaw/layer);
+    const riser=smooth((band-.22)/.14)*(1-smooth((band-.64)/.14));
+    const patch=smooth((detail-.38)/.28);
+    const rock=Math.min(.92,weights.hill*patch*riser*.72+
+      weights.low*(.12+.68*patch)*(.4+.6*riser)+
+      weights.high*(.38+.48*patch)*(.65+.35*riser));
+    const stone=[132,136,119];
+    land=land.map((v,i)=>v*(1-rock)+stone[i]*rock);
+    const snowCover=weights.snow*smooth((z-(weights.high>weights.low?1.64:.86))/.38);
     land=land.map((v,i)=>v*(1-snowCover)+[224,233,230][i]*snowCover);
-    const bank=[196,187,139];
+    // Low ground becomes beach then grass/stone, independent of hex edges.
+    const shore=smooth(distance/.38),bank=[185,178,138];
     const color='#'+land.map((v,i)=>Math.round(bank[i]*(1-shore)+v*shore).toString(16).padStart(2,'0')).join('');
-    return {x,y,z,color,water:false};
+    return {x,y,z,color,water:false,rock};
   }
   // Keep scenery bases inside the revealed polygon. Raised crowns may extend
   // naturally across a fog bank, but no hidden-side trees are generated.
   function sceneryVisible(x,y,neighbours) {
     return neighbours.every((known,i)=>known || x*Math.cos((i+.5)*Math.PI/3)+y*Math.sin((i+.5)*Math.PI/3)<Math.sqrt(3)/2*.67-.04);
   }
-  const api={reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
+  const api={coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
   if(typeof module!=='undefined' && module.exports) module.exports=api; else root.IsoGeometry=api;
 })(typeof window!=='undefined'?window:globalThis);

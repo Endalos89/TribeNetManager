@@ -9,15 +9,15 @@ The new view uses software-rendered 3D terrain meshes under an north-up orthogra
 - Forests, jungle, hills, mountains, snow, desert, swamp and open ground have terrain-specific geometry or details.
 - Scenery is deterministically generated from the uppercase coordinate. Identical coordinates have identical details across installations running this renderer version.
 - Neighbour-aware corners and shared edges connect the ground geometry. A world-space surface blends adjoining terrain and gives both owners of each shared vertex the same height and colour. Dry terrain never borrows the water colour.
-- Oceans and lakes fill their entire hex. Coastal water and a bank extend into the adjacent land hex.
-- Unknown terrain and unknown border regions are covered by opaque fog. Only terrain in the selected turn's cache contributes to transitions.
-- Matching forests populate their shared boundaries to form continuous woodland. Hills use smooth, connected slopes rather than separate pyramid models.
+- Oceans and lakes retain water at their reported hex centres. Shared edge/corner sections shape irregular coastlines while central hexes retain their own terrain; these visual contours do not change terrain codes, movement or selection ownership.
+- Unknown cores are covered by opaque fog. Edge sections require both owners to be known; corner sections require all three. Only terrain in the selected turn's cache contributes.
+- Matching forests populate their shared boundaries to form continuous woodland. Hills use broad, layered rises; mountains use taller, sharper connected ridges. Neither uses separate hill/mountain props.
 - North is always vertically up. The 3D view zooms to 180; the original view retains its 68 limit. Selection tests the elevated surface.
 - Geometry is culled to the viewport, scenery is simplified at low zoom, and an overscanned landscape buffer keeps normal panning responsive. Data/notes, zoom, viewport and display-density changes invalidate that buffer.
 
 ## Rivers
 
-The current map data has no structured river-edge field. The hex editor therefore offers six River edges checkboxes, using the same map directions as movement commands. Choose edges and use **Save Hex**. Rivers follow shared edges and connect at corners; a mark on either bank is sufficient. Both banks must be known before a river is displayed across their border.
+The current map data has no structured river-edge field. The hex editor therefore offers six River edges checkboxes, using the same map directions as movement commands. Choose edges and use **Save Hex**. Rivers follow shared edges and connect at corners; a mark on either bank is sufficient. Both banks must be known before a river is displayed across their border, and river segments in corner sections remain hidden until all three owners are known.
 
 Edge annotations are stored in the existing notes field as `[Rivers: N, NE]`, preserving existing database backup/history support without a schema migration. Removing every edge removes the annotation. Existing notes are retained. Edges follow the existing editing permissions: historical Results knowledge remains read-only. Automatic extraction of river directions from report prose is not added by this change.
 
@@ -26,7 +26,7 @@ Edge annotations are stored in the existing notes field as `[Rivers: N, NE]`, pr
 - `node tests/isometric-mapper.test.js`: coordinate projection/inverse, deterministic variation, river annotations, physical shared endpoints across odd/even columns and submap boundaries, north-up orientation, continuous hill heights and dry/coastal colour boundaries.
 - `node tests/isometric-browser.test.js`: optional Playwright browser fixture; launcher, terrain renderer, selection, river editing/save, zoom anchor, pan direction, classic view, shared notes, historical edit permissions, increased zoom limit, north-up projection, runtime errors. Requires a separately installed Playwright/browser. Electron IPC is represented by an in-memory fixture.
 - Existing movement, fog, Results history/reprocessing, saved route, planned split and session restore regressions pass.
-- The full `npm test` run is blocked by the pre-existing assertion `skill groups should filter the current skill table` in `tests/feedback-review-fixes.test.js`, invoked by the feedback annotations suite. The same assertion fails on the unmodified base commit.
+- `node tests/isometric-ground.test.js`: executes the renderer on a recording canvas to check the segmented detail mesh, deterministic geometry, hit testing, landscape caching, terrain edit invalidation and zoom. This test also runs through the isometric mapper suite.
 
 Water is static in this first version. Windows/Electron installer testing remains separate from the browser verification.
 
@@ -50,14 +50,22 @@ Reported units open their selected-turn population/inventory and reported weight
 
 Wagons face diagonally with a raised bed and vertical wheel discs projected in the axle plane. Rear wheels render behind the bed, with the near wheels in front.
 
-## Light voxel terrain styling
+## Layered world terrain
 
-Scenery uses broad bevelled canopies, layered conifers, stepped rock shoulders and modest hill outcrops. There is no cube grid. Mountains have moderate height to preserve adjacent hex readability. The existing fog, surface geometry, shore transitions, hit testing and order overlays are retained.
+The ground uses a voxel-inspired layered height surface (not a volumetric cube engine). Shared seeded noise defines broad hill rises and narrower mountain ridges; strata have bevelled transitions and patchy exposed stone. Hill boulder props and detached mountain scenery are removed. Hill stone is sparse; Low Mountains expose more rock and rise higher; HSM/ALPS have taller, sharper rocky/snowy profiles. The distinction is visual and does not alter the movement engine's passability or costs.
 
-`IsoGeometry.scenerySeed` is the shared, published seed `tribenet-world:scenery-v1`. Scenery is derived from that seed and the hex reference (or a named edge stream), never an installation ID, current turn, time or discovery order. Preserve this version unless deliberately replacing the visual world. Unit formation randomness is separate. Reports still supply terrain types; no hidden terrain is invented. Unknown tiles generate no scenery. Surface blending and edge trees can respond to newly revealed neighbours; installations with the same known terrain render the same landscape.
+The detail mesh has eight subdivisions per wedge edge, or 384 base ground triangles per hex: four times the previous 96. Triangles are then clipped to the exact core/edge/corner boundaries, giving 522 visible/fog polygon fragments per detailed hex. Below scale 43 it uses four subdivisions; below 28 it uses two. A frame uses one resolution throughout to keep shared edges aligned. Ground shape generation is independent of zoom. The landscape buffer is still reused during navigation; terrain-cell caching avoids repeated report lookups per vertex.
 
-## Connected ground relief
+The shared relief seed is deliberately advanced to `tribenet-world:relief-v2` for this replacement. The independent `tribenet-world:scenery-v1` seed is unchanged. Neither depends on installation, time, turn or discovery order. Same known terrain and renderer version produce the same landscape. Revealing neighbours unlocks shared sections; it does not reshape the already generated core.
 
-Mountains now belong to the continuous ground mesh; detached mountain scenery has been removed. The independent shared `tribenet-world:relief-v1` seed shapes connected ridges, saddles and bevelled shelves without changing the existing scenery seed. Low Mountain codes LAM/LCM/LJM/LSM/LVM receive lower relief; the movement engine's impassable HSM/ALPS receive taller, sharper, rocky/snowy ridges. Heights are visual only and do not change movement costs. Colours and heights blend across shared world-space vertices. A fixed four-subdivision mesh retains its shape through zoom while the existing navigation cache remains active.
+## Segmented reveal and coasts
 
-Trees only grow in wooded terrain (D/DH/CH/JG/JH/LCM/LJM), rooted on sampled ground. Placement rejects water, shoreline overhang, steep slopes and exposed elevations. Brush retains low shrubs. Fog colour and reveal rules are unchanged; no hidden terrain is generated. Revealing adjacent terrain can adjust the blended boundary, consistently across installations with the same knowledge.
+Each game hex has a smaller central hex (62% radius), six halves of shared quadrilateral edge sections, and six portions of shared triangular corner sections. A core generates from its own reported terrain as soon as that terrain is known. An edge section requires both owning hexes to be known; a corner requires all three. All-owner checks apply even if one owner's interpolation weight is zero. There is no inference from an unknown neighbour.
+
+The core uses only its own terrain for colour, elevation and water identity, so later discoveries cannot regenerate it. Shared regions blend their two or three owners with continuous weights; world-space relief and the shared seed join their slopes. Coastlines, headlands and inlets are confined to shared regions. The whole central hex retains its terrain, including land/water identity. Exact polygon clipping prevents partially revealed edge/corner triangles. Fog keeps its existing opaque colour.
+
+The previous straight hex-edge coastline strokes and separate hill rocks are removed. Shared coastal ground descends through layered slopes and beach material to level water. Selection and movement still use the original full game hexes; the segmentation is visual, with no new orders or database state. Rivers stop at unrevealed corner regions.
+
+Stone patches are surface materials on exposed strata of hills and mountains. Trees remain restricted to wooded types D/DH/CH/JG/JH/LCM/LJM and avoid unrevealed sections, water, shoreline overhang, steep slopes, exposed elevations and rocky patches. Brush retains low shrubs.
+
+Validation covers one/two/three-owner reveal progression, unchanged cores after neighbouring discoveries, core terrain purity, full-area coverage at every level of detail, deterministic installations, and the actual renderer's geometry, selection and caches.
