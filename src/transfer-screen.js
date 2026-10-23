@@ -320,18 +320,18 @@ function transferScreenQuantityChanged(value, source) {
   }
 }
 
-async function transferScreenLoadGroup(from, to, timing) {
+async function transferScreenLoadGroup(from, to, timing, createdSplitId = null) {
   const turnKey = savedMovementCurrentTurnKey();
   const a = String(from || '').trim(); const b = String(to || '').trim();
   const phase = String(timing || 'BM').toUpperCase() === 'AM' ? 'AM' : 'BM';
   const all = turnKey && b ? await window.tribenet.listPlannedTransfers(turnKey) : [];
   const group = all.filter(row => transferScreenPairMatches(row, a, b) && String(row.timing).toUpperCase() === phase)
     .map(row => ({ from:row.from, to:row.to, item:transferScreenKey(row.item), quantity:Number(row.quantity), timing:phase, notes:row.notes || '' }));
-  transferScreenSession = { turnKey, from:a, to:b, timing:phase, originalRows:structuredClone(group), draftRows:structuredClone(group) };
+  transferScreenSession = { turnKey, from:a, to:b, timing:phase, createdSplitId, originalRows:structuredClone(group), draftRows:structuredClone(group) };
   transferScreenRenderRosters();
 }
 
-async function transferScreenOpen({ from = '', to = '', timing = 'BM' } = {}) {
+async function transferScreenOpen({ from = '', to = '', timing = 'BM', createdSplitId = null } = {}) {
   const dialog = document.getElementById('transferDialog');
   const turnKey = savedMovementCurrentTurnKey();
   if (!dialog || !turnKey) return false;
@@ -345,7 +345,11 @@ async function transferScreenOpen({ from = '', to = '', timing = 'BM' } = {}) {
   phaseSelect.value = String(timing).toUpperCase() === 'AM' || (sourceUnit.plannedSplit && sourceUnit.creationPhase === 'after') ? 'AM' : 'BM';
   transferScreenPopulateTargets(fromCode, phaseSelect.value, to);
   document.getElementById('transferStatus').textContent = '';
-  await transferScreenLoadGroup(fromCode, toSelect.value, phaseSelect.value);
+  const cancelButton = document.getElementById('transferCancel');
+  const creationHint = document.getElementById('transferCreationCancelHint');
+  if (cancelButton) cancelButton.textContent = createdSplitId ? 'Cancel unit creation' : 'Cancel';
+  if (creationHint) creationHint.hidden = !createdSplitId;
+  await transferScreenLoadGroup(fromCode, toSelect.value, phaseSelect.value, createdSplitId);
   transferScreenRenderOverviewButton();
   if (!dialog.open) dialog.showModal();
   return true;
@@ -354,6 +358,7 @@ async function transferScreenOpen({ from = '', to = '', timing = 'BM' } = {}) {
 async function transferScreenSelectionChanged() {
   if (!transferScreenSession) return;
   const from = transferScreenSession.from;
+  const createdSplitId = transferScreenSession.createdSplitId;
   const phaseSelect = document.getElementById('transferTiming');
   const toSelect = document.getElementById('transferTo');
   const timing = phaseSelect.value;
@@ -369,11 +374,11 @@ async function transferScreenSelectionChanged() {
     if (changedGroup && transferScreenSession.draftRows.length) {
       document.getElementById('transferStatus').textContent = 'This phase has no other unit at the same location.';
     }
-    await transferScreenLoadGroup(from, '', timing);
+    await transferScreenLoadGroup(from, '', timing, createdSplitId);
     return;
   }
   document.getElementById('transferStatus').textContent = '';
-  await transferScreenLoadGroup(from, to, timing);
+  await transferScreenLoadGroup(from, to, timing, createdSplitId);
 }
 
 function transferScreenRenderOverviewButton(rows = null) {
@@ -424,6 +429,7 @@ async function transferScreenSave() {
     const refreshed = await window.tribenet.listPlannedTransfers(session.turnKey);
     savedMovementPlansState.transfers = refreshed;
     transferScreenRenderOverviewButton(refreshed);
+    session.createdSplitId = null;
     document.getElementById('transferDialog').close();
     if (typeof turnActionsRender === 'function') turnActionsRender();
   } catch (error) {
@@ -431,11 +437,26 @@ async function transferScreenSave() {
   }
 }
 
-function transferScreenCancel() {
+async function transferScreenCancel() {
+  const session = transferScreenSession;
   transferScreenItemDraft = null;
   document.getElementById('transferItemEditor').hidden = true;
   document.getElementById('transferDialog').close();
   transferScreenSession = null;
+  if (session?.createdSplitId) {
+    try {
+      await window.tribenet.deletePlannedUnitSplit(session.createdSplitId);
+      state.selectedUnit = session.from;
+      savedMovementPlansState.selectedUnitCode = session.from;
+      state.selectedUnitHex = savedMovementUnits().find(unit => String(unit.unitCode).toLowerCase() === String(session.from).toLowerCase())?.currentHex || null;
+      await savedMovementRefresh();
+      if (typeof turnActionsRefresh === 'function') turnActionsRefresh();
+      draw();
+    } catch (error) {
+      const status = document.getElementById('transferStatus');
+      if (status) status.textContent = error.message || String(error);
+    }
+  }
 }
 
 async function transferScreenCancelAll() {
@@ -467,6 +488,7 @@ document.getElementById('transferItemApply')?.addEventListener('click', () => {
 document.getElementById('transferSave')?.addEventListener('click', transferScreenSave);
 document.getElementById('transferCancel')?.addEventListener('click', transferScreenCancel);
 document.getElementById('transferClose')?.addEventListener('click', transferScreenCancel);
+document.getElementById('transferDialog')?.addEventListener('cancel', event => { event.preventDefault(); transferScreenCancel(); });
 document.getElementById('transferOverviewClose')?.addEventListener('click', () => document.getElementById('transferOverviewDialog').close());
 document.getElementById('transferOverviewDone')?.addEventListener('click', () => document.getElementById('transferOverviewDialog').close());
 document.getElementById('transferCancelAll')?.addEventListener('click', transferScreenCancelAll);

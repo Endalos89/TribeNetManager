@@ -256,6 +256,10 @@
         <p class="turn-action-dialog-copy">Unit codes are assigned automatically from the selected source Tribe and unit type.</p>
         <label class="movement-planner-field"><span>Name</span><input id="movementPlannerCreateName" placeholder="Optional" /></label>
         <div id="movementPlannerCreateSkills" class="movement-planner-create-skills"></div>
+        <section class="planned-unit-management" aria-labelledby="plannedUnitManagementHeading">
+          <h3 id="plannedUnitManagementHeading">Units created this turn</h3>
+          <div id="plannedUnitManagementList" class="planned-unit-management-list"></div>
+        </section>
         <div class="turn-action-dialog-actions">
           <button value="cancel" class="button">Cancel</button>
           <button id="movementPlannerCreateSubmit" type="button" class="button accent">Create</button>
@@ -276,6 +280,7 @@
           <label class="movement-planner-field"><span>To Tribe</span><select id="transferTo"></select></label>
         </div>
         <p id="transferAreaHint" class="turn-action-dialog-copy transfer-area-hint"></p>
+        <p id="transferCreationCancelHint" class="turn-action-dialog-copy" hidden>Canceling this screen will also cancel the new unit.</p>
         <div class="transfer-rosters">
           <section class="transfer-roster-panel"><h3 id="transferLeftTitle">From</h3><div id="transferLogisticsLeft" class="transfer-roster-metrics"></div><div id="transferRosterLeft" class="transfer-roster-items"></div></section>
           <div class="transfer-roster-arrow" aria-hidden="true">⇄</div>

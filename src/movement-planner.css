@@ -204,6 +204,41 @@
   font-size: 9px;
 }
 
+.planned-unit-management {
+  grid-column: 1 / -1;
+  border-top: 1px solid rgba(150, 190, 160, .2);
+  padding-top: 8px;
+}
+
+.planned-unit-management h3 {
+  margin: 0 0 6px;
+  color: #8fb69a;
+  font-size: 8px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.planned-unit-management-list {
+  display: grid;
+  gap: 4px;
+  max-height: 100px;
+  overflow: auto;
+  color: #b8d8bf;
+  font-size: 9px;
+}
+
+.planned-unit-management-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.planned-unit-management-row button {
+  padding: 2px 6px;
+  font-size: 8px;
+}
+
 .movement-planner-create-skills span {
   color: #8fb69a;
   text-transform: uppercase;
