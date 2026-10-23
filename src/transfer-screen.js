@@ -58,6 +58,51 @@ function transferScreenUnitLabel(code) {
   return unit ? `${transferScreenCode(unit)} · ${unit.unitName || unit.unitType || unit.type || 'Unit'}` : String(code || '—');
 }
 
+function transferScreenPositionHex(unit, timing) {
+  if (!unit) return null;
+  const phase = String(timing || 'BM').toUpperCase() === 'AM' ? 'AM' : 'BM';
+  if (unit.plannedSplit && unit.creationPhase === 'after') {
+    if (phase === 'BM') return null;
+    if (typeof plannedSplitMapHex === 'function') return plannedSplitMapHex(unit);
+  }
+  const start = unit.currentHex || unit.startHex || null;
+  if (phase === 'BM') return start;
+  const destination = typeof savedMovementUnitMoveDestination === 'function'
+    ? savedMovementUnitMoveDestination(transferScreenCode(unit))
+    : null;
+  return destination || start;
+}
+
+function transferScreenEligibleTargets(from, timing) {
+  const units = savedMovementUnits?.() || [];
+  const source = units.find(unit => transferScreenCode(unit).toLowerCase() === String(from || '').toLowerCase());
+  const location = transferScreenPositionHex(source, timing);
+  if (!location) return [];
+  return units.filter(unit => {
+    if (transferScreenCode(unit).toLowerCase() === String(from || '').toLowerCase()) return false;
+    const position = transferScreenPositionHex(unit, timing);
+    return position && String(position).trim().toUpperCase() === String(location).trim().toUpperCase();
+  });
+}
+
+function transferScreenPopulateTargets(from, timing, preferred = '') {
+  const select = document.getElementById('transferTo');
+  const targets = transferScreenEligibleTargets(from, timing);
+  const source = (savedMovementUnits?.() || []).find(unit => transferScreenCode(unit).toLowerCase() === String(from || '').toLowerCase());
+  const location = transferScreenPositionHex(source, timing);
+  select.innerHTML = targets.length
+    ? targets.map(unit => `<option value="${transferScreenEsc(transferScreenCode(unit))}">${transferScreenEsc(transferScreenUnitLabel(transferScreenCode(unit)))}</option>`).join('')
+    : '<option value="">No other unit shares this location</option>';
+  select.disabled = !targets.length;
+  const preferredTarget = targets.find(unit => transferScreenCode(unit).toLowerCase() === String(preferred || '').toLowerCase());
+  select.value = transferScreenCode(preferredTarget || targets[0]) || '';
+  const phaseName = String(timing || 'BM').toUpperCase() === 'AM' ? 'After Movement' : 'Before Movement';
+  document.getElementById('transferAreaHint').textContent = location
+    ? `${phaseName} location: ${location}. Only units at this hex are available.`
+    : `${phaseName}: ${transferScreenUnitLabel(from)} has no location at this point in the turn.`;
+  return targets;
+}
+
 function transferScreenSessionRows() {
   const totals = new Map();
   for (const row of transferScreenSession?.draftRows || []) {
@@ -184,9 +229,9 @@ function transferScreenQuantityChanged(value, source) {
 
 async function transferScreenLoadGroup(from, to, timing) {
   const turnKey = savedMovementCurrentTurnKey();
-  const all = turnKey ? await window.tribenet.listPlannedTransfers(turnKey) : [];
   const a = String(from || '').trim(); const b = String(to || '').trim();
   const phase = String(timing || 'BM').toUpperCase() === 'AM' ? 'AM' : 'BM';
+  const all = turnKey && b ? await window.tribenet.listPlannedTransfers(turnKey) : [];
   const group = all.filter(row => transferScreenPairMatches(row, a, b) && String(row.timing).toUpperCase() === phase)
     .map(row => ({ from:row.from, to:row.to, item:transferScreenKey(row.item), quantity:Number(row.quantity), timing:phase, notes:row.notes || '' }));
   transferScreenSession = { turnKey, from:a, to:b, timing:phase, originalRows:structuredClone(group), draftRows:structuredClone(group) };
@@ -198,17 +243,16 @@ async function transferScreenOpen({ from = '', to = '', timing = 'BM' } = {}) {
   const turnKey = savedMovementCurrentTurnKey();
   if (!dialog || !turnKey) return false;
   const units = savedMovementUnits();
-  const options = units.map(unit => `<option value="${transferScreenEsc(transferScreenCode(unit))}">${transferScreenEsc(transferScreenCode(unit))} · ${transferScreenEsc(unit.unitName || unit.unitType || unit.type || 'Unit')}</option>`).join('');
-  const fromSelect = document.getElementById('transferFrom');
-  const toSelect = document.getElementById('transferTo');
-  fromSelect.innerHTML = options; toSelect.innerHTML = options;
   const fromCode = from || transferScreenCode(savedMovementSelectedUnit());
-  const defaultTo = to || transferScreenCode(units.find(unit => transferScreenCode(unit).toLowerCase() !== String(fromCode).toLowerCase()));
-  if (fromCode) fromSelect.value = fromCode;
-  if (defaultTo) toSelect.value = defaultTo;
-  document.getElementById('transferTiming').value = String(timing).toUpperCase() === 'AM' ? 'AM' : 'BM';
+  const sourceUnit = units.find(unit => transferScreenCode(unit).toLowerCase() === String(fromCode).toLowerCase());
+  if (!sourceUnit) return false;
+  document.getElementById('transferFromLabel').textContent = transferScreenUnitLabel(fromCode);
+  const toSelect = document.getElementById('transferTo');
+  const phaseSelect = document.getElementById('transferTiming');
+  phaseSelect.value = String(timing).toUpperCase() === 'AM' || (sourceUnit.plannedSplit && sourceUnit.creationPhase === 'after') ? 'AM' : 'BM';
+  transferScreenPopulateTargets(fromCode, phaseSelect.value, to);
   document.getElementById('transferStatus').textContent = '';
-  await transferScreenLoadGroup(fromSelect.value, toSelect.value, document.getElementById('transferTiming').value);
+  await transferScreenLoadGroup(fromCode, toSelect.value, phaseSelect.value);
   transferScreenRenderOverviewButton();
   if (!dialog.open) dialog.showModal();
   return true;
@@ -216,21 +260,26 @@ async function transferScreenOpen({ from = '', to = '', timing = 'BM' } = {}) {
 
 async function transferScreenSelectionChanged() {
   if (!transferScreenSession) return;
-  const from = document.getElementById('transferFrom').value;
-  const to = document.getElementById('transferTo').value;
-  const timing = document.getElementById('transferTiming').value;
+  const from = transferScreenSession.from;
+  const phaseSelect = document.getElementById('transferTiming');
+  const toSelect = document.getElementById('transferTo');
+  const timing = phaseSelect.value;
+  const targets = transferScreenPopulateTargets(from, timing, toSelect.value);
+  const to = toSelect.value;
   const changedGroup = transferScreenRowsSignature(transferScreenSession.draftRows) !== transferScreenRowsSignature(transferScreenSession.originalRows);
   if (changedGroup && !window.confirm('Discard the unsaved edits to this unit pair and transfer phase?')) {
-    document.getElementById('transferFrom').value = transferScreenSession.from;
-    document.getElementById('transferTo').value = transferScreenSession.to;
-    document.getElementById('transferTiming').value = transferScreenSession.timing;
+    phaseSelect.value = transferScreenSession.timing;
+    transferScreenPopulateTargets(from, phaseSelect.value, transferScreenSession.to);
     return;
   }
-  if (from && to && from.toLowerCase() === to.toLowerCase()) {
-    window.alert('Choose two different units.');
-    document.getElementById('transferTo').value = transferScreenSession.to;
+  if (!targets.length || !to) {
+    if (changedGroup && transferScreenSession.draftRows.length) {
+      document.getElementById('transferStatus').textContent = 'This phase has no other unit at the same location.';
+    }
+    await transferScreenLoadGroup(from, '', timing);
     return;
   }
+  document.getElementById('transferStatus').textContent = '';
   await transferScreenLoadGroup(from, to, timing);
 }
 
@@ -274,7 +323,7 @@ async function transferScreenOpenOverview() {
 async function transferScreenSave() {
   const session = transferScreenSession;
   if (!session?.from || !session?.to || session.from.toLowerCase() === session.to.toLowerCase()) {
-    document.getElementById('transferStatus').textContent = 'Choose two different units.';
+    document.getElementById('transferStatus').textContent = 'No other unit shares this location for the selected phase.';
     return;
   }
   try {
@@ -305,7 +354,6 @@ async function transferScreenCancelAll() {
   if (typeof turnActionsRender === 'function') turnActionsRender();
 }
 
-document.getElementById('transferFrom')?.addEventListener('change', transferScreenSelectionChanged);
 document.getElementById('transferTo')?.addEventListener('change', transferScreenSelectionChanged);
 document.getElementById('transferTiming')?.addEventListener('change', transferScreenSelectionChanged);
 document.getElementById('transferQuantity')?.addEventListener('input', event => transferScreenQuantityChanged(event.target.value, 'number'));

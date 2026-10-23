@@ -1,5 +1,6 @@
 const assert = require('assert');
 const fs = require('fs');
+const vm = require('vm');
 
 const actions = fs.readFileSync('src/turn-actions.js', 'utf8');
 const savedPlans = fs.readFileSync('src/saved-movement-plans.js', 'utf8');
@@ -16,6 +17,11 @@ assert.match(index, /id="scoutRoutesDialog"/, 'Scouting orders must have a dedic
 assert.match(index, /id="turnActionRouteLegend"/, 'The map must expose a route certainty legend.');
 assert.match(index, /id="unitSplitDialog"/, 'Split Off Unit must have a dedicated dialog.');
 assert.match(index, /id="openTransferOverviewButton"/, 'Transfer overview must be reachable from the top-left mapper actions.');
+assert.match(index, /id="openTransferOverviewButton" class="transfer-map-button"/, 'Transfers must be a map-corner overlay.');
+assert.match(index, /<h2>Transfers<\/h2>/, 'The overview dialog should be titled Transfers.');
+assert.match(index, /id="transferFromLabel"/, 'The transfer source should be displayed as the initiating unit.');
+assert.ok(!/id="transferFrom"/.test(index), 'The source unit must not be editable in the transfer dialog.');
+assert.match(index, /From<\/span>[\s\S]*?Timing<\/span>[\s\S]*?To Tribe<\/span>/, 'The transfer form should order source, phase, then target.');
 assert.match(index, /id="transferOverviewRows"/, 'Transfer overview must show workbook-style rows.');
 assert.match(index, /id="transferCancelAll"/, 'Transfer overview must allow cancelling every transfer for the current turn.');
 assert.match(index, /id="transferQuantitySlider"/, 'Transfer item editor must include a quantity slider.');
@@ -23,6 +29,7 @@ assert.match(index, /id="transferQuantity"/, 'Transfer item editor must allow di
 assert.match(transferScreen, /TribeNetItemIconManifest/, 'Transfer roster items must use compendium icons where available.');
 assert.match(transferScreen, /replacePlannedTransferGroup/, 'Transfer editor must save the complete selected pair and timing group.');
 assert.match(transferScreen, /deleteAllPlannedTransfers/, 'Transfer overview must provide turn-wide cancellation.');
+assert.match(transferScreen, /transferScreenEligibleTargets/, 'Transfer targets must be filtered to units at the phase-specific location.');
 assert.match(actions, /Move Unit/, 'Move Unit action is missing.');
 assert.match(actions, /Split Off Unit/, 'Split Off Unit action is missing.');
 assert.match(actions, /Send Out Scout/, 'Send Out Scout action is missing.');
@@ -99,5 +106,33 @@ assert.match(savedPlans, /scoutHorses\s*:\s*2/, 'Scouting must default to two ho
 assert.ok(!actions.includes('Smart Scout') && !actions.includes('smartScout'), 'Smart Scout must be removed completely.');
 assert.ok(!mapperStyles.includes('movement-planner-smart'), 'Smart Scout styling must be removed completely.');
 assert.ok(!index.includes('movementPlannerCard') && !index.includes('plannerOverlayCard'), 'The old planning panel must not be present.');
+
+const transferUnits = [
+  { unitCode:'0485', unitType:'Tribe', currentHex:'AA0101' },
+  { unitCode:'1485', unitType:'Tribe', currentHex:'AA0101' },
+  { unitCode:'2485', unitType:'Tribe', currentHex:'CC0303' },
+  { unitCode:'3485', unitType:'Tribe', currentHex:'BB0202' },
+  { unitCode:'0485e1', unitType:'Element', plannedSplit:true, creationPhase:'after', parentUnit:'0485', currentHex:'AA0101', startHex:'AA0101' },
+  { unitCode:'0485e2', unitType:'Element', plannedSplit:true, creationPhase:'before', parentUnit:'0485', currentHex:'AA0101', startHex:'AA0101' }
+];
+const transferDestinations = { '0485':'BB0202', '1485':'AA0101', '2485':'BB0202', '3485':'DD0404' };
+const transferContext = vm.createContext({
+  document: { getElementById: () => null },
+  window: {},
+  savedMovementUnits: () => transferUnits,
+  savedMovementUnitMoveDestination: code => transferDestinations[code] || null,
+  plannedSplitMapHex: unit => transferDestinations[unit.parentUnit] || unit.startHex
+});
+vm.runInContext(transferScreen, transferContext);
+assert.deepEqual(
+  Array.from(vm.runInContext(`transferScreenEligibleTargets('0485', 'BM').map(unit => unit.unitCode)`, transferContext)),
+  ['1485', '0485e2'],
+  'Before Movement targets should share the source unit start hex and exclude units created after movement.'
+);
+assert.deepEqual(
+  Array.from(vm.runInContext(`transferScreenEligibleTargets('0485', 'AM').map(unit => unit.unitCode)`, transferContext)),
+  ['2485', '0485e1'],
+  'After Movement targets should share the source movement endpoint and include units created there.'
+);
 
 console.log('Turn action UI regression tests passed');
