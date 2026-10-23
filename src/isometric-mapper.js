@@ -86,7 +86,8 @@ const IsoMapper = (() => {
     return {ref,data,c,n,col,row,known:known(data),water:isWater(data?.terrain),p:project(c)};
   }
   function groundFaces(t) {
-    const steps=state.scale<28?2:state.scale<90?4:6,key=`${t.ref}:${steps}`;
+    // A fixed mesh keeps ridge silhouettes and shared edges stable through zoom.
+    const steps=4,key=`${t.ref}:${steps}`;
     if(groundCache.has(key))return groundCache.get(key);
     const faces=[];
     if(!t.known){faces.push({points:G.corners.map(p=>({...offset(t.c,p),z:sample(t.c.x+p.x,t.c.y+p.y).z})),color:FOG});}
@@ -149,12 +150,6 @@ const IsoMapper = (() => {
       if(state.scale>=48)tier({...p,x:p.x-.11*size,y:p.y+.06*size},size,[[.11,.27],[.18,.36],[.14,.49],[.06,.53]],shade,variant+.3);
     }
   }
-  function mountain(p,size,snow,volcanic,variant=0) {
-    // Broad shoulders and modest stepped ridges keep neighbouring hexes legible.
-    tier(p,size,[[.45,.01],[.38,.14],[.28,.20],[.26,.35],[.17,.41],[.14,.59],[.06,.70]],volcanic?'#777568':'#8b9280',variant);
-    if(snow)tier(p,size,[[.15,.56],[.12,.63],[.06,.71]],'#e2e9dc',variant);
-    if(volcanic)tier(p,size,[[.055,.70],[.035,.715]],'#bd7852',variant);
-  }
   function sceneryVisible(t,x,y) {
     return !IsoUnits.occupies(t.ref,x-t.c.x,y-t.c.y) && G.sceneryVisible(x-t.c.x,y-t.c.y,t.n.map(known));
   }
@@ -163,18 +158,14 @@ const IsoMapper = (() => {
     const terrain=t.data.terrain,items=details(t.ref),{c}=t;
     const plant=(x,y,size,variant=0)=>{
       if(!sceneryVisible(t,x,y))return;
-      const p=sample(x,y);if(p.water)return;
-      jobs.push({y:p.y,draw:()=>tree(p,size,terrain==='CH'||terrain==='LCM',terrain.startsWith('J')?'#487c59':'#63834e',variant)});
+      const p=sample(x,y);if(!G.treeSite(terrain,p,sample))return;
+      jobs.push({y:p.y,draw:()=>tree(p,size,terrain==='CH'||terrain==='LCM',(terrain.startsWith('J')||terrain==='LJM')?'#487c59':'#63834e',variant)});
     };
     if(t.water){
       if(state.scale>20)for(const a of items.slice(0,3))line([{x:c.x+a.x,y:c.y+a.y,z:.015},{x:c.x+a.x+.16,y:c.y+a.y,z:.015}],'#76b0be66',1);
       return;
     }
     if(state.scale<22)return;
-    if(/ALPS|HSM|L.M/.test(terrain))for(const a of items.slice(0,2)){
-      const p=sample(c.x+a.x*.7,c.y+a.y*.7);if(!sceneryVisible(t,p.x,p.y))continue;
-      jobs.push({y:p.y,draw:()=>mountain(p,a.size*(terrain==='ALPS'?1.05:.8),/ALPS|HSM|LSM/.test(terrain),terrain==='LVM',a.variant)});
-    }
     if(G.isHill(terrain) && state.scale>=32)for(const a of items.slice(0,2)){
       const p=sample(c.x+a.x,c.y+a.y);if(p.water||!sceneryVisible(t,p.x,p.y))continue;
       jobs.push({y:p.y,draw:()=>tier(p,a.size,[[.17,0],[.16,.06],[.10,.14],[.05,.16]],'#92937b',a.variant)});
@@ -194,7 +185,7 @@ const IsoMapper = (() => {
       for(const a of items.slice(0,5)){
         const p=sample(c.x+a.x,c.y+a.y);if(!sceneryVisible(t,p.x,p.y))continue;
         if(terrain==='SW')line([p,{...p,x:p.x+.22}],WATER,state.scale*.07);
-        else if(terrain==='BR')jobs.push({y:p.y,draw:()=>tree(p,.35,false,'#7d9551')});
+        else if(terrain==='BR')jobs.push({y:p.y,draw:()=>tier(p,.35,[[.20,0],[.25,.12],[.13,.25]],'#7d9551',a.variant)});
         else line([p,{...p,x:p.x+.05,z:p.z+.06},{...p,x:p.x+.11}],terrain==='DE'?'#b69958':'#6d8b4a',1);
       }
     }

@@ -131,3 +131,32 @@ assert.notDeepEqual(G.sceneryDetails('PK1613'),G.sceneryDetails('PK1614'));
 assert.deepEqual(G.sceneryDetails('PK1613')[0],{x:-0.21691800735890865,y:0.23783399775624275,size:1.2555440784431995,variant:0.0227246368303895});
 assert.equal(G.scenerySeed,'tribenet-world:scenery-v1');
 console.log('Versioned scenery seed is stable across installations and discovery order');
+
+// Mountains are ground relief, with traversable low ranges below high ranges.
+for(const terrain of ['LAM','LCM','LJM','LSM','LVM'])assert.equal(G.isLowMountain(terrain),true);
+for(const terrain of ['ALPS','HSM'])assert.equal(G.isHighMountain(terrain),true);
+for(let x=44;x<49;x+=.27)for(let y=34;y<39;y+=.31){
+ const low=G.surface(x,y,()=>({terrain:'LCM'}),palette);
+ const high=G.surface(x,y,()=>({terrain:'HSM'}),palette);
+ assert.ok(low.z>.6&&low.z<1.25,'low ranges have connected, moderate relief');
+ assert.ok(high.z>low.z+.45,'impassable ranges are clearly higher');
+ assert.ok(high.z<2.5,'height remains bounded');
+ assert.equal(JSON.stringify(first.surface(x,y,()=>({terrain:'LCM'}),palette)),JSON.stringify(second.surface(x,y,()=>({terrain:'LCM'}),palette)));
+}
+const mixedRanges=(c,r)=>({terrain:c<30?'LCM':r<21?'HSM':'GH'});
+for(const col of [29,30])for(let i=0;i<6;i++){
+ const c=center(col,20),n=center(...neighbour(col,20,i)),x=(c.x+n.x)/2,y=(c.y+n.y)/2;
+ const a=G.surface(x-1e-6,y,mixedRanges,palette),b=G.surface(x+1e-6,y,mixedRanges,palette);
+ assert.ok(Math.abs(a.z-b.z)<1e-4,'mixed ranges join continuously at hex/submap seams');
+}
+const site={x:0,y:0,z:.8,water:false};
+const gentle=(x,y)=>({x,y,z:.8+x*.2,water:false});
+assert.equal(G.treeSite('LCM',site,gentle),true);
+assert.equal(G.treeSite('LJM',site,gentle),true);
+for(const t of ['LAM','LSM','LVM','HSM','ALPS','PR','UNKNOWN'])assert.equal(G.treeSite(t,site,gentle),false);
+assert.equal(G.treeSite('LCM',site,(x,y)=>({x,y,z:.8+x*1.2,water:false})),false,'avoid steep slopes');
+assert.equal(G.treeSite('LCM',{...site,z:1.3},gentle),false,'avoid exposed heights');
+assert.equal(G.treeSite('D',site,()=>({...site,water:true})),false,'avoid shoreline overhang');
+assert.equal(G.treeSite('D',{...site,water:true},gentle),false);
+assert.equal(G.surface(p.x,p.y,wet,palette).z,0,'water remains level beside relief');
+console.log('Connected low/high mountain relief, shared seed, seams and slope-aware wooded placement passed');

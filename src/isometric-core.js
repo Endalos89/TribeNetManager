@@ -36,12 +36,36 @@
 
   const isHill=t=>['BH','CH','DH','GH','GHP','JH','PGH','RH','SH'].includes(t);
   const isForest=t=>['D','DH','CH','JG','JH','LCM','LJM'].includes(t);
+  const isLowMountain=t=>['LAM','LCM','LJM','LSM','LVM'].includes(t);
+  const isHighMountain=t=>t==='HSM'||t==='ALPS';
+  // Independent versioned relief stream keeps existing tree positions stable.
+  const reliefSeed='tribenet-world:relief-v1';
+  const reliefPhase=random(reliefSeed)()*Math.PI*2;
+  function relief(x,y) {
+    // World-space waves join across every hex and submap boundary.
+    const broad=.5+.25*Math.sin(x*.83+y*.47+reliefPhase)+.25*Math.cos(y*.91-x*.31-reliefPhase);
+    const ridge=1-Math.abs(Math.sin(x*1.12-y*.68+reliefPhase));
+    return {broad,ridge};
+  }
+  function terrace(height) {
+    const level=height/.16,whole=Math.floor(level),fraction=level-whole;
+    // Shallow shelves with bevelled ramps, never discontinuous vertical jumps.
+    return (whole+smooth((fraction-.18)/.64))*.16;
+  }
+  function treeSite(terrain,p,sample) {
+    if(!isForest(terrain)||p.water||p.z>1.2)return false;
+    const delta=.09;
+    const neighbours=[[delta,0],[-delta,0],[0,delta],[0,-delta]].map(([x,y])=>sample(p.x+x,p.y+y));
+    if(neighbours.some(q=>q.water))return false;
+    const slope=Math.hypot(neighbours[0].z-neighbours[1].z,neighbours[2].z-neighbours[3].z)/(2*delta);
+    return slope<.85;
+  }
   const water=t=>t==='O'||t==='L';
   const smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
   // A continuous world-space surface. Shared vertices are independent of tile ownership.
   function surface(x,y,lookup,palette) {
     const col=Math.round((x-1)/1.5), rgb=[0,0,0];
-    let total=0,hills=0,mountains=0,wetDistance=Infinity;
+    let total=0,hills=0,low=0,high=0,snow=0,wetDistance=Infinity;
     for(let c=col-2;c<=col+2;c++) {
       const row=Math.round(y/Math.sqrt(3)-.5-(c%2?.5:0));
       for(let r=row-2;r<=row+2;r++) {
@@ -55,15 +79,25 @@
           wetDistance=Math.min(wetDistance,distance);continue;
         }
         const w=Math.pow(1-d2/6.25,3),color=palette(terrain);
-        total+=w;hills+=isHill(terrain)?w:0;mountains+=/ALPS|HSM|L.M/.test(terrain)?w:0;
+        total+=w;hills+=isHill(terrain)?w:0;low+=isLowMountain(terrain)?w:0;high+=isHighMountain(terrain)?w:0;snow+=['LSM','HSM','ALPS'].includes(terrain)?w:0;
         [1,3,5].forEach((p,i)=>rgb[i]+=parseInt(color.slice(p,p+2),16)*w);
       }
     }
     if(wetDistance<=.13)return {x,y,z:0,color:'#337f98',water:true};
     const shore=smooth((wetDistance-.13)/.24);
-    const roll=.53+.23*Math.sin(x*1.8+y*.65)+.18*Math.cos(y*1.5-x*.5);
-    const z=(.14+(total?hills/total*.85*roll+mountains/total*.2:0))*shore;
-    const land=total?rgb.map(n=>n/total):[37,54,64];
+    const {broad,ridge}=relief(x,y);
+    const hillHeight=.26+.30*broad;
+    const lowHeight=.57+.30*broad+.16*ridge;
+    const highHeight=1.35+.35*broad+.60*ridge*ridge;
+    const elevation=total?(hills*hillHeight+low*lowHeight+high*highHeight)/total:0;
+    const raw=.14+elevation;
+    const z=(raw*.35+terrace(raw)*.65)*shore;
+    let land=total?rgb.map(n=>n/total):[37,54,64];
+    // Rock shoulders and snowy upper ridges are part of the ground mesh.
+    const rock=total?smooth((z-.7)/.8)*high/total:0;
+    land=land.map((v,i)=>v*(1-rock)+[133,143,139][i]*rock);
+    const snowCover=total?snow/total*smooth((z-(high>low?1.35:.65))/.48):0;
+    land=land.map((v,i)=>v*(1-snowCover)+[224,233,230][i]*snowCover);
     const bank=[196,187,139];
     const color='#'+land.map((v,i)=>Math.round(bank[i]*(1-shore)+v*shore).toString(16).padStart(2,'0')).join('');
     return {x,y,z,color,water:false};
@@ -73,6 +107,6 @@
   function sceneryVisible(x,y,neighbours) {
     return neighbours.every((known,i)=>known || x*Math.cos((i+.5)*Math.PI/3)+y*Math.sin((i+.5)*Math.PI/3)<Math.sqrt(3)/2*.67-.04);
   }
-  const api={scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
+  const api={reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
   if(typeof module!=='undefined' && module.exports) module.exports=api; else root.IsoGeometry=api;
 })(typeof window!=='undefined'?window:globalThis);
