@@ -587,13 +587,45 @@ selectHex = async function selectHexWithTurnActions(globalCol, globalRow) {
   }
 };
 
-function turnActionsOpenSplit() {
+async function turnActionsRenderPlannedUnitManagement() {
+  const host = document.getElementById('plannedUnitManagementList');
+  if (!host) return;
+  const splits = savedMovementPlansState.unitSplits || [];
+  host.innerHTML = splits.length ? splits.map(split => `
+    <div class="planned-unit-management-row">
+      <span>${savedMovementEscape(split.unitCode)} · ${savedMovementEscape(split.unitType)} · ${split.creationPhase === 'after' ? 'After Movement' : 'Before Movement'}</span>
+      <button type="button" class="button danger" data-remove-planned-unit="${Number(split.id)}">Remove</button>
+    </div>`).join('') : '<span>No units created this turn.</span>';
+  host.querySelectorAll('[data-remove-planned-unit]').forEach(button => button.addEventListener('click', async () => {
+    const split = splits.find(row => Number(row.id) === Number(button.dataset.removePlannedUnit));
+    if (!split || !window.confirm(`Cancel creation of ${split.unitCode}? Any transfers to or from this unit will also be removed.`)) return;
+    try {
+      const removed = await window.tribenet.deletePlannedUnitSplit(split.id);
+      if (!removed) return;
+      if (String(state.selectedUnit).toLowerCase() === String(split.unitCode).toLowerCase()) {
+        state.selectedUnit = null;
+        state.selectedUnitHex = null;
+        savedMovementPlansState.selectedUnitCode = '';
+      }
+      await savedMovementRefresh();
+      await turnActionsRenderPlannedUnitManagement();
+      draw();
+    } catch (error) {
+      const status = document.getElementById('movementPlannerCreateStatus');
+      if (status) status.textContent = error.message || String(error);
+    }
+  }));
+}
+
+async function turnActionsOpenSplit() {
   if (turnActionState.active) return;
   const dialog = document.getElementById('unitSplitDialog');
   if (!dialog) return;
   const phase = document.getElementById('movementPlannerCreatePhase');
   if (phase) phase.value = 'before';
-  savedMovementPopulateCreationForm();
+  await savedMovementRefresh();
+  await savedMovementPopulateCreationForm();
+  await turnActionsRenderPlannedUnitManagement();
   dialog.showModal();
 }
 

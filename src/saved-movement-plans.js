@@ -159,7 +159,17 @@ async function savedMovementCreateUnit() {
     state.selectedUnitHex = created.startHex || null;
     await savedMovementRefresh();
     document.getElementById('unitSplitDialog')?.close();
-    if (typeof transferScreenOpen === 'function') transferScreenOpen({ from: parentUnit, to: created.unitCode, timing: creationPhase === 'after' ? 'AM' : 'BM' });
+    if (typeof transferScreenOpen === 'function') {
+      const opened = await transferScreenOpen({ from: parentUnit, to: created.unitCode, timing: creationPhase === 'after' ? 'AM' : 'BM', createdSplitId: created.id });
+      if (!opened) {
+        await window.tribenet.deletePlannedUnitSplit(created.id);
+        savedMovementPlansState.selectedUnitCode = parentUnit;
+        state.selectedUnit = parentUnit;
+        state.selectedUnitHex = savedMovementUnits().find(unit => String(unit.unitCode).toLowerCase() === String(parentUnit).toLowerCase())?.currentHex || null;
+        await savedMovementRefresh();
+        draw();
+      }
+    }
     if (typeof turnActionsRefresh === 'function') turnActionsRefresh();
   } catch (error) {
     if (status) status.textContent = error.message || String(error);

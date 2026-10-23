@@ -30,6 +30,12 @@ assert.match(index, /id="transferQuantity"/, 'Transfer item editor must allow di
 assert.match(transferScreen, /TribeNetItemIconManifest/, 'Transfer roster items must use compendium icons where available.');
 assert.match(transferScreen, /replacePlannedTransferGroup/, 'Transfer editor must save the complete selected pair and timing group.');
 assert.match(transferScreen, /deleteAllPlannedTransfers/, 'Transfer overview must provide turn-wide cancellation.');
+assert.match(savedPlans, /createdSplitId: created\.id/, 'A newly created unit must be linked to its initial transfer screen.');
+assert.match(transferScreen, /createdSplitId\)\s*\{[\s\S]*deletePlannedUnitSplit\(session\.createdSplitId\)/, 'Cancelling the initial transfer screen must remove the new unit creation.');
+assert.match(transferScreen, /addEventListener\('cancel',[\s\S]*transferScreenCancel\(\)/, 'Escape must use the same creation rollback as the cancel button.');
+assert.match(transferScreen, /session\.createdSplitId = null/, 'Saving the initial transfer screen must keep the created unit.');
+assert.match(index, /id="plannedUnitManagementList"/, 'The create-unit dialog must expose existing planned units for cleanup.');
+assert.match(actions, /data-remove-planned-unit/, 'Planned units must be removable even when they are not visible on the map.');
 assert.match(transferScreen, /transferScreenEligibleTargets/, 'Transfer targets must be filtered to units at the phase-specific location.');
 assert.match(actions, /unit\.plannedSplit \? `<button class="turn-action-utility danger" data-turn-action="cancel-unit-creation"/, 'Selecting a unit created this turn must expose a cancel-creation button.');
 assert.match(actions, /deletePlannedUnitSplit\(split\.id\)/, 'Cancelling a created unit must delete its planned creation record.');
