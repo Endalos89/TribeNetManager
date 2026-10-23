@@ -340,13 +340,14 @@ function transferScreenOpenItemEditor(from, to, item) {
   const monthsMode = document.getElementById('transferProvisionMonthsMode');
   const quantityLabel = document.getElementById('transferQuantityLabel');
   const monthsKind = transferScreenMonthsItemKind(key);
-  if (modePicker) modePicker.hidden = !monthsKind;
+  const isProvisions = monthsKind === 'provisions';
+  if (modePicker) modePicker.hidden = !isProvisions;
   if (monthsHint) monthsHint.hidden = true;
   if (amountMode) { amountMode.classList.add('active'); amountMode.setAttribute('aria-pressed', 'true'); }
   if (monthsMode) {
-    const context = monthsKind ? transferScreenProvisionContext() : null;
+    const context = isProvisions ? transferScreenProvisionContext() : null;
     monthsMode.disabled = !context?.monthlyConsumption;
-    monthsMode.title = context?.monthlyConsumption ? '' : `Add ${monthsKind === 'provisions' ? 'people' : monthsKind === 'water' ? 'people or animals' : 'fodder-consuming animals'} to the receiving unit first.`;
+    monthsMode.title = context?.monthlyConsumption ? '' : 'Transfer people first so monthly consumption can be calculated.';
     monthsMode.classList.remove('active');
     monthsMode.setAttribute('aria-pressed', 'false');
   }

@@ -33,6 +33,7 @@ assert.match(index, /<dialog id="transferItemEditor"[^>]*>[\s\S]*?data-drag-hand
 assert.match(mapperStyles, /\.transfer-item-editor:not\(\[open\]\)\s*\{\s*display:none;/, 'The quantity popup must stay hidden until it is opened by an item selection.');
 assert.match(transferScreen, /editor\.showModal\(\)/, 'The transfer quantity popup must overlay the transfer screen.');
 assert.match(transferScreen, /turnActionsBindDialogDrag\(editor, 'transfer-item-editor'\)/, 'The transfer quantity popup must be draggable.');
+assert.match(transferScreen, /const isProvisions = monthsKind === 'provisions';\s*if \(modePicker\) modePicker\.hidden = !isProvisions;/, 'The Months section must only be visible when transferring provisions.');
 assert.match(transferScreen, /transferScreenCloseItemEditor/, 'The transfer quantity popup must close cleanly on cancel or apply.');
 assert.match(transferScreen, /replacePlannedTransferGroup/, 'Transfer editor must save the complete selected pair and timing group.');
 assert.match(transferScreen, /deleteAllPlannedTransfers/, 'Transfer overview must provide turn-wide cancellation.');
