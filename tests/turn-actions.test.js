@@ -20,6 +20,9 @@ assert.match(index, /id="turnActionRouteLegend"/, 'The map must expose a route c
 assert.match(index, /id="unitSplitDialog"/, 'Split Off Unit must have a dedicated dialog.');
 assert.match(index, /id="openTransferOverviewButton"/, 'Transfer overview must be reachable from the top-left mapper actions.');
 assert.match(index, /id="openTransferOverviewButton" class="transfer-map-button"/, 'Transfers must be a map-corner overlay.');
+assert.match(index, /id="openScoutOverviewButton" class="transfer-map-button"/, 'The map-corner actions must include a scout overview.');
+assert.match(index, /id="scoutOverviewDialog"/, 'The scout overview must be available independently of the selected unit.');
+assert.match(index, /id="scoutOverviewRows"/, 'The scout overview must show workbook-style scouting rows.');
 assert.match(index, /<h2>Transfers<\/h2>/, 'The overview dialog should be titled Transfers.');
 assert.match(index, /id="transferFromLabel"/, 'The transfer source should be displayed as the initiating unit.');
 assert.ok(!/id="transferFrom"/.test(index), 'The source unit must not be editable in the transfer dialog.');
@@ -74,6 +77,9 @@ assert.match(actions, /data-turn-action="scout-confirm"[\s\S]*?data-turn-action=
 assert.match(actions, /data-turn-action="scout-fol"[\s\S]*?>FOL<\/button>[\s\S]*?data-turn-action="scout-for"[\s\S]*?>FOR<\/button>/, 'The floating scout controls must offer FOL and FOR commands.');
 assert.match(actions, /function turnActionsAddScoutConditional\(order\)/, 'FOL/FOR buttons must insert conditional commands into the pending route.');
 assert.match(actions, /if \(existingConditional === order\)/, 'Clicking an active FOL/FOR option again must remove that command from the draft.');
+assert.match(actions, /function turnActionsOpenScoutOverview\(\)/, 'The scout overview must list scouting orders across all units.');
+assert.match(actions, /Movement1|length:9/, 'The scout overview must expose the workbook scouting command columns.');
+assert.match(actions, /if \(turnActionState\.active && !event\?\.detail\?\.unitCode\)/, 'Clicking an empty destination hex must not cancel the active route overlay.');
 assert.match(actions, /turnActionState\.active === 'unit' && turnActionState\.shiftChainStarted/, 'Only movement routes may auto-commit when Shift is released.');
 assert.match(actions, /pendingMapClick/, 'Shift release must wait for the map click to finish appending its route.');
 assert.match(actions, /await turnActionState\.pendingMapClick/, 'Shift release must await the pending map click before committing.');
@@ -85,6 +91,10 @@ assert.match(movementPlanner, /movementPlannerAppendRouteTo/, 'Movement planner 
 assert.match(actions, /turnActionsRefreshHover/, 'Changing Shift state must refresh the hover preview.');
 assert.match(actions, /turnActionsUnitMovement/, 'Move Unit must use the selected unit movement profile.');
 assert.match(actions, /turnActionsMovementRisk/, 'Move Unit must classify safe, risky and over-range routes.');
+assert.match(renderer, /const unreachable = Number\.isFinite\(weatherAllowance\) && normalCumulative > weatherAllowance/, 'Routes beyond best-weather movement range must be marked unreachable.');
+assert.match(renderer, /unreachableColor \|\| '#f06464'/, 'Unreachable route segments must use a red route color.');
+assert.match(renderer, /dashed: style\.dashed \|\| maybe \|\| unreachable/, 'Unreachable routes must use a dotted arrow style.');
+assert.match(renderer, /const scoutColor = '#c58cff'/, 'Scouting routes must use a distinct color from movement routes.');
 assert.match(actions, /Unit total:/, 'Move Unit must show the selected unit total movement.');
 assert.match(actions, /Bad weather/, 'Move Unit must show the bad-weather movement warning.');
 assert.match(actions, /turnActionsCancelRightClick/, 'Right-clicking during an active action must cancel it.');
