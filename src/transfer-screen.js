@@ -160,7 +160,8 @@ function transferScreenUnitStats(unitCode) {
   if (!planned) return null;
   return {
     unit: transferScreenCode(planned), totalPeople:0, eaters:0, warrior:0, active:0, inactive:0, locals:0,
-    horseCount:0, cattleCount:0, elephantCount:0, camelCount:0, wagonCount:0, backpacks:0, saddlebags:0,
+    slaves:0, hirelings:0, mercenaries:0, residents:0, followers:0, auxiliaries:0,
+    horseCount:0, cattleCount:0, elephantCount:0, camelCount:0, goatCount:0, dogCount:0, wagonCount:0, backpacks:0, saddlebags:0,
     carriedWeight:0, inventory:[]
   };
 }
@@ -199,6 +200,14 @@ function transferScreenLiveLogistics(unitCode) {
   const cattle = transferScreenAdjustedStat(unitCode, 'cattleCount', ['CATTLE']);
   const elephants = transferScreenAdjustedStat(unitCode, 'elephantCount', ['ELEPHANT', 'ELEPHANTS']);
   const camels = transferScreenAdjustedStat(unitCode, 'camelCount', ['CAMEL', 'CAMELS']);
+  const goats = transferScreenAdjustedStat(unitCode, 'goatCount', ['GOAT', 'GOATS']) || transferScreenAdjustedStat(unitCode, 'goats', ['GOAT', 'GOATS']);
+  const dogs = transferScreenAdjustedStat(unitCode, 'dogCount', ['DOG', 'DOGS']) || transferScreenAdjustedStat(unitCode, 'dogs', ['DOG', 'DOGS']);
+  const slaves = transferScreenAdjustedStat(unitCode, 'slaves', ['SLAVE', 'SLAVES']);
+  const ordinaryPeople = [
+    ['warrior', ['WARRIORS']], ['active', ['ACTIVES']], ['inactive', ['INACTIVES']], ['hirelings', ['HIRELING', 'HIRELINGS']],
+    ['mercenaries', ['MERCENARY', 'MERCENARIES']], ['locals', ['LOCALS']], ['residents', ['RESIDENTS']],
+    ['followers', ['FOLLOWERS']], ['auxiliaries', ['AUXILIARIES', 'AUXILIARY']]
+  ].reduce((sum, [field, items]) => sum + transferScreenAdjustedStat(unitCode, field, items), 0);
   const wagons = transferScreenAdjustedStat(unitCode, 'wagonCount', ['WAGON', 'WAGONS']);
   const backpacks = transferScreenAdjustedStat(unitCode, 'backpacks', ['BACKPACK', 'BACKPACKS']);
   const saddlebags = transferScreenAdjustedStat(unitCode, 'saddlebags', ['SADDLEBAG', 'SADDLEBAGS']);
@@ -230,7 +239,23 @@ function transferScreenLiveLogistics(unitCode) {
   weight = Math.max(0, weight);
   const provisions = transferScreenBalance(unitCode, 'PROVS').amount;
   const months = eaters > 0 ? provisions / eaters : null;
-  return { capacity, weight, weightKnown, loadPercent:capacity > 0 ? weight / capacity * 100 : null, provisions, eaters, months };
+  const supplyCounts = { ordinaryPeople, slaves, goats, dogs, cattle, horses, elephants, camels };
+  const supplyRates = window.UnitSustenance?.dryTerrainRates?.(supplyCounts) || {
+    waterPerTurn:ordinaryPeople * 10 + (slaves + goats + dogs) * 5 + (cattle + horses) * 20 + elephants * 30,
+    fodderPerTurn:horses * 8 + cattle * 5 + goats + elephants * 12
+  };
+  return {
+    capacity, weight, weightKnown, loadPercent:capacity > 0 ? weight / capacity * 100 : null,
+    provisions, eaters, months, waterPerMonth:supplyRates.waterPerTurn, fodderPerMonth:supplyRates.fodderPerTurn
+  };
+}
+
+function transferScreenMonthsItemKind(item) {
+  const key = transferScreenKey(item);
+  if (['PROVS', 'PROVISION', 'PROVISIONS'].includes(key)) return 'provisions';
+  if (['WATER', 'WATERS'].includes(key)) return 'water';
+  if (['FODDER', 'FODDERS'].includes(key)) return 'fodder';
+  return null;
 }
 
 function transferScreenRenderLogistics(unitCode, elementId) {
@@ -314,14 +339,14 @@ function transferScreenOpenItemEditor(from, to, item) {
   const amountMode = document.getElementById('transferProvisionAmountMode');
   const monthsMode = document.getElementById('transferProvisionMonthsMode');
   const quantityLabel = document.getElementById('transferQuantityLabel');
-  const isProvisions = key === 'PROVS' || key === 'PROVISION' || key === 'PROVISIONS';
-  if (modePicker) modePicker.hidden = !isProvisions;
+  const monthsKind = transferScreenMonthsItemKind(key);
+  if (modePicker) modePicker.hidden = !monthsKind;
   if (monthsHint) monthsHint.hidden = true;
   if (amountMode) { amountMode.classList.add('active'); amountMode.setAttribute('aria-pressed', 'true'); }
   if (monthsMode) {
-    const context = isProvisions ? transferScreenProvisionContext() : null;
+    const context = monthsKind ? transferScreenProvisionContext() : null;
     monthsMode.disabled = !context?.monthlyConsumption;
-    monthsMode.title = context?.monthlyConsumption ? '' : 'Transfer people first so monthly consumption can be calculated.';
+    monthsMode.title = context?.monthlyConsumption ? '' : `Add ${monthsKind === 'provisions' ? 'people' : monthsKind === 'water' ? 'people or animals' : 'fodder-consuming animals'} to the receiving unit first.`;
     monthsMode.classList.remove('active');
     monthsMode.setAttribute('aria-pressed', 'false');
   }
@@ -334,6 +359,13 @@ function transferScreenOpenItemEditor(from, to, item) {
   slider.value = String(Math.min(qty, max));
   slider.disabled = max <= 0;
   if (!editor.open) editor.showModal();
+  if (typeof turnActionsBindDialogDrag === 'function') turnActionsBindDialogDrag(editor, 'transfer-item-editor');
+  if (!editor.dataset.positioned) {
+    const rect = editor.getBoundingClientRect();
+    editor.style.left = `${Math.max(8, (window.innerWidth - rect.width) / 2)}px`;
+    editor.style.top = `${Math.max(8, (window.innerHeight - rect.height) / 2)}px`;
+    editor.dataset.positioned = '1';
+  }
   number.focus();
 }
 
@@ -346,7 +378,8 @@ function transferScreenCloseItemEditor() {
 
 function transferScreenProvisionContext() {
   const draft = transferScreenItemDraft;
-  if (!draft || !['PROVS', 'PROVISION', 'PROVISIONS'].includes(transferScreenKey(draft.item))) return null;
+  const kind = draft && transferScreenMonthsItemKind(draft.item);
+  if (!draft || !kind) return null;
   const current = transferScreenFindRow(transferScreenSession?.draftRows || [], draft.from, draft.to, draft.item);
   const fromBalance = transferScreenBalance(draft.from, draft.item);
   const maxTransfer = fromBalance.known
@@ -354,12 +387,12 @@ function transferScreenProvisionContext() {
     : Math.max(10000, Number(current?.quantity || 0));
   const destinationBefore = transferScreenBalance(draft.to, draft.item, current).amount;
   const receiver = transferScreenLiveLogistics(draft.to);
-  const monthlyConsumption = Math.max(0, Number(receiver?.eaters || 0));
-  const maxMonths = monthlyConsumption > 0 ? (destinationBefore + maxTransfer) / monthlyConsumption : 0;
+  const monthlyConsumption = Math.max(0, Number(kind === 'provisions' ? receiver?.eaters : kind === 'water' ? receiver?.waterPerMonth : receiver?.fodderPerMonth) || 0);
+  const itemLabel = kind === 'provisions' ? 'Provs' : kind === 'water' ? 'Water' : 'Fodder';
   const currentMonths = monthlyConsumption > 0
     ? (destinationBefore + Number(current?.quantity || 0)) / monthlyConsumption
     : 0;
-  return { current, maxTransfer, destinationBefore, monthlyConsumption, maxMonths, currentMonths };
+  return { current, maxTransfer, destinationBefore, monthlyConsumption, maxMonths:monthlyConsumption > 0 ? (destinationBefore + maxTransfer) / monthlyConsumption : 0, currentMonths, kind, itemLabel };
 }
 
 function transferScreenSetProvisionMode(mode) {
@@ -377,7 +410,7 @@ function transferScreenSetProvisionMode(mode) {
   amountButton?.setAttribute('aria-pressed', String(!monthsMode));
   monthsButton?.classList.toggle('active', monthsMode);
   monthsButton?.setAttribute('aria-pressed', String(monthsMode));
-  if (label) label.textContent = monthsMode ? 'Months of provisions' : 'Quantity';
+  if (label) label.textContent = monthsMode ? `Months of ${context.itemLabel}` : 'Quantity';
   if (monthsMode) {
     number.step = '0.1';
     number.max = String(context.maxMonths);
@@ -413,7 +446,8 @@ function transferScreenUpdateMonthsHint(value, context = transferScreenProvision
   const transfer = Math.min(context.maxTransfer, Math.max(0, target - context.destinationBefore));
   const actualMonths = (context.destinationBefore + transfer) / context.monthlyConsumption;
   const capped = target > context.destinationBefore + context.maxTransfer;
-  hint.textContent = `Consumption: ${context.monthlyConsumption.toLocaleString()} Provs/month · transfer ${transfer.toLocaleString()} Provs${capped ? ` (source limit: ${actualMonths.toFixed(1)} months)` : ''}.`;
+  const rateLabel = context.kind === 'provisions' ? 'Consumption' : 'Dry-terrain usage';
+  hint.textContent = `${rateLabel}: ${context.monthlyConsumption.toLocaleString()} ${context.itemLabel}/month · transfer ${transfer.toLocaleString()} ${transferScreenKey(transferScreenItemDraft?.item)}${capped ? ` (source limit: ${actualMonths.toFixed(1)} months)` : ''}.`;
 }
 
 function transferScreenQuantityChanged(value, source) {
@@ -593,6 +627,7 @@ document.getElementById('transferTiming')?.addEventListener('change', transferSc
 document.getElementById('transferQuantity')?.addEventListener('input', event => transferScreenQuantityChanged(event.target.value, 'number'));
 document.getElementById('transferQuantitySlider')?.addEventListener('input', event => transferScreenQuantityChanged(event.target.value, 'slider'));
 document.getElementById('transferItemCancel')?.addEventListener('click', transferScreenCloseItemEditor);
+document.getElementById('transferItemClose')?.addEventListener('click', transferScreenCloseItemEditor);
 document.getElementById('transferItemEditor')?.addEventListener('cancel', event => { event.preventDefault(); transferScreenCloseItemEditor(); });
 document.getElementById('transferProvisionAmountMode')?.addEventListener('click', () => transferScreenSetProvisionMode('amount'));
 document.getElementById('transferProvisionMonthsMode')?.addEventListener('click', () => transferScreenSetProvisionMode('months'));

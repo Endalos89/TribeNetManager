@@ -297,7 +297,10 @@
         </div>
         <p class="turn-action-dialog-copy">Select an item on either side to move it to the other unit. BM transfers happen before movement; AM transfers happen after movement.</p>
         <dialog id="transferItemEditor" class="transfer-item-editor" aria-labelledby="transferItemEditorTitle">
-          <h3 id="transferItemEditorTitle">Transfer item</h3>
+          <div class="transfer-item-editor-heading" data-drag-handle="transfer-item-editor">
+            <h3 id="transferItemEditorTitle">Transfer item</h3>
+            <button id="transferItemClose" type="button" class="button square" aria-label="Close">×</button>
+          </div>
           <p id="transferItemAvailable" class="transfer-item-available"></p>
           <div id="transferProvisionMode" class="transfer-provision-mode" role="group" aria-label="Provision transfer mode" hidden>
             <button id="transferProvisionAmountMode" type="button" class="button active" aria-pressed="true">Amount</button>
