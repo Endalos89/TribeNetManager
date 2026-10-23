@@ -715,8 +715,8 @@ function turnActionsCloseScoutRoutes() {
   document.getElementById('scoutRoutesDialog')?.close();
 }
 
-function turnActionsBindDialogDrag(dialog) {
-  const handle = dialog?.querySelector('[data-drag-handle="scout-routes"]');
+function turnActionsBindDialogDrag(dialog, handleName = 'scout-routes') {
+  const handle = dialog?.querySelector(`[data-drag-handle="${handleName}"]`);
   if (!dialog || !handle || handle.dataset.dragBound) return;
   handle.dataset.dragBound = '1';
   let drag = null;
