@@ -28,6 +28,9 @@ assert.match(index, /id="transferCancelAll"/, 'Transfer overview must allow canc
 assert.match(index, /id="transferQuantitySlider"/, 'Transfer item editor must include a quantity slider.');
 assert.match(index, /id="transferQuantity"/, 'Transfer item editor must allow direct quantity entry.');
 assert.match(transferScreen, /TribeNetItemIconManifest/, 'Transfer roster items must use compendium icons where available.');
+assert.match(index, /<dialog id="transferItemEditor" class="transfer-item-editor"/, 'Editing a transfer quantity must open a popup dialog.');
+assert.match(transferScreen, /editor\.showModal\(\)/, 'The transfer quantity popup must overlay the transfer screen.');
+assert.match(transferScreen, /transferScreenCloseItemEditor/, 'The transfer quantity popup must close cleanly on cancel or apply.');
 assert.match(transferScreen, /replacePlannedTransferGroup/, 'Transfer editor must save the complete selected pair and timing group.');
 assert.match(transferScreen, /deleteAllPlannedTransfers/, 'Transfer overview must provide turn-wide cancellation.');
 assert.match(savedPlans, /createdSplitId: created\.id/, 'A newly created unit must be linked to its initial transfer screen.');
@@ -35,6 +38,8 @@ assert.match(transferScreen, /createdSplitId\)\s*\{[\s\S]*deletePlannedUnitSplit
 assert.match(transferScreen, /addEventListener\('cancel',[\s\S]*transferScreenCancel\(\)/, 'Escape must use the same creation rollback as the cancel button.');
 assert.match(transferScreen, /session\.createdSplitId = null/, 'Saving the initial transfer screen must keep the created unit.');
 assert.match(index, /id="plannedUnitManagementList"/, 'The create-unit dialog must expose existing planned units for cleanup.');
+assert.match(index, /id="plannedUnitManagementDialog"/, 'Existing planned units must be shown in a dedicated popup.');
+assert.match(actions, /turnActionsOpenPlannedUnitManagement/, 'The create-unit dialog must open the planned-unit management popup.');
 assert.match(actions, /data-remove-planned-unit/, 'Planned units must be removable even when they are not visible on the map.');
 assert.match(transferScreen, /transferScreenEligibleTargets/, 'Transfer targets must be filtered to units at the phase-specific location.');
 assert.match(actions, /unit\.plannedSplit \? `<button class="turn-action-utility danger" data-turn-action="cancel-unit-creation"/, 'Selecting a unit created this turn must expose a cancel-creation button.');
@@ -194,5 +199,16 @@ const logistics = vm.runInContext(`transferScreenLiveLogistics('0485')`, logisti
 assert.equal(logistics.capacity, 8100, 'Carrying capacity must recalculate for people staged out of the source unit.');
 assert.equal(logistics.weight, 5000, 'Carried weight must recalculate for goods staged out of the source unit.');
 assert.equal(logistics.months, 500 / 270, 'Sustenance must recalculate from remaining provisions and eaters.');
+vm.runInContext(`savedMovementUnits=()=>[{unitCode:'3485',unitType:'Tribe',plannedSplit:true}]`, logisticsContext);
+vm.runInContext(`transferScreenSession={from:'0485',to:'3485',draftRows:[{from:'0485',to:'3485',item:'ACTIVES',quantity:12},{from:'0485',to:'3485',item:'PROVS',quantity:2400}]}; transferScreenItemDraft={from:'0485',to:'3485',item:'PROVS'}`, logisticsContext);
+const newUnitLogistics = vm.runInContext(`transferScreenLiveLogistics('3485')`, logisticsContext);
+assert.equal(newUnitLogistics.capacity, 360, 'A newly created unit must show carrying capacity based on people staged into it.');
+assert.equal(newUnitLogistics.eaters, 12, 'A newly created unit must calculate its provision consumption from staged population.');
+assert.equal(newUnitLogistics.months, 200, 'A newly created unit must show months of provisions from staged transfers.');
+const provisionMode = vm.runInContext(`transferScreenProvisionContext()`, logisticsContext);
+assert.equal(provisionMode.monthlyConsumption, 12, 'The provisions months option must use the receiving unit consumption.');
+assert.equal(provisionMode.currentMonths, 200, 'The provisions months option must reflect already staged provisions.');
+assert.match(transferScreen, /transferScreenSetProvisionMode\('months'\)/, 'Provisions must support transfer amounts expressed as months.');
+assert.match(transferScreen, /Math\.ceil\(inputValue \* provisionContext\.monthlyConsumption - provisionContext\.destinationBefore\)/, 'A selected number of months must calculate the provision quantity from the receiver consumption.');
 
 console.log('Turn action UI regression tests passed');

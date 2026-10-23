@@ -256,16 +256,25 @@
         <p class="turn-action-dialog-copy">Unit codes are assigned automatically from the selected source Tribe and unit type.</p>
         <label class="movement-planner-field"><span>Name</span><input id="movementPlannerCreateName" placeholder="Optional" /></label>
         <div id="movementPlannerCreateSkills" class="movement-planner-create-skills"></div>
-        <section class="planned-unit-management" aria-labelledby="plannedUnitManagementHeading">
-          <h3 id="plannedUnitManagementHeading">Units created this turn</h3>
-          <div id="plannedUnitManagementList" class="planned-unit-management-list"></div>
-        </section>
         <div class="turn-action-dialog-actions">
           <button value="cancel" class="button">Cancel</button>
           <button id="movementPlannerCreateSubmit" type="button" class="button accent">Create</button>
         </div>
+        <button id="openPlannedUnitManagement" type="button" class="button planned-unit-management-open">Units created this turn (<span id="plannedUnitManagementCount">0</span>)</button>
         <div id="movementPlannerCreateStatus" class="turn-action-status"></div>
       </form>
+    </dialog>
+
+    <dialog id="plannedUnitManagementDialog" class="turn-action-dialog planned-unit-management-dialog">
+      <div class="turn-action-dialog-form">
+        <div class="turn-action-dialog-heading">
+          <div><p class="eyebrow">TURN ORDERS</p><h2>Units created this turn</h2></div>
+          <button id="plannedUnitManagementClose" type="button" class="button square" aria-label="Close">×</button>
+        </div>
+        <p class="turn-action-dialog-copy">Remove a planned unit here if it is no longer needed. Any transfers to or from it will also be removed.</p>
+        <div id="plannedUnitManagementList" class="planned-unit-management-list"></div>
+        <div class="turn-action-dialog-actions"><button id="plannedUnitManagementDone" type="button" class="button">Close</button></div>
+      </div>
     </dialog>
 
     <dialog id="transferDialog" class="turn-action-dialog">
@@ -287,13 +296,18 @@
           <section class="transfer-roster-panel"><h3 id="transferRightTitle">To</h3><div id="transferLogisticsRight" class="transfer-roster-metrics"></div><div id="transferRosterRight" class="transfer-roster-items"></div></section>
         </div>
         <p class="turn-action-dialog-copy">Select an item on either side to move it to the other unit. BM transfers happen before movement; AM transfers happen after movement.</p>
-        <section id="transferItemEditor" class="transfer-item-editor" role="dialog" aria-modal="false" aria-labelledby="transferItemEditorTitle" hidden>
+        <dialog id="transferItemEditor" class="transfer-item-editor" aria-labelledby="transferItemEditorTitle">
           <h3 id="transferItemEditorTitle">Transfer item</h3>
           <p id="transferItemAvailable" class="transfer-item-available"></p>
-          <label class="movement-planner-field"><span>Quantity</span><input id="transferQuantity" type="number" min="0" step="1" value="0" /></label>
+          <div id="transferProvisionMode" class="transfer-provision-mode" role="group" aria-label="Provision transfer mode" hidden>
+            <button id="transferProvisionAmountMode" type="button" class="button active" aria-pressed="true">Amount</button>
+            <button id="transferProvisionMonthsMode" type="button" class="button" aria-pressed="false">Months</button>
+          </div>
+          <p id="transferMonthsHint" class="transfer-item-available" hidden></p>
+          <label class="movement-planner-field"><span id="transferQuantityLabel">Quantity</span><input id="transferQuantity" type="number" min="0" step="1" value="0" /></label>
           <input id="transferQuantitySlider" type="range" min="0" max="0" value="0" aria-label="Transfer quantity" />
           <div class="turn-action-dialog-actions"><button id="transferItemCancel" type="button" class="button">Cancel</button><button id="transferItemApply" type="button" class="button accent">OK</button></div>
-        </section>
+        </dialog>
         <div class="turn-action-dialog-actions"><button id="transferCancel" type="button" class="button">Cancel</button><button id="transferSave" type="button" class="button accent">OK</button></div>
         <div id="transferStatus" class="turn-action-status"></div>
       </div>
