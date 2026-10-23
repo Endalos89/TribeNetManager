@@ -513,6 +513,8 @@
 }
 
 .turn-action-utility:hover { color: #e1f4e4; }
+.turn-action-utility.danger { color:#e8a291; }
+.turn-action-utility.danger:hover { color:#ffd0c3; }
 .turn-action-utility img { width: 12px; height: 12px; padding: 0; border: 0; background: transparent; }
 
 .turn-action-dialog {
