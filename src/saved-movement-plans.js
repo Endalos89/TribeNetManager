@@ -8,7 +8,8 @@ const savedMovementPlansState = {
   scoutCount: 2,
   scoutHorses: 2,
   scoutMission: 'PATROL',
-  unitSplits: []
+  unitSplits: [],
+  transfers: []
 };
 let savedMovementRefreshSequence = 0;
 
@@ -158,6 +159,7 @@ async function savedMovementCreateUnit() {
     state.selectedUnitHex = created.startHex || null;
     await savedMovementRefresh();
     document.getElementById('unitSplitDialog')?.close();
+    if (typeof transferScreenOpen === 'function') transferScreenOpen({ from: parentUnit, to: created.unitCode, timing: creationPhase === 'after' ? 'AM' : 'BM' });
     if (typeof turnActionsRefresh === 'function') turnActionsRefresh();
   } catch (error) {
     if (status) status.textContent = error.message || String(error);
@@ -277,8 +279,11 @@ async function savedMovementRefresh() {
   const turnKey = savedMovementCurrentTurnKey();
   savedMovementPlansState.turnKey = turnKey;
   const routes = turnKey ? await window.tribenet.listPlannedRoutes(turnKey) : [];
+  const transfers = turnKey && typeof window.tribenet.listPlannedTransfers === 'function' ? await window.tribenet.listPlannedTransfers(turnKey) : [];
   if (refreshSequence !== savedMovementRefreshSequence) return;
   savedMovementPlansState.routes = routes;
+  savedMovementPlansState.transfers = transfers;
+  if (typeof transferScreenRenderOverviewButton === 'function') transferScreenRenderOverviewButton(transfers);
   if (state.selectedRouteId != null && !savedMovementPlansState.routes.some(route => savedMovementRouteKey(route) === String(state.selectedRouteId))) {
     state.selectedRouteId = null;
     if (typeof turnActionsHideHover === 'function') turnActionsHideHover();

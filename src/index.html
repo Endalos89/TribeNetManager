@@ -72,6 +72,9 @@
 
     <main id="mapperView" class="view mapper-view hidden">
       <div class="mapper-toolbar">
+        <div class="mapper-primary-actions" aria-label="Planning tools">
+          <button id="openTransferOverviewButton" class="button" type="button">Transfers <span id="transferOverviewCount" class="transfer-count-badge">0</span></button>
+        </div>
         <button id="backButton" class="button">← Launcher</button>
         <button id="overviewButton" class="button active">World Overview</button>
         <div class="planner-controls">
@@ -209,6 +212,7 @@
                 <button class="button" type="button" data-unit-action="move">Move Unit</button>
                 <button class="button" type="button" data-unit-action="scout">Send Out Scout</button>
                 <button class="button" type="button" data-unit-action="split">Split Off Unit</button>
+                <button class="button" type="button" data-unit-action="transfer">Transfer</button>
                 <button class="button" type="button" data-unit-action="open-scouts">View Scout Routes</button>
               </div>
               <div class="unit-menu-section-heading"><span>MOVEMENT &amp; SCOUTING</span><small id="unitOrdersBasis"></small></div>
@@ -262,6 +266,47 @@
       </form>
     </dialog>
 
+    <dialog id="transferDialog" class="turn-action-dialog">
+      <div class="turn-action-dialog-form" id="transferForm">
+        <div class="turn-action-dialog-heading" data-drag-handle="transfers">
+          <div><p class="eyebrow">TURN ORDERS</p><h2>Transfer between units</h2></div>
+          <button id="transferClose" type="button" class="button square" aria-label="Close">×</button>
+        </div>
+        <div class="transfer-editor-grid">
+          <label class="movement-planner-field"><span>From</span><select id="transferFrom"></select></label>
+          <label class="movement-planner-field"><span>To</span><select id="transferTo"></select></label>
+          <label class="movement-planner-field"><span>Timing</span><select id="transferTiming"><option value="BM">Before Movement (BM)</option><option value="AM">After Movement (AM)</option></select></label>
+        </div>
+        <div class="transfer-rosters">
+          <section class="transfer-roster-panel"><h3 id="transferLeftTitle">From</h3><div id="transferRosterLeft" class="transfer-roster-items"></div></section>
+          <div class="transfer-roster-arrow" aria-hidden="true">⇄</div>
+          <section class="transfer-roster-panel"><h3 id="transferRightTitle">To</h3><div id="transferRosterRight" class="transfer-roster-items"></div></section>
+        </div>
+        <p class="turn-action-dialog-copy">Select an item on either side to move it to the other unit. BM transfers happen before movement; AM transfers happen after movement.</p>
+        <section id="transferItemEditor" class="transfer-item-editor" role="dialog" aria-modal="false" aria-labelledby="transferItemEditorTitle" hidden>
+          <h3 id="transferItemEditorTitle">Transfer item</h3>
+          <p id="transferItemAvailable" class="transfer-item-available"></p>
+          <label class="movement-planner-field"><span>Quantity</span><input id="transferQuantity" type="number" min="0" step="1" value="0" /></label>
+          <input id="transferQuantitySlider" type="range" min="0" max="0" value="0" aria-label="Transfer quantity" />
+          <div class="turn-action-dialog-actions"><button id="transferItemCancel" type="button" class="button">Cancel</button><button id="transferItemApply" type="button" class="button accent">OK</button></div>
+        </section>
+        <div class="turn-action-dialog-actions"><button id="transferCancel" type="button" class="button">Cancel</button><button id="transferSave" type="button" class="button accent">OK</button></div>
+        <div id="transferStatus" class="turn-action-status"></div>
+      </div>
+    </dialog>
+
+    <dialog id="transferOverviewDialog" class="turn-action-dialog transfer-overview-dialog">
+      <div class="turn-action-dialog-form">
+        <div class="turn-action-dialog-heading" data-drag-handle="transfer-overview">
+          <div><p class="eyebrow">TURN ORDERS</p><h2>Pending transfers</h2></div>
+          <button id="transferOverviewClose" type="button" class="button square" aria-label="Close">×</button>
+        </div>
+        <p id="transferOverviewTurn" class="turn-action-dialog-copy"></p>
+        <div class="transfer-overview-table-wrap"><table class="transfer-overview-table"><thead><tr><th>From</th><th>To</th><th>Item</th><th>Quantity</th><th>Timing</th><th>Notes</th><th></th></tr></thead><tbody id="transferOverviewRows"></tbody></table></div>
+        <div class="turn-action-dialog-actions transfer-overview-actions"><button id="transferCancelAll" type="button" class="button danger">Cancel all transfers this turn</button><button id="transferOverviewDone" type="button" class="button">Close</button></div>
+      </div>
+    </dialog>
+
     <dialog id="scoutRoutesDialog" class="turn-action-dialog">
       <form method="dialog" class="turn-action-dialog-form">
         <div class="turn-action-dialog-heading" data-drag-handle="scout-routes">
@@ -299,5 +344,6 @@
   <script src="item-icon-manifest.js"></script>
   <script src="results-playback.js"></script>
   <script src="turn-actions.js"></script>
+  <script src="transfer-screen.js"></script>
 </body>
 </html>

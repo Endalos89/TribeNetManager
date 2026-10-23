@@ -21,6 +21,10 @@ const data = buildOrdersExportData({
     [{ unitCode: '1485', unitType: 'Tribe', unitName: 'New Tribe', parentUnit: '0485', startHex: 'AA0101', creationPhase: 'after', skills: [{ skill: 'Woodworking', level: 3 }] }],
     [{ unitCode: '1485', unitType: 'Tribe', unitName: 'Stale Legacy', parentUnit: '0485', startHex: 'AA0101' }]
   ],
+  transferGroups: [
+    [{ id:1, turnKey:'906-04', from:'0485', to:'1485', item:'WARRIORS', quantity:10, timing:'AM' }],
+    [{ id:1, turnKey:'906-04', from:'0485', to:'1485', item:'WARRIORS', quantity:10, timing:'AM' }]
+  ],
   skillAttempts: [
     { tribe:'1485', order:2, topic:'Engineering', group:'C', baselineLevel:3 },
     { tribe:'0485', order:1, topic:'Diplomacy', group:'B', baselineLevel:2 },
@@ -34,6 +38,7 @@ assert.deepEqual(data.movements.map(row => [row.unitCode, row.directions]), [
   ['1485', ['Still']]
 ]);
 assert.deepEqual(data.scouts.map(row => [row.unitCode, row.scoutNumber, row.directions]), [['0485', 1, ['FOL']]]);
+assert.deepEqual(data.transfers.map(row => [row.from, row.to, row.item, row.quantity, row.timing]), [['0485','1485','WARRIORS',10,'AM']]);
 assert.ok(data.validUnits.some(row => row.unitCode === '1485' && row.unitName === 'New Tribe'));
 assert.deepEqual(data.gmActions.map(row => row.text), [
   'Create Tribe 1485 from 0485 after movement',

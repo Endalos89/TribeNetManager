@@ -685,6 +685,51 @@
   font-size: 9px;
 }
 
+.mapper-primary-actions { display:flex; align-items:center; gap:5px; flex:none; }
+.transfer-count-badge { display:inline-grid; place-items:center; min-width:18px; height:18px; margin-left:3px; padding:0 4px; border-radius:999px; background:#233d2b; color:#c4efc8; font-size:9px; font-variant-numeric:tabular-nums; }
+#transferDialog { width:min(900px,calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:visible; }
+#transferDialog .turn-action-dialog-form { position:relative; max-height:calc(100vh - 28px); overflow:auto; }
+.transfer-editor-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(190px,.7fr); gap:10px; }
+.transfer-editor-grid .movement-planner-field { min-width:0; }
+.transfer-rosters { display:grid; grid-template-columns:minmax(0,1fr) 34px minmax(0,1fr); gap:8px; min-height:250px; }
+.transfer-roster-panel { min-width:0; padding:10px; border:1px solid rgba(130,160,139,.27); border-radius:10px; background:rgba(11,25,20,.42); }
+.transfer-roster-panel h3 { margin:0 0 8px; overflow:hidden; color:#e2f0e4; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.transfer-roster-items { display:grid; grid-template-columns:repeat(auto-fill,minmax(83px,1fr)); gap:7px; max-height:min(45vh,420px); overflow:auto; align-content:start; }
+.transfer-roster-item { display:grid; justify-items:center; align-content:start; gap:4px; min-height:93px; padding:5px 3px; border:1px solid rgba(130,160,139,.2); border-radius:8px; background:#102019; color:#c6d5c9; cursor:pointer; }
+.transfer-roster-item:hover,.transfer-roster-item.has-transfer { border-color:#80bf89; background:#173022; }
+.transfer-roster-icon { position:relative; display:grid; place-items:center; width:52px; height:52px; border:1px solid #314c39; border-radius:8px; background:#09150e; image-rendering:pixelated; }
+.transfer-roster-icon img { width:40px; height:40px; object-fit:contain; image-rendering:pixelated; }
+.transfer-roster-icon > strong { position:absolute; right:-5px; bottom:-5px; max-width:51px; padding:2px 4px; border:1px solid #789c72; border-radius:7px; background:#07130c; color:#f2edcc; font-size:9px; font-variant-numeric:tabular-nums; line-height:1.1; }
+.transfer-roster-fallback { display:grid; place-items:center; width:38px; height:38px; border:1px solid #5e7752; border-radius:7px; background:#1a2b1d; color:#ddcf91; font-size:20px; font-weight:800; }
+.transfer-roster-name { max-width:100%; overflow:hidden; font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
+.transfer-roster-delta { max-width:100%; overflow:hidden; font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
+.transfer-roster-delta.incoming { color:#a6e6a9; }
+.transfer-roster-delta.outgoing { color:#e8c276; }
+.transfer-roster-arrow { display:grid; place-items:center; color:#d3bb73; font-size:24px; }
+.transfer-roster-empty { grid-column:1/-1; margin:6px; color:#91a89a; font-size:10px; }
+.transfer-item-editor { display:grid; gap:8px; width:min(360px,calc(100% - 28px)); margin:0 auto; padding:12px; border:1px solid #87ae78; border-radius:10px; background:#13251a; box-shadow:0 10px 32px rgba(0,0,0,.5); }
+.transfer-item-editor[hidden] { display:none; }
+.transfer-item-editor h3 { margin:0; color:#fff0bd; font-size:13px; }
+.transfer-item-available { margin:0; color:#9ab8a1; font-size:9px; }
+#transferQuantitySlider { width:100%; accent-color:#8dcb8e; padding:0; }
+.transfer-overview-dialog { width:min(1050px,calc(100vw - 28px)); max-height:calc(100vh - 28px); }
+.transfer-overview-dialog .turn-action-dialog-form { max-height:calc(100vh - 28px); overflow:auto; }
+.transfer-overview-table-wrap { max-width:100%; overflow:auto; border:1px solid rgba(130,160,139,.25); border-radius:8px; }
+.transfer-overview-table { width:100%; border-collapse:collapse; font-size:10px; }
+.transfer-overview-table th,.transfer-overview-table td { padding:8px; border-bottom:1px solid rgba(130,160,139,.16); text-align:left; white-space:nowrap; }
+.transfer-overview-table th { position:sticky; top:0; background:#14251a; color:#b5d1b5; }
+.transfer-overview-table td { color:#d1ded3; }
+.transfer-table-item { display:flex; align-items:center; gap:6px; }
+.transfer-table-item img { width:20px; height:20px; image-rendering:pixelated; object-fit:contain; }
+.transfer-overview-empty { padding:24px !important; color:#91a89a !important; text-align:center !important; }
+.transfer-overview-actions { justify-content:space-between; }
+@media (max-width: 650px) {
+  .transfer-editor-grid { grid-template-columns:1fr; }
+  .transfer-rosters { grid-template-columns:1fr; }
+  .transfer-roster-arrow { min-height:20px; transform:rotate(90deg); }
+  .transfer-overview-actions { align-items:stretch; flex-direction:column; }
+}
+
 @media (max-width: 1000px) {
   .movement-planner-setup-grid {
     grid-template-columns: 1fr 1fr;

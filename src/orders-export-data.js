@@ -41,7 +41,20 @@ function mergeDraftSplits(splitGroups = []) {
   return merged;
 }
 
-function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGroups = [], skillAttempts = [] } = {}) {
+function mergeDraftTransfers(groups = []) {
+  const merged = [];
+  const seen = new Set();
+  for (const group of groups) for (const row of group || []) {
+    if (!row?.from || !row?.to || !row?.item) continue;
+    const key = row.id != null ? `id:${row.turnKey || ''}:${row.id}` : `${row.from}|${row.to}|${row.item}|${row.quantity}|${row.timing}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({ ...row, timing: String(row.timing || 'BM').toUpperCase() === 'AM' ? 'AM' : 'BM' });
+  }
+  return merged;
+}
+
+function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGroups = [], transferGroups = [], skillAttempts = [] } = {}) {
   const unitsByCode = new Map();
   for (const unit of baselineUnits || []) {
     const unitCode = String(unit?.unit || unit?.unitCode || '').trim();
@@ -137,9 +150,10 @@ function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGrou
     movements,
     scouts,
     gmActions,
+    transfers: mergeDraftTransfers(transferGroups),
     skillAttempts: normalizedSkillAttempts,
     validUnits: units.map(unit => ({ unitCode: unit.unitCode, unitName: unit.unitName || '' }))
   };
 }
 
-module.exports = { buildOrdersExportData, mergeDraftRoutes, mergeDraftSplits };
+module.exports = { buildOrdersExportData, mergeDraftRoutes, mergeDraftSplits, mergeDraftTransfers };

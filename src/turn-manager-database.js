@@ -86,6 +86,20 @@ class TurnManagerDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_tm_splits_turn_parent ON planned_unit_splits(turn_key, parent_unit, unit_code);
 
+      CREATE TABLE IF NOT EXISTS planned_transfers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        turn_key TEXT NOT NULL,
+        from_unit TEXT NOT NULL,
+        to_unit TEXT NOT NULL,
+        item TEXT NOT NULL,
+        quantity INTEGER NOT NULL CHECK(quantity > 0),
+        timing TEXT NOT NULL CHECK(timing IN ('BM','AM')),
+        notes TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_tm_transfers_turn ON planned_transfers(turn_key, id);
+
       CREATE TABLE IF NOT EXISTS turn_context (
         turn_key TEXT PRIMARY KEY,
         notes TEXT NOT NULL DEFAULT '',
@@ -182,6 +196,7 @@ class TurnManagerDatabase {
       final: null,
       activities: this.listActivities(turnKey),
       unitSplits: this.listUnitSplits(turnKey),
+      transfers: this.listTransfers(turnKey),
       context: this.getContext(turnKey)
     };
     for (const row of rows) {
@@ -365,6 +380,8 @@ class TurnManagerDatabase {
       .filter(candidate => (canonicalTurnKey(candidate.turnKey) || candidate.turnKey) === key)
       .map(candidate => Number(candidate.id));
     for (const candidate of aliases) this.db.prepare('DELETE FROM planned_unit_splits WHERE id=?').run(candidate);
+    this.db.prepare('DELETE FROM planned_transfers WHERE turn_key=? AND (lower(from_unit)=lower(?) OR lower(to_unit)=lower(?))')
+      .run(key, row.unitCode, row.unitCode);
     return row;
   }
 
@@ -376,8 +393,96 @@ class TurnManagerDatabase {
     const ids = this.db.prepare('SELECT id, turn_key AS turnKey FROM planned_unit_splits').all()
       .filter(candidate => (canonicalTurnKey(candidate.turnKey) || candidate.turnKey) === key)
       .map(candidate => Number(candidate.id));
+    const unitCodes = new Set(rows.map(row => normalizeUnitCode(row.unitCode)));
+    const linkedTransfers = this.listTransfers(key).filter(row => unitCodes.has(normalizeUnitCode(row.from)) || unitCodes.has(normalizeUnitCode(row.to)));
+    for (const transfer of linkedTransfers) this.db.prepare('DELETE FROM planned_transfers WHERE id=?').run(transfer.id);
     for (const id of ids) this.db.prepare('DELETE FROM planned_unit_splits WHERE id=?').run(id);
     return rows;
+  }
+
+  addTransfer(turnKey, transfer) {
+    turnKey = canonicalTurnKey(turnKey) || turnKey;
+    const from = normalizeUnitCode(transfer?.from);
+    const to = normalizeUnitCode(transfer?.to);
+    const item = String(transfer?.item || '').trim();
+    const quantity = Number(transfer?.quantity);
+    const timing = String(transfer?.timing || 'BM').toUpperCase() === 'AM' ? 'AM' : 'BM';
+    if (!turnKey || !from || !to || from === to || !item) throw new Error('Choose two different units and an item to transfer.');
+    if (!Number.isInteger(quantity) || quantity <= 0) throw new Error('Transfer quantity must be a positive whole number.');
+    const now = new Date().toISOString();
+    const result = this.db.prepare(`
+      INSERT INTO planned_transfers(turn_key, from_unit, to_unit, item, quantity, timing, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(turnKey, from, to, item, quantity, timing, String(transfer?.notes || '').trim(), now, now);
+    return this.getTransfer(Number(result.lastInsertRowid));
+  }
+
+  getTransfer(id) {
+    return this.db.prepare(`SELECT id, turn_key AS turnKey, from_unit AS "from", to_unit AS "to", item, quantity,
+      timing, notes, created_at AS createdAt, updated_at AS updatedAt FROM planned_transfers WHERE id=?`).get(Number(id)) || null;
+  }
+
+  listTransfers(turnKey) {
+    if (!turnKey) return [];
+    const key = canonicalTurnKey(turnKey) || turnKey;
+    return this.db.prepare(`SELECT id, turn_key AS turnKey, from_unit AS "from", to_unit AS "to", item, quantity,
+      timing, notes, created_at AS createdAt, updated_at AS updatedAt FROM planned_transfers ORDER BY id`)
+      .all().filter(row => (canonicalTurnKey(row.turnKey) || row.turnKey) === key);
+  }
+
+  deleteTransfer(id) {
+    const transfer = this.getTransfer(id);
+    if (transfer) this.db.prepare('DELETE FROM planned_transfers WHERE id=?').run(Number(id));
+    return transfer;
+  }
+
+  replaceTransferGroup(turnKey, unitA, unitB, timing, transfers = []) {
+    turnKey = canonicalTurnKey(turnKey) || turnKey;
+    const a = normalizeUnitCode(unitA); const b = normalizeUnitCode(unitB);
+    const phase = String(timing || 'BM').toUpperCase();
+    if (!turnKey || !a || !b || a === b || !['BM', 'AM'].includes(phase)) {
+      throw new Error('Choose two different units and a valid transfer phase.');
+    }
+    const normalized = (transfers || []).map(row => {
+      const from = normalizeUnitCode(row?.from); const to = normalizeUnitCode(row?.to);
+      const item = String(row?.item || '').trim(); const quantity = Number(row?.quantity);
+      if (!((from === a && to === b) || (from === b && to === a)) || !item) {
+        throw new Error('Each transfer must use the selected pair of units and include an item.');
+      }
+      if (!Number.isInteger(quantity) || quantity <= 0) throw new Error('Transfer quantity must be a positive whole number.');
+      return { from, to, item, quantity, timing: phase, notes: String(row?.notes || '').trim() };
+    });
+    const now = new Date().toISOString();
+    const insert = this.db.prepare(`
+      INSERT INTO planned_transfers(turn_key, from_unit, to_unit, item, quantity, timing, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const replacedIds = this.listTransfers(turnKey).filter(row => String(row.timing).toUpperCase() === phase &&
+      ((normalizeUnitCode(row.from) === a && normalizeUnitCode(row.to) === b) ||
+       (normalizeUnitCode(row.from) === b && normalizeUnitCode(row.to) === a))).map(row => Number(row.id));
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const remove = this.db.prepare('DELETE FROM planned_transfers WHERE id=?');
+      for (const id of replacedIds) remove.run(id);
+      for (const row of normalized) insert.run(turnKey, row.from, row.to, row.item, row.quantity, phase, row.notes, now, now);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+    return this.listTransfers(turnKey).filter(row => row.timing === phase &&
+      ((normalizeUnitCode(row.from) === a && normalizeUnitCode(row.to) === b) ||
+       (normalizeUnitCode(row.from) === b && normalizeUnitCode(row.to) === a)));
+  }
+
+  deleteAllTransfers(turnKey) {
+    const transfers = this.listTransfers(turnKey);
+    if (!transfers.length) return [];
+    const key = canonicalTurnKey(turnKey) || turnKey;
+    const ids = this.db.prepare('SELECT id, turn_key AS turnKey FROM planned_transfers').all()
+      .filter(row => (canonicalTurnKey(row.turnKey) || row.turnKey) === key).map(row => Number(row.id));
+    for (const id of ids) this.db.prepare('DELETE FROM planned_transfers WHERE id=?').run(id);
+    return transfers;
   }
 
   saveSkillAttempts(turnKey, tribe, attempts = []) {

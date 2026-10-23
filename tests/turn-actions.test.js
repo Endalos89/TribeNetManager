@@ -7,6 +7,7 @@ const index = fs.readFileSync('src/index.html', 'utf8');
 const mapperStyles = fs.readFileSync('src/movement-planner.css', 'utf8');
 const movementPlanner = fs.readFileSync('src/movement-planner.js', 'utf8');
 const renderer = fs.readFileSync('src/renderer.js', 'utf8');
+const transferScreen = fs.readFileSync('src/transfer-screen.js', 'utf8');
 
 assert.match(index, /id="turnActionBar"/, 'The mapper must expose the selected-unit action bar.');
 assert.match(index, /id="turnActionHoverCard"/, 'Move Unit must expose a hover cost readout.');
@@ -14,6 +15,14 @@ assert.match(index, /id="turnActionTooltip"/, 'Action controls must expose an im
 assert.match(index, /id="scoutRoutesDialog"/, 'Scouting orders must have a dedicated edit dialog.');
 assert.match(index, /id="turnActionRouteLegend"/, 'The map must expose a route certainty legend.');
 assert.match(index, /id="unitSplitDialog"/, 'Split Off Unit must have a dedicated dialog.');
+assert.match(index, /id="openTransferOverviewButton"/, 'Transfer overview must be reachable from the top-left mapper actions.');
+assert.match(index, /id="transferOverviewRows"/, 'Transfer overview must show workbook-style rows.');
+assert.match(index, /id="transferCancelAll"/, 'Transfer overview must allow cancelling every transfer for the current turn.');
+assert.match(index, /id="transferQuantitySlider"/, 'Transfer item editor must include a quantity slider.');
+assert.match(index, /id="transferQuantity"/, 'Transfer item editor must allow direct quantity entry.');
+assert.match(transferScreen, /TribeNetItemIconManifest/, 'Transfer roster items must use compendium icons where available.');
+assert.match(transferScreen, /replacePlannedTransferGroup/, 'Transfer editor must save the complete selected pair and timing group.');
+assert.match(transferScreen, /deleteAllPlannedTransfers/, 'Transfer overview must provide turn-wide cancellation.');
 assert.match(actions, /Move Unit/, 'Move Unit action is missing.');
 assert.match(actions, /Split Off Unit/, 'Split Off Unit action is missing.');
 assert.match(actions, /Send Out Scout/, 'Send Out Scout action is missing.');
