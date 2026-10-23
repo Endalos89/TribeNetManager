@@ -526,18 +526,18 @@ function drawRoute(points, style = {}) {
       normalCumulative += baseEntryMp;
       badWeatherCumulative += baseEntryMp + weatherPenalty;
     }
-    const weatherRisk = Number.isFinite(weatherAllowance)
-      && (normalCumulative > weatherAllowance || badWeatherCumulative > weatherAllowance);
+    const unreachable = Number.isFinite(weatherAllowance) && normalCumulative > weatherAllowance;
+    const weatherRisk = Number.isFinite(weatherAllowance) && badWeatherCumulative > weatherAllowance;
     const maybe = points[i].kind === 'approx'
       || points[i].kind === 'conditional'
       || points[i].terrain === 'UNKNOWN'
       || (hasEntryMp && points[i].entryMp == null)
       || weatherRisk;
-    const color = maybe ? (style.maybeColor || style.color) : (style.certainColor || style.color);
+    const color = unreachable ? (style.unreachableColor || '#f06464') : maybe ? (style.maybeColor || style.color) : (style.certainColor || style.color);
     drawArrowSegment(points[i - 1], points[i], {
       ...style,
       color,
-      dashed: style.dashed || maybe
+      dashed: style.dashed || maybe || unreachable
     });
   }
 }
@@ -643,21 +643,22 @@ function drawPlanOverlay() {
   if (state.scoutingVisible) {
     for (const s of state.routeCache.scouts) {
       const routeId = planRouteKey(s);
+      const scoutColor = '#c58cff';
       const emphasis=routeStyle(s.unit, { alpha:.76 }, routeId);
       drawRoute(s.route.points, routeStyle(s.unit, {
-        color:'#78c9e6', certainColor:'#78c9e6', maybeColor:'#e4bb65',
+        color:scoutColor, certainColor:scoutColor, maybeColor:'#e4bb65', unreachableColor:'#f06464',
         badWeatherAllowance: s.mounted ? 15 : 8,
         width:Math.max(1.7,state.scale*.075), alpha:.76, dashed:true
       }, routeId));
-      drawConditionalPredictions(s.route, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1.2,state.scale*.05), alpha:.3, dashed:true }, routeId));
-      const start=s.route.points[0], end=s.route.points[s.route.points.length-1]; if (start) drawScoutLabel(start, s.id, s.unit); if (s.route.unresolved.length && end) drawConditionalMarker(end, s.route.unresolved[0], '#78c9e6', emphasis.alpha);
-      if (s.route.points.length > 1 && !s.route.unresolved.length) drawArrowSegment(end, start, routeStyle(s.unit, { color:'#78c9e6', width:Math.max(1,state.scale*.05), alpha:.32, dashed:true }, routeId));
+      drawConditionalPredictions(s.route, routeStyle(s.unit, { color:scoutColor, width:Math.max(1.2,state.scale*.05), alpha:.3, dashed:true }, routeId));
+      const start=s.route.points[0], end=s.route.points[s.route.points.length-1]; if (start) drawScoutLabel(start, s.id, s.unit); if (s.route.unresolved.length && end) drawConditionalMarker(end, s.route.unresolved[0], scoutColor, emphasis.alpha);
+      if (s.route.points.length > 1 && !s.route.unresolved.length) drawArrowSegment(end, start, routeStyle(s.unit, { color:scoutColor, width:Math.max(1,state.scale*.05), alpha:.32, dashed:true }, routeId));
     }
   }
 }
 function drawScoutLabel(point, id, unit) {
   const p=screenFromBase(baseCenter(point.globalCol,point.globalRow)); ctx.save(); const text=`S${id} ${unit}`; ctx.font=`700 ${Math.max(8,Math.min(10,state.scale*.25))}px Segoe UI`; const w=ctx.measureText(text).width+10,h=16,x=p.x-w/2,y=p.y+state.scale*.48;
-  ctx.fillStyle='rgba(8,28,37,.9)'; ctx.strokeStyle='#78c9e6'; roundedRect(ctx,x,y,w,h,5); ctx.fill(); ctx.stroke(); ctx.fillStyle='#c8f1ff'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,x+w/2,y+h/2); ctx.restore();
+  ctx.fillStyle='rgba(21,13,34,.94)'; ctx.strokeStyle='#c58cff'; roundedRect(ctx,x,y,w,h,5); ctx.fill(); ctx.stroke(); ctx.fillStyle='#ead7ff'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,x+w/2,y+h/2); ctx.restore();
 }
 
 function bindEvents() {

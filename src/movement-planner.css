@@ -743,8 +743,11 @@
 }
 
 .transfer-count-badge { display:inline-grid; place-items:center; min-width:18px; height:18px; margin-left:3px; padding:0 4px; border-radius:999px; background:#233d2b; color:#c4efc8; font-size:9px; font-variant-numeric:tabular-nums; }
-.transfer-map-button { position:absolute; z-index:20; top:12px; left:12px; display:inline-flex; align-items:center; gap:5px; padding:8px 11px; border:1px solid rgba(170,205,182,.55); border-radius:8px; background:rgba(7,16,20,.88); color:#edf5ee; font-weight:700; box-shadow:0 3px 12px rgba(0,0,0,.38); cursor:pointer; backdrop-filter:blur(5px); }
+.map-corner-actions { position:absolute; z-index:20; top:12px; left:12px; display:flex; gap:7px; }
+.transfer-map-button { position:relative; display:inline-flex; align-items:center; gap:5px; padding:8px 11px; border:1px solid rgba(170,205,182,.55); border-radius:8px; background:rgba(7,16,20,.88); color:#edf5ee; font-weight:700; box-shadow:0 3px 12px rgba(0,0,0,.38); cursor:pointer; backdrop-filter:blur(5px); }
 .transfer-map-button:hover { background:rgba(24,49,37,.96); border-color:#a6d4ac; }
+.scout-overview-dialog .turn-action-dialog-form { max-height:calc(100vh - 28px); overflow:auto; }
+.scout-overview-table { min-width:1120px; }
 .transfer-from-value { display:block; min-height:34px; padding:9px 10px; overflow:hidden; border:1px solid rgba(130,160,139,.27); border-radius:7px; background:rgba(11,25,20,.42); color:#e2f0e4; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
 .transfer-area-hint { margin:0 0 10px; }
 #transferDialog { width:min(900px,calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:visible; }

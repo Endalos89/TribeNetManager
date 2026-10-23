@@ -293,6 +293,7 @@ async function savedMovementRefresh() {
   if (refreshSequence !== savedMovementRefreshSequence) return;
   savedMovementPlansState.routes = routes;
   savedMovementPlansState.transfers = transfers;
+  if (typeof turnActionsRenderScoutOverviewButton === 'function') turnActionsRenderScoutOverviewButton(routes);
   if (typeof transferScreenRenderOverviewButton === 'function') transferScreenRenderOverviewButton(transfers);
   if (state.selectedRouteId != null && !savedMovementPlansState.routes.some(route => savedMovementRouteKey(route) === String(state.selectedRouteId))) {
     state.selectedRouteId = null;
@@ -443,13 +444,13 @@ function savedMovementDrawOverlay() {
     if (route.routeType === 'unit' && !state.planningVisible) continue;
     if (route.routeType === 'scout' && (!state.planningVisible || !state.scoutingVisible)) continue;
     const scout = route.routeType === 'scout';
-    const color = scout ? '#78c9e6' : '#f0b45e';
-    const certainColor = scout ? '#78c9e6' : '#8dd7a1';
+    const color = scout ? '#c58cff' : '#f0b45e';
+    const certainColor = scout ? '#c58cff' : '#8dd7a1';
     const maybeColor = '#e4bb65';
     const routeId = savedMovementRouteKey(route);
     const style = routeStyle(route.unitCode || route.unit, {
       color, certainColor, maybeColor,
-      badWeatherAllowance: savedMovementRouteWeatherAllowance(route),
+      badWeatherAllowance: savedMovementRouteWeatherAllowance(route), unreachableColor:'#f06464',
       width: Math.max(1.8, state.scale * (scout ? .07 : .09)), alpha: .58, dashed: scout
     }, routeId);
     drawRoute(route.path, style);

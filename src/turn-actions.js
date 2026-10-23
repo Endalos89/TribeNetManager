@@ -177,6 +177,40 @@ function turnActionsRenderScoutTools() {
   requestAnimationFrame(turnActionsPositionScoutTools);
 }
 
+function turnActionsRenderScoutOverviewButton(routes = savedMovementPlansState.routes) {
+  const count = document.getElementById('scoutOverviewCount');
+  if (count) count.textContent = String((routes || []).filter(route => route.routeType === 'scout').length);
+}
+
+function turnActionsOpenScoutOverview() {
+  const dialog = document.getElementById('scoutOverviewDialog');
+  const host = document.getElementById('scoutOverviewRows');
+  if (!dialog || !host) return false;
+  const turnKey = savedMovementCurrentTurnKey();
+  const routes = savedMovementPlansState.routes.filter(route => route.routeType === 'scout')
+    .slice().sort((a, b) => String(a.unitCode).localeCompare(String(b.unitCode), undefined, { numeric:true }) || Number(a.scoutNumber || 0) - Number(b.scoutNumber || 0));
+  const directions = route => (route.directions || []).slice(0, 9);
+  const movementCell = value => value ? (String(value).toUpperCase() === 'STILL' ? 'Still' : String(value).toUpperCase()) : '—';
+  document.getElementById('scoutOverviewTurn').textContent = turnKey
+    ? `Turn ${turnKey} · ${routes.length} scouting row${routes.length === 1 ? '' : 's'}`
+    : 'No planning turn is selected.';
+  host.innerHTML = routes.length ? routes.map(route => {
+    const moves = directions(route);
+    return `<tr data-scout-overview-route="${turnActionsEscape(savedMovementRouteKey(route))}" title="Select to highlight this route on the map">
+      <td>${turnActionsEscape(route.unitCode)}</td><td>S${turnActionsEscape(route.scoutNumber || '?')}</td>
+      <td>${Number(route.noOfScouts || 0)}</td><td>${Number(route.noOfHorses || 0)}</td><td>${turnActionsEscape(route.mission || 'PATROL')}</td>
+      ${Array.from({length:9}, (_, index) => `<td>${turnActionsEscape(movementCell(moves[index]))}</td>`).join('')}
+    </tr>`;
+  }).join('') : '<tr><td class="transfer-overview-empty" colspan="14">No scouting orders planned for this turn.</td></tr>';
+  host.querySelectorAll('[data-scout-overview-route]').forEach(row => row.addEventListener('click', () => {
+    savedMovementSelectSavedRoute(row.dataset.scoutOverviewRoute);
+    dialog.close();
+  }));
+  turnActionsBindDialogDrag(dialog, 'scout-overview');
+  if (!dialog.open) dialog.showModal();
+  return true;
+}
+
 function turnActionsReadScoutFields() {
   savedMovementPlansState.scoutCount = Math.max(1, Number(document.getElementById('turnActionScoutPeople')?.value || 2));
   savedMovementPlansState.scoutHorses = Math.max(0, Number(document.getElementById('turnActionScoutHorses')?.value || 2));
@@ -968,7 +1002,16 @@ async function turnActionsCancelUnitCreation() {
   }
 }
 
-function turnActionsSyncSelection() {
+function turnActionsSyncSelection(event) {
+  if (turnActionState.active && !event?.detail?.unitCode) {
+    // Empty-hex clicks dispatch a null unit selection before they are handed
+    // to the route planner. Keep the initiating unit selected so the action
+    // bar and floating scout controls survive destination clicks.
+    state.selectedUnit = savedMovementPlansState.selectedUnitCode || state.selectedUnit;
+    state.selectedUnitHex = movementPlannerState.origin?.coordinate || state.selectedUnitHex;
+    turnActionsRender();
+    return;
+  }
   if (turnActionState.active) turnActionsCancel();
   if (state.selectedUnit) savedMovementPlansState.selectedUnitCode = String(state.selectedUnit);
   else savedMovementPlansState.selectedUnitCode = '';
@@ -986,9 +1029,10 @@ draw = function drawWithTurnActions() {
   if (turnActionState.active && route?.status === 'ok' && route.path?.length > 1) {
     const scout = turnActionState.active === 'scout';
     drawRoute(route.path, {
-      color: scout ? '#78c9e6' : '#8dd7a1',
-      certainColor: scout ? '#78c9e6' : '#8dd7a1',
+      color: scout ? '#c58cff' : '#8dd7a1',
+      certainColor: scout ? '#c58cff' : '#8dd7a1',
       maybeColor: '#e4bb65',
+      unreachableColor: '#f06464',
       badWeatherAllowance: scout ? turnActionsScoutAllowance() : turnActionsUnitMovement(turnActionsUnit()).allowance,
       width: Math.max(2.5, state.scale * .11),
       alpha: .98,
@@ -1014,7 +1058,7 @@ draw = function drawWithTurnActions() {
   }
   if (!turnActionState.active || !route?.conditionalPredictionPaths?.length) return;
   const style = turnActionState.active === 'scout'
-    ? { color:'#78c9e6', width:Math.max(1.2,state.scale*.05), alpha:.3, dashed:true }
+    ? { color:'#c58cff', width:Math.max(1.2,state.scale*.05), alpha:.3, dashed:true }
     : { color:'#f0b45e', width:Math.max(1.4,state.scale*.06), alpha:.3, dashed:true };
   drawConditionalPredictions(route, style);
   if (turnActionState.tracePoint) {
@@ -1064,6 +1108,10 @@ window.addEventListener('keyup', async event => {
 });
 window.addEventListener('resize', turnActionsPositionScoutTools);
 window.addEventListener('blur', () => { movementPlannerState.shiftHeld = false; });
+document.getElementById('openScoutOverviewButton')?.addEventListener('click', turnActionsOpenScoutOverview);
+document.getElementById('scoutOverviewClose')?.addEventListener('click', () => document.getElementById('scoutOverviewDialog').close());
+document.getElementById('scoutOverviewDone')?.addEventListener('click', () => document.getElementById('scoutOverviewDialog').close());
+turnActionsRenderScoutOverviewButton();
 
 document.getElementById('movementPlannerCreateParent')?.addEventListener('change', savedMovementLoadCreationSkills);
 document.getElementById('movementPlannerCreateType')?.addEventListener('change', savedMovementLoadCreationSkills);
