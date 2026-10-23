@@ -84,10 +84,12 @@ function turnActionsMovementRisk(route, allowance) {
 function turnActionsRender() {
   const bar = document.getElementById('turnActionBar');
   if (!bar) return;
+  const scoutTools = document.getElementById('turnActionScoutTools');
   turnActionsRenderLegend();
   const unit = turnActionsUnit();
   if (!turnActionsPlanningAvailable() || !unit) {
     bar.classList.add('hidden');
+    scoutTools?.classList.add('hidden');
     return;
   }
 
@@ -121,7 +123,7 @@ function turnActionsRender() {
       ${turnActionState.active === 'scout' ? `<button class="turn-action-button route-action${turnActionState.followOceanMode ? ' active' : ''}" data-turn-action="follow-ocean" aria-label="Follow Ocean" title="Follow Ocean · F">${TURN_ACTION_ICONS.followOcean}</button>` : ''}
       ${unitScoutRoutes.length ? `<button class="turn-action-button route-action" data-turn-action="open-scouts" aria-label="View scouting routes" title="View scouting routes · V">${TURN_ACTION_ICONS.routes}</button>` : ''}
       ${unit.plannedSplit ? `<button class="turn-action-utility danger" data-turn-action="cancel-unit-creation" aria-label="Cancel unit creation" title="Cancel creation of ${turnActionsEscape(unit.unitCode)} and remove its linked transfers">Cancel unit creation</button>` : ''}
-      ${active ? `<button class="turn-action-button secondary" data-turn-action="cancel" aria-label="Cancel action" title="Cancel action · Esc">${TURN_ACTION_ICONS.cancel}</button>` : ''}
+      ${active && turnActionState.active !== 'scout' ? `<button class="turn-action-button secondary" data-turn-action="cancel" aria-label="Cancel action" title="Cancel action · Esc">${TURN_ACTION_ICONS.cancel}</button>` : ''}
       ${selectedScout && !active ? `<span class="turn-action-route-selection">Scout S${selectedScout.scoutNumber} selected</span><button class="turn-action-button route-action" data-turn-action="edit-scout" aria-label="Edit scouting" title="Edit scouting · C">${TURN_ACTION_ICONS.edit}</button><button class="turn-action-button secondary route-action" data-turn-action="cancel-scout" aria-label="Cancel scouting" title="Cancel scouting">${TURN_ACTION_ICONS.remove}</button>` : ''}
     </div>
     <div class="turn-action-utilities">
@@ -131,12 +133,48 @@ function turnActionsRender() {
       ${splitCount ? `<button class="turn-action-utility" data-turn-action="reset-splits" title="Reset unit changes">${TURN_ACTION_ICONS.reset}</button>` : ''}
     </div>`;
   bar.classList.remove('hidden');
+  turnActionsRenderScoutTools();
 
   bar.querySelectorAll('[data-turn-action]').forEach(button => button.addEventListener('click', () => turnActionsHandle(button.dataset.turnAction)));
   turnActionsBindTooltips(bar);
   for (const id of ['turnActionScoutPeople', 'turnActionScoutHorses', 'turnActionScoutMission']) {
     document.getElementById(id)?.addEventListener('change', turnActionsReadScoutFields);
   }
+}
+
+function turnActionsPositionScoutTools() {
+  const tools = document.getElementById('turnActionScoutTools');
+  const bar = document.getElementById('turnActionBar');
+  const wrap = document.getElementById('canvasWrap');
+  if (!tools || !bar || !wrap || tools.classList.contains('hidden')) return;
+  const barRect = bar.getBoundingClientRect();
+  const wrapRect = wrap.getBoundingClientRect();
+  const left = barRect.left - wrapRect.left + (barRect.width - tools.offsetWidth) / 2;
+  const top = Math.max(8, barRect.top - wrapRect.top - tools.offsetHeight - 8);
+  tools.style.left = `${Math.max(8, Math.min(wrapRect.width - tools.offsetWidth - 8, left))}px`;
+  tools.style.top = `${top}px`;
+}
+
+function turnActionsRenderScoutTools() {
+  const tools = document.getElementById('turnActionScoutTools');
+  if (!tools) return;
+  if (turnActionState.active !== 'scout') {
+    tools.classList.add('hidden');
+    tools.innerHTML = '';
+    return;
+  }
+  const route = movementPlannerState.route;
+  const hasRoute = route?.status === 'ok' && route.directions?.length > 0;
+  const pendingOcean = Boolean(turnActionState.pendingOcean);
+  tools.innerHTML = `
+    <button class="turn-action-scout-tool danger" type="button" data-turn-action="scout-cancel" aria-label="Cancel scouting order" title="Cancel scouting order">×</button>
+    <button class="turn-action-scout-tool${route?.conditionalOrder === 'FOL' ? ' active' : ''}" type="button" data-turn-action="scout-fol" aria-label="Insert FOL scouting command" title="Insert FOL · follow ocean left"${!hasRoute || pendingOcean ? ' disabled' : ''}>FOL</button>
+    <button class="turn-action-scout-tool${route?.conditionalOrder === 'FOR' ? ' active' : ''}" type="button" data-turn-action="scout-for" aria-label="Insert FOR scouting command" title="Insert FOR · follow ocean right"${!hasRoute || pendingOcean ? ' disabled' : ''}>FOR</button>
+    <button class="turn-action-scout-tool confirm" type="button" data-turn-action="scout-confirm" aria-label="Confirm scouting order" title="Confirm scouting order"${!hasRoute || pendingOcean ? ' disabled' : ''}>✓</button>`;
+  tools.classList.remove('hidden');
+  tools.querySelectorAll('[data-turn-action]').forEach(button => button.addEventListener('click', () => turnActionsHandle(button.dataset.turnAction)));
+  turnActionsBindTooltips(tools);
+  requestAnimationFrame(turnActionsPositionScoutTools);
 }
 
 function turnActionsReadScoutFields() {
@@ -390,7 +428,9 @@ async function turnActionsStart(type, options = {}) {
   turnActionState.pendingOcean = null;
   turnActionState.tracePoint = null;
   turnActionState.followOceanMode = Boolean(options.followOcean);
-  turnActionState.status = `Click a destination${type === 'scout' ? ' to trace the scout route' : ''}. Hold Shift to chain commands.`;
+  turnActionState.status = type === 'scout'
+    ? 'Click a destination to trace the scout route. Hold Shift to chain commands, then confirm with ✓.'
+    : 'Click a destination. Hold Shift to chain commands.';
   if (turnActionState.followOceanMode) turnActionState.status = 'Follow Ocean armed · select an adjacent ocean hex, then a land or unexplored hex for direction.';
   movementPlannerState.active = true;
   movementPlannerState.shiftHeld = false;
@@ -468,6 +508,52 @@ async function turnActionsCommit() {
   }
 }
 
+function turnActionsAddScoutConditional(order) {
+  if (turnActionState.active !== 'scout' || !['FOL', 'FOR'].includes(order)) return;
+  const route = movementPlannerState.route;
+  const path = route?.path || [];
+  if (!route || route.status !== 'ok' || path.length < 2) {
+    turnActionsSetStatus('Trace a scouting route first, then add FOL or FOR at its endpoint.');
+    return;
+  }
+  if (turnActionState.pendingOcean) {
+    turnActionsSetStatus('Finish the current coastline selection before adding FOL or FOR.');
+    return;
+  }
+  const endpoint = path[path.length - 1];
+  const previous = path[path.length - 2];
+  const heading = directionBetween(previous.coordinate, endpoint.coordinate);
+  if (!heading) {
+    turnActionsSetStatus('Could not determine the heading at the end of this scout route.');
+    return;
+  }
+  const routeDirections = [...(route.directions || [])];
+  const existingConditional = route.conditionalOrder || (ConditionalOrders.DEFINITIONS?.[routeDirections[routeDirections.length - 1]] ? routeDirections[routeDirections.length - 1] : null);
+  const directions = [...routeDirections];
+  if (ConditionalOrders.DEFINITIONS?.[directions[directions.length - 1]]) directions.pop();
+  if (existingConditional === order) {
+    movementPlannerState.route = { ...route, directions, conditionalOrder:null, conditionalPredictionPaths:[], steps:directions.length };
+    turnActionsSetStatus(`${order} removed. Continue tracing or confirm the route.`);
+    draw();
+    return;
+  }
+  const preview = ConditionalOrders.preview(state.hexCache, endpoint, heading, order, { maxSteps:6 });
+  movementPlannerState.route = {
+    ...route,
+    directions:[...directions, order],
+    destinationHex:endpoint.coordinate,
+    actualTarget:endpoint.coordinate,
+    conditionalPredictionPaths:preview.predictionPaths || [],
+    conditionalOrder:order,
+    steps:Number(route.steps || directions.length) + 1
+  };
+  turnActionState.followOceanMode = false;
+  turnActionState.pendingOcean = null;
+  turnActionState.tracePoint = null;
+  turnActionsSetStatus(`${order} added at ${endpoint.coordinate}. Confirm the route or click ${order} again to remove it.`);
+  draw();
+}
+
 function turnActionsDirectionBetween(from, to) {
   return MovementPlannerCore.adjacentHexes(from).find(point => point.coordinate === to.coordinate)?.direction || null;
 }
@@ -504,16 +590,20 @@ async function turnActionsApplyFollowOcean(ocean, target) {
   turnActionState.pendingOcean = null;
   turnActionState.tracePoint = target;
   turnActionState.shiftChainStarted = true;
-  const commitFollowOcean = turnActionState.followOceanMode && !movementPlannerState.shiftHeld;
   turnActionState.followOceanMode = false;
-  turnActionsSetStatus(`${order} inferred. ${commitFollowOcean ? 'Saving…' : 'Release Shift to commit, or cancel to discard.'}`);
+  turnActionsSetStatus(`${order} added. Confirm the scout route or continue editing.`);
   draw();
-  if (commitFollowOcean) await turnActionsCommit();
   return true;
 }
 
 async function turnActionsHandleScoutTrace(targetCoordinate) {
-  if (turnActionState.active !== 'scout' || (!movementPlannerState.shiftHeld && !turnActionState.followOceanMode && !turnActionState.pendingOcean)) return false;
+  if (turnActionState.active !== 'scout') return false;
+  const routeOrder = movementPlannerState.route?.directions?.at(-1)?.toUpperCase();
+  if (ConditionalOrders.DEFINITIONS?.[routeOrder]) {
+    turnActionsSetStatus('FOL/FOR is the final scouting command. Click its button again to remove it, or confirm the route.');
+    return true;
+  }
+  if (!movementPlannerState.shiftHeld && !turnActionState.followOceanMode && !turnActionState.pendingOcean) return false;
   const target = parseCoordinate(targetCoordinate);
   if (!target) return true;
   const ocean = turnActionsOceanPoint(target.coordinate);
@@ -573,6 +663,11 @@ selectHex = async function selectHexWithTurnActions(globalCol, globalRow) {
     await turnActionsOriginalSelectHex(globalCol, globalRow);
     if (!turnActionState.active) return;
     if (movementPlannerState.shiftHeld) {
+      turnActionState.shiftChainStarted = true;
+      turnActionsRender();
+      return;
+    }
+    if (turnActionState.active === 'scout') {
       turnActionState.shiftChainStarted = true;
       turnActionsRender();
       return;
@@ -830,7 +925,10 @@ async function turnActionsHandle(action) {
   if (action === 'scout') return turnActionsStart('scout');
   if (action === 'split') return turnActionsOpenSplit();
   if (action === 'transfer') return typeof transferScreenOpen === 'function' ? transferScreenOpen({ from: savedMovementSelectedUnit()?.unitCode }) : false;
-  if (action === 'cancel') return turnActionsCancel();
+  if (action === 'cancel' || action === 'scout-cancel') return turnActionsCancel();
+  if (action === 'scout-confirm') return turnActionsCommit();
+  if (action === 'scout-fol') return turnActionsAddScoutConditional('FOL');
+  if (action === 'scout-for') return turnActionsAddScoutConditional('FOR');
   if (action === 'edit-scout') return turnActionsEditSelectedScout();
   if (action === 'cancel-scout') return turnActionsCancelSelectedScout();
   if (action === 'follow-ocean') return turnActionsArmFollowOcean();
@@ -962,8 +1060,9 @@ window.addEventListener('keyup', async event => {
   // The key can be released immediately after mouseup. Wait for that click's
   // async append/route calculation before committing the complete chain.
   if (turnActionState.pendingMapClick) await turnActionState.pendingMapClick;
-  if (turnActionState.active && turnActionState.shiftChainStarted) await turnActionsCommit();
+  if (turnActionState.active === 'unit' && turnActionState.shiftChainStarted) await turnActionsCommit();
 });
+window.addEventListener('resize', turnActionsPositionScoutTools);
 window.addEventListener('blur', () => { movementPlannerState.shiftHeld = false; });
 
 document.getElementById('movementPlannerCreateParent')?.addEventListener('change', savedMovementLoadCreationSkills);
