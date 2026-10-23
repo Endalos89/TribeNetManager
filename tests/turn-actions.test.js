@@ -134,5 +134,23 @@ assert.deepEqual(
   ['2485', '0485e1'],
   'After Movement targets should share the source movement endpoint and include units created there.'
 );
+assert.match(transferScreen, /const transferScreenPeopleItems = \['WARRIORS', 'ACTIVES', 'INACTIVES'\]/, 'Warriors, actives and inactives must always have separate roster entries.');
+assert.match(transferScreen, /!transferScreenPeopleItems\.includes\(item\) && balance\.amount <= 0/, 'Zero quantity goods should be omitted from the transfer roster.');
+assert.match(transferScreen, /transferScreenRenderLogistics\(transferScreenSession\.from, 'transferLogisticsLeft'\)/, 'The transfer screen must refresh logistics meters after each staged change.');
+const logisticsContext = vm.createContext({
+  document: { getElementById: () => null },
+  window: { TribeNetOrdersReferenceRaw: { goods:[{name:'Provs',rawName:'PROVS',weight:10}] } },
+  savedMovementUnits: () => [],
+  state: { planImport:{ plan:{ unitStats:[
+    {unit:'0485',warrior:0,active:300,inactive:0,eaters:300,totalPeople:300,locals:0,horseCount:0,cattleCount:0,elephantCount:0,camelCount:0,wagonCount:0,backpacks:0,saddlebags:0,carriedWeight:6000,carryingCapacity:9000,inventory:[{item:'PROVS',quantity:600,weightEach:10}]},
+    {unit:'1485',warrior:0,active:0,inactive:0,eaters:0,totalPeople:0,locals:0,horseCount:0,cattleCount:0,elephantCount:0,camelCount:0,wagonCount:0,backpacks:0,saddlebags:0,carriedWeight:0,carryingCapacity:0,inventory:[]}
+  ] } } }
+});
+vm.runInContext(transferScreen, logisticsContext);
+vm.runInContext(`transferScreenSession={from:'0485',to:'1485',draftRows:[{from:'0485',to:'1485',item:'ACTIVES',quantity:30},{from:'0485',to:'1485',item:'PROVS',quantity:100}]}`, logisticsContext);
+const logistics = vm.runInContext(`transferScreenLiveLogistics('0485')`, logisticsContext);
+assert.equal(logistics.capacity, 8100, 'Carrying capacity must recalculate for people staged out of the source unit.');
+assert.equal(logistics.weight, 5000, 'Carried weight must recalculate for goods staged out of the source unit.');
+assert.equal(logistics.months, 500 / 270, 'Sustenance must recalculate from remaining provisions and eaters.');
 
 console.log('Turn action UI regression tests passed');
