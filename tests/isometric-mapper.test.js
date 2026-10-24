@@ -37,7 +37,7 @@ assert.ok(Math.abs(parseInt(dryColor.slice(1,3),16)-0x83)<18,'plain patches pres
 const wet=(c,r)=>c===30&&r===20?{terrain:'O'}:{terrain:'PR'};
 assert.equal(G.surface(p.x,p.y,wet,palette).water,true);
 // Visual coasts may cross hex edges; centres retain authoritative terrain.
-assert.equal(G.surface(p.x,p.y,wet,palette).z,.10,'reported ocean centre uses configurable sea level');
+assert.equal(G.surface(p.x,p.y,wet,palette).z,.5,'reported ocean centre uses configurable sea level');
 assert.equal(G.surface(n.x,n.y,wet,palette).water,false,'coastal band does not consume whole land hex');
 // Heights are eased *within* mixed terrain pieces; the flat PR side must
 // contain a gradual foothill before the GH core reaches its full elevation.
@@ -176,7 +176,7 @@ assert.equal(G.treeSite('LCM',site,(x,y)=>({x,y,z:.8+x*1.2,water:false})),false,
 assert.equal(G.treeSite('LCM',{...site,z:1.3},gentle),false,'avoid exposed heights');
 assert.equal(G.treeSite('D',site,()=>({...site,water:true})),false,'avoid shoreline overhang');
 assert.equal(G.treeSite('D',{...site,water:true},gentle),false);
-assert.equal(G.surface(p.x,p.y,wet,palette).z,.10,'water remains level beside relief');
+assert.equal(G.surface(p.x,p.y,wet,palette).z,.5,'water remains level beside relief');
 console.log('Connected low/high mountain relief, shared seed, seams and slope-aware wooded placement passed');
 
 // Layered terrain replaces hill props; exposed stone occurs in both families.
@@ -253,8 +253,8 @@ for(const terrain of ['PR','GH','LCM','HSM'])for(const water of ['O','L'])for(co
  assert.equal(at(G.coreRadius/2).water,false,'central land is preserved');
  let wet=0;
  for(let i=0;i<100;i++)if(at(G.coreRadius/2+(1-G.coreRadius)/2*(i+.5)/100).water)wet++;
- assert.ok(wet>=45&&wet<=75,`coastal land-side edge water share ${wet}%`);
- assert.equal(at(.5).z,.10,'shared hex border is navigable at the configured water level');
+ assert.ok(wet>=20&&wet<=50,`approved 35% coastal land-side water share ${wet}%`);
+ assert.equal(at(.5).z,.5,'shared hex border is navigable at the configured water level');
 }
 // Corners shared with water also contain water, but wait for ALL three owners.
 for(const water of ['O','L']){
@@ -265,7 +265,7 @@ for(const water of ['O','L']){
  const hidden=owners.find(o=>o!==sea);
  assert.equal(G.surface(v.x,v.y,(x,y)=>x===hidden.col&&y===hidden.row?null:lookup(x,y),palette).fog,true);
 }
-console.log('Ocean/lake coastal land edges reserve about 60% water across all orientations');
+console.log('Ocean/lake coastal land edges respect seeded approved water share');
 // Inner relief remains unchanged beside water; mountains retain their height.
 {
  const c=center(30,20),n=center(30,21);
