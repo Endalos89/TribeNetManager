@@ -1,10 +1,15 @@
 # 3D Mapper
 
+> **Current geometry, placement and tuning contract (24 October 2026):** see [World Terrain Generation & Shared-Region Rendering v1.2](hex-terrain-generation-design.md). It supersedes historical notes below about the 62% core inset, release-version terrain seeds, fixed compass unit slots and moving units merely sitting on an original-game-hex border. Inner terrain hexes are now ~63.4% radius with shared squares and triangles, using one permanent seed derived from repository creation, die-like unit layouts and a local-only Terrain Dev JSON preset panel.
+
+
 Open **3D Mapper** from the launcher and choose a submap or enter a coordinate. The original **Mapper** tile continues to open the top-down view. Both views use the existing local terrain data, selected Results turn, hex editor, history, movement planner, saved routes and unit overlays.
 
 The new view uses software-rendered 3D terrain meshes under an north-up orthographic 3D projection. It requires no extra runtime dependency, CDN, image downloads or graphics service. Drag to pan, scroll to zoom, click to inspect, and use the Labels and Hex grid toggles as needed. Session restore remembers which projection was open.
 
 ## Terrain
+
+**Live terrain controls:** 3D Mapper → **Terrain Dev** opens nine sliders (heights, jaggedness, coast threshold, rock exposure, mesh detail and unit spacing), optional true terrain-region borders, **Import preset**, **Reset defaults** and **Export settings**. Export saves `TribeNet-Terrain-Settings.json` for review; local overrides do not change Results, Orders or the permanent `1790425012` world seed. Background terrain preloading begins on desktop startup, prioritising bounded low-detail work.
 
 - Forests, jungle, hills, mountains, snow, desert, swamp and open ground have terrain-specific geometry or details.
 - Scenery is deterministically generated from the uppercase coordinate. Identical coordinates have identical details across installations running this renderer version.
