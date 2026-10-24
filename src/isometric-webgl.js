@@ -250,6 +250,18 @@ class GPUMap {
     this.stats.trees=[...this.chunkCache.values()].filter(r=>r.group.visible).reduce((n,r)=>n+r.trees,0);
     return true;
   }
+  pick(x,y){
+    if(!this.initialized||!this.visible)return null;
+    const canvas=document.getElementById('mapCanvas');
+    const rect=canvas.getBoundingClientRect();
+    if(rect.width<=0||rect.height<=0)return null;
+    const raycaster=new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(2*x/rect.width-1,1-2*y/rect.height),this.camera);
+    const objects=[...this.chunkCache.values()].filter(chunk=>chunk.group.visible).map(chunk=>chunk.ground);
+    const intersection=raycaster.intersectObjects(objects,false)[0];
+    if(!intersection)return null;
+    return {x:intersection.point.x/1.5,y:intersection.point.z/1.5};
+  }
   addModel(m){if(m && Number.isFinite(m.x)&&Number.isFinite(m.y))this.units.push(m);}
   updateUnits(){
     const kinds={body:[],head:[],horse:[],cart:[]};
