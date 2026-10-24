@@ -7,15 +7,17 @@ const {TerrainMeshDiskCache,validateChunk}=require('../src/terrain-mesh-disk-cac
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'tribenet-terrain-cache-'));
   try{
     const first=new TerrainMeshDiskCache(directory,{maxFiles:2});
-    const mesh={format:1,faces:1,trees:2,
+    const mesh={format:2,faces:2,coreFaces:1,sharedFaces:1,trees:2,
       positions:[0,0,.5,1,0,.5,0,1,.5],
       colors:[.25,.5,.75,.25,.5,.75,.25,.5,.75],
+      sharedPositions:[0,0,.5,-1,0,.5,0,-1,.5],
+      sharedColors:[.25,.5,.75,.25,.5,.75,.25,.5,.75],
       waves:null,instances:[{type:'trunk',matrices:Array.from({length:32},(_,i)=>i%5===0?1:0)}]};
     assert.equal(validateChunk(mesh),true);
     assert.equal(validateChunk({...mesh,positions:[NaN,1,2]}),false);
     assert.equal(validateChunk({...mesh,instances:[{type:'person',matrices:[]}]}),false);
 
-    const persistentKey=JSON.stringify(['terrain-fixed8-shore-20261024-r1',1790425012,
+    const persistentKey=JSON.stringify(['terrain-fixed8-shore-components-20261024-r2',1790425012,
       '152:163',8,[['waterHeight',.5]],[['PK1719','PR'],['PK1819','O']]]);
     const otherHistory=persistentKey.replace('PK1819","O','PK1819","?');
     const otherPreset=persistentKey.replace('waterHeight",0.5','waterHeight",0.3');
