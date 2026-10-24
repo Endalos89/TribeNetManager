@@ -6,12 +6,13 @@ const IsoMapper = (() => {
   let preloadJob=0, preloadCount=0;
   const terrainRasterCache=new Map();
   let terrainRasterBytes=0;
-  const detailCache=new Map(), cellCache=new Map(), surfaceCache=new Map(), groundCache=new Map(), resourceIconCache=new Map();
+  const detailCache=new Map(), cellCache=new Map(), surfaceCache=new Map(), groundCache=new Map(), coreFaceCache=new Map(), resourceIconCache=new Map();
   let interactive=false, settleTimer=null, hitScale=1, sceneBuilds=0, groundBuilds=0;
   let unitSignature='', decorationSignature='', groundLayer=null, frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
   // Track individual terrain changes rather than hashing every known cell and
   // invalidating the whole world whenever one newly discovered hex arrives.
   const terrainSnapshot=new Map(),notesSnapshot=new Map();
+  let lastTerrainRevision=-1,lastDecorationRevision=-1,lastPlaybackRevision=-1;
   function mapData(ref) {
     const target=state.hexCache.get(ref);
     return typeof resultsPlaybackMapData==='function' ? resultsPlaybackMapData(ref,target) : target;
@@ -33,43 +34,51 @@ const IsoMapper = (() => {
     return surfaceCache.get(key);
   }
   function prepareSurface() {
+    const terrainRevision=Number(state.hexCache?.terrainRevision??-1);
+    const decorationRevision=Number(state.hexCache?.decorationRevision??-1);
+    const playbackRevision=Number(window.resultsPlayback?.renderRevision??0);
+    // Zoom, pan, selection and frame animation cannot change the underlying
+    // knowledge revision. They must NEVER rescan the entire terrain Map or
+    // invalidate GPU buffers.
+    if(terrainRevision>=0 && terrainRevision===lastTerrainRevision &&
+      decorationRevision===lastDecorationRevision &&
+      playbackRevision===lastPlaybackRevision)return;
+    lastTerrainRevision=terrainRevision;
+    lastDecorationRevision=decorationRevision;
+    lastPlaybackRevision=playbackRevision;
     const next=new Map(),nextNotes=new Map(),changed=new Set();
     let decorationsChanged=false;
-    // String comparisons avoid repeated river parsing on *every* animation
-    // frame. Terrain chunks are invalidated by terrain values only; notes
-    // affect the overlay but don't require regenerating the GPU world.
     for(const [ref,data] of state.hexCache){
       const terrain=mapData(ref)?.terrain||'UNKNOWN';
       next.set(ref,terrain);
       if(terrainSnapshot.get(ref)!==terrain)changed.add(ref);
       const notes=String(data?.notes||'');
       const prior=notesSnapshot.get(ref);
-      const rivers=prior && prior.notes===notes
-        ? prior.rivers
-        : [...G.rivers(data)].sort().join(',');
+      const rivers=prior&&prior.notes===notes
+        ? prior.rivers:[...G.rivers(data)].sort().join(',');
       nextNotes.set(ref,{notes,rivers});
       if((prior?.rivers||'')!==rivers)decorationsChanged=true;
     }
     for(const ref of terrainSnapshot.keys())if(!next.has(ref))changed.add(ref);
-    for(const [ref,prior] of notesSnapshot)if(!nextNotes.has(ref) && prior.rivers)decorationsChanged=true;
+    for(const [ref,prior] of notesSnapshot)if(!nextNotes.has(ref)&&prior.rivers)decorationsChanged=true;
     const hadMesh=Boolean(window.TribeNetGPU?.chunkCache?.size);
     terrainSnapshot.clear();notesSnapshot.clear();
     for(const [ref,terrain] of next)terrainSnapshot.set(ref,terrain);
     for(const [ref,notes] of nextNotes)notesSnapshot.set(ref,notes);
-    if(decorationsChanged){landscape=null;}
+    if(decorationsChanged)landscape=null;
     if(changed.size===0)return;
-
-    // Clear analytic samples (which may blend up to three owners), but retain
-    // all unaffected GPU chunks and other already-generated terrain faces.
-    cellCache.clear();
-    surfaceCache.clear();
+    // Analytic height at the centre of an already-known core does not
+    // depend on later discovery; its immutable faces remain cached.
+    cellCache.clear();surfaceCache.clear();
     landscape=null;groundLayer=null;
-    const affected=new Set();
+    const directlyChanged=[],affected=new Set();
     for(const ref of changed){
-      const p=typeof parseCoordinate==='function'
-        ? parseCoordinate(ref)
-        : (()=>{const [col,row]=ref.split(':').map(Number);return Number.isFinite(col)&&Number.isFinite(row)?{globalCol:col,globalRow:row}:null;})();
+      const p=typeof parseCoordinate==='function'?parseCoordinate(ref):null;
       if(!p)continue;
+      directlyChanged.push({col:p.globalCol,row:p.globalRow});
+      coreFaceCache.delete(ref);
+      // The owner of an edge/corner may be in a nearby chunk. Mark those
+      // chunks for transition-only updates, NOT wholesale core recreation.
       for(let dc=-2;dc<=2;dc++)for(let dr=-2;dr<=2;dr++){
         const col=p.globalCol+dc,row=p.globalRow+dr;
         if(col>=0&&row>=0&&col<TOTAL_COLS&&row<TOTAL_ROWS)
@@ -78,13 +87,13 @@ const IsoMapper = (() => {
     }
     for(const key of groundCache.keys())
       if(affected.has(key.replace(/:\d+:\d+$/, '')))groundCache.delete(key);
-    if(hadMesh)window.TribeNetGPU?.invalidateHexes?.([...affected].map(ref=>{
-      const p=typeof parseCoordinate==='function'
-        ? parseCoordinate(ref)
-        : (()=>{const [col,row]=ref.split(':').map(Number);return Number.isFinite(col)&&Number.isFinite(row)?{globalCol:col,globalRow:row}:null;})();
-      return p?{col:p.globalCol,row:p.globalRow}:null;
-    }).filter(Boolean));
-    // During initial startup the GPU has no generated terrain yet.
+    if(hadMesh)window.TribeNetGPU?.invalidateHexes?.(
+      directlyChanged,
+      [...affected].map(ref=>{
+        const p=typeof parseCoordinate==='function'?parseCoordinate(ref):null;
+        return p?{col:p.globalCol,row:p.globalRow}:null;
+      }).filter(Boolean)
+    );
   }
   const isWater=t=>t==='O'||t==='L';
   const known=d=>d && d.terrain && d.terrain!=='UNKNOWN';
@@ -192,9 +201,10 @@ const IsoMapper = (() => {
     const faces=[];
     if(!t.known || (t.water&&t.n.every(n=>known(n)&&isWater(n.terrain)))){
       const point=sample(t.c.x,t.c.y);
-      faces.push({points:G.corners.map(p=>offset(t.c,p,1,t.known?point.z:.14)),color:t.known?point.color:FOG});
+      faces.push({points:G.corners.map(p=>offset(t.c,p,1,t.known?point.z:.14)),color:t.known?point.color:FOG,region:'shared'});
       groundCache.set(key,faces);return faces;
     }
+    let activeRegion='shared';
     const emitPart=part=>{
       const [a,b,c]=part,ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z,vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
       const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,len=Math.hypot(nx,ny,nz)||1;
@@ -209,12 +219,20 @@ const IsoMapper = (() => {
         const amount=Math.min(.96,cliff*exposure*(.72+.28*rockWeight));
         return Math.max(0,Math.min(255,Math.round(base*(1-amount)+stone[k]*amount))).toString(16).padStart(2,'0');
       }).join('');
-      faces.push({points:part,color:shade});
+      faces.push({points:part,color:shade,region:activeRegion});
     };
+    const coreKey=t.ref+':'+String(t.data?.terrain||'?');
+    const savedCore=coreFaceCache.get(coreKey);
+    const stableCore=[];
     for(const face of G.regionMesh(steps)){
+      if(face.kind==='core' && savedCore){
+        faces.push(...savedCore.slice(0,0)); // core polygon reuse is assembled after the loop
+        continue;
+      }
+      activeRegion=face.kind==='core'?'core':'shared';
       const visible=G.regionOwners(t.col,t.row,face.kind,face.index).every(o=>known(surfaceData(o.col,o.row)));
       const points=face.points.map(p=>sample(t.c.x+p.x,t.c.y+p.y));
-      if(!visible){faces.push({points,color:FOG});continue;}
+      if(!visible){faces.push({points,color:FOG,region:'shared'});continue;}
       if(!microDepth){
         for(const part of shoreFaces(points))emitPart(part);
         continue;
@@ -227,6 +245,13 @@ const IsoMapper = (() => {
         refineShoreline([points[0],points[k],points[k+1]],microDepth,triangles);
         for(const triangle of triangles)for(const part of shoreFaces(triangle))emitPart(part);
       }
+    }
+    // Reuse fully computed core polygons on neighbour-only updates, where
+    // edge/corner fog and coastline classification may have changed.
+    if(savedCore)faces.push(...savedCore);
+    else if(t.known){
+      for(const part of faces)if(part.region==='core')stableCore.push(part);
+      coreFaceCache.set(coreKey,stableCore);
     }
     groundCache.set(key,faces);return faces;
   }
@@ -330,7 +355,8 @@ const IsoMapper = (() => {
   }
   function invalidateTerrain(){
     preloadJob++;
-    cellCache.clear();surfaceCache.clear();groundCache.clear();
+    cellCache.clear();surfaceCache.clear();groundCache.clear();coreFaceCache.clear();
+    lastTerrainRevision=-1;lastDecorationRevision=-1;lastPlaybackRevision=-1;
     terrainRasterCache.clear();terrainRasterBytes=0;
     groundLayer=null;landscape=null;
     window.TribeNetGPU?.invalidate();
