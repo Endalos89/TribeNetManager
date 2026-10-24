@@ -100,8 +100,13 @@ class GPUMap {
       this.camera.up.set(0,1,0);
       this.initialized=true;
       this.setVisible(this.visible);
+      const activeCanvas=this.canvas;
       this.canvas.addEventListener('webglcontextlost',event=>{
-        event.preventDefault();this.failureReason='WebGL context lost';this.failed=true;this.initialized=false;
+        event.preventDefault();
+        // A deliberate renderer disposal can emit contextlost asynchronously.
+        // Never let a disposed, old canvas disable a fresh WebGL renderer.
+        if(this.canvas!==activeCanvas)return;
+        this.failureReason='WebGL context lost';this.failed=true;this.initialized=false;
         console.error('Mapper GPU context lost; switching to software terrain');
         this.setVisible(false);
         if(typeof window.draw==='function')window.draw();
@@ -112,6 +117,19 @@ class GPUMap {
       this.canvas?.remove();this.canvas=null;this.renderer=null;
       return false;
     }
+  }
+  retry(){
+    // Recreate only the graphics backend; historical terrain and all saved
+    // game state remain untouched. The old canvas' contextlost event is
+    // ignored by the canvas identity guard in init().
+    this.dispose();
+    this.failed=false;this.failureReason='';this.visible=false;
+    if(typeof IsoMapper!=='undefined'&&IsoMapper.enabled&&
+      typeof state!=='undefined'&&state.mode==='detail'){
+      this.init();
+      if(typeof draw==='function')draw();
+    }
+    return !this.failed;
   }
   setVisible(visible){
     const returning=!this.visible && Boolean(visible);
@@ -629,7 +647,11 @@ class GPUMap {
         try{
           this.refreshSharedChunk(next.id,next.lod);
           this.requestLater();
-        }catch(error){this.failed=true;console.error('GPU border mesh update failed:',error);}
+        }catch(error){
+          this.failed=true;this.failureReason='Border geometry: '+(error?.message||String(error));
+          console.error('GPU border mesh update failed:',error);
+          this.setVisible(false);
+        }
         this.scheduleIdleChunk();return;
       }
       if(this.chunkCache.has(this.chunkKey(next.id,next.lod))){
@@ -671,7 +693,8 @@ class GPUMap {
         this.stats.terrainMs+=performance.now()-started;
         this.evictUnused();this.requestLater();
       }catch(error){
-        this.failed=true;console.error('GPU terrain chunk generation failed:',error);
+        this.failed=true;this.failureReason='Terrain geometry: '+(error?.message||String(error));
+        console.error('GPU terrain chunk generation failed:',error);
         this.setVisible(false);this.requestLater();return;
       }
       this.scheduleIdleChunk();
