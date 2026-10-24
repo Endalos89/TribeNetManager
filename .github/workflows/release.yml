@@ -38,6 +38,11 @@ jobs:
           node tests/skill-overhaul-category-c4.test.js
           node tests/skill-overhaul-category-c5-final.test.js
 
+      - name: Check real 3D Mapper terrain rendering
+        run: |
+          npm install --no-save playwright
+          node tests/mapper-visible-terrain.browser.test.js
+
       - name: Assign release version
         shell: pwsh
         run: |
