@@ -294,7 +294,8 @@ function setHistoricalEditingState(enabled) {
 let historicalAreaRetryTimer = null;
 let historicalAreaGeneration = 0;
 function historicalAreaBounds() {
-  const submaps = activeSubmaps();
+  // Standalone Results tests do not load the interactive mapper module.
+  const submaps = typeof activeSubmaps === 'function' ? activeSubmaps() : [];
   const visible = visibleBounds();
   return {
     minCol: Math.max(0, Math.min(visible.minCol, ...submaps.map(s => s.col * HEX_COLS))),
