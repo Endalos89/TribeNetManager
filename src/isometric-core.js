@@ -4,7 +4,10 @@
   const corners = Array.from({length:6}, (_,i) => ({x:Math.cos(i*Math.PI/3), y:Math.sin(i*Math.PI/3)}));
   function seed(reference) {
     let n = 2166136261;
-    for (const c of reference.toUpperCase()) n = Math.imul(n ^ c.charCodeAt(0), 16777619);
+    // World seed is numeric and intentionally fixed; hash it as a stable decimal
+    // string. Previous versions called .toUpperCase() on this number and
+    // aborted script evaluation, leaving the entire 3D Mapper black.
+    for (const c of String(reference).toUpperCase()) n = Math.imul(n ^ c.charCodeAt(0), 16777619);
     return n >>> 0;
   }
   function random(reference) {
