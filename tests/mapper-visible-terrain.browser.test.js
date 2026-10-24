@@ -247,9 +247,12 @@ const {chromium}=require('playwright');
     await page.evaluate(()=>{
       window.stalledTerrainQuery=false;window.releaseTerrainQuery=null;
       const original=window.tribenet.getHexesInArea;
+      window.originalAreaRead=original;
       window.tribenet.getHexesInArea=async bounds=>{
-        window.stalledTerrainQuery=true;
-        await new Promise(resolve=>{window.releaseTerrainQuery=resolve;});
+        if(!window.stalledTerrainQuery){
+          window.stalledTerrainQuery=true;
+          await new Promise(resolve=>{window.releaseTerrainQuery=resolve;});
+        }
         return original(bounds);
       };
       centerOnHex(355,327);
@@ -277,7 +280,10 @@ const {chromium}=require('playwright');
       'pending submap data must prevent generation against incomplete knowledge');
     assert.equal(duringHydration.hits,beforeHydration.hits,
       'pending submap data must prevent uploading inappropriate old disk meshes');
-    await page.evaluate(()=>window.releaseTerrainQuery());
+    await page.evaluate(()=>{
+      window.releaseTerrainQuery();
+      window.tribenet.getHexesInArea=window.originalAreaRead;
+    });
     await page.waitForFunction(()=>window.TribeNetKnowledge.ready(),null,{timeout:15000});
     await page.waitForFunction(()=>window.TribeNetGPU.chunkCache.size>=1 &&
       window.TribeNetGPU.getStats().knowledgePending===0,null,{timeout:30000});
