@@ -40,7 +40,7 @@ const {chromium}=require('playwright');
     });
     await page.goto(pathToFileURL(path.join(__dirname,'../src/index.html')).href);
     await page.waitForFunction(()=>
-      typeof showDetail==='function'&&typeof IsoMapper!=='undefined'&&
+      typeof showDetail==='function'&&typeof IsoMapper!=='undefined'&& resultsTimeline.ready&&
       Boolean(document.querySelector('#openMapperButton')),null,{timeout:15000});
     await page.click('#openMapperButton');
     await page.evaluate(()=>{
@@ -59,7 +59,7 @@ const {chromium}=require('playwright');
     await page.waitForFunction(()=>
       window.delayedHistoricalReads?.length>0 && window.TribeNetKnowledge?.pending()>0
       && IsoMapper.renderer==='WebGL',null,{timeout:15000});
-    const requested=await page.evaluate(()=>window.delayedHistoricalReads[0]);
+    const requested=await page.evaluate(()=>({turnKey:window.delayedHistoricalReads[0].turnKey,bounds:window.delayedHistoricalReads[0].bounds}));
     assert.equal(requested.turnKey,'906-04','read correct historical baseline');
     assert.ok(requested.bounds.minCol<=315&&requested.bounds.maxCol>=315,
       'historical query includes camera centre');
