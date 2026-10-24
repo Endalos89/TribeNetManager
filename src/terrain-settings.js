@@ -2,27 +2,29 @@
 (function(root) {
   'use strict';
   // Endalos89/TribeNetManager was created 2026-09-26T12:16:52Z.
+  // Production defaults approved in the user's exported Terrain Dev preset
+  // on 2026-10-24. Existing locally saved custom overrides remain intact.
   const WORLD_SEED=1790425012;
   const STORAGE_KEY='tribenet:terrain-dev-settings-v1';
   const definitions=Object.freeze({
-    hillAmplitude: {label:'Hill height', min:0,max:1.1,step:.01,default:.53},
-    mountainHeight: {label:'Mountain height',min:0,max:1.7,step:.01,default:.83},
-    ruggedness: {label:'Jagged detail',min:0,max:.5,step:.01,default:.15},
-    ridgeSharpness: {label:'Ridge sharpness',min:1,max:5,step:.1,default:2.8},
-    coastWaterShare: {label:'Coast water share',min:.3,max:.8,step:.01,default:.6},
-    coastRoughness: {label:'Coast irregularity',min:0,max:.35,step:.01,default:.16},
-    rockExposure: {label:'Exposed rock',min:.2,max:1.5,step:.02,default:.72},
-    meshQuality: {label:'Close-up mesh detail',min:8,max:32,step:4,default:16},
-    unitSpread: {label:'Unit layout spacing',min:.20,max:.49,step:.01,default:.38},
-    treeSize: {label:'Tree size (GPU)',min:.2,max:1.2,step:.05,default:.55},
-    treeDensity: {label:'Tree density (GPU)',min:.5,max:5,step:.25,default:2.5},
-    waterHeight: {label:'Water level',min:-.15,max:.50,step:.005,default:.10},
-    plainsRelief: {label:'Plains undulation',min:0,max:.20,step:.005,default:.055},
-    plainsTexture: {label:'Plains colour variety',min:0,max:.5,step:.01,default:.22},
-    waveStrength: {label:'Ocean / lake waves',min:0,max:1,step:.05,default:.55},
-    foothillFlatness: {label:'Foothill flat approach',min:0,max:.45,step:.01,default:.20},
-    cliffExposure: {label:'Cliff rock exposure',min:0,max:1,step:.05,default:.85},
-    shoreDetail: {label:'Coast geometry detail',min:8,max:32,step:4,default:24}
+    hillAmplitude: {label:'Hill height', min:0,max:1.1,step:.01,default:0.2},
+    mountainHeight: {label:'Mountain height',min:0,max:1.7,step:.01,default:0.5},
+    ruggedness: {label:'Jagged detail',min:0,max:.5,step:.01,default:0.28},
+    ridgeSharpness: {label:'Ridge sharpness',min:1,max:5,step:.1,default:4.7},
+    coastWaterShare: {label:'Coast water share',min:.3,max:.8,step:.01,default:0.35},
+    coastRoughness: {label:'Coast irregularity',min:0,max:.35,step:.01,default:0.3},
+    rockExposure: {label:'Exposed rock',min:.2,max:1.5,step:.02,default:0.62},
+    meshQuality: {label:'Base terrain subdivisions (fixed)',min:8,max:8,step:1,default:8},
+    unitSpread: {label:'Unit layout spacing',min:.20,max:.49,step:.01,default:0.38},
+    treeSize: {label:'Tree size (GPU)',min:.2,max:1.2,step:.05,default:0.65},
+    treeDensity: {label:'Tree density (GPU)',min:.5,max:5,step:.25,default:4.75},
+    waterHeight: {label:'Water level',min:-.15,max:.50,step:.005,default:0.5},
+    plainsRelief: {label:'Plains undulation',min:0,max:.20,step:.005,default:0.045},
+    plainsTexture: {label:'Plains colour variety',min:0,max:.5,step:.01,default:0.5},
+    waveStrength: {label:'Ocean / lake waves',min:0,max:1,step:.05,default:0},
+    foothillFlatness: {label:'Foothill flat approach',min:0,max:.45,step:.01,default:0.21},
+    cliffExposure: {label:'Cliff rock exposure',min:0,max:1,step:.05,default:0.5},
+    shoreDetail: {label:'Coast geometry detail',min:8,max:32,step:4,default:20}
   });
   const defaults=()=>Object.fromEntries(Object.entries(definitions).map(([name,d])=>[name,d.default]));
   function normalise(input) {
