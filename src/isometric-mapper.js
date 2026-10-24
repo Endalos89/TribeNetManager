@@ -162,9 +162,10 @@ const IsoMapper = (() => {
     if(depth<=0){out.push(triangle);return;}
     const mid=(a,b)=>sample((a.x+b.x)/2,(a.y+b.y)/2);
     const [a,b,c]=triangle,ab=mid(a,b),bc=mid(b,c),ca=mid(c,a);
-    const centre=sample((a.x+b.x+c.x)/3,(a.y+b.y+c.y)/3);
-    const flags=[a,b,c,ab,bc,ca,centre].map(p=>Boolean(p.water));
-    if(flags.every(v=>v===flags[0])){out.push(triangle);return;}
+    // Uniform refinement is essential for watertight neighbouring triangles.
+    // Early-exiting a triangle with uniform water classification created
+    // unmatched midpoint vertices (T-junctions) and black coastal cracks
+    // between adjacent triangles along sloped shore walls.
     refineShoreline([a,ab,ca],depth-1,out);
     refineShoreline([ab,b,bc],depth-1,out);
     refineShoreline([ca,bc,c],depth-1,out);
