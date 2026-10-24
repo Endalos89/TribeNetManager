@@ -88,6 +88,10 @@ const {chromium}=require('playwright');
     // repeated wheel/drag redraws within those same submaps do zero IO.
     await page.waitForFunction(()=>typeof loadedSubmaps!=='undefined' && loadedSubmaps.size>=9,
       null,{timeout:15000});
+    await page.waitForFunction(()=>{
+      const id=Math.floor(315/2)+':'+Math.floor(327/2);
+      return Boolean(window.TribeNetGPU.bestResident(id,8)?.group.visible);
+    },null,{timeout:30000});
     const dataReuse=await page.evaluate(()=>{
       const queries=window.areaQueryCount;
       const gpu=window.TribeNetGPU;
@@ -99,7 +103,7 @@ const {chromium}=require('playwright');
       }
       state.cameraX+=.08;state.cameraY+=.03;draw();requestVisibleData();
       return {queries,windowSize:loadedSubmaps.size,
-        resident,centreId,centreUUID:resident?.uuid};
+        centreId,centreUUID:resident?.uuid};
     });
     await page.waitForTimeout(230);
     const fetchCount=await page.evaluate(()=>window.areaQueryCount);
@@ -109,6 +113,7 @@ const {chromium}=require('playwright');
       const gpu=window.TribeNetGPU;
       const original=gpu.bestResident(id,8);
       const geometry=original?.ground.geometry;
+      if(!geometry)return false;
       // A newly revealed *distant* hex can never unload a previously
       // rendered local chunk or cause its GPU mesh object to be rebuilt.
       const coord=coordinateFor(50,50);
