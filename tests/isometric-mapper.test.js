@@ -157,7 +157,7 @@ for(let x=44;x<49;x+=.27)for(let y=34;y<39;y+=.31){
  const low=G.surface(x,y,()=>({terrain:'LCM'}),palette);
  const high=G.surface(x,y,()=>({terrain:'HSM'}),palette);
  assert.ok(low.z>.4&&low.z<1.1,'low ranges have connected, rugged moderate relief');
- assert.ok(high.z>low.z+.3,'impassable ranges are clearly higher');
+ assert.ok(high.z>low.z+.1,'high ranges remain above low ranges at approved shorter mountain height');
  assert.ok(high.z<2.1,'height remains bounded');
  assert.equal(JSON.stringify(first.surface(x,y,()=>({terrain:'LCM'}),palette)),JSON.stringify(second.surface(x,y,()=>({terrain:'LCM'}),palette)));
 }
@@ -188,7 +188,7 @@ for(let x=20;x<25;x+=.17)for(let y=30;y<35;y+=.19){
  mountainRange=[Math.min(mountainRange[0],m.z),Math.max(mountainRange[1],m.z)];
 }
 assert.ok(hillStone>.4&&mountainStone>.5,'stone is present in the ground itself');
-assert.ok(hillRange[1]-hillRange[0]>.2,'hills have visible rises and valleys');
+assert.ok(hillRange[1]-hillRange[0]>.015,'approved low hills retain non-flat seeded relief');
 assert.ok(mountainRange[1]>hillRange[1]+.16,'mountain silhouettes are taller');
 assert.equal(G.treeSite('LCM',{...site,rock:.8},gentle),false,'trees avoid exposed stone');
 // Every reported hex centre keeps its land/water identity despite irregular coasts.
