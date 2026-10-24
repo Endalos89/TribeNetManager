@@ -1,7 +1,7 @@
 # TribeNet Manager — World Terrain Generation & Shared-Region Rendering
-**Design v1.1 · 24 October 2026 · Proposed, not implemented**
+**Final design v1.2 · 24 October 2026 · Implementation baseline and tuning specification**
 
-> **Precedence:** The supplied hand sketch and subsequent discussion override earlier conflicts; the World Map Design discussion supplies additional compatible requirements. This revision replaces v1.0's *hex-only connector illustration*, version-derived noise seeds, universally smoothed slopes and fixed single-sample percentages.
+> **Precedence:** The supplied hand sketch and the latest user discussion override earlier conflicting decisions; the World Map Design discussion applies wherever compatible. V1.2 supersedes v1.1's fixed directional six-slot unit model. Physical shared-region geometry is a world-space topology; rasterising it in original-hex fragments for cache efficiency does not change physical ownership, weight fields or selectable gameplay hexes.
 
 ## 1. Design requirements
 
@@ -234,13 +234,108 @@ flowchart LR
 - A new revelation only unlocks its affected shared pieces; never invalidates immutable unrelated core meshes. Pan, scroll, selection, scouting and unit overlays must not rebuild the full landscape.
 - Queue work off the input path, cancel/deprioritise when changing maps/turns, and retain responsiveness. Measure cold startup, warm startup, pan frame latency, memory and cache hit rate. No expensive remote dependencies.
 
-## 9. Units and gameplay overlay
+## 9. Units: die-style occupancy layouts and shared-region movement (final)
 
-Stationary units use six numbered positions inside their core: **1 N, 2 NE, 3 SE, 4 S, 5 SW, 6 NW**, with stable assignment by unit identifier. A seventh+ unit may use a second ring/cluster without displacing existing units unnecessarily.
+Movement, scouting and unit selection still belong to the **original gameplay hex grid**. Visual positions, however, belong to the **new physical terrain pieces**:
 
-Only **actual movement** places a unit at the next-destination-facing shared-edge lane (A/B/C for several travellers). During playback, interpolate position continuously across these regions and sample 3D ground. Planning arrows are not duplicate unit models at destination. **Scouting alone does not move the main unit**; it remains in its inner-hex position. Keep original hex-based selection, route hit-testing, turn records, unit data, rivers, exporting and fog.
+- **Stationary / scouting-only unit:** an anchor in its own **inner hexagon** (never forced to the original hex boundary merely because it is scouting).
+- **Planned moving unit:** an anchor in the **full shared square** connecting its origin and its immediately adjacent destination. Its centre is the average of the two game-hex centres; the square uses the global, canonical owner pair and true square axes. Do **not** compute position by adding an arbitrary per-hex half-width to a sprite.
+- **Multiple moving units using the same square:** share the same destination-independent physical square geometry and occupy separate slots **inside that square**. Include opposite-direction travellers in this occupancy group. The path direction controls their facing, not the square's identity.
+- **Movement through a triangular junction:** render interpolation through the true world surface. Triangles do not become new travel orders and must not allow diagonal or illegal gameplay movement. Planned models remain on the valid square for their **first immediate move**.
+- **During Results playback:** explicit interpolated world coordinates take precedence over placement on a planned shared square. Each model appears once, without adding phantom copies at route endpoints.
 
-## 10. Implementation order and test gates
+### 9.1 Dice patterns depending on the number of units
+
+Do not reserve permanent compass positions 1–6. Recompute the formation for the **current count**, sorting by stable numeric unit code. One unit sits at the **centre** of the piece, not on its rim.
+
+\`\`\`text
+    1 unit             2 units            3 units
+   ┌───────┐          ┌───────┐          ┌───────┐
+   │       │          │ ●     │          │ ●     │
+   │   ●   │          │       │          │   ●   │
+   │       │          │     ● │          │     ● │
+   └───────┘          └───────┘          └───────┘
+
+    4 units            5 units            6 units
+   ┌───────┐          ┌───────┐          ┌───────┐
+   │ ●   ● │          │ ●   ● │          │ ●   ● │
+   │       │          │   ●   │          │ ●   ● │
+   │ ●   ● │          │ ●   ● │          │ ●   ● │
+   └───────┘          └───────┘          └───────┘
+\`\`\`
+
+These are **top-down positions** inside the inner hex or shared square, not square-shaped game tiles. Above six units, use bounded near-square row/column packing with stable ordering and no overlapping anchors. Put miniature figures around each anchor separately; the individual warrior/active/horse figurines must not determine the number of unit-level slots.
+
+The final unit-level position formula is
+
+\[
+P_u=C_{\mathrm{piece}}+
+s\,[d_{u,x}T+d_{u,y}N],
+\qquad 0.20\le s/\rho\le0.49,
+\]
+
+where \((d_{u,x},d_{u,y})\) is the selected die-layout point, \(T,N\) are the **shared square's tangent and travel-axis normal** when moving, and world axes when stationary. Default \(s=0.38\rho\). Height follows the *sampled physical region ground*, not a flat game hex. Keep all anchor points comfortably within their owning piece.
+
+### 9.2 Scouting and visual selection
+
+Scouting does not move the parent unit. Selected units use one distinct unit-centred highlight; the original full-size gameplay hex outline is still available separately when selecting land or displaying the optional overlay. Clicking retains game-hex selection and unit cycling; square and triangle terrain pieces are not separately clickable game destinations.
+
+## 10. Developer tuning mode — inspect → adjust → export
+
+Enable a discoverable **Terrain Dev** button while the 3D Mapper is visible. It opens a scrollable, non-destructive panel with labelled sliders, current numeric values, and an optional **Show core / square / triangle boundaries** overlay. Changes apply immediately to the local terrain preview and invalidate the appropriate terrain caches, but **never** edit hex codes, Orders workbooks, Results history or the permanent numeric seed.
+
+| Constant | Default | Allowed range | Effect |
+|---|---:|---:|---|
+| Hill height | 0.53 | 0.15–1.10 | Broad hill relief amplitude |
+| Mountain height | 0.83 | 0.40–1.70 | High ridge peak amplitude |
+| Jagged detail | 0.15 | 0–0.50 | Small-scale irregular relief |
+| Ridge sharpness | 2.8 | 1.0–5.0 | Ridge exponent/peak profile |
+| Coast water share | 0.60 | 0.30–0.80 | Land/water signed-field threshold |
+| Coast irregularity | 0.16 | 0–0.35 | World-space shoreline noise displacement |
+| Exposed rock | 0.72 | 0.20–1.50 | Surface rock material intensity |
+| Close-up mesh detail | 16 | 8–32 | Top LOD ground subdivisions per wedge |
+| Unit layout spacing | 0.38 | 0.20–0.49 | Die-pattern spread inside physical pieces |
+
+### 10.1 Export contract
+
+The user can continuously tune until satisfied and then click **Export settings**. The app saves a machine-readable \`TribeNet-Terrain-Settings.json\`; the user can attach that exact file to a later conversation for committing the chosen production defaults. This export is purely local and does not deploy settings to other installations. **Import preset** can restore a previous JSON, and **Reset defaults** restores factory values.
+
+\`\`\`json
+{
+  "format": "tribenet-terrain-preset",
+  "formatVersion": 1,
+  "worldSeed": 1790425012,
+  "settings": {
+    "hillAmplitude": 0.53,
+    "mountainHeight": 0.83,
+    "ruggedness": 0.15,
+    "ridgeSharpness": 2.8,
+    "coastWaterShare": 0.60,
+    "coastRoughness": 0.16,
+    "rockExposure": 0.72,
+    "meshQuality": 16,
+    "unitSpread": 0.38
+  }
+}
+\`\`\`
+
+Keys and format are deliberately stable; the preset importer refuses a conflicting world seed. Developer settings are saved locally for the same machine so previews survive reopening the mapper. The app never changes the immutable \`WORLD_SEED\` or the game's historical terrain reports.
+
+### 10.2 Preview invalidation and diagnostics
+
+\`\`\`mermaid
+flowchart LR
+  A["Developer changes a slider"] --> B["Validate/clamp value"]
+  B --> C["Save local override"]
+  C --> D["Invalidate terrain-specific caches"]
+  D --> E["Render viewport"]
+  E --> F["Preload known terrain incrementally"]
+  F --> G["Export JSON once happy"]
+\`\`\`
+
+For level-of-detail changes, invalidate ground face and raster caches, not Results data or unit orders. A physical-region overlay visualises whole squares and triangles crossing gameplay-hex edges; it must never be confused with the original hex-selection overlay. Benchmarks include FPS/pan responsiveness, cold-start and warm-start times, memory usage, renderer determinism and visual comparisons before/after settings changes.
+
+## 11. Implementation order and test gates
 
 1. Make physical piece ownership global and canonical; draw three independently owned mesh types plus original gameplay-hex overlay.
 2. Lock **WORLD_SEED = 1790425012** and stable keyed hash tests; preserve previously established cores across renderer refactors.
@@ -249,7 +344,8 @@ Only **actual movement** places a unit at the next-destination-facing shared-edg
 5. Replace coasts with bounded jagged signed-field shorelines and exact water clipping; verify the 60% target without land/water-core corruption.
 6. Increase close-detail geometry adaptively and use stitched LOD; benchmark the 50% larger display scale.
 7. Preload existing known map in nonblocking cache-first passes, with local invalidation and warm-start performance tests.
-8. Confirm unit staging, route selection, stationary scouting, movement playback and all existing Orders export/report reprocessing tests.
+8. Confirm die layouts (1–6 and overflow), shared-square movement anchors, stable order, stationary scouting, movement playback and all existing Orders export/report reprocessing tests.
+9. Deliver developer tuning panel, instant preview, local persistence, export/import JSON, region overlay, and regression tests.
 
 **Pass conditions:** no overlapping or missing physical pieces; no hidden neighbour leakage; immutability of known cores; seeded percentage reproducibility; exact shared boundaries with non-flat varied relief; no large cubical voxels; natural broken hills/coasts; responsive panning even on large discovered maps; unmodified gameplay behaviour.
 
@@ -259,4 +355,4 @@ Only **actual movement** places a unit at the next-destination-facing shared-edg
 - Existing implementation entry points: \`src/isometric-core.js\`, \`src/isometric-mapper.js\`, \`src/isometric-units.js\`.
 - Illustrated companion deliverable: **TribeNet_Hex_Terrain_Design_v1_1.docx / .pdf**, supplied in the conversation.
 
-**Document-only change:** no application code, app installer or release was modified by this specification update.
+**Implementation note:** source changes include terrain settings, 3D mapper, unit layout, seed-driven blending, developer panel, and targeted regression tests. Approval/release status must be verified independently in GitHub Actions. The terrain renderer may rasterise globally defined regions as original-hex fragments for caching, but the physical-region geometry and influence field remain canonical.

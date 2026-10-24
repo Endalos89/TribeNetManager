@@ -3,6 +3,7 @@
 const IsoMapper = (() => {
   const G=IsoGeometry, WATER='#337f98', FOG='#253640';
   let enabled=false, labels=true, grid=false;
+  let preloadJob=0, preloadCount=0;
   const terrainRasterCache=new Map();
   let terrainRasterBytes=0;
   const detailCache=new Map(), cellCache=new Map(), surfaceCache=new Map(), groundCache=new Map(), resourceIconCache=new Map();
@@ -22,7 +23,10 @@ const IsoMapper = (() => {
     // Quantisation gives the two owners of a shared edge exactly the same vertex.
     x=Math.round(x*1e6)/1e6;y=Math.round(y*1e6)/1e6;
     const key=`${x}:${y}`;
-    if(!surfaceCache.has(key))surfaceCache.set(key,G.surface(x,y,surfaceData,color));
+    if(!surfaceCache.has(key)){
+      if(surfaceCache.size>140000)surfaceCache.clear();
+      surfaceCache.set(key,G.surface(x,y,surfaceData,color));
+    }
     return surfaceCache.get(key);
   }
   function prepareSurface() {
@@ -32,7 +36,7 @@ const IsoMapper = (() => {
     const signature=Array.from(state.hexCache,([ref,data])=>`${ref}:${data.terrain}`).join('|')+playbackSignature;
     const decorations=Array.from(state.hexCache,([ref,data])=>`${ref}:${[...G.rivers(data)].sort().join(',')}`).join('|');
     if(decorations!==decorationSignature){decorationSignature=decorations;cellCache.clear();landscape=null;}
-    if(signature!==terrainSignature){terrainSignature=signature;cellCache.clear();surfaceCache.clear();groundCache.clear();terrainRasterCache.clear();terrainRasterBytes=0;groundLayer=null;landscape=null;}
+    if(signature!==terrainSignature){terrainSignature=signature;cellCache.clear();surfaceCache.clear();groundCache.clear();terrainRasterCache.clear();terrainRasterBytes=0;groundLayer=null;landscape=null;scheduleKnownTerrainPreload();}
   }
   const isWater=t=>t==='O'||t==='L';
   const known=d=>d && d.terrain && d.terrain!=='UNKNOWN';
@@ -114,10 +118,10 @@ const IsoMapper = (() => {
     }
     return [land,sea].filter(p=>p.length>=3);
   }
-  function groundFaces(t) {
+  function groundFaces(t,requestedSteps=null) {
     // One resolution per frame avoids mismatched shared edges; distant ground
     // uses fewer faces once individual facets are below a few screen pixels.
-    const steps=state.scale<28?2:state.scale<43?4:state.scale<65?8:G.groundSubdivisions,key=`${t.ref}:${steps}`;
+    const steps=requestedSteps ?? (state.scale<28?2:state.scale<43?4:state.scale<65?8:G.subdivisions()),key=`${t.ref}:${steps}`;
     if(groundCache.has(key))return groundCache.get(key);
     const faces=[];
     if(!t.known || (t.water&&t.n.every(n=>known(n)&&isWater(n.terrain)))){
@@ -231,6 +235,65 @@ const IsoMapper = (() => {
       }
     }
   }
+  function invalidateTerrain(){
+    preloadJob++;
+    cellCache.clear();surfaceCache.clear();groundCache.clear();
+    terrainRasterCache.clear();terrainRasterBytes=0;
+    groundLayer=null;landscape=null;
+    scheduleKnownTerrainPreload();
+  }
+  // Startup/warm-view preloading is deliberately incremental. Build coarse
+  // terrain for ALL discovered cells, but prioritize UI responsiveness.
+  function scheduleKnownTerrainPreload(){
+    const job=++preloadJob;
+    if(typeof setTimeout!=='function' || !state.hexCache)return;
+    const knownRefs=[...state.hexCache].filter(([ref,data])=>known(data)).map(([ref])=>ref);
+    preloadCount=0;
+    let index=0;
+    function batch(){
+      if(job!==preloadJob)return;
+      const deadline=(typeof performance!=='undefined'?performance.now():Date.now())+9;
+      let processed=0;
+      while(index<knownRefs.length && processed<5 &&
+        (typeof performance!=='undefined'?performance.now():Date.now())<=deadline){
+        const parsed=typeof parseCoordinate==='function'?parseCoordinate(knownRefs[index]):null;
+        if(parsed && Number.isFinite(parsed.globalCol) && Number.isFinite(parsed.globalRow)){
+          const t=tile(parsed.globalCol,parsed.globalRow);
+          groundFaces(t,4);preloadCount++;
+        }
+        index++;processed++;
+      }
+      if(index<knownRefs.length)setTimeout(batch,0);
+    }
+    setTimeout(batch,0);
+  }
+  function drawPhysicalRegions(tiles){
+    if(!window.TerrainDevMode?.showRegions)return;
+    for(const t of tiles){
+      if(!t.known)continue;
+      const outline=(points,stroke)=>{
+        const projected=points.map(p=>project({x:p.x,y:p.y},sample(p.x,p.y).z+.015));
+        polygon(projected,null,stroke);
+      };
+      outline(G.corners.map(c=>({x:t.c.x+c.x*G.coreRadius,y:t.c.y+c.y*G.coreRadius})),'#a9e4cf');
+      for(let i=0;i<6;i++){
+        const owners=G.regionOwners(t.col,t.row,'edge',i);
+        const sorted=owners.slice().sort((a,b)=>a.col-b.col||a.row-b.row);
+        if(sorted[0].col!==t.col||sorted[0].row!==t.row ||
+           !owners.every(o=>known(surfaceData(o.col,o.row))))continue;
+        const sq=G.sharedSquare(owners[0],owners[1]);
+        if(sq)outline(sq.corners,'#56bee0');
+      }
+      for(let i=0;i<6;i++){
+        const owners=G.regionOwners(t.col,t.row,'corner',i);
+        const sorted=owners.slice().sort((a,b)=>a.col-b.col||a.row-b.row);
+        if(sorted[0].col!==t.col||sorted[0].row!==t.row ||
+           !owners.every(o=>known(surfaceData(o.col,o.row))))continue;
+        const triangle=G.sharedTriangle(t.col,t.row,i);
+        outline(triangle.corners,'#f6b76b');
+      }
+    }
+  }
   function interact() {
     if(!enabled)return;
     interactive=true;clearTimeout(settleTimer);
@@ -323,6 +386,7 @@ const IsoMapper = (() => {
       const partialQuestion=playbackState?.active && (playbackState.revealedQuestions?.has(t.ref) || playbackState.partialPreviews?.has(t.ref));
       if(!t.known && state.scale>=35 && !partialQuestion){renderCtx.fillStyle='#71838b';renderCtx.textAlign='center';renderCtx.font='12px Segoe UI';renderCtx.fillText('?',t.p.x,t.p.y);}
     }
+    drawPhysicalRegions(tiles);
     if(state.planningVisible && state.planImport?.plan)drawPlanOverlay();
     if(typeof drawResultsPlaybackOverlay==='function')drawResultsPlaybackOverlay();
     updateCenterReadout();frameRect=null;
@@ -332,6 +396,7 @@ const IsoMapper = (() => {
     $('isoViewControls').classList.toggle('hidden',!value);
     $('openMapperButton').querySelector('h2').textContent='Mapper';
     if(value && state.scale<43)state.scale=52;
+    if(value)scheduleKnownTerrainPreload();
     const toggle=$('mapperViewToggle');if(toggle)toggle.checked=Boolean(value);
     showMapper({overview:options.overview !== false});
   }
@@ -349,6 +414,6 @@ const IsoMapper = (() => {
     new MutationObserver(sync).observe($('notesInput'),{attributes:true,attributeFilter:['disabled']});
     new MutationObserver(sync).observe($('selectedState'),{childList:true});
   }
-  return {get enabled(){return enabled;},surface:sample,withProjection,project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},get groundBuilds(){return groundBuilds;},draw:drawScene,setEnabled,setup};
+  return {get enabled(){return enabled;},get preloadCount(){return preloadCount;},preloadKnown:()=>{prepareSurface();scheduleKnownTerrainPreload();},invalidateTerrain,surface:sample,withProjection,project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},get groundBuilds(){return groundBuilds;},draw:drawScene,setEnabled,setup};
 })();
 IsoMapper.setup();

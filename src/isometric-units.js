@@ -1,5 +1,7 @@
 /* Deterministic groups of low-poly miniatures, anchored to the terrain surface. */
 (function(root) {
+  const G=root.IsoGeometry || (typeof require==='function' ? require('./isometric-core') : null);
+  const tuning=root.TerrainSettings || (typeof require==='function' ? require('./terrain-settings') : null);
   const number=v=>{const n=Number(String(v??0).replace(/,/g,''));return Number.isFinite(n)?Math.max(0,n):0;};
   function composition(unit) {
     if(!unit)return null;
@@ -25,7 +27,9 @@
     if(!counts)return [];
     const models=[];
     for(const kind of kinds)for(let i=0;i<modelCount(counts[kind]);i++)models.push({kind,mounted:counts.mounted && ['warriors','actives','inactives'].includes(kind)});
-    // A fixed seed and golden-angle spacing keep the gathering stable and irregular.
+    // A single miniature sits exactly at its parent unit anchor.
+    if(models.length===1)return [{...models[0],x:0,y:0}];
+    // Otherwise stable golden-angle spacing keeps each unit's miniatures distinct.
     let hash=2166136261;for(const c of String(seed))hash=Math.imul(hash^c.charCodeAt(0),16777619);
     const phase=(hash>>>0)/4294967296*Math.PI*2;
     return models.map((m,i)=>{const a=phase+i*2.399963229728653,r=.46*Math.sqrt((i+.5)/models.length);return {...m,x:Math.cos(a)*r,y:Math.sin(a)*r};});
@@ -65,37 +69,85 @@
   // cleared nearly the whole hex whenever a unit entered it, making trees and
   // terrain details disappear during movement/playback.
   function occupies(ref,x,y){return clearings.has(ref) && Math.hypot(x,y)<.18;}
+  // Deterministic die-like patterns. One unit occupies the centre;
+  // six use two columns x three rows, and overflow packs into balanced rows.
+  const dicePatterns={
+    1:[[0,0]],
+    2:[[-.55,-.55],[.55,.55]],
+    3:[[-.55,-.55],[0,0],[.55,.55]],
+    4:[[-.55,-.55],[.55,-.55],[-.55,.55],[.55,.55]],
+    5:[[-.55,-.55],[.55,-.55],[0,0],[-.55,.55],[.55,.55]],
+    6:[[-.55,-.68],[.55,-.68],[-.55,0],[.55,0],[-.55,.68],[.55,.68]]
+  };
+  function diceSlots(count) {
+    const n=Math.max(0,Math.floor(count||0));
+    if(n<=6)return (dicePatterns[n]||[]).map(p=>({x:p[0],y:p[1]}));
+    const cols=Math.ceil(Math.sqrt(n)),rows=Math.ceil(n/cols),slots=[];
+    for(let i=0;i<n;i++){
+      const row=Math.floor(i/cols),inRow=Math.min(cols,n-row*cols),col=i%cols;
+      slots.push({x:inRow===1?0:(col/(inRow-1)-.5)*1.15,y:rows===1?0:(row/(rows-1)-.5)*1.3});
+    }
+    return slots;
+  }
+  const ordered=values=>values.slice().sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+  const routePoints=route=>route?.route?.points||[];
+  function moveForUnit(code,coordinate) {
+    return (state.routeCache?.movements||[]).find(row=>{
+      const ps=routePoints(row);
+      return String(row.unit)===String(code) && ps.length>1 && ps[0].coordinate===coordinate
+        && Number.isFinite(ps[0].globalCol) && Number.isFinite(ps[0].globalRow)
+        && Number.isFinite(ps[1].globalCol) && Number.isFinite(ps[1].globalRow);
+    })||null;
+  }
   function layout(point,code,type,offset=0,extra='',snapshot=null) {
-    const counts=composition(record(code,snapshot)),center=Number.isFinite(point.x)&&Number.isFinite(point.y)?{x:point.x,y:point.y}:baseCenter(point.globalCol,point.globalRow);
-    const group=[...(occupants.get(point.coordinate)||[])].sort(),slot=Math.max(0,group.indexOf(String(code))),multiple=group.length>1;
-    const spread=multiple?.46:1,angle=slot*Math.PI*2/Math.max(1,group.length);
-    const shift=multiple?{x:Math.cos(angle)*.33,y:Math.sin(angle)*.33}:{x:0,y:0};
-    const movementRoute=state.routeCache?.movements?.find(row=>String(row.unit)===String(code))?.route;
-    const scoutRoute=state.scoutingVisible ? state.routeCache?.scouts?.find(row=>String(row.unit)===String(code))?.route : null;
-    // Scouting is an activity performed from the unit's current hex; it is
-    // not movement. A scout route may still provide the facing direction,
-    // but only a real movement route may put the miniature on a shared edge.
-    const hasMovementRoute=Boolean(movementRoute?.points?.length>1);
-    const routeForHeading=hasMovementRoute ? movementRoute : scoutRoute;
-    const first=routeForHeading?.points?.[0], next=routeForHeading?.points?.[1];
-    const heading=first?.coordinate===point.coordinate && next ? Math.atan2(baseCenter(next.globalCol,next.globalRow).y-baseCenter(first.globalCol,first.globalRow).y,baseCenter(next.globalCol,next.globalRow).x-baseCenter(first.globalCol,first.globalRow).x) : null;
-    const interpolated=Number.isFinite(point.x)&&Number.isFinite(point.y);
-    const travellingFromStart=!interpolated && hasMovementRoute && first?.coordinate===point.coordinate && next;
-    const travelOffset=travellingFromStart ? {x:(baseCenter(next.globalCol,next.globalRow).x-center.x)*.5,y:(baseCenter(next.globalCol,next.globalRow).y-center.y)*.5} : {x:0,y:0};
-    const models=formation(counts,`${point.coordinate||''}:${code}`).map(m=>{
-      const x=center.x+shift.x+travelOffset.x+m.x*spread,y=center.y+shift.y+travelOffset.y+m.y*spread;
+    const counts=composition(record(code,snapshot));
+    const isInterpolated=Number.isFinite(point.x)&&Number.isFinite(point.y);
+    const origin=isInterpolated?{x:point.x,y:point.y}:baseCenter(point.globalCol,point.globalRow);
+    const move=!isInterpolated?moveForUnit(code,point.coordinate):null;
+    const steps=routePoints(move),first=steps[0],next=steps[1];
+    const square=first&&next?G?.sharedSquare?.(
+      {col:first.globalCol,row:first.globalRow},{col:next.globalCol,row:next.globalRow}):null;
+    // Transport or special orders can move more than one hex; they stay at
+    // origin until playback supplies a real interpolated world position.
+    const travelling=Boolean(square);
+    const movementCodes=ordered((state.routeCache?.movements||[]).filter(row=>{
+      const pair=routePoints(row),s=pair[0],e=pair[1];
+      return s&&e&&first&&next&&
+        ((s.globalCol===first.globalCol&&s.globalRow===first.globalRow&&e.globalCol===next.globalCol&&e.globalRow===next.globalRow) ||
+         (e.globalCol===first.globalCol&&e.globalRow===first.globalRow&&s.globalCol===next.globalCol&&s.globalRow===next.globalRow));
+    }).map(row=>String(row.unit)));
+    const group=ordered([...(occupants.get(point.coordinate)||[])]);
+    const stationary=group.filter(id=>!moveForUnit(id,point.coordinate));
+    const slotCodes=travelling?movementCodes:(stationary.length?stationary:group);
+    const slot=Math.max(0,slotCodes.indexOf(String(code)));
+    const slots=diceSlots(Math.max(1,slotCodes.length));
+    const target=slots[Math.min(slot,slots.length-1)];
+    const scale=(tuning?.value('unitSpread')??.38)*(G?.coreRadius??.634);
+    const position=travelling?square.center:origin;
+    const shift=travelling?
+      {x:(target.x*square.tangent.x+target.y*square.normal.x)*scale,
+       y:(target.x*square.tangent.y+target.y*square.normal.y)*scale}:
+      {x:target.x*scale,y:target.y*scale};
+    const spread=slotCodes.length>1 ? 0.32 : 0.52;
+    const heading=first&&next?
+      Math.atan2(baseCenter(next.globalCol,next.globalRow).y-baseCenter(first.globalCol,first.globalRow).y,
+                  baseCenter(next.globalCol,next.globalRow).x-baseCenter(first.globalCol,first.globalRow).x):null;
+    const models=formation(counts,String(point.coordinate||'')+':'+code).map(m=>{
+      const x=position.x+shift.x+m.x*spread,y=position.y+shift.y+m.y*spread;
       return {...m,x,y,z:IsoMapper.surface(x,y).z,heading};
     }).sort((a,b)=>a.y-b.y);
-    const text=`${type==='Element'?'E':type==='Tribe'?'T':type==='Fleet'?'F':'U'} ${code}${extra?` ${extra}`:''}`;
-    const anchor=IsoMapper.project({x:center.x+shift.x+travelOffset.x,y:center.y+shift.y+travelOffset.y+.56});
-    anchor.y+=15+(multiple?slot*13:0);
+    const labelPrefix=type==='Element'?'E':type==='Tribe'?'T':type==='Fleet'?'F':'U';
+    const text=labelPrefix+' '+code+(extra?' '+extra:'');
+    const anchor=IsoMapper.project({x:position.x+shift.x,y:position.y+shift.y+.56});
+    // Keep labels readable without shifting the underlying physical unit anchors.
+    anchor.y+=15+(slotCodes.length>1?slot*11:0);
     ctx.save();ctx.font='700 11px Segoe UI';const labelWidth=ctx.measureText(text).width+12;ctx.restore();
     const points=models.map(m=>IsoMapper.project(m,m.z)),extent=Math.max(4,state.scale*.16),height=state.scale*.43;
     const x=Math.min(anchor.x-labelWidth/2,...points.map(p=>p.x-extent));
     const y=Math.min(anchor.y-12,...points.map(p=>p.y-height));
     const right=Math.max(anchor.x+labelWidth/2,...points.map(p=>p.x+extent));
     const bottom=Math.max(anchor.y+5,...points.map(p=>p.y+4));
-    return {x,y,w:right-x,h:bottom-y,anchor,text,counts,models};
+    return {x,y,w:right-x,h:bottom-y,anchor,text,counts,models,slot,slotCount:slotCodes.length,position,physicalRegion:travelling?'square':'hex'};
   }
   function face(vertices,color) {
     ctx.beginPath();vertices.forEach((v,i)=>{const p=IsoMapper.project(v,v.z);i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);});ctx.closePath();ctx.fillStyle=color;ctx.fill();
@@ -236,7 +288,7 @@
       ctx.strokeStyle='#ffe18a';ctx.lineWidth=Math.max(1.5,state.scale*.04);ctx.stroke();ctx.restore();
     });
   }
-  const api={resetSelection:()=>{cycle=null;},nextSelection,unitsAt,composition,modelCount,formation,layout,draw,drawScout,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];},clickHex,drawSelectionHighlight};
+  const api={diceSlots,resetSelection:()=>{cycle=null;},nextSelection,unitsAt,composition,modelCount,formation,layout,draw,drawScout,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];},clickHex,drawSelectionHighlight};
   if(typeof module!=='undefined' && module.exports)module.exports=api;
   else {
     root.IsoUnits=api;

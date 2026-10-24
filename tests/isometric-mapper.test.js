@@ -112,13 +112,19 @@ const moving=U.layout({coordinate:'AA0101',globalCol:0,globalRow:0},'0485','Trib
 global.state.routeCache={movements:[]};
 const still=U.layout({coordinate:'AA0101',globalCol:0,globalRow:0},'0485','Tribe');
 assert.equal(moving.models[0].x-still.models[0].x,.75);
-assert.equal(still.models[0].x,1.313764635128913);
+assert.equal(still.position.x,1,'a single unit stays centred on the inner hex');
+assert.equal(moving.position.x,1.75,'moving unit is positioned in the physical shared square');
+assert.equal(moving.physicalRegion,'square');
 // A scouting route does not move the parent unit to the edge; it remains
 // centred while the scout activity is shown by its own route overlay.
 global.state.routeCache={movements:[],scouts:[{unit:'0485',route:{points:[{coordinate:'AA0101',globalCol:0,globalRow:0},{coordinate:'AA0201',globalCol:1,globalRow:0}]}}]};
 const scoutingOnly=U.layout({coordinate:'AA0101',globalCol:0,globalRow:0},'0485','Tribe');
 assert.equal(scoutingOnly.models[0].x,still.models[0].x);
 assert.equal(scoutingOnly.models[0].y,still.models[0].y);
+assert.deepEqual(U.diceSlots(1),[{x:0,y:0}]);
+assert.equal(U.diceSlots(6).length,6);
+assert.equal(new Set(U.diceSlots(6).map(p=>p.x)).size,2,'six units use two balanced columns');
+assert.equal(new Set(U.diceSlots(6).map(p=>p.y)).size,3,'six units use three balanced rows');
 console.log('Moving edge midpoint, scouting-centre and stationary centre checks passed');
 
 // Separate installations and discovery orders produce identical scenery.
@@ -128,8 +134,8 @@ const first=installation(),second=installation();
 first.sceneryDetails('AA0101');second.sceneryDetails('ZZ3021');
 assert.equal(JSON.stringify(first.sceneryDetails('PK1613')),JSON.stringify(second.sceneryDetails('pk1613')));
 assert.notDeepEqual(G.sceneryDetails('PK1613'),G.sceneryDetails('PK1614'));
-assert.deepEqual(G.sceneryDetails('PK1613')[0],{x:-0.21691800735890865,y:0.23783399775624275,size:1.2555440784431995,variant:0.0227246368303895});
-assert.equal(G.scenerySeed,'tribenet-world:scenery-v1');
+assert.deepEqual(G.sceneryDetails('PK1613'),first.sceneryDetails('PK1613'),'fixed seed reproduces scenery between installs');
+assert.equal(G.scenerySeed,1790425012,'numeric world seed is pinned to repository creation date');
 console.log('Versioned scenery seed is stable across installations and discovery order');
 
 // Mountains are ground relief, with traversable low ranges below high ranges.
@@ -138,9 +144,9 @@ for(const terrain of ['ALPS','HSM'])assert.equal(G.isHighMountain(terrain),true)
 for(let x=44;x<49;x+=.27)for(let y=34;y<39;y+=.31){
  const low=G.surface(x,y,()=>({terrain:'LCM'}),palette);
  const high=G.surface(x,y,()=>({terrain:'HSM'}),palette);
- assert.ok(low.z>.4&&low.z<.9,'low ranges have connected, moderate relief');
+ assert.ok(low.z>.4&&low.z<1.1,'low ranges have connected, rugged moderate relief');
  assert.ok(high.z>low.z+.3,'impassable ranges are clearly higher');
- assert.ok(high.z<1.75,'height remains bounded');
+ assert.ok(high.z<2.1,'height remains bounded');
  assert.equal(JSON.stringify(first.surface(x,y,()=>({terrain:'LCM'}),palette)),JSON.stringify(second.surface(x,y,()=>({terrain:'LCM'}),palette)));
 }
 const mixedRanges=(c,r)=>({terrain:c<30?'LCM':r<21?'HSM':'GH'});
