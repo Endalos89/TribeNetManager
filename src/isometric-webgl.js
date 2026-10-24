@@ -168,7 +168,7 @@ class GPUMap {
         const x=t.c.x+Math.cos(angle)*rad,y=t.c.y+Math.sin(angle)*rad;
         const p=sample(x,y);
         if(!p || p.fog || p.water || p.rock>.64)continue;
-        if(window.IsoUnits?.occupies(t.ref,x-t.c.x,y-t.c.y))continue;
+        if(typeof IsoUnits!=='undefined' && IsoUnits.occupies(t.ref,x-t.c.x,y-t.c.y))continue;
         const h=scale*(.75+rnd()*.55);
         sites.push({x,y,z:p.z,size:h,conifer:t.data.terrain==='CH'||t.data.terrain==='LCM'});
       }
@@ -198,7 +198,7 @@ class GPUMap {
   requestLater(){
     if(this.pendingFrame)return;
     this.pendingFrame=true;
-    requestAnimationFrame(()=>{this.pendingFrame=false;if(this.visible && window.IsoMapper?.enabled && typeof window.draw==='function')window.draw();});
+    requestAnimationFrame(()=>{this.pendingFrame=false;if(this.visible && typeof IsoMapper!=='undefined' && IsoMapper.enabled && typeof draw==='function')draw();});
   }
   beginFrame(tiles,groundFaces,sample,state,onDraw,tileAt){
     if(!this.init())return false;
@@ -225,7 +225,7 @@ class GPUMap {
         const [cx,cy]=id.split(':').map(Number),full=[];
         for(let col=cx*CHUNK_SIZE;col<(cx+1)*CHUNK_SIZE;col++)
           for(let row=cy*CHUNK_SIZE;row<(cy+1)*CHUNK_SIZE;row++)
-            if(col>=0&&row>=0&&col<window.TOTAL_COLS&&row<window.TOTAL_ROWS)full.push(tileAt(col,row));
+            if(col>=0&&row>=0&&col<TOTAL_COLS&&row<TOTAL_ROWS)full.push(tileAt(col,row));
         record=this.newChunk(full,groundFaces,sample,lod);
         record.key=key;
         this.chunkCache.set(key,record);this.chunkGroup.add(record.group);
