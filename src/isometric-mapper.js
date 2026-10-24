@@ -36,7 +36,7 @@ const IsoMapper = (() => {
     const signature=Array.from(state.hexCache,([ref,data])=>`${ref}:${data.terrain}`).join('|')+playbackSignature;
     const decorations=Array.from(state.hexCache,([ref,data])=>`${ref}:${[...G.rivers(data)].sort().join(',')}`).join('|');
     if(decorations!==decorationSignature){decorationSignature=decorations;cellCache.clear();landscape=null;}
-    if(signature!==terrainSignature){terrainSignature=signature;cellCache.clear();surfaceCache.clear();groundCache.clear();terrainRasterCache.clear();terrainRasterBytes=0;groundLayer=null;landscape=null;scheduleKnownTerrainPreload();}
+    if(signature!==terrainSignature){terrainSignature=signature;cellCache.clear();surfaceCache.clear();groundCache.clear();terrainRasterCache.clear();terrainRasterBytes=0;groundLayer=null;landscape=null;window.TribeNetGPU?.invalidate();scheduleKnownTerrainPreload();}
   }
   const isWater=t=>t==='O'||t==='L';
   const known=d=>d && d.terrain && d.terrain!=='UNKNOWN';
@@ -144,6 +144,11 @@ const IsoMapper = (() => {
     groundCache.set(key,faces);return faces;
   }
   function pick(x,y) {
+    // The GPU raycaster reads the actual elevated world-space mesh.
+    if(window.TribeNetGPU?.initialized && window.TribeNetGPU.visible){
+      const hit=window.TribeNetGPU.pick(x,y);
+      if(hit){const owner=G.regionAt(hit.x,hit.y);return {globalCol:owner.col,globalRow:owner.row};}
+    }
     x=(x-hitOffset.x)/hitScale;y=(y-hitOffset.y)/hitScale;
     // Hit-test the elevated surface, rather than the flat plane underneath hills.
     for(let i=hitFaces.length-1;i>=0;i--){
@@ -240,12 +245,14 @@ const IsoMapper = (() => {
     cellCache.clear();surfaceCache.clear();groundCache.clear();
     terrainRasterCache.clear();terrainRasterBytes=0;
     groundLayer=null;landscape=null;
+    window.TribeNetGPU?.invalidate();
     scheduleKnownTerrainPreload();
   }
   // Startup/warm-view preloading is deliberately incremental. Build coarse
   // terrain for ALL discovered cells, but prioritize UI responsiveness.
   function scheduleKnownTerrainPreload(){
     const job=++preloadJob;
+    if(window.TribeNetGPU && !window.TribeNetGPU.failed)return;
     if(typeof setTimeout!=='function' || !state.hexCache)return;
     const knownRefs=[...state.hexCache].filter(([ref,data])=>known(data)).map(([ref])=>ref);
     preloadCount=0;
@@ -312,7 +319,68 @@ const IsoMapper = (() => {
       if(enabled && state.mode==='detail')draw();
     },150);
   }
+  // The WebGL backend owns physical terrain, water, trees and miniatures.
+  // Canvas 2D remains an interaction/labels/routes layer and is never painted
+  // opaque in this path. Existing Orders and scouting drawing stay unchanged.
+  function drawWebGLScene(){
+    const gpu=window.TribeNetGPU;
+    if(!gpu || gpu.failed)return false;
+    const units=IsoUnits.prepare();
+    if(units!==unitSignature)unitSignature=units;
+    prepareSurface();
+    const rect=canvas.getBoundingClientRect();
+    if(rect.width<2||rect.height<2)return true;
+    frameRect=rect;renderCtx=ctx;
+    const b=bounds(),tiles=[],pad=Math.max(80,state.scale*1.4);
+    for(let col=b.minCol;col<=b.maxCol;col++)for(let row=b.minRow;row<=b.maxRow;row++){
+      const t=tile(col,row);
+      if(t.p.x< -pad||t.p.x>rect.width+pad||t.p.y< -pad||t.p.y>rect.height+pad)continue;
+      tiles.push(t);
+    }
+    const started=gpu.beginFrame(tiles,groundFaces,sample,state,()=>draw(),tile);
+    if(!started){gpu.setVisible(false);frameRect=null;return false;}
+    ctx.clearRect(0,0,rect.width,rect.height);
+    hitFaces=[];hitScale=1;hitOffset={x:0,y:0};
+    IsoUnits.beginFrame();
+    const playbackState=typeof resultsPlayback!=='undefined'?resultsPlayback:null;
+    for(const t of tiles){
+      const selected=state.selected?.coordinate===t.ref && !state.selectedUnit;
+      if(grid||selected){
+        const outline=G.corners.map(p=>{const q=offset(t.c,p,.98);return project(q,sample(q.x,q.y).z);});
+        if(grid)polygon(outline,null,'#324a4899');
+        if(selected)polygon(outline,null,'#ffe093');
+      }
+      if(t.known)edges(t); // Rivers: overlay, no replacement game mechanics.
+      if(labels && state.scale>=43){
+        const p=project({...t.c,y:t.c.y+.5});
+        renderCtx.font=String(Math.min(14,Math.max(10,state.scale*.09)))+'px Segoe UI';
+        renderCtx.textAlign='center';renderCtx.lineWidth=3;
+        renderCtx.strokeStyle='#20302bea';renderCtx.strokeText(t.ref,p.x,p.y);
+        renderCtx.fillStyle='#f0f2dc';renderCtx.fillText(t.ref,p.x,p.y);
+      }
+      drawResourceIcons(t);
+      const partial=playbackState?.active && (playbackState.revealedQuestions?.has(t.ref)||playbackState.partialPreviews?.has(t.ref));
+      if(!t.known&&state.scale>=35&&!partial){
+        renderCtx.fillStyle='#71838b';renderCtx.textAlign='center';renderCtx.font='12px Segoe UI';
+        renderCtx.fillText('?',t.p.x,t.p.y);
+      }
+    }
+    drawPhysicalRegions(tiles);
+    if(state.planningVisible && state.planImport?.plan)drawPlanOverlay();
+    if(typeof drawResultsPlaybackOverlay==='function')drawResultsPlaybackOverlay();
+    updateCenterReadout();
+    gpu.endFrame();
+    frameRect=null;
+    return true;
+  }
   function drawScene() {
+    if(enabled && window.TribeNetGPU && !window.TribeNetGPU.failed){
+      try{if(drawWebGLScene())return;}
+      catch(error){
+        console.error('GPU mapper failed; restoring software terrain:',error);
+        window.TribeNetGPU.failed=true;window.TribeNetGPU.setVisible(false);
+      }
+    }
     const units=IsoUnits.prepare();if(units!==unitSignature){unitSignature=units;landscape=null;}
     const playbackState=typeof resultsPlayback!=='undefined' ? resultsPlayback : null;
     // Playback reveals can change terrain while the pointer is moving. Do not
@@ -401,7 +469,7 @@ const IsoMapper = (() => {
     updateCenterReadout();frameRect=null;
   }
   function setEnabled(value, options = {}) {
-    enabled=value;IsoUnits.resetSelection();interactive=false;clearTimeout(settleTimer);if(!value)state.scale=Math.min(68,state.scale);document.body.classList.toggle('isometric-mode',value);
+    enabled=value;window.TribeNetGPU?.setVisible(value && window.TribeNetGPU.initialized && !window.TribeNetGPU.failed);IsoUnits.resetSelection();interactive=false;clearTimeout(settleTimer);if(!value)state.scale=Math.min(68,state.scale);document.body.classList.toggle('isometric-mode',value);
     $('isoViewControls').classList.toggle('hidden',!value);
     $('openMapperButton').querySelector('h2').textContent='Mapper';
     if(value && state.scale<43)state.scale=52;
@@ -428,6 +496,6 @@ const IsoMapper = (() => {
     new MutationObserver(sync).observe($('notesInput'),{attributes:true,attributeFilter:['disabled']});
     new MutationObserver(sync).observe($('selectedState'),{childList:true});
   }
-  return {get enabled(){return enabled;},get preloadCount(){return preloadCount;},preloadKnown:()=>{prepareSurface();scheduleKnownTerrainPreload();},invalidateTerrain,surface:sample,withProjection,project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},get groundBuilds(){return groundBuilds;},draw:drawScene,setEnabled,setup};
+  return {get enabled(){return enabled;},get renderer(){return window.TribeNetGPU?.initialized&&window.TribeNetGPU?.visible?'WebGL':'Canvas2D';},get gpuStats(){return window.TribeNetGPU?.getStats();},get preloadCount(){return preloadCount;},queueGpuModel:m=>window.TribeNetGPU?.addModel(m),preloadKnown:()=>{prepareSurface();scheduleKnownTerrainPreload();},invalidateTerrain,surface:sample,withProjection,project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},get groundBuilds(){return groundBuilds;},draw:drawScene,setEnabled,setup};
 })();
 IsoMapper.setup();
