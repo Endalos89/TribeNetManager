@@ -27,7 +27,9 @@
     if(!counts)return [];
     const models=[];
     for(const kind of kinds)for(let i=0;i<modelCount(counts[kind]);i++)models.push({kind,mounted:counts.mounted && ['warriors','actives','inactives'].includes(kind)});
-    // A fixed seed and golden-angle spacing keep the gathering stable and irregular.
+    // A single miniature sits exactly at its parent unit anchor.
+    if(models.length===1)return [{...models[0],x:0,y:0}];
+    // Otherwise stable golden-angle spacing keeps each unit's miniatures distinct.
     let hash=2166136261;for(const c of String(seed))hash=Math.imul(hash^c.charCodeAt(0),16777619);
     const phase=(hash>>>0)/4294967296*Math.PI*2;
     return models.map((m,i)=>{const a=phase+i*2.399963229728653,r=.46*Math.sqrt((i+.5)/models.length);return {...m,x:Math.cos(a)*r,y:Math.sin(a)*r};});
@@ -137,7 +139,8 @@
     const labelPrefix=type==='Element'?'E':type==='Tribe'?'T':type==='Fleet'?'F':'U';
     const text=labelPrefix+' '+code+(extra?' '+extra:'');
     const anchor=IsoMapper.project({x:position.x+shift.x,y:position.y+shift.y+.56});
-    anchor.y+=15;
+    // Keep labels readable without shifting the underlying physical unit anchors.
+    anchor.y+=15+(slotCodes.length>1?slot*11:0);
     ctx.save();ctx.font='700 11px Segoe UI';const labelWidth=ctx.measureText(text).width+12;ctx.restore();
     const points=models.map(m=>IsoMapper.project(m,m.z)),extent=Math.max(4,state.scale*.16),height=state.scale*.43;
     const x=Math.min(anchor.x-labelWidth/2,...points.map(p=>p.x-extent));
