@@ -95,15 +95,23 @@ const {chromium}=require('playwright');
       return {previous,after:IsoMapper.gpuStats.builds};
     });
     assert.ok(reuse.after<=reuse.previous+2,'small camera pans reuse uploaded GPU terrain');
-    // Zoom across the 8->12 LOD threshold: previously uploaded chunks
-    // must stay visible until sharper replacements have been generated.
+    // A pure camera zoom must reuse the SAME eight-step mesh. No 2/4/12/32
+    // terrain variants may be generated at any scale.
     const zoomContinuity=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU;
+      const previous=[...gpu.chunkCache].map(([key,v])=>({key,lod:v.lod}));
       const before=IsoMapper.gpuStats.chunks;
       state.scale=81;draw();
-      return {before,after:IsoMapper.gpuStats.chunks,pending:IsoMapper.gpuStats.queuedChunks};
+      const after=IsoMapper.gpuStats.chunks;
+      state.scale=52;draw();
+      return {before,after,steps:IsoMapper.gpuStats.terrainSubdivisions,
+        oldLods:previous.map(x=>x.lod),
+        newLods:[...gpu.chunkCache.values()].map(x=>x.lod)};
     });
-    assert.ok(zoomContinuity.before>=1&&zoomContinuity.after>=1,
-      'zooming must never blink out already-resident terrain chunks');
+    assert.ok(zoomContinuity.before>=1&&zoomContinuity.after>=1,'zoom never blanks resident terrain');
+    assert.equal(zoomContinuity.steps,8);
+    assert.ok([...zoomContinuity.oldLods,...zoomContinuity.newLods].every(x=>x===8),
+      'camera changes must never produce alternate terrain LOD meshes');
     await page.waitForFunction(()=>{
       const gpu=window.TribeNetGPU;
       const id=Math.floor(315/2)+':'+Math.floor(327/2);
@@ -117,6 +125,21 @@ const {chromium}=require('playwright');
     });
     assert.ok(groundTest.height>=groundTest.field-.02,'GPU unit grounding never drops below computed landscape');
     assert.ok(groundTest.cache>=1,'rendered triangle height is cached for repeated unit draws');
+    const unitTest=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU,p=baseCenter(315,327);
+      const model={x:p.x,y:p.y,z:-1,kind:'warriors',mounted:false,heading:0};
+      const ground=gpu.renderedGroundHeight(model);
+      gpu.units=[model];
+      gpu.updateUnits();
+      const instance=gpu.unitMeshes.get('body'),matrix=instance.instanceMatrix.array;
+      const y=matrix[13],scale=matrix[5];
+      const bottom=y-instance.geometry.parameters.height*scale/2;
+      return {ground,scale,bottom,reportedScale:gpu.getStats().unitModelScale};
+    });
+    assert.equal(unitTest.reportedScale,.5,'all unit models use half scale');
+    assert.ok(Math.abs(unitTest.scale-.5)<1e-6,'GPU body mesh is half height');
+    assert.ok(unitTest.bottom>=unitTest.ground,
+      'model feet remain above visible terrain despite low analytic height');
     const numericTuning=await page.evaluate(()=>{
       document.getElementById('terrainDevToggle').click();
       const field=document.getElementById('terrain-number-waterHeight');
@@ -139,7 +162,12 @@ const {chromium}=require('playwright');
     assert.equal(limits.hill,0);
     assert.equal(limits.mountain,0);
     assert.ok(limits.sea>=.45);
-    assert.ok(limits.coast>=20);
+    assert.equal(limits.coast,20);
+    const preset=await page.evaluate(()=>TerrainSettings.defaults());
+    assert.equal(preset.waterHeight,.5);
+    assert.equal(preset.coastWaterShare,.35);
+    assert.equal(preset.hillAmplitude,.2);
+    assert.equal(preset.treeDensity,4.75);
     console.log('Mapper real-WebGL terrain smoke passed');
   } finally{await browser.close();}
 })().catch(e=>{console.error(e.stack||e);process.exitCode=1;});
