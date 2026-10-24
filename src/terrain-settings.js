@@ -15,7 +15,11 @@
     meshQuality: {label:'Close-up mesh detail',min:8,max:32,step:4,default:16},
     unitSpread: {label:'Unit layout spacing',min:.20,max:.49,step:.01,default:.38},
     treeSize: {label:'Tree size (GPU)',min:.2,max:1.2,step:.05,default:.55},
-    treeDensity: {label:'Tree density (GPU)',min:.5,max:5,step:.25,default:2.5}
+    treeDensity: {label:'Tree density (GPU)',min:.5,max:5,step:.25,default:2.5},
+    waterHeight: {label:'Water level',min:-.15,max:.14,step:.005,default:.10},
+    plainsRelief: {label:'Plains undulation',min:0,max:.20,step:.005,default:.055},
+    plainsTexture: {label:'Plains colour variety',min:0,max:.5,step:.01,default:.22},
+    waveStrength: {label:'Ocean / lake waves',min:0,max:1,step:.05,default:.55}
   });
   const defaults=()=>Object.fromEntries(Object.entries(definitions).map(([name,d])=>[name,d.default]));
   function normalise(input) {

@@ -26,13 +26,37 @@
   for(const [name,definition] of Object.entries(tuning.definitions)){
     const row=document.createElement('label');row.className='terrain-dev-row';
     const text=document.createElement('span');text.textContent=definition.label;
-    const output=document.createElement('output');output.setAttribute('for','terrain-dev-'+name);
     const range=document.createElement('input');range.type='range';range.id='terrain-dev-'+name;
     range.min=definition.min;range.max=definition.max;range.step=definition.step;
-    const update=()=>{output.textContent=Number(range.value).toFixed(definition.step>=1?0:definition.step<.1?2:1);};
-    range.value=tuning.value(name);update();
-    range.addEventListener('input',()=>{tuning.set({[name]:Number(range.value)});update();drawNow();});
-    row.append(text,range,output);sliders.appendChild(row);fields.set(name,{range,update});
+    const number=document.createElement('input');number.type='number';number.className='terrain-dev-number';
+    number.min=definition.min;number.max=definition.max;number.step=definition.step;
+    number.id='terrain-number-'+name;number.setAttribute('aria-label',definition.label+' numeric value');
+    const decimals=definition.step>=1?0:definition.step<.01?3:definition.step<.1?2:1;
+    let timer=null;
+    const update=()=>{const value=tuning.value(name);range.value=value;number.value=Number(value).toFixed(decimals);};
+    const commit=value=>{
+      if(!Number.isFinite(value)){update();return;}
+      const applied=tuning.set({[name]:value});
+      range.value=applied[name];number.value=Number(applied[name]).toFixed(decimals);
+      drawNow();
+    };
+    range.addEventListener('input',()=>{
+      number.value=Number(range.value).toFixed(decimals);
+      if(timer!==null)clearTimeout(timer);
+      timer=setTimeout(()=>{timer=null;commit(Number(range.value));},160);
+    });
+    range.addEventListener('change',()=>{
+      if(timer!==null){clearTimeout(timer);timer=null;}
+      commit(Number(range.value));
+    });
+    number.addEventListener('change',()=>{
+      if(timer!==null){clearTimeout(timer);timer=null;}
+      if(number.value.trim()===''){update();return;}
+      commit(Number(number.value));
+    });
+    number.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();number.blur();}});
+    update();
+    row.append(text,range,number);sliders.appendChild(row);fields.set(name,{range,number,update});
   }
   panel.appendChild(sliders);
   const regionLabel=document.createElement('label');regionLabel.className='terrain-dev-regions';

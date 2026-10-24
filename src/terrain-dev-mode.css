@@ -5,10 +5,13 @@
 .terrain-dev-head strong{font-size:14px;}
 .terrain-dev-head small{color:#9cb6b5;}
 .terrain-dev-sliders{display:grid;gap:9px;}
-.terrain-dev-row{display:grid;grid-template-columns:120px minmax(80px,1fr) 39px;gap:8px;align-items:center;}
+.terrain-dev-row{display:grid;grid-template-columns:130px minmax(55px,1fr) 66px;gap:8px;align-items:center;}
 .terrain-dev-row input{width:100%;accent-color:#91d6b0;cursor:pointer;}
 .terrain-dev-row output{text-align:right;font-variant-numeric:tabular-nums;color:#ffe2a4;}
 .terrain-dev-regions{display:block;margin:14px 0 10px;}
 .terrain-dev-actions{display:flex;gap:6px;flex-wrap:wrap;}
 .terrain-dev-actions button{font-size:11px;}
 .terrain-dev-feedback{min-height:18px;padding-top:8px;color:#b7d2cc;}
+
+.terrain-dev-row .terrain-dev-number{width:100%;min-width:0;padding:5px 2px;background:#10232a;color:#ffe4ae;border:1px solid #4a7069;border-radius:5px;font:600 12px Segoe UI,sans-serif;text-align:center;font-variant-numeric:tabular-nums;box-sizing:border-box;}
+.terrain-dev-row .terrain-dev-number:focus{outline:2px solid #90d7b6;outline-offset:1px;}

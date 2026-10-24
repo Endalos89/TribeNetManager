@@ -95,6 +95,28 @@ const {chromium}=require('playwright');
       return {previous,after:IsoMapper.gpuStats.builds};
     });
     assert.ok(reuse.after<=reuse.previous+2,'small camera pans reuse uploaded GPU terrain');
+    // Zoom across the 8->12 LOD threshold: previously uploaded chunks
+    // must stay visible until sharper replacements have been generated.
+    const zoomContinuity=await page.evaluate(()=>{
+      const before=IsoMapper.gpuStats.chunks;
+      state.scale=81;draw();
+      return {before,after:IsoMapper.gpuStats.chunks,pending:IsoMapper.gpuStats.queuedChunks};
+    });
+    assert.ok(zoomContinuity.before>=1&&zoomContinuity.after>=1,
+      'zooming must never blink out already-resident terrain chunks');
+    const numericTuning=await page.evaluate(()=>{
+      document.getElementById('terrainDevToggle').click();
+      const field=document.getElementById('terrain-number-waterHeight');
+      if(!field)throw Error('Terrain Dev numeric water height is missing');
+      field.value='0.125';
+      field.dispatchEvent(new Event('change',{bubbles:true}));
+      return {value:TerrainSettings.value('waterHeight'),
+        range:Number(document.getElementById('terrain-dev-waterHeight').value),
+        exported:JSON.parse(TerrainSettings.exportPreset()).settings.waterHeight};
+    });
+    assert.equal(numericTuning.value,.125);
+    assert.equal(numericTuning.range,.125);
+    assert.equal(numericTuning.exported,.125);
     console.log('Mapper real-WebGL terrain smoke passed');
   } finally{await browser.close();}
 })().catch(e=>{console.error(e.stack||e);process.exitCode=1;});
