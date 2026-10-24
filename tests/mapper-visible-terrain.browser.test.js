@@ -104,6 +104,19 @@ const {chromium}=require('playwright');
     });
     assert.ok(zoomContinuity.before>=1&&zoomContinuity.after>=1,
       'zooming must never blink out already-resident terrain chunks');
+    await page.waitForFunction(()=>{
+      const gpu=window.TribeNetGPU;
+      const id=Math.floor(315/2)+':'+Math.floor(327/2);
+      return Boolean(gpu.bestResident(id,gpu.lastLod)?.group.visible);
+    },null,{timeout:30000});
+    const groundTest=await page.evaluate(()=>{
+      const p=baseCenter(315,327);
+      const height=window.TribeNetGPU.renderedGroundHeight({x:p.x,y:p.y,z:-.1});
+      const field=IsoMapper.surface(p.x,p.y).z;
+      return {height,field,cache:window.TribeNetGPU.groundHeightCache.size};
+    });
+    assert.ok(groundTest.height>=groundTest.field-.02,'GPU unit grounding never drops below computed landscape');
+    assert.ok(groundTest.cache>=1,'rendered triangle height is cached for repeated unit draws');
     const numericTuning=await page.evaluate(()=>{
       document.getElementById('terrainDevToggle').click();
       const field=document.getElementById('terrain-number-waterHeight');
@@ -117,6 +130,16 @@ const {chromium}=require('playwright');
     assert.equal(numericTuning.value,.125);
     assert.equal(numericTuning.range,.125);
     assert.equal(numericTuning.exported,.125);
+    const limits=await page.evaluate(()=>({
+      hill:TerrainSettings.definitions.hillAmplitude.min,
+      mountain:TerrainSettings.definitions.mountainHeight.min,
+      sea:TerrainSettings.definitions.waterHeight.max,
+      coast:TerrainSettings.definitions.shoreDetail.default
+    }));
+    assert.equal(limits.hill,0);
+    assert.equal(limits.mountain,0);
+    assert.ok(limits.sea>=.45);
+    assert.ok(limits.coast>=20);
     console.log('Mapper real-WebGL terrain smoke passed');
   } finally{await browser.close();}
 })().catch(e=>{console.error(e.stack||e);process.exitCode=1;});

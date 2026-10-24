@@ -5,9 +5,12 @@
  */
 import * as THREE from 'three';
 
-const CHUNK_SIZE=4;
-const MAX_CHUNKS=160;
-const PREFETCH_RING=1;
+// Smaller chunks cap synchronous CPU work when zoomed in; GPU instancing
+// still batches trees and units across each chunk.
+const CHUNK_SIZE=2;
+const MAX_CHUNKS=256;
+// Two 2x2-chunk rings cover the same neighbourhood as one former 4x4 ring.
+const PREFETCH_RING=2;
 const INITIAL_LOD=4;
 const baseTreeTrunk=new THREE.CylinderGeometry(.012,.017,.20,5);
 const baseTreeCrown=new THREE.ConeGeometry(.095,.24,6);
@@ -30,6 +33,7 @@ class GPUMap {
     this.units=[];this.visible=false;this.failed=false;this.initialized=false;
     this.generation=0;this.pendingChunks=[];this.idleBuildPending=false;this.activeChunkIds=new Set();this.visibleChunkIds=new Set();
     this.groundFaces=null;this.sampleTerrain=null;this.tileAt=null;this.lastLod=4;
+    this.groundHeightCache=new Map();this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
     this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,gpuCalls:0,renderMs:0};
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
     this.waveMaterial=new THREE.LineBasicMaterial({color:0xc8e9d9,transparent:true,opacity:.58,depthWrite:false});
@@ -102,10 +106,12 @@ class GPUMap {
     this.chunkCache.clear();
     this.stats.chunks=0;this.stats.faces=0;this.stats.trees=0;
     this.generation++;this.pendingChunks=[];this.queueSignature=null;
+    this.groundHeightCache.clear();
   }
   disposeChunk(record){
     this.chunkGroup?.remove(record.group);
     record.ground.geometry.dispose();
+    this.groundHeightCache.clear();
     record.waves?.geometry.dispose();
     // Free per-instance GPU buffers on LRU eviction; tree geometries and
     // materials are shared and intentionally retained.
@@ -411,8 +417,39 @@ class GPUMap {
     raycaster.setFromCamera(new THREE.Vector2(2*x/rect.width-1,1-2*y/rect.height),this.camera);
     const objects=[...this.chunkCache.values()].filter(chunk=>chunk.group.visible).map(chunk=>chunk.ground);
     const intersection=raycaster.intersectObjects(objects,false)[0];
-    if(!intersection)return null;
-    return {x:intersection.point.x/1.5,y:intersection.point.z/1.5};
+    if(intersection)return {x:intersection.point.x/1.5,y:intersection.point.z/1.5};
+    // While streaming, a newly visible tile can have no GPU mesh yet.
+    // Project the ray against the analytic surface as a temporary fallback,
+    // instead of making original hex selection non-responsive until upload.
+    const plane=new THREE.Plane(new THREE.Vector3(0,1,0),-.14);
+    let world=raycaster.ray.intersectPlane(plane,new THREE.Vector3());
+    if(!world)return null;
+    for(let i=0;i<2;i++){
+      const z=this.sampleTerrain?.(world.x/1.5,world.z/1.5)?.z;
+      if(!Number.isFinite(z))break;
+      plane.constant=-z;
+      const next=raycaster.ray.intersectPlane(plane,new THREE.Vector3());
+      if(!next)break;
+      world=next;
+    }
+    return {x:world.x/1.5,y:world.z/1.5};
+  }
+  renderedGroundHeight(m){
+    const analytic=Number(m.z)||0;
+    const region=window.IsoGeometry.regionAt(m.x,m.y),cx=Math.floor(region.col/CHUNK_SIZE),cy=Math.floor(region.row/CHUNK_SIZE);
+    const id=cx+':'+cy;
+    const chunk=this.bestResident(id,this.lastLod);
+    if(!chunk || !chunk.group.visible)return analytic;
+    const key=chunk.key+':'+m.x.toFixed(5)+':'+m.y.toFixed(5);
+    const cached=this.groundHeightCache.get(key);
+    if(cached!==undefined)return Math.max(analytic,cached);
+    this.downRay.set(new THREE.Vector3(m.x*1.5,20,m.y*1.5),this.downDirection);
+    this.downRay.near=0;this.downRay.far=40;
+    const hit=this.downRay.intersectObject(chunk.ground,false)[0];
+    const height=hit?hit.point.y:analytic;
+    if(this.groundHeightCache.size>1500)this.groundHeightCache.clear();
+    this.groundHeightCache.set(key,height);
+    return Math.max(analytic,height);
   }
   addModel(m){if(m && Number.isFinite(m.x)&&Number.isFinite(m.y))this.units.push(m);}
   updateUnits(){
@@ -420,6 +457,9 @@ class GPUMap {
     const personColor=m=>m.kind==='warriors'?0xb7614e:m.kind==='actives'?0x4c9f95:0xd4b86c;
     for(const m of this.units){
       const p=position(m),mounted=m.mounted;
+      // Meshes are piecewise planar at their rendered LOD. The exact height
+      // field can sit *under* a coarse triangle, burying miniature feet.
+      p[1]=this.renderedGroundHeight(m)+.055;
       if(m.kind==='horses'||mounted)kinds.horse.push({p:[p[0],p[1]+.095,p[2]],scale:[1,1,1],color:0xa87a4c,heading:m.heading||0});
       if(m.kind==='carts'){kinds.cart.push({p:[p[0],p[1]+.08,p[2]],scale:[1,1,1],color:0xa77945,heading:m.heading||0});continue;}
       if(m.kind==='horses')continue;

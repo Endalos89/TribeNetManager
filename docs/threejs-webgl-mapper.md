@@ -60,3 +60,16 @@ The Windows release workflow runs \`npm test\` (including static generation and 
 - Ocean/lake colouring adds seeded depth/shallow-water variation. GPU wave crest lines are **static and batched by chunk**; they appear more frequently near the shoreline and are tuned with \`waveStrength\` (default 0.55). No continuous water-animation redraw is required.
 - Every Terrain Dev parameter now provides a numeric input beside its slider. Inputs clamp to declared limits; sliders are throttled to avoid repeatedly throwing away the terrain caches mid-drag. Local preset JSON exports include the new values and preserve all prior settings. The immutable world seed is not user-editable.
 - Browser regression tests must verify WebGL remains visible at zoom threshold transitions and that the numeric sea-height setting is actually applied and exported. Node tests cover the water plane, low-lying plains and fallback renderer.
+
+
+## October 2026 — terrain polish, LOD and grounding
+
+The on-screen 3D renderer now builds **2×2 world-hex GPU chunks** (rather than 4×4), making each synchronous mesh generation job substantially smaller at high zoom. A two-chunk prefetched ring covers the same physical margin as the previous four-hex ring, while up to 256 chunk/LOD meshes are retained. Current visible meshes remain on screen as detail is regenerated. The existing idle scheduler, turn-specific fog and global permanent seed are unchanged.
+
+The **Terrain Dev** constraints were expanded: Hill height and Mountain height now permit zero (the sliders scale the whole landform including its prior minimum baseline), and Water level now permits up to 0.50. New **Foothill flat approach** (0–0.45, default 0.20), **Cliff rock exposure** (0–1, default 0.85), and **Coast geometry detail** (8–32, default 24) parameters are included in local presets and numeric editing. Land core terrain type and the permanently fixed `1790425012` seed are unaffected.
+
+The PR-to-GH/HSM height blend is now **nonlinear**: low influence from adjoining hills produces a predominantly flat connector first, then foothills, then the full known hill or mountain core. This elevation curve does not alter biome ownership proportions or fog reveal conditions. Bare rock is assigned to steep rendered slopes, preventing green triangular cliff faces, and naturally appearing on sharper mountain slopes. Mixed land/water hexes are selectively tessellated at higher resolution to reduce angular coastline silhouettes. Coast height and water remain continuous on the same adjustable water plane.
+
+Three.js unit grounding now samples the currently rendered mesh by a cached downwards raycast per figure, ensuring its model feet cannot sit below the actual GPU terrain triangles even if the analytic height field differs slightly from coarse LOD geometry. This lookup is cached and cleared when terrain meshes change.
+
+Regression coverage requires water and terrain limits, seeded foothill behaviour, actual WebGL-rendered unit grounding, GPU zoom continuity, hex picking, and existing Windows installer upgrade tests.
