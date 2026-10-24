@@ -107,6 +107,9 @@ async function initialize() {
   setTimeout(async () => {
     try {
       const rows=await window.tribenet.getHexesInArea({minCol:0,maxCol:TOTAL_COLS-1,minRow:0,maxRow:TOTAL_ROWS-1});
+      // Historical Results knowledge lives in a separate versioned table.
+      // Never mix this live global preload into a selected historical turn.
+      if(window.resultsTimeline?.turn)return;
       for(const row of rows)if(!state.hexCache.has(row.coordinate))state.hexCache.set(row.coordinate,row);
       // A successful whole-world query authoritatively hydrates every submap.
       // It must also unlock any active mapper that opened while this ran.
@@ -213,8 +216,25 @@ function activeSubmaps(){
   }
   return active;
 }
+function historicalKnowledgeBounds(){
+  if(!window.resultsTimeline?.turn)return null;
+  const b=state.loadedArea;
+  return b&&!window.resultsTimeline.loadingArea ? b : null;
+}
+function historicalSubmapLoaded(t,b){
+  return Boolean(b && t.col*HEX_COLS>=b.minCol &&
+    Math.min(TOTAL_COLS-1,(t.col+1)*HEX_COLS-1)<=b.maxCol &&
+    t.row*HEX_ROWS>=b.minRow &&
+    Math.min(TOTAL_ROWS-1,(t.row+1)*HEX_ROWS-1)<=b.maxRow);
+}
+function pendingTerrainSubmaps(){
+  const historical=Boolean(window.resultsTimeline?.turn),bounds=historicalKnowledgeBounds();
+  return activeSubmaps().filter(t=>historical
+    ? !historicalSubmapLoaded(t,bounds)
+    : !loadedSubmaps.has(t.key));
+}
 function isTerrainKnowledgeComplete(){
-  return state.mode==='detail'&&activeSubmaps().every(t=>loadedSubmaps.has(t.key));
+  return state.mode==='detail' && pendingTerrainSubmaps().length===0;
 }
 function isTerrainKnowledgeReady(){
   if(state.mode!=='detail')return false;
@@ -229,14 +249,30 @@ function finishHydration(){
   if(isTerrainKnowledgeComplete())knowledgeStartedAt=0;
   if(window.TribeNetGPU?.visible)window.TribeNetGPU.scheduleIdleChunk();
 }
+function startHydrationGrace(){
+  if(knowledgeStartedAt)return;
+  knowledgeStartedAt=Date.now();
+  clearTimeout(knowledgeResumeTimer);
+  knowledgeResumeTimer=setTimeout(()=>{
+    if(!isTerrainKnowledgeComplete()){
+      knowledgeFallbackCount++;
+      finishHydration();draw();
+    }
+  },HYDRATION_GRACE_MS+20);
+}
 function ensureTerrainKnowledge(){
-  if(state.mode==='detail'&&!isTerrainKnowledgeComplete())requestVisibleData();
+  if(state.mode==='detail'&&!isTerrainKnowledgeComplete()){
+    startHydrationGrace();
+    requestVisibleData();
+  }
 }
 window.TribeNetKnowledge={
   ready:isTerrainKnowledgeReady,
   complete:isTerrainKnowledgeComplete,
-  pending:()=>activeSubmaps().filter(t=>!loadedSubmaps.has(t.key)).length,
+  pending:()=>pendingTerrainSubmaps().length,
   errors:()=>knowledgeFailures,
+  historicalError:()=>{knowledgeFailures++;},
+  historicalSettled:finishHydration,
   fallback:()=>!isTerrainKnowledgeComplete()&&isTerrainKnowledgeReady(),
   terrainRevision:()=>state.hexCache.terrainRevision,
   ensure:ensureTerrainKnowledge
@@ -255,17 +291,7 @@ function requestVisibleData() {
   // Claim work immediately. The old debounce didn't mark submaps as pending
   // until the timer fired, so frequent map events could keep cancelling it.
   for(const t of missing)loadingSubmaps.add(t.key);
-  if(!knowledgeStartedAt){
-    knowledgeStartedAt=Date.now();
-    clearTimeout(knowledgeResumeTimer);
-    knowledgeResumeTimer=setTimeout(()=>{
-      if(!isTerrainKnowledgeComplete()){
-        knowledgeFallbackCount++;
-        finishHydration();
-        draw();
-      }
-    },HYDRATION_GRACE_MS+20);
-  }
+  startHydrationGrace();
   // Group new submaps into one indexed SQLite read, retaining every completed
   // submap for this session even as the centre moves. Never re-query unchanged
   // map knowledge merely because zoom/pan changes the current 3x3 window.
