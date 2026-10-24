@@ -250,12 +250,21 @@ const IsoMapper = (() => {
     const knownRefs=[...state.hexCache].filter(([ref,data])=>known(data)).map(([ref])=>ref);
     preloadCount=0;
     let index=0;
-    function batch(){
+    // Use idle frames rather than a continuously rescheduled zero-delay
+    // timer: the Mapper button and pan/zoom must always take priority.
+    function scheduleNext(){
+      if(job!==preloadJob || index>=knownRefs.length)return;
+      if(typeof window!=='undefined' && typeof window.requestIdleCallback==='function')
+        window.requestIdleCallback(batch,{timeout:250});
+      else setTimeout(()=>batch(null),45);
+    }
+    function batch(idleDeadline){
       if(job!==preloadJob)return;
-      const deadline=(typeof performance!=='undefined'?performance.now():Date.now())+9;
+      const started=typeof performance!=='undefined'?performance.now():Date.now();
       let processed=0;
-      while(index<knownRefs.length && processed<5 &&
-        (typeof performance!=='undefined'?performance.now():Date.now())<=deadline){
+      while(index<knownRefs.length && processed<2 &&
+        (typeof performance!=='undefined'?performance.now():Date.now())-started<6 &&
+        (!idleDeadline || idleDeadline.timeRemaining()>3 || idleDeadline.didTimeout)){
         const parsed=typeof parseCoordinate==='function'?parseCoordinate(knownRefs[index]):null;
         if(parsed && Number.isFinite(parsed.globalCol) && Number.isFinite(parsed.globalRow)){
           const t=tile(parsed.globalCol,parsed.globalRow);
@@ -263,9 +272,9 @@ const IsoMapper = (() => {
         }
         index++;processed++;
       }
-      if(index<knownRefs.length)setTimeout(batch,0);
+      scheduleNext();
     }
-    setTimeout(batch,0);
+    scheduleNext();
   }
   function drawPhysicalRegions(tiles){
     if(!window.TerrainDevMode?.showRegions)return;
@@ -398,10 +407,15 @@ const IsoMapper = (() => {
     if(value && state.scale<43)state.scale=52;
     if(value)scheduleKnownTerrainPreload();
     const toggle=$('mapperViewToggle');if(toggle)toggle.checked=Boolean(value);
-    showMapper({overview:options.overview !== false});
+    // Rendering mode changes never navigate to the mapper themselves. The
+    // launcher has exactly one owner for navigation (renderer.showMapper).
+    if (state.mode==='detail' && !$('mapperView').classList.contains('hidden')) {
+      resizeCanvas();
+      requestVisibleData();
+      draw();
+    }
   }
   function setup() {
-    $('openMapperButton').addEventListener('click',()=>setEnabled(Boolean($('mapperViewToggle')?.checked)));
     $('isoLabels').addEventListener('change',e=>{labels=e.target.checked;draw();});
     $('isoGrid').addEventListener('change',e=>{grid=e.target.checked;draw();});
     const field=document.createElement('fieldset');field.id='riverEdgeEditor';field.className='river-edge-editor';
