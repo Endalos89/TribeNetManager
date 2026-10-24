@@ -97,7 +97,9 @@ class GPUMap {
   disposeChunk(record){
     this.chunkGroup?.remove(record.group);
     record.ground.geometry.dispose();
-    // Trees use shared static geometries; don't dispose them per chunk.
+    // Free per-instance GPU buffers on LRU eviction; tree geometries and
+    // materials are shared and intentionally retained.
+    for(const child of record.group.children)if(child.isInstancedMesh)child.dispose();
   }
   dispose(){
     this.invalidate();
