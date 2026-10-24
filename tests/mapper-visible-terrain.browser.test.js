@@ -5,7 +5,7 @@ const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const {chromium}=require('playwright');
 (async()=>{
-  const browser=await chromium.launch({channel:process.env.CHROME_CHANNEL || 'msedge',headless:true,args:['--disable-gpu','--no-sandbox']});
+  const browser=await chromium.launch({channel:process.env.CHROME_CHANNEL || 'msedge',headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--no-sandbox']});
   try{
     const page=await browser.newPage({viewport:{width:1400,height:900},deviceScaleFactor:1});
     const errors=[];
@@ -47,10 +47,18 @@ const {chromium}=require('playwright');
       state.scale=52;
       draw();
     });
-    await page.waitForTimeout(1600);
+    await page.waitForFunction(()=>
+      typeof IsoMapper!=='undefined' && IsoMapper.renderer==='WebGL' &&
+      IsoMapper.gpuStats?.chunks>=1,null,{timeout:30000});
+    await page.waitForTimeout(600);
     const actual=await page.evaluate(()=>{
-      const elem=document.querySelector('#mapCanvas'),w=elem.width,h=elem.height;
-      const data=elem.getContext('2d').getImageData(0,0,w,h).data;
+      const overlay=document.querySelector('#mapCanvas'),elem=document.querySelector('#terrainWebGL');
+      assertMarker=Boolean(elem && elem.style.display!=='none');
+      if(!elem)throw Error('Three.js renderer did not mount a WebGL canvas');
+      const w=elem.width,h=elem.height;
+      const copy=document.createElement('canvas');copy.width=w;copy.height=h;
+      const context=copy.getContext('2d');context.drawImage(elem,0,0);
+      const data=context.getImageData(0,0,w,h).data;
       let nonBlack=0,brightGreen=0,blue=0,distinct=new Set();
       for(let y=0;y<h;y+=6)for(let x=0;x<w;x+=6){
         const i=(y*w+x)*4,r=data[i],g=data[i+1],b=data[i+2];
@@ -59,17 +67,27 @@ const {chromium}=require('playwright');
         if(b>r*1.2 && b>g*.7 && b>70)blue++;
         distinct.add([r>>4,g>>4,b>>4].join(','));
       }
-      return {mode:state.mode,enabled:IsoMapper.enabled,builds:IsoMapper.sceneBuilds,terrainCache:state.hexCache.size,
+      return {mode:state.mode,enabled:IsoMapper.enabled,renderer:IsoMapper.renderer,
+        gpu:IsoMapper.gpuStats,terrainCache:state.hexCache.size,
         canvas:{w,h},nonBlack,brightGreen,blue,distinct:distinct.size,preloaded:IsoMapper.preloadCount};
     });
     console.log('BROWSER_SMOKE_REPORT',JSON.stringify({actual,errors,init}));
     assert.equal(actual.mode,'detail','entered submap');
     assert.equal(actual.enabled,true,'3D mapper enabled');
     assert.ok(actual.canvas.w>400 && actual.canvas.h>200,'canvas visible');
-    assert.ok(actual.builds>=1,'landscape built');
+    assert.equal(actual.renderer,'WebGL','Three.js must be the active renderer');
+    assert.ok(actual.gpu?.chunks>=1,'GPU chunks built');
+    assert.ok(actual.gpu?.faces>=50,'GPU terrain triangles uploaded');
+    assert.ok(actual.gpu?.gpuCalls>=1,'actual WebGL draw calls executed');
     assert.ok(actual.distinct>12,'rendered terrain has nonuniform colours, not one black/fog rectangle');
     assert.ok(actual.brightGreen+actual.blue>120,'actual terrain visible (not all black)');
     assert.equal(errors.length,0,'no browser JS or rendering errors');
-    console.log('Mapper real-canvas terrain smoke passed');
+    const reuse=await page.evaluate(()=>{
+      const previous=IsoMapper.gpuStats.builds;
+      state.cameraX+=.05;state.cameraY+=.02;draw();
+      return {previous,after:IsoMapper.gpuStats.builds};
+    });
+    assert.ok(reuse.after<=reuse.previous+2,'small camera pans reuse uploaded GPU terrain');
+    console.log('Mapper real-WebGL terrain smoke passed');
   } finally{await browser.close();}
 })().catch(e=>{console.error(e.stack||e);process.exitCode=1;});
