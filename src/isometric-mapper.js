@@ -113,8 +113,8 @@ const IsoMapper = (() => {
         const mid=sample((dry.x+wet.x)/2,(dry.y+wet.y)/2);
         if(mid.water)wet=mid;else dry=mid;
       }
-      const coast={...dry,z:0,water:false};
-      land.push(coast);sea.push({...coast,water:true,color:WATER});
+      const coast={...dry,z:wet.z,water:false};
+      land.push(coast);sea.push({...coast,water:true,color:wet.color});
     }
     return [land,sea].filter(p=>p.length>=3);
   }
@@ -125,7 +125,7 @@ const IsoMapper = (() => {
     if(groundCache.has(key))return groundCache.get(key);
     const faces=[];
     if(!t.known || (t.water&&t.n.every(n=>known(n)&&isWater(n.terrain)))){
-      faces.push({points:G.corners.map(p=>offset(t.c,p,1,t.known?0:.14)),color:t.known?WATER:FOG});
+      faces.push({points:G.corners.map(p=>offset(t.c,p,1,t.known?sample(t.c.x,t.c.y).z:.14)),color:t.known?sample(t.c.x,t.c.y).color:FOG});
       groundCache.set(key,faces);return faces;
     }
     for(const face of G.regionMesh(steps)){
@@ -137,7 +137,7 @@ const IsoMapper = (() => {
       const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,len=Math.hypot(nx,ny,nz)||1;
       const light=Math.max(.78,Math.min(1.13,.94+(-nx*.35-ny*.28)/len));
       const mixed=G.mix(part.map(p=>p.color));
-      const shade=part.every(p=>p.water)?WATER:'#'+[1,3,5].map(i=>Math.min(255,Math.round(parseInt(mixed.slice(i,i+2),16)*light)).toString(16).padStart(2,'0')).join('');
+      const shade=part.every(p=>p.water)?mixed:'#'+[1,3,5].map(i=>Math.min(255,Math.round(parseInt(mixed.slice(i,i+2),16)*light)).toString(16).padStart(2,'0')).join('');
       faces.push({points:part,color:shade});
       }
     }
