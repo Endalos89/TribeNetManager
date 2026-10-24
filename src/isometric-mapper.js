@@ -8,7 +8,10 @@ const IsoMapper = (() => {
   let terrainRasterBytes=0;
   const detailCache=new Map(), cellCache=new Map(), surfaceCache=new Map(), groundCache=new Map(), resourceIconCache=new Map();
   let interactive=false, settleTimer=null, hitScale=1, sceneBuilds=0, groundBuilds=0;
-  let unitSignature='', terrainSignature='', decorationSignature='', groundLayer=null, frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
+  let unitSignature='', decorationSignature='', groundLayer=null, frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
+  // Track individual terrain changes rather than hashing every known cell and
+  // invalidating the whole world whenever one newly discovered hex arrives.
+  const terrainSnapshot=new Map();
   function mapData(ref) {
     const target=state.hexCache.get(ref);
     return typeof resultsPlaybackMapData==='function' ? resultsPlaybackMapData(ref,target) : target;
@@ -30,13 +33,47 @@ const IsoMapper = (() => {
     return surfaceCache.get(key);
   }
   function prepareSurface() {
-    const playbackState=typeof resultsPlayback!=='undefined' ? resultsPlayback : null;
-    const playbackSignature=typeof resultsPlaybackMapData==='function' && playbackState?.active
-      ? `:playback:${playbackState.baselineTurnKey||'baseline'}:${playbackState.renderRevision||0}` : '';
-    const signature=Array.from(state.hexCache,([ref,data])=>`${ref}:${data.terrain}`).join('|')+playbackSignature;
+    const next=new Map(),changed=new Set();
+    for(const [ref] of state.hexCache){
+      const terrain=mapData(ref)?.terrain||'UNKNOWN';
+      next.set(ref,terrain);
+      if(terrainSnapshot.get(ref)!==terrain)changed.add(ref);
+    }
+    for(const ref of terrainSnapshot.keys())if(!next.has(ref))changed.add(ref);
+    const firstLoad=terrainSnapshot.size===0;
+    terrainSnapshot.clear();
+    for(const [ref,terrain] of next)terrainSnapshot.set(ref,terrain);
+
     const decorations=Array.from(state.hexCache,([ref,data])=>`${ref}:${[...G.rivers(data)].sort().join(',')}`).join('|');
-    if(decorations!==decorationSignature){decorationSignature=decorations;cellCache.clear();landscape=null;}
-    if(signature!==terrainSignature){terrainSignature=signature;cellCache.clear();surfaceCache.clear();groundCache.clear();terrainRasterCache.clear();terrainRasterBytes=0;groundLayer=null;landscape=null;window.TribeNetGPU?.invalidate();scheduleKnownTerrainPreload();}
+    if(decorations!==decorationSignature){
+      decorationSignature=decorations;
+      // Rivers and decorations are overlays; never delete GPU land meshes.
+      landscape=null;
+    }
+    if(changed.size===0)return;
+
+    // Clear analytic samples (which may blend up to three owners), but retain
+    // all unaffected GPU chunks and other already-generated terrain faces.
+    cellCache.clear();
+    surfaceCache.clear();
+    landscape=null;groundLayer=null;
+    const affected=new Set();
+    for(const ref of changed){
+      const p=parseCoordinate(ref);
+      if(!p)continue;
+      for(let dc=-2;dc<=2;dc++)for(let dr=-2;dr<=2;dr++){
+        const col=p.globalCol+dc,row=p.globalRow+dr;
+        if(col>=0&&row>=0&&col<TOTAL_COLS&&row<TOTAL_ROWS)
+          affected.add(coordinateFor(col,row));
+      }
+    }
+    for(const key of groundCache.keys())
+      if(affected.has(key.slice(0,key.indexOf(':'))))groundCache.delete(key);
+    if(!firstLoad)window.TribeNetGPU?.invalidateHexes?.([...affected].map(ref=>{
+      const p=parseCoordinate(ref);
+      return p?{col:p.globalCol,row:p.globalRow}:null;
+    }).filter(Boolean));
+    // During initial startup the GPU has no generated terrain yet.
   }
   const isWater=t=>t==='O'||t==='L';
   const known=d=>d && d.terrain && d.terrain!=='UNKNOWN';
