@@ -13,7 +13,9 @@
     coastRoughness: {label:'Coast irregularity',min:0,max:.35,step:.01,default:.16},
     rockExposure: {label:'Exposed rock',min:.2,max:1.5,step:.02,default:.72},
     meshQuality: {label:'Close-up mesh detail',min:8,max:32,step:4,default:16},
-    unitSpread: {label:'Unit layout spacing',min:.20,max:.49,step:.01,default:.38}
+    unitSpread: {label:'Unit layout spacing',min:.20,max:.49,step:.01,default:.38},
+    treeSize: {label:'Tree size (GPU)',min:.2,max:1.2,step:.05,default:.55},
+    treeDensity: {label:'Tree density (GPU)',min:.5,max:5,step:.25,default:2.5}
   });
   const defaults=()=>Object.fromEntries(Object.entries(definitions).map(([name,d])=>[name,d.default]));
   function normalise(input) {
