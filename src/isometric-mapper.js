@@ -121,7 +121,10 @@ const IsoMapper = (() => {
   function groundFaces(t,requestedSteps=null) {
     // One resolution per frame avoids mismatched shared edges; distant ground
     // uses fewer faces once individual facets are below a few screen pixels.
-    const steps=requestedSteps ?? (state.scale<28?2:state.scale<43?4:state.scale<65?8:G.subdivisions()),key=`${t.ref}:${steps}`;
+    const baseSteps=requestedSteps ?? (state.scale<28?2:state.scale<43?4:state.scale<65?8:G.subdivisions());
+    const coastal=t.known && t.n.some(n=>known(n) && (isWater(n.terrain)!==t.water));
+    const minimum=state.scale<38?8:state.scale<78?16:Math.round(window.TerrainSettings?.value('shoreDetail')??24);
+    const steps=coastal?Math.max(baseSteps,minimum):baseSteps,key=`${t.ref}:${steps}`;
     if(groundCache.has(key))return groundCache.get(key);
     const faces=[];
     if(!t.known || (t.water&&t.n.every(n=>known(n)&&isWater(n.terrain)))){
