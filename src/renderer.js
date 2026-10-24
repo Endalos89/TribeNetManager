@@ -160,17 +160,66 @@ function visibleBounds() {
     minRow: Math.max(0, Math.floor(minBaseY / SQRT3) - 2), maxRow: Math.min(TOTAL_ROWS - 1, Math.ceil(maxBaseY / SQRT3) + 2)
   };
 }
-let areaRequestTimer;
+// Retain the current submap and its eight neighbours as one knowledge window.
+// Changing zoom or panning inside this window NEVER re-queries the database.
+// GPU geometry has a separate bounded, lazy cache and is not tied to records.
+const loadedSubmaps=new Set(),loadingSubmaps=new Set();
+let areaRequestTimer=null;
+const submapKey=(c,r)=>c+':'+r;
+function activeSubmaps(){
+  const nearest=nearestHex(state.cameraX,state.cameraY);
+  const col=Math.max(0,Math.min(Math.floor(TOTAL_COLS/HEX_COLS)-1,
+    Math.floor(nearest.globalCol/HEX_COLS)));
+  const row=Math.max(0,Math.min(Math.floor(TOTAL_ROWS/HEX_ROWS)-1,
+    Math.floor(nearest.globalRow/HEX_ROWS)));
+  const active=[];
+  for(let dc=-1;dc<=1;dc++)for(let dr=-1;dr<=1;dr++){
+    const c=col+dc,r=row+dr;
+    if(c>=0&&r>=0&&c*HEX_COLS<TOTAL_COLS&&r*HEX_ROWS<TOTAL_ROWS)
+      active.push({col:c,row:r,key:submapKey(c,r)});
+  }
+  return active;
+}
+function invalidateLoadedSubmaps(){
+  loadedSubmaps.clear();loadingSubmaps.clear();
+  requestVisibleData();
+}
 function requestVisibleData() {
-  if (state.mode !== 'detail') return; clearTimeout(areaRequestTimer);
-  areaRequestTimer = setTimeout(async () => {
-    const b = visibleBounds(); const rows = await window.tribenet.getHexesInArea(b);
-    for (const row of rows) state.hexCache.set(row.coordinate, row); state.loadedArea = b;
-    // Follow-ocean routes depend on revealed terrain. Re-evaluate them after
-    // each area refresh so the marker advances as scouting data arrives.
-    if (state.planImport?.plan) state.routeCache = null;
-    draw();
-  }, 55);
+  if(state.mode!=='detail')return;
+  const requested=activeSubmaps();
+  const wanted=new Set(requested.map(t=>t.key));
+  // An old submap can be forgotten only after the centre has moved outside
+  // the 3x3 window; shared neighbouring submaps remain loaded.
+  for(const key of loadedSubmaps)if(!wanted.has(key))loadedSubmaps.delete(key);
+  const missing=requested.filter(t=>!loadedSubmaps.has(t.key) && !loadingSubmaps.has(t.key));
+  if(!missing.length)return;
+  clearTimeout(areaRequestTimer);
+  areaRequestTimer=setTimeout(async()=>{
+    // A single indexed query covers newly entered submaps, not every wheel
+    // gesture. Current and adjacent records remain untouched on small moves.
+    const minCol=Math.min(...missing.map(x=>x.col))*HEX_COLS;
+    const maxCol=Math.min(TOTAL_COLS-1,(Math.max(...missing.map(x=>x.col))+1)*HEX_COLS-1);
+    const minRow=Math.min(...missing.map(x=>x.row))*HEX_ROWS;
+    const maxRow=Math.min(TOTAL_ROWS-1,(Math.max(...missing.map(x=>x.row))+1)*HEX_ROWS-1);
+    missing.forEach(t=>loadingSubmaps.add(t.key));
+    try{
+      const rows=await window.tribenet.getHexesInArea({minCol,maxCol,minRow,maxRow});
+      for(const row of rows) {
+        const previous=state.hexCache.get(row.coordinate);
+        if(!previous || previous.terrain!==row.terrain || previous.notes!==row.notes ||
+          JSON.stringify(previous)!==JSON.stringify(row))
+          state.hexCache.set(row.coordinate,row);
+      }
+      missing.forEach(t=>loadedSubmaps.add(t.key));
+      state.loadedArea={minCol,maxCol,minRow,maxRow};
+      if(state.planImport?.plan)state.routeCache=null;
+      draw();
+    }catch(err){
+      console.warn('Could not preload adjacent submap records:',err);
+    }finally{
+      missing.forEach(t=>loadingSubmaps.delete(t.key));
+    }
+  },100);
 }
 
 function hexPath(cx, cy, radius) {
