@@ -48,8 +48,14 @@ entire cache simply because the app version increases.
 The first time a discovered region is seen, a chunk is generated during idle
 time, uploaded to the GPU, and saved asynchronously. Future launches read
 existing compressed files asynchronously and reconstruct the Three.js buffers
-without recalculating terrain. Neighbouring submaps are warmed through the
-existing camera-priority idle scheduler. There is no long blocking startup
+without recalculating terrain. Neighbouring **submap records** are kept in memory, but GPU geometry generation
+is deliberately restricted to visible 2x2-hex chunks and at most **96 offscreen
+chunks** in a two-chunk ring surrounding the viewport. Once this finite set
+has been generated or restored, a stationary camera must stop generating
+terrain. Panning into a new area loads additional meshes from disk first, then
+generates only genuinely new geometry. Unneeded 3x3-submap GPU pre-generation
+was removed because it exceeded the 520-chunk GPU LRU and forced otherwise
+useful meshes out of memory. There is no long blocking startup
 operation and already discovered gameplay data remains in the existing DB.
 
 Terrain Dev displays disk hits, misses, writes and generated chunk counts.
@@ -60,3 +66,6 @@ Tests cover real compressed disk round trips across cache instances, key
 isolation, corrupted cache recovery, pruning, and an actual Edge/WebGL test
 that destroys GPU meshes and verifies they are reloaded without incrementing
 the terrain generation count.
+
+
+Terrain Dev reports resident GPU chunks, pending work, the offscreen prefetch target and eviction count, in addition to disk hits and mesh generations. The 3x3 data window is **not** a promise that all nine entire submaps are kept as GPU meshes.

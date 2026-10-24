@@ -13,6 +13,9 @@ const CHUNK_SIZE=2;
 const MAX_CHUNKS=520;
 // Two 2x2-chunk rings cover the same neighbourhood as one former 4x4 ring.
 const PREFETCH_RING=2;
+// Generate only a modest offscreen margin. The 3x3 SUBMAP DATA window is
+// separate and must never imply eagerly building all of its GPU geometry.
+const MAX_OFFSCREEN_PREFETCH=96;
 const FIXED_TERRAIN_STEPS=8;
 const UNIT_MODEL_SCALE=.5;
 // Only change this identifier when geometry generation rules change, not
@@ -47,7 +50,7 @@ class GPUMap {
     this.diskStats={diskHits:0,diskMisses:0,diskWrites:0,diskErrors:0};
     this.groundHeightCache=new Map();this.meshRevision=0;
     this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
-    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,gpuCalls:0,renderMs:0};
+    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,gpuCalls:0,renderMs:0,evictions:0,prefetchTarget:0};
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
     this.waveMaterial=new THREE.LineBasicMaterial({color:0xc8e9d9,transparent:true,opacity:.58,depthWrite:false});
     this.treeMaterials={
@@ -129,6 +132,7 @@ class GPUMap {
   }
   disposeChunk(record){
     this.chunkGroup?.remove(record.group);
+    this.stats.evictions++;
     record.ground.geometry.dispose();
     record.waves?.geometry.dispose();
     // Free per-instance GPU buffers on LRU eviction; tree geometries and
@@ -471,32 +475,25 @@ class GPUMap {
           ring.add(a+':'+b);
       }
     }
-    this.activeChunkIds=ring;
     const distance=id=>{
       const [cx,cy]=id.split(':').map(Number);
       const worldX=1+1.5*(cx*CHUNK_SIZE+(CHUNK_SIZE-1)/2);
       const worldY=Math.sqrt(3)*(cy*CHUNK_SIZE+(CHUNK_SIZE-1)/2);
       return (worldX-this.cameraCenterX)**2+(worldY-this.cameraCenterY)**2;
     };
-    // The current viewport is top priority; surrounding ring is second.
-    // Fill the rest of the 3x3-submap window opportunistically, nearest first.
+    // The visible viewport is the only mandatory geometry. Prefetch at most
+    // 96 additional 2x2 chunks in its immediate two-chunk ring, not the whole
+    // 3x3 submap DATA cache (~1,400 meshes). Otherwise the 520-entry GPU LRU
+    // evicts meshes while background work is still filling distant submaps.
     const priority=[...visible].sort((a,b)=>distance(a)-distance(b));
-    const prefetch=[...ring].filter(id=>!visible.has(id)).sort((a,b)=>distance(a)-distance(b));
-    const extras=[];
-    const minC=Math.max(0,Math.floor((this.cameraCenterX-1)/1.5/HEX_COLS)-1);
-    const maxC=Math.min(Math.ceil(TOTAL_COLS/HEX_COLS)-1,minC+2);
-    const centreRow=Math.round(this.cameraCenterY/Math.sqrt(3));
-    const minR=Math.max(0,Math.floor(centreRow/HEX_ROWS)-1);
-    const maxR=Math.min(Math.ceil(TOTAL_ROWS/HEX_ROWS)-1,minR+2);
-    for(let sc=minC;sc<=maxC;sc++)for(let sr=minR;sr<=maxR;sr++){
-      if(!this.knowledgeSubmapWindow.has(sc+':'+sr))continue;
-      const firstC=Math.floor(sc*HEX_COLS/CHUNK_SIZE),lastC=Math.floor(((sc+1)*HEX_COLS-1)/CHUNK_SIZE);
-      const firstR=Math.floor(sr*HEX_ROWS/CHUNK_SIZE),lastR=Math.floor(((sr+1)*HEX_ROWS-1)/CHUNK_SIZE);
-      for(let cx=firstC;cx<=lastC;cx++)for(let cy=firstR;cy<=lastR;cy++)
-        extras.push(cx+':'+cy);
-    }
-    extras.sort((a,b)=>distance(a)-distance(b));
-    const ordered=[...priority,...prefetch,...extras];
+    const prefetch=[...ring].filter(id=>!visible.has(id))
+      .sort((a,b)=>distance(a)-distance(b));
+    const offscreenLimit=Math.max(0,Math.min(MAX_OFFSCREEN_PREFETCH,
+      MAX_CHUNKS-priority.length));
+    const ordered=[...priority,...prefetch.slice(0,offscreenLimit)];
+    // Not all ring chunks are necessarily retained when zoomed far out.
+    this.activeChunkIds=new Set(ordered);
+    this.stats.prefetchTarget=Math.min(prefetch.length,offscreenLimit);
     // Preserve unfinished work when zoom/camera changes; change its priority,
     // never throw it all away and restart it from the beginning.
     const existing=new Set(this.pendingChunks.map(t=>t.id));
@@ -513,7 +510,7 @@ class GPUMap {
     for(const job of this.pendingChunks)
       if(rank.has(job.id) && !this.chunkCache.has(this.chunkKey(job.id,job.lod)))unique.push(job);
     unique.sort((a,b)=>rank.get(a.id)-rank.get(b.id));
-    this.pendingChunks=unique.slice(0,MAX_CHUNKS);
+    this.pendingChunks=unique.slice(0,Math.max(MAX_CHUNKS,priority.length));
     this.scheduleIdleChunk();
   }
   scheduleIdleChunk(){

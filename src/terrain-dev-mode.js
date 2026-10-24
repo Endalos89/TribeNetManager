@@ -97,7 +97,9 @@
         ' triangles · '+info.trees+' trees · '+info.gpuCalls+
         ' draw calls · '+info.renderMs.toFixed(1)+' ms GPU submission' +
         ' · Disk restored '+info.diskHits+' · generated '+info.builds+
-        ' · saved '+info.diskWrites+' · misses '+info.diskMisses
+        ' · saved '+info.diskWrites+' · misses '+info.diskMisses+
+        ' · resident '+info.cachedChunks+' · queued '+info.queuedChunks+
+        ' · nearby prefetch '+info.prefetchTarget+' · evicted '+info.evictions
       : 'WebGL is inactive (software fallback or classic view).';
   }
   toggle.addEventListener('click',()=>{
