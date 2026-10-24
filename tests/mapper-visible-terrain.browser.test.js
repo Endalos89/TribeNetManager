@@ -13,12 +13,15 @@ const {chromium}=require('playwright');
     page.on('console',m=>{if(m.type()==='error')errors.push('CONSOLE: '+m.text());});
     await page.addInitScript(()=>{
       window.fixtureRows=new Map();
+      window.savedMeshes=new Map();
       window.areaQueryCount=0;
       const original={
         getVersion:async()=>'browser-smoke',
         getUserDataPath:async()=>'local',
         onUpdateStatus:()=>{},
         getHexesInArea:async()=>{window.areaQueryCount++;return Array.from(window.fixtureRows.values());},
+        loadTerrainMesh:async key=>window.savedMeshes.get(key)||null,
+        saveTerrainMesh:async (key,mesh)=>{window.savedMeshes.set(key,mesh);return true;},
         getHex:async(id)=>window.fixtureRows.get(id)||null,
         getSubmapSummaries:async()=>[],
         getPlannerImports:async()=>[],
@@ -195,6 +198,28 @@ const {chromium}=require('playwright');
     assert.ok(footTest.legs>=2,'human miniatures have visible supporting legs');
     assert.ok(footTest.minFoot>=footTest.ground-.005,
       'all miniature feet are above highest nearby terrain instead of sinking');
+    // A simulated application restart clears ALL GPU geometry but retains
+    // its durable mesh store. Recreate GPU buffers from saved vertices/trees,
+    // not by invoking the terrain generator again.
+    await page.waitForFunction(()=>window.savedMeshes.size>=1,null,{timeout:30000});
+    const preRestore=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU;
+      const generated=gpu.stats.builds;
+      const persisted=window.savedMeshes.size;
+      gpu.invalidate();draw();
+      return {generated,persisted};
+    });
+    await page.waitForFunction(()=>
+      window.TribeNetGPU.diskStats.diskHits>=1 && window.TribeNetGPU.stats.chunks>=1,
+      null,{timeout:30000});
+    const restored=await page.evaluate(()=>({
+      generated:window.TribeNetGPU.stats.builds,
+      diskHits:window.TribeNetGPU.diskStats.diskHits,
+      restoredForests:[...window.TribeNetGPU.chunkCache.values()].reduce((n,r)=>n+r.trees,0)
+    }));
+    assert.ok(restored.diskHits>=1,'saved terrain geometry must be restored on GPU cache miss');
+    assert.equal(restored.generated,preRestore.generated,
+      'restoring terrain from disk must not call mesh-generation code');
     const numericTuning=await page.evaluate(()=>{
       document.getElementById('terrainDevToggle').click();
       const field=document.getElementById('terrain-number-waterHeight');
