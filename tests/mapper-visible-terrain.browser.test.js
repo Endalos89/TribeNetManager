@@ -176,27 +176,23 @@ const {chromium}=require('playwright');
       const instance=gpu.unitMeshes.get('body'),matrix=instance.instanceMatrix.array;
       const y=matrix[13],scale=matrix[5];
       const bottom=y-instance.geometry.parameters.height*scale/2;
-      return {ground,scale,bottom,reportedScale:gpu.getStats().unitModelScale};
+      const leg=gpu.unitMeshes.get('leg');
+      if(!leg || leg.count<2)throw Error('Standing figure lacks leg geometry');
+      const legValues=leg.instanceMatrix.array,h=leg.geometry.parameters.height;
+      let minFoot=Infinity;
+      for(let j=0;j<leg.count;j++){
+        const offset=16*j;
+        minFoot=Math.min(minFoot,legValues[offset+13]-h*legValues[offset+5]/2);
+      }
+      return {ground,scale,bottom,minFoot,legs:leg.count,
+        reportedScale:gpu.getStats().unitModelScale};
     });
     assert.equal(unitTest.reportedScale,.5,'all unit models use half scale');
     assert.ok(Math.abs(unitTest.scale-.5)<1e-6,'GPU body mesh is half height');
     assert.ok(unitTest.bottom>=unitTest.ground,
       'model feet remain above visible terrain despite low analytic height');
-    const footTest=await page.evaluate(()=>{
-      const gpu=window.TribeNetGPU,leg=gpu.unitMeshes.get('leg');
-      if(!leg || leg.count<2)throw Error('Standing figure lacks leg geometry');
-      const ground=gpu.renderedGroundHeight(gpu.units[0]);
-      const values=leg.instanceMatrix.array,h=leg.geometry.parameters.height;
-      let minFoot=Infinity;
-      for(let n=0;n<leg.count;n++){
-        const offset=16*n;
-        const y=values[offset+13],scale=values[offset+5];
-        minFoot=Math.min(minFoot,y-h*scale/2);
-      }
-      return {minFoot,ground,legs:leg.count};
-    });
-    assert.ok(footTest.legs>=2,'human miniatures have visible supporting legs');
-    assert.ok(footTest.minFoot>=footTest.ground-.005,
+    assert.ok(unitTest.legs>=2,'human miniatures have visible supporting legs');
+    assert.ok(unitTest.minFoot>=unitTest.ground-.005,
       'all miniature feet are above highest nearby terrain instead of sinking');
     // A simulated application restart clears ALL GPU geometry but retains
     // its durable mesh store. Recreate GPU buffers from saved vertices/trees,
