@@ -12,8 +12,11 @@
     return () => { n += 0x6D2B79F5; let t=n; t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296; };
   }
   // Published visual seed/version: never use installation IDs, clocks or discovery order.
-  const scenerySeed='tribenet-world:scenery-v1';
-  function sceneryRandom(reference) { return random(`${scenerySeed}:${reference}`); }
+  const tuning=root.TerrainSettings || (typeof require==='function' ? require('./terrain-settings') : null);
+  const WORLD_SEED=1790425012;
+  const setting=(name,fallback)=>tuning?.value(name) ?? fallback;
+  const scenerySeed=WORLD_SEED;
+  function sceneryRandom(reference) { return random(`${scenerySeed}:scenery:${reference}`); }
   function sceneryDetails(reference) {
     const rand=sceneryRandom(reference);
     return Array.from({length:9},()=>({x:(rand()-.5)*.96,y:(rand()-.5)*.96,size:.7+rand()*.6,variant:rand()}));
@@ -39,9 +42,10 @@
   const isLowMountain=t=>['LAM','LCM','LJM','LSM','LVM'].includes(t);
   const isHighMountain=t=>t==='HSM'||t==='ALPS';
   // Layered terrain v2: independent of scenery, reports and installation state.
-  const reliefSeed='tribenet-world:relief-v2';
+  const reliefSeed=WORLD_SEED;
   const reliefHash=seed(reliefSeed);
-  const groundSubdivisions=16; // Fine terrain: 1,536 base faces; cached per level of detail.
+  const groundSubdivisions=16; // Runtime high-detail value may be adjusted locally in Terrain Dev.
+  const subdivisions=()=>Math.max(8,Math.min(32,Math.round(setting('meshQuality',16))));
   function noise(x,y,salt=0) {
     const ix=Math.floor(x),iy=Math.floor(y),u=smooth(x-ix),v=smooth(y-iy);
     const value=(a,b)=>{
@@ -77,7 +81,8 @@
   }
   const water=t=>t==='O'||t==='L';
   const smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
-  const coreRadius=.62,apothem=Math.sqrt(3)/2;
+  // Exact rhombitrihexagonal tiling: one inner hex, whole shared squares and triangles.
+  const coreRadius=Math.sqrt(3)/(1+Math.sqrt(3)),apothem=Math.sqrt(3)/2;
   const normals=Array.from({length:6},(_,i)=>({x:Math.cos((i+.5)*Math.PI/3),y:Math.sin((i+.5)*Math.PI/3)}));
   const center=(col,row)=>({x:1+col*1.5,y:apothem+Math.sqrt(3)*(row+(col%2?.5:0))});
   function neighbour(col,row,index) {
@@ -91,6 +96,65 @@
     if(kind==='edge')return [own,neighbour(col,row,index)];
     return [own,neighbour(col,row,(index+5)%6),neighbour(col,row,index)];
   }
+  const ownerKey=o=>o.col+':'+o.row;
+  const canon=owners=>owners.slice().sort((a,b)=>a.col-b.col||a.row-b.row);
+  function fraction(key) {
+    const h=seed(WORLD_SEED+':'+key);
+    return (h>>>0)/4294967295;
+  }
+  function pairFraction(owners) {
+    const sorted=canon(owners);
+    return .25+.5*fraction('square:'+sorted.map(ownerKey).join('|'));
+  }
+  // Both square and triangle use the SAME split at their shared edge midpoint.
+  // A and B cores are always pure: at the middle, B's seeded influence is 25–75%.
+  function pairSplit(t,beta) {
+    t=Math.max(0,Math.min(1,t));
+    return t<=.5 ? 2*t*beta : beta+2*(t-.5)*(1-beta);
+  }
+  function barycentric(p,a,b,c) {
+    const den=(b.y-c.y)*(a.x-c.x)+(c.x-b.x)*(a.y-c.y);
+    if(Math.abs(den)<1e-12)return null;
+    const u=((b.y-c.y)*(p.x-c.x)+(c.x-b.x)*(p.y-c.y))/den;
+    const v=((c.y-a.y)*(p.x-c.x)+(a.x-c.x)*(p.y-c.y))/den;
+    return [u,v,1-u-v];
+  }
+  const midpoint=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+  function cornerInfluences(position,owners,junction) {
+    const sorted=canon(owners);
+    const vertices=sorted.map(o=>{const c=center(o.col,o.row);return {x:c.x+(junction.x-c.x)*coreRadius,y:c.y+(junction.y-c.y)*coreRadius};});
+    const boundary=[],basis=[];
+    for(let i=0;i<3;i++){
+      const j=(i+1)%3,weights=Array(3).fill(0);weights[i]=1;
+      boundary.push(vertices[i]);basis.push(weights);
+      const pair=[sorted[i],sorted[j]],beta=pairFraction(pair);
+      const split=canon(pair)[0]===sorted[i]?beta:1-beta;
+      const mix=Array(3).fill(0);mix[i]=1-split;mix[j]=split;
+      boundary.push(midpoint(vertices[i],vertices[j]));basis.push(mix);
+    }
+    const centre={x:vertices.reduce((a,p)=>a+p.x,0)/3,y:vertices.reduce((a,p)=>a+p.y,0)/3};
+    const salts=sorted.map(o=>.000001+fraction('triangle:'+sorted.map(ownerKey).join('|')+':'+ownerKey(o)));
+    const sum=salts.reduce((a,b)=>a+b,0),centreWeights=salts.map(v=>.25+.25*v/sum);
+    for(let k=0;k<boundary.length;k++){
+      const n=(k+1)%boundary.length,b=barycentric(position,centre,boundary[k],boundary[n]);
+      if(b && b.every(v=>v>=-1e-7))return sorted.map((o,i)=>({...o,weight:Math.max(0,b[0]*centreWeights[i]+b[1]*basis[k][i]+b[2]*basis[n][i])}));
+    }
+    // Precision fallback is still deterministic at extreme shared vertices.
+    const b=barycentric(position,...vertices)||[1,0,0];
+    return sorted.map((o,i)=>({...o,weight:Math.max(0,b[i])}));
+  }
+  function sharedSquare(from,to) {
+    const A=center(from.col,from.row),B=center(to.col,to.row);
+    const vx=B.x-A.x,vy=B.y-A.y,length=Math.hypot(vx,vy);
+    if(Math.abs(length-Math.sqrt(3))>1e-5)return null;
+    const nx=vx/length,ny=vy/length,tx=-ny,ty=nx;
+    const width=coreRadius,half=width/2,mid=midpoint(A,B);
+    const corners=[[-1,-1],[-1,1],[1,1],[1,-1]].map(([along,side])=>({
+      x:mid.x+nx*along*half+tx*side*half,
+      y:mid.y+ny*along*half+ty*side*half
+    }));
+    return {center:mid,corners,tangent:{x:tx,y:ty},normal:{x:nx,y:ny},halfSize:half,owners:canon([from,to])};
+  }
   function regionAt(x,y) {
     const guess=Math.round((x-1)/1.5);let col=guess,row=0,best=Infinity;
     for(let c=guess-1;c<=guess+1;c++){
@@ -98,24 +162,23 @@
       if(d<best){best=d;col=c;row=r;}
     }
     const origin=center(col,row),dx=x-origin.x,dy=y-origin.y;
-    let kind='core',index=0,weights=[1];
+    let kind='core',index=0,owners=[{col,row,weight:1}];
     if(normals.some(n=>dx*n.x+dy*n.y>apothem*coreRadius+3e-6)){
       index=normals.findIndex(n=>dx*n.x+dy*n.y>=apothem*coreRadius-3e-6&&Math.abs(-dx*n.y+dy*n.x)<=coreRadius/2+3e-6);
       if(index>=0){
-        kind='edge';const n=normals[index],t=smooth((dx*n.x+dy*n.y-apothem*coreRadius)/(2*apothem*(1-coreRadius)));
-        weights=[1-t,t];
+        kind='edge';
+        const local=regionOwners(col,row,kind,index),sorted=canon(local);
+        const n=normals[index],t=Math.max(0,Math.min(1,(dx*n.x+dy*n.y-apothem*coreRadius)/(2*apothem*(1-coreRadius))));
+        const canonicalT=ownerKey(local[0])===ownerKey(sorted[0])?t:1-t;
+        const fractionB=pairSplit(canonicalT,pairFraction(sorted));
+        owners=sorted.map((o,i)=>({...o,weight:i===0?1-fractionB:fractionB}));
       }else{
         kind='corner';index=0;
         for(let i=1;i<6;i++)if(dx*corners[i].x+dy*corners[i].y>dx*corners[index].x+dy*corners[index].y)index=i;
         const junction={x:origin.x+corners[index].x,y:origin.y+corners[index].y};
-        const vertices=regionOwners(col,row,kind,index).map(o=>{const c=center(o.col,o.row);return {x:c.x+(junction.x-c.x)*coreRadius,y:c.y+(junction.y-c.y)*coreRadius};});
-        const [a,b,c]=vertices,den=(b.y-c.y)*(a.x-c.x)+(c.x-b.x)*(a.y-c.y);
-        const u=((b.y-c.y)*(x-c.x)+(c.x-b.x)*(y-c.y))/den,v=((c.y-a.y)*(x-c.x)+(a.x-c.x)*(y-c.y))/den;
-        weights=[u,v,1-u-v].map(smooth);const sum=weights.reduce((a,b)=>a+b,0);weights=weights.map(w=>w/sum);
+        owners=cornerInfluences({x,y},regionOwners(col,row,kind,index),junction);
       }
     }
-    // Canonical addition order makes samples identical on shared boundaries.
-    const owners=regionOwners(col,row,kind,index).map((o,i)=>({...o,weight:weights[i]})).sort((a,b)=>a.col-b.col||a.row-b.row);
     return {kind,index,col,row,owners};
   }
   const meshCache=new Map();
@@ -170,18 +233,21 @@
     }
     // About 60% of the land-side connector is water; seeded detail breaks
     // straight shorelines without changing either inner hex.
-    const shoreline=(noise(x*2.3,y*2.3,419)-.5)*.10+(noise(x*8.1,y*8.1,557)-.5)*.06;
+    const coastRoughness=setting('coastRoughness',.16);
+    const shoreline=coastRoughness*((noise(x*2.3,y*2.3,419)-.5)*.625+(noise(x*8.1,y*8.1,557)-.5)*.375);
     const coastTotal=coastLand+coastWater;
     const landFraction=coastTotal?coastLand/coastTotal:1;
-    const threshold=.896+shoreline;
+    // Calibrate from the physical A–B square, approximately 60% water along a coast.
+    const threshold=setting('coastWaterShare',.6)+shoreline;
     const coastField=landFraction-threshold;
     if(coastField<=0)return {x,y,z:0,color:'#337f98',water:true,rock:0};
     const weights=total?{hill:hills/total,low:low/total,high:high/total,snow:snow/total}:{hill:0,low:0,high:0,snow:0};
     const {broad,ridge,detail}=relief(x,y);
     // Distinct silhouette families, even with identical ground colours.
-    const hillHeight=.18+.53*smooth(broad);
-    const lowHeight=.60+.16*broad+.34*ridge*ridge;
-    const highHeight=1.27+.23*broad+.83*Math.pow(ridge,3);
+    const hillHeight=.18+setting('hillAmplitude',.53)*broad+setting('ruggedness',.15)*(detail-.5);
+    const ridgeTerm=Math.pow(ridge,setting('ridgeSharpness',2.8));
+    const lowHeight=.60+.16*broad+.42*ridgeTerm+setting('ruggedness',.15)*(detail-.5);
+    const highHeight=1.27+.23*broad+setting('mountainHeight',.83)*ridgeTerm+setting('ruggedness',.15)*2*(detail-.5);
     const raw=.14+(2/3)*(weights.hill*hillHeight+weights.low*lowHeight+weights.high*highHeight);
     // Hills ease into level water with a flat beach tangent. Mountains retain
     // a steep rocky coastal face. The core boundary still joins unchanged.
@@ -200,7 +266,7 @@
     const band=coastalRaw/layer-Math.floor(coastalRaw/layer);
     const riser=smooth((band-.22)/.14)*(1-smooth((band-.64)/.14));
     const patch=smooth((detail-.38)/.28);
-    const rock=Math.min(.92,weights.hill*patch*riser*.72+
+    const rock=Math.min(.92,weights.hill*patch*riser*setting('rockExposure',.72)+
       weights.low*(.12+.68*patch)*(.4+.6*riser)+
       weights.high*(.38+.48*patch)*(.65+.35*riser));
     const stone=[132,136,119];
@@ -215,8 +281,8 @@
   // Keep scenery bases inside the revealed polygon. Raised crowns may extend
   // naturally across a fog bank, but no hidden-side trees are generated.
   function sceneryVisible(x,y,neighbours) {
-    return neighbours.every((known,i)=>known || x*Math.cos((i+.5)*Math.PI/3)+y*Math.sin((i+.5)*Math.PI/3)<Math.sqrt(3)/2*.67-.04);
+    return neighbours.every((known,i)=>known || x*Math.cos((i+.5)*Math.PI/3)+y*Math.sin((i+.5)*Math.PI/3)<Math.sqrt(3)/2*coreRadius-.04);
   }
-  const api={coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
+  const api={WORLD_SEED,coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,subdivisions,sharedSquare,pairFraction,cornerInfluences,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
   if(typeof module!=='undefined' && module.exports) module.exports=api; else root.IsoGeometry=api;
 })(typeof window!=='undefined'?window:globalThis);
