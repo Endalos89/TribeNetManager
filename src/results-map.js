@@ -9,6 +9,7 @@ const resultsTimeline = {
   turn: null,
   playTimer: null,
   loadingArea: false,
+  lastTerrainLoad: null,
   ready: false,
   // Import staging loads the target snapshot before playback can establish
   // the previous-turn baseline. Suppress intermediate draws so the user never
@@ -319,6 +320,7 @@ requestVisibleData = function requestVisibleDataWithResults() {
   const generation = historicalAreaGeneration;
   const turnKey = resultsTimeline.turn.turnKey;
   const knowledgeKey = resultKnowledgeTurnKey();
+  resultsTimeline.lastTerrainLoad={status:'loading',count:0,turnKey,knowledgeKey,startedAt:Date.now()};
   // Claim the request immediately: repeated GPU frames must not repeatedly
   // cancel a debounce before the historical SQLite query can start.
   resultsTimeline.loadingArea = true;
@@ -330,6 +332,7 @@ requestVisibleData = function requestVisibleDataWithResults() {
           row.globalRow >= b.minRow && row.globalRow <= b.maxRow);
     if (generation !== historicalAreaGeneration || turnKey !== resultsTimeline.turn?.turnKey) return;
     if (!Array.isArray(rows)) throw Error('Invalid historical terrain response');
+    resultsTimeline.lastTerrainLoad={status:'loaded',count:rows.length,turnKey,knowledgeKey,finishedAt:Date.now()};
     // Keep previous submap records within this historical turn while panning.
     // Never erase the entire cache just because the centre moved slightly.
     for (const row of rows) if (row?.coordinate) state.hexCache.set(row.coordinate, row);
@@ -346,6 +349,8 @@ requestVisibleData = function requestVisibleDataWithResults() {
   }).catch(error => {
     if (generation !== historicalAreaGeneration) return;
     window.TribeNetKnowledge?.historicalError?.();
+    resultsTimeline.lastTerrainLoad={status:'error',count:0,turnKey,knowledgeKey,
+      error:error?.message||String(error),finishedAt:Date.now()};
     console.warn('Historical submap knowledge failed; retrying:', error);
     clearTimeout(historicalAreaRetryTimer);
     historicalAreaRetryTimer = setTimeout(() => {
@@ -563,6 +568,7 @@ async function applyResultTurn(turnKey, options = {}) {
   clearTimeout(historicalAreaRetryTimer);
   historicalAreaRetryTimer = null;
   resultsTimeline.loadingArea = false;
+  resultsTimeline.lastTerrainLoad = null;
   if (persist) localStorage.setItem(RESULT_TURN_STORAGE_KEY, turnKey);
   state.hexCache.clear();
   state.loadedArea = null;
