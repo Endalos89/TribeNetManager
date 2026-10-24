@@ -255,6 +255,10 @@ const {chromium}=require('playwright');
         }
         return original(bounds);
       };
+      // Startup may already have hydrated the entire world. Explicitly
+      // invalidate the tracked *data window* to exercise a true delayed
+      // database request without needing to delete known terrain records.
+      invalidateLoadedSubmaps();
       centerOnHex(355,327);
       state.scale=52;draw();
     });
