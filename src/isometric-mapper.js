@@ -251,7 +251,7 @@ const IsoMapper = (() => {
     preloadCount=0;
     let index=0;
     function batch(){
-      if(job!==preloadJob || !enabled)return;
+      if(job!==preloadJob)return;
       const deadline=(typeof performance!=='undefined'?performance.now():Date.now())+9;
       let processed=0;
       while(index<knownRefs.length && processed<5 &&
@@ -414,6 +414,6 @@ const IsoMapper = (() => {
     new MutationObserver(sync).observe($('notesInput'),{attributes:true,attributeFilter:['disabled']});
     new MutationObserver(sync).observe($('selectedState'),{childList:true});
   }
-  return {get enabled(){return enabled;},get preloadCount(){return preloadCount;},invalidateTerrain,surface:sample,withProjection,project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},get groundBuilds(){return groundBuilds;},draw:drawScene,setEnabled,setup};
+  return {get enabled(){return enabled;},get preloadCount(){return preloadCount;},preloadKnown:()=>{prepareSurface();scheduleKnownTerrainPreload();},invalidateTerrain,surface:sample,withProjection,project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},get groundBuilds(){return groundBuilds;},draw:drawScene,setEnabled,setup};
 })();
 IsoMapper.setup();
