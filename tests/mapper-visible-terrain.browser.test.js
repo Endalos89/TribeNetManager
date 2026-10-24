@@ -29,7 +29,7 @@ const {chromium}=require('playwright');
       window.tribenet=new Proxy(original,{get:(t,p)=>t[p] || (async()=>[])});
     });
     await page.goto(pathToFileURL(path.join(__dirname,'../src/index.html')).href);
-    await page.waitForFunction(()=>document.querySelector('#openMapperButton') && typeof IsoMapper==='object' && typeof showDetail==='function',{timeout:15000});
+    await page.waitForFunction(()=>document.querySelector('#openMapperButton') && typeof IsoMapper!=='undefined' && typeof showDetail==='function',null,{timeout:15000});
     // Populate 13x13 genuine-looking discovered terrain records inside a submap.
     const init=await page.evaluate(()=>{
       for(let col=309;col<=321;col++)for(let row=321;row<=333;row++){
