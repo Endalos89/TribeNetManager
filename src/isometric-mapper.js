@@ -493,7 +493,7 @@ const IsoMapper = (() => {
       try{if(drawWebGLScene())return;}
       catch(error){
         console.error('GPU mapper failed; restoring software terrain:',error);
-        window.TribeNetGPU.failed=true;window.TribeNetGPU.setVisible(false);
+        window.TribeNetGPU.failureReason='Rendering: '+(error?.message||String(error));window.TribeNetGPU.failed=true;window.TribeNetGPU.setVisible(false);
       }
     }
     const units=IsoUnits.prepare();if(units!==unitSignature){unitSignature=units;landscape=null;}
