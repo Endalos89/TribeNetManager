@@ -99,7 +99,11 @@
         ' · Disk restored '+info.diskHits+' · generated '+info.builds+
         ' · saved '+info.diskWrites+' · misses '+info.diskMisses+
         ' · resident '+info.cachedChunks+' · queued '+info.queuedChunks+
-        ' · nearby prefetch '+info.prefetchTarget+' · evicted '+info.evictions
+        ' · centre area '+info.focusTarget+' ('+(2*info.focusRadiusChunks+1)+'×'+(2*info.focusRadiusChunks+1)+')' +
+        ' · offscreen queued '+info.prefetchTarget+
+        ' · memory evicted '+info.evictions+
+        ' · terrain changed '+info.terrainInvalidations+
+        ' · cache resets '+info.fullResets
       : 'WebGL is inactive (software fallback or classic view).';
   }
   toggle.addEventListener('click',()=>{
