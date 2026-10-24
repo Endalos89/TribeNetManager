@@ -82,6 +82,12 @@ const {chromium}=require('playwright');
     assert.ok(actual.distinct>12,'rendered terrain has nonuniform colours, not one black/fog rectangle');
     assert.ok(actual.brightGreen+actual.blue>120,'actual terrain visible (not all black)');
     assert.equal(errors.length,0,'no browser JS or rendering errors');
+    const selection=await page.evaluate(()=>{
+      const c=baseCenter(315,327),screen=IsoMapper.project(c,IsoMapper.surface(c.x,c.y).z);
+      return {screen,picked:IsoMapper.pick(screen.x,screen.y)};
+    });
+    assert.equal(selection.picked?.globalCol,315,'WebGL raycasting selects original game hex column');
+    assert.equal(selection.picked?.globalRow,327,'WebGL raycasting selects original game hex row');
     const reuse=await page.evaluate(()=>{
       const previous=IsoMapper.gpuStats.builds;
       state.cameraX+=.05;state.cameraY+=.02;draw();
