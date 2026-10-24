@@ -281,15 +281,28 @@
     const weights=total?{hill:hills/total,low:low/total,high:high/total,snow:snow/total}:{hill:0,low:0,high:0,snow:0};
     const {broad,ridge,detail}=relief(x,y);
     // Distinct silhouette families, even with identical ground colours.
-    const hillHeight=.18+setting('hillAmplitude',.53)*broad+setting('ruggedness',.15)*(detail-.5);
+    // Height controls scale the *whole* feature including its baseline.
+    // Previously "minimum" mountain height still left a 1.27-unit peak.
+    const hillScale=setting('hillAmplitude',.53)/.53;
+    const mountainScale=setting('mountainHeight',.83)/.83;
+    const hillHeight=hillScale*(.18+.53*broad+setting('ruggedness',.15)*(detail-.5));
     const ridgeTerm=Math.pow(ridge,setting('ridgeSharpness',2.8));
-    const lowHeight=.60+.16*broad+.42*ridgeTerm+setting('ruggedness',.15)*(detail-.5);
-    const highHeight=1.27+.23*broad+setting('mountainHeight',.83)*ridgeTerm+setting('ruggedness',.15)*2*(detail-.5);
+    const lowHeight=mountainScale*(.60+.16*broad+.42*ridgeTerm+setting('ruggedness',.15)*(detail-.5));
+    const highHeight=mountainScale*(1.27+.23*broad+.83*ridgeTerm+setting('ruggedness',.15)*2*(detail-.5));
     // Plains have slight broad undulations and patchy colours, not mountain-like
     // terracing. Adjacent hills blend through the established shared weights.
     const plainFraction=Math.max(0,1-weights.hill-weights.low-weights.high);
     const plainVariation=setting('plainsRelief',.055)*((broad-.5)*.75+(detail-.5)*.25);
-    const raw=.14+plainFraction*plainVariation+(2/3)*(weights.hill*hillHeight+weights.low*lowHeight+weights.high*highHeight);
+    // Biome proportions are unchanged, but elevation needs its own nonlinear
+    // transition. A mostly-PR square should be broad, flat foothills rather
+    // than a diagonal wall from the first hint of GH / mountains.
+    const flatness=setting('foothillFlatness',.20);
+    const foothill=w=>smooth((w-flatness)/(1-flatness));
+    const mountFoot=w=>smooth((w-flatness*.65)/(1-flatness*.65));
+    const base=Math.max(.14,setting('waterHeight',.10)+.025);
+    const raw=base+plainFraction*plainVariation+
+      (2/3)*(foothill(weights.hill)*hillHeight+
+        mountFoot(weights.low)*lowHeight+mountFoot(weights.high)*highHeight);
     // Hills ease into level water with a flat beach tangent. Mountains retain
     // a steep rocky coastal face. The core boundary still joins unchanged.
     const inland=Math.max(0,Math.min(1,coastField/(1-threshold)));
