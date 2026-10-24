@@ -384,12 +384,12 @@ class GPUMap {
       let payload;
       try{payload=this.serializeChunk(record);}
       catch(error){this.diskStats.diskErrors++;this.cachedWrites.delete(key);return;}
-      Promise.resolve(api(key,payload)).then(()=>{
+      Promise.resolve().then(()=>api(key,payload)).then(()=>{
         this.diskStats.diskWrites++;
       }).catch(error=>{
-        this.diskStats.diskErrors++;this.cachedWrites.delete(key);
+        this.diskStats.diskErrors++;
         console.warn('Terrain cache write unavailable:',error);
-      });
+      }).finally(()=>this.cachedWrites.delete(key));
     };
     if(typeof requestIdleCallback==='function')
       requestIdleCallback(job,{timeout:500});
