@@ -70,7 +70,7 @@ const IsoMapper = (() => {
       }
     }
     for(const key of groundCache.keys())
-      if(affected.has(key.slice(0,key.indexOf(':'))))groundCache.delete(key);
+      if(affected.has(key.replace(/:\d+:\d+$/, '')))groundCache.delete(key);
     if(hadMesh)window.TribeNetGPU?.invalidateHexes?.([...affected].map(ref=>{
       const p=typeof parseCoordinate==='function'
         ? parseCoordinate(ref)
