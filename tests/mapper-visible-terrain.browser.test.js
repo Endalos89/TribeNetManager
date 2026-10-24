@@ -80,6 +80,26 @@ const {chromium}=require('playwright');
     assert.equal(actual.enabled,true,'3D mapper enabled');
     assert.ok(actual.canvas.w>400 && actual.canvas.h>200,'canvas visible');
     assert.equal(actual.renderer,'WebGL','Three.js must be the active renderer');
+    // A stationary camera must not try to eagerly build the entire 3x3
+    // knowledge window. Only visible chunks and up to 96 adjacent chunks are
+    // eligible for background mesh generation.
+    const preloadBudget=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU;
+      return {
+        visible:gpu.visibleChunkIds.size,
+        active:gpu.activeChunkIds.size,
+        pending:gpu.pendingChunks.length,
+        extraneous:gpu.pendingChunks.filter(job=>!gpu.activeChunkIds.has(job.id)).length,
+        prefetchTarget:gpu.getStats().prefetchTarget
+      };
+    });
+    assert.ok(preloadBudget.active<=preloadBudget.visible+96,
+      'GPU preloading is bounded to visible chunks plus a small nearby ring');
+    assert.ok(preloadBudget.pending<=preloadBudget.active,
+      'do not generate whole adjacent submaps while the camera is stationary');
+    assert.equal(preloadBudget.extraneous,0,'all queued GPU chunks must be needed by current view');
+    assert.ok(preloadBudget.prefetchTarget<=96);
+
     assert.ok(actual.overlayBackground==='transparent' || /rgba\([^)]*,\s*0(?:\.0+)?\)/.test(actual.overlayBackground),'transparent Canvas overlay must not hide WebGL terrain');
     assert.ok(actual.gpu?.chunks>=1,'GPU chunks built');
     assert.ok(actual.gpu?.faces>=50,'GPU terrain triangles uploaded');
