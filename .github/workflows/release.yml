@@ -30,6 +30,7 @@ jobs:
         run: |
           set -e
           npm test
+          node tests/terrain-mesh-disk-cache.test.js
           node tests/results-playback.test.js
           node tests/results-transition.test.js
           node tests/results-start-state.test.js
