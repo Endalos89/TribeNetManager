@@ -249,8 +249,23 @@
     const shoreline=coastRoughness*((noise(x*2.3,y*2.3,419)-.5)*.625+(noise(x*8.1,y*8.1,557)-.5)*.375);
     const coastTotal=coastLand+coastWater;
     const landFraction=coastTotal?coastLand/coastTotal:1;
-    // Calibrate from the physical A–B square, approximately 60% water along a coast.
-    const threshold=setting('coastWaterShare',.6)+shoreline;
+    // Water should occupy the configured fraction of the *land-side half*
+    // of a mixed shared square, regardless of seeded 25–75 influence.
+    // Water weight goes 0 -> seeded midpoint weight in that half. The
+    // threshold must be calibrated to this pair, not to a fixed 0.6 field.
+    const waterOwners=owners.filter(o=>water(o.data.terrain));
+    let midpointWaterWeight=.5;
+    if(region.kind==='edge' && waterOwners.length===1 && owners.length===2) {
+      const canonical=canon(owners);
+      const midpointB=pairFraction(canonical);
+      midpointWaterWeight=ownerKey(waterOwners[0])===ownerKey(canonical[0])
+        ? 1-midpointB : midpointB;
+    } else if(region.kind==='corner' && waterOwners.length) {
+      midpointWaterWeight=waterOwners.length/owners.length;
+    }
+    const threshold=coastWater>0
+      ? 1-(1-setting('coastWaterShare',.6))*midpointWaterWeight+shoreline
+      : setting('coastWaterShare',.6);
     const coastField=landFraction-threshold;
     if(coastField<=0)return {x,y,z:0,color:'#337f98',water:true,rock:0};
     const weights=total?{hill:hills/total,low:low/total,high:high/total,snow:snow/total}:{hill:0,low:0,high:0,snow:0};
