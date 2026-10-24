@@ -19,6 +19,9 @@ const baseTreeTrunk=new THREE.CylinderGeometry(.012,.017,.20,5);
 const baseTreeCrown=new THREE.ConeGeometry(.095,.24,6);
 const unitBox=new THREE.BoxGeometry(.12,.12,.085);
 const unitHead=new THREE.IcosahedronGeometry(.045,0);
+const personLeg=new THREE.BoxGeometry(.026,.085,.028);
+const horseLeg=new THREE.BoxGeometry(.028,.105,.035);
+const cartWheel=new THREE.CylinderGeometry(.050,.050,.03,8);
 const horseBox=new THREE.BoxGeometry(.21,.105,.09);
 const cartBox=new THREE.BoxGeometry(.25,.095,.17);
 const WATER=0x337f98;
@@ -37,7 +40,8 @@ class GPUMap {
     this.generation=0;this.pendingChunks=[];this.idleBuildPending=false;this.activeChunkIds=new Set();this.visibleChunkIds=new Set();
     this.knowledgeSubmapWindow=new Set();this.lastCentreSubmap=null;
     this.groundFaces=null;this.sampleTerrain=null;this.tileAt=null;this.lastLod=FIXED_TERRAIN_STEPS;
-    this.groundHeightCache=new Map();this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
+    this.groundHeightCache=new Map();this.meshRevision=0;
+    this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
     this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,gpuCalls:0,renderMs:0};
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
     this.waveMaterial=new THREE.LineBasicMaterial({color:0xc8e9d9,transparent:true,opacity:.58,depthWrite:false});
@@ -47,6 +51,9 @@ class GPUMap {
       conifer:new THREE.MeshLambertMaterial({color:0x477b58,side:THREE.DoubleSide}),
       body:new THREE.MeshLambertMaterial({color:0xffffff}),
       head:new THREE.MeshLambertMaterial({color:0xffffff}),
+      leg:new THREE.MeshLambertMaterial({color:0xffffff}),
+      horseLeg:new THREE.MeshLambertMaterial({color:0xffffff}),
+      wheel:new THREE.MeshLambertMaterial({color:0xffffff}),
       horse:new THREE.MeshLambertMaterial({color:0xffffff}),
       cart:new THREE.MeshLambertMaterial({color:0xffffff})
     };
@@ -115,7 +122,6 @@ class GPUMap {
   disposeChunk(record){
     this.chunkGroup?.remove(record.group);
     record.ground.geometry.dispose();
-    this.groundHeightCache.clear();
     record.waves?.geometry.dispose();
     // Free per-instance GPU buffers on LRU eviction; tree geometries and
     // materials are shared and intentionally retained.
@@ -292,8 +298,8 @@ class GPUMap {
     const result=this.newChunk(cells,this.groundFaces,this.sampleTerrain,lod);
     const record={...result,key:this.chunkKey(id,lod),id,lod};
     this.chunkCache.set(record.key,record);this.chunkGroup.add(record.group);
+    record.serial=++this.meshRevision;
     this.stats.builds++;
-    this.groundHeightCache.clear();
     return record;
   }
   // Submap knowledge is cached separately by renderer.js. Prewarm GPU
@@ -509,8 +515,11 @@ class GPUMap {
     }
     return {x:world.x/1.5,y:world.z/1.5};
   }
+  // Grounding is solved for the whole miniature footprint, not just one
+  // centre-point raycast. On steep hills the surrounding triangle used to
+  // swallow the front half of the figure even when its centre was above land.
   renderedGroundHeight(m){
-    const analytic=Number.isFinite(m.z)?m.z:0;
+    const originHeight=Number.isFinite(m.z)?m.z:0;
     const region=window.IsoGeometry.regionAt(m.x,m.y);
     const cx=Math.floor(region.col/CHUNK_SIZE),cy=Math.floor(region.row/CHUNK_SIZE);
     const neighbours=[];
@@ -518,45 +527,71 @@ class GPUMap {
       const record=this.bestResident((cx+dx)+':'+(cy+dy),FIXED_TERRAIN_STEPS);
       if(record?.group.visible)neighbours.push(record);
     }
-    if(!neighbours.length)return analytic;
-    const key=neighbours.map(r=>r.key).sort().join('|')+':'+m.x.toFixed(5)+':'+m.y.toFixed(5);
+    const radius=m.kind==='carts'?.145:m.kind==='horses'||m.mounted?.115:.085;
+    const key=neighbours.map(r=>r.key+'#'+r.serial).sort().join('|')+
+      ':'+m.x.toFixed(5)+':'+m.y.toFixed(5)+':'+radius;
     const cached=this.groundHeightCache.get(key);
-    if(cached!==undefined)return Math.max(analytic,cached);
-    // Raycast actual displayed triangles, including squares/corners crossing a
-    // chunk border. A one-chunk-only raycast could miss those and bury models.
-    this.downRay.set(new THREE.Vector3(m.x*1.5,30,m.y*1.5),this.downDirection);
-    this.downRay.near=0;this.downRay.far=60;
-    const hit=this.downRay.intersectObjects(neighbours.map(r=>r.ground),false)[0];
-    const height=hit?hit.point.y:analytic;
-    if(this.groundHeightCache.size>1500)this.groundHeightCache.clear();
-    if(hit)this.groundHeightCache.set(key,height);
-    return Math.max(analytic,height);
+    if(cached!==undefined)return cached;
+    const positions=[[0,0],[-radius,0],[radius,0],[0,-radius],[0,radius],
+      [-radius*.7,-radius*.7],[radius*.7,-radius*.7],
+      [-radius*.7,radius*.7],[radius*.7,radius*.7]];
+    let highest=originHeight;
+    const surfaces=neighbours.map(r=>r.ground);
+    for(const [dx,dy] of positions){
+      const x=m.x+dx,y=m.y+dy;
+      const analytic=this.sampleTerrain?.(x,y)?.z;
+      if(Number.isFinite(analytic))highest=Math.max(highest,analytic);
+      if(!surfaces.length)continue;
+      this.downRay.set(new THREE.Vector3(x*1.5,30,y*1.5),this.downDirection);
+      this.downRay.near=0;this.downRay.far=60;
+      const hit=this.downRay.intersectObjects(surfaces,false)[0];
+      if(hit)highest=Math.max(highest,hit.point.y);
+    }
+    if(this.groundHeightCache.size>2500)this.groundHeightCache.clear();
+    this.groundHeightCache.set(key,highest);
+    return highest;
   }
   addModel(m){if(m && Number.isFinite(m.x)&&Number.isFinite(m.y))this.units.push(m);}
   updateUnits(){
-    const kinds={body:[],head:[],horse:[],cart:[]};
+    const kinds={body:[],head:[],leg:[],horse:[],horseLeg:[],cart:[],wheel:[]};
     const personColor=m=>m.kind==='warriors'?0xb7614e:m.kind==='actives'?0x4c9f95:0xd4b86c;
+    const scale=UNIT_MODEL_SCALE;
+    const scaled=(x,y,z)=>[x*scale,y*scale,z*scale];
+    const add=(kind,x,y,z,size,color,heading=0)=>kinds[kind].push({
+      p:[x,y,z],scale:size,color,heading
+    });
     for(const m of this.units){
-      const p=position(m),mounted=Boolean(m.mounted);
+      const x=m.x*1.5,z=m.y*1.5;
       const ground=this.renderedGroundHeight(m);
-      // Instance meshes are centred on their origin. Place their lowest face
-      // just above the *displayed* triangle, then scale ALL geometry and
-      // vertical offsets together to exactly one-half of the old model size.
-      const sole=ground+.008;
-      p[1]=sole;
-      const half=UNIT_MODEL_SCALE;
-      const scaled=(a,b,c)=>[a*half,b*half,c*half];
-      if(m.kind==='horses'||mounted)
-        kinds.horse.push({p:[p[0],sole+.052*half,p[2]],scale:scaled(1,1,1),color:0xa87a4c,heading:m.heading||0});
+      // A small clearance is intentional: mesh faces can be tilted across
+      // the entire footprint. Models are grounded by their FEET, not torsos.
+      const sole=ground+.018;
+      const mounted=Boolean(m.mounted),heading=m.heading||0;
       if(m.kind==='carts'){
-        kinds.cart.push({p:[p[0],sole+.09*half,p[2]],scale:scaled(1,1,1),color:0xa77945,heading:m.heading||0});
+        add('cart',x,sole+.08*scale,z,scaled(1,1,1),0xa77945,heading);
+        for(const sx of [-.085,.085])for(const sz of [-.095,.095])
+          add('wheel',x+sx*scale,sole+.052*scale,z+sz*scale,
+            scaled(1,1,1),0x493f31,heading);
         continue;
       }
-      if(m.kind==='horses')continue;
-      kinds.body.push({p:[p[0],sole+(mounted?.135:.054)*half,p[2]],scale:scaled(.70,1,.75),color:personColor(m),heading:m.heading||0});
-      kinds.head.push({p:[p[0],sole+(mounted?.206:.128)*half,p[2]],scale:scaled(.7,.7,.7),color:0xe2bd92,heading:m.heading||0});
+      if(m.kind==='horses'||mounted){
+        add('horse',x,sole+.10*scale,z,scaled(1,1,1),0xa87a4c,heading);
+        for(const sx of [-.068,.068])for(const sz of [-.048,.048])
+          add('horseLeg',x+sx*scale,sole+.051*scale,z+sz*scale,
+            scaled(1,1,1),0x71543e,heading);
+        if(m.kind==='horses')continue;
+      }
+      const rise=mounted?.16:0;
+      for(const side of [-.027,.027])
+        add('leg',x+side*scale,sole+(rise+.043)*scale,z,
+          scaled(1,1,1),0x34434a,heading);
+      add('body',x,sole+(rise+.10)*scale,z,
+        scaled(.70,1,.75),personColor(m),heading);
+      add('head',x,sole+(rise+.175)*scale,z,
+        scaled(.7,.7,.7),0xe2bd92,heading);
     }
-    const geometries={body:unitBox,head:unitHead,horse:horseBox,cart:cartBox};
+    const geometries={body:unitBox,head:unitHead,leg:personLeg,horse:horseBox,
+      horseLeg:horseLeg,cart:cartBox,wheel:cartWheel};
     for(const [kind,entries] of Object.entries(kinds)){
       let mesh=this.unitMeshes.get(kind);
       if(mesh && mesh.instanceMatrix.count<entries.length){
@@ -571,7 +606,7 @@ class GPUMap {
       mesh.count=entries.length;
       entries.forEach((item,i)=>{
         this.object.position.set(...item.p);
-        this.object.rotation.set(0,-item.heading,0);
+        this.object.rotation.set(0,-item.heading,kind==='wheel'?Math.PI/2:0);
         this.object.scale.set(...item.scale);
         this.object.updateMatrix();
         mesh.setMatrixAt(i,this.object.matrix);
