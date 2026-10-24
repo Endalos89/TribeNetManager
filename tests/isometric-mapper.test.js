@@ -134,7 +134,7 @@ const first=installation(),second=installation();
 first.sceneryDetails('AA0101');second.sceneryDetails('ZZ3021');
 assert.equal(JSON.stringify(first.sceneryDetails('PK1613')),JSON.stringify(second.sceneryDetails('pk1613')));
 assert.notDeepEqual(G.sceneryDetails('PK1613'),G.sceneryDetails('PK1614'));
-assert.deepEqual(G.sceneryDetails('PK1613'),first.sceneryDetails('PK1613'),'fixed seed reproduces scenery between installs');
+assert.equal(JSON.stringify(G.sceneryDetails('PK1613')),JSON.stringify(first.sceneryDetails('PK1613')),'fixed seed reproduces scenery between installs');
 assert.equal(G.scenerySeed,1790425012,'numeric world seed is pinned to repository creation date');
 console.log('Versioned scenery seed is stable across installations and discovery order');
 
