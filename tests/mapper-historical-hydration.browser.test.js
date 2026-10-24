@@ -73,6 +73,20 @@ const {chromium}=require('playwright');
     assert.ok(before.pending>0&&before.fallback,
       'stalled history may render provisional fog but must remain pending');
     assert.equal(before.writes,0,'never permanently save fog while history is loading');
+    // Simulate a transient WebGL failure while historical terrain is still
+    // pending. The controls must identify the actual failure (not incorrectly
+    // claim that the checked 3D view is classic), then recover after hydration.
+    const failureDiagnostic=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU;
+      gpu.failed=true;gpu.failureReason='Simulated transient terrain failure';
+      gpu.setVisible(false);
+      document.getElementById('terrainDevToggle').click();
+      return document.querySelector('#terrainDevPanel .terrain-dev-feedback:last-child').textContent;
+    });
+    assert.match(failureDiagnostic,/WebGL failed/i);
+    assert.match(failureDiagnostic,/Simulated transient terrain failure/);
+    assert.match(failureDiagnostic,/mapper 3D/);
+    assert.doesNotMatch(failureDiagnostic,/classic 2D view selected/i);
     await page.evaluate(()=>{
       const rows=[];
       for(let col=307;col<=323;col++)for(let row=319;row<=335;row++){
@@ -84,6 +98,7 @@ const {chromium}=require('playwright');
     });
     await page.waitForFunction(()=>
       window.TribeNetKnowledge.complete()&&
+      IsoMapper.renderer==='WebGL'&&!window.TribeNetGPU.failed&&
       window.TribeNetGPU?.getStats().trees>0&&
       window.TribeNetGPU?.getStats().faces>5000&&
       window.savedMeshes.size>0,null,{timeout:45000});
