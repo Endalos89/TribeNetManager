@@ -8,7 +8,9 @@ import * as THREE from 'three';
 // Smaller chunks cap synchronous CPU work when zoomed in; GPU instancing
 // still batches trees and units across each chunk.
 const CHUNK_SIZE=2;
-const MAX_CHUNKS=256;
+// Keep enough GPU chunks for the current submap and nearby regions; geometry
+// is still bounded by LRU. Nine whole submaps of GPU meshes would be excessive.
+const MAX_CHUNKS=520;
 // Two 2x2-chunk rings cover the same neighbourhood as one former 4x4 ring.
 const PREFETCH_RING=2;
 const FIXED_TERRAIN_STEPS=8;
@@ -33,6 +35,7 @@ class GPUMap {
     this.chunkGroup=null;this.modelGroup=null;this.chunkCache=new Map();
     this.units=[];this.visible=false;this.failed=false;this.initialized=false;
     this.generation=0;this.pendingChunks=[];this.idleBuildPending=false;this.activeChunkIds=new Set();this.visibleChunkIds=new Set();
+    this.knowledgeSubmapWindow=new Set();this.lastCentreSubmap=null;
     this.groundFaces=null;this.sampleTerrain=null;this.tileAt=null;this.lastLod=FIXED_TERRAIN_STEPS;
     this.groundHeightCache=new Map();this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
     this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,gpuCalls:0,renderMs:0};
@@ -293,6 +296,49 @@ class GPUMap {
     this.groundHeightCache.clear();
     return record;
   }
+  // Submap knowledge is cached separately by renderer.js. Prewarm GPU
+  // geometry nearest the camera and inside the current/adjacent 3x3 submaps
+  // without allocating the entire nine-submap world upfront.
+  retentionWindow(){
+    const col=Math.max(0,Math.min(TOTAL_COLS-1,Math.round((this.cameraCenterX-1)/1.5)));
+    const row=Math.max(0,Math.min(TOTAL_ROWS-1,
+      Math.round(this.cameraCenterY/Math.sqrt(3)-.5-(col%2?.5:0))));
+    const homeC=Math.floor(col/HEX_COLS),homeR=Math.floor(row/HEX_ROWS);
+    const windowKeys=new Set();
+    for(let dc=-1;dc<=1;dc++)for(let dr=-1;dr<=1;dr++){
+      const c=homeC+dc,r=homeR+dr;
+      if(c>=0&&r>=0&&c*HEX_COLS<TOTAL_COLS&&r*HEX_ROWS<TOTAL_ROWS)
+        windowKeys.add(c+':'+r);
+    }
+    this.knowledgeSubmapWindow=windowKeys;
+    const anchor=homeC+':'+homeR;
+    if(anchor!==this.lastCentreSubmap){
+      this.lastCentreSubmap=anchor;
+      this.dropDistantSubmaps();
+    }
+  }
+  submapOfChunk(id){
+    const [cx,cy]=id.split(':').map(Number);
+    return Math.floor(cx*CHUNK_SIZE/HEX_COLS)+':'+Math.floor(cy*CHUNK_SIZE/HEX_ROWS);
+  }
+  dropDistantSubmaps(){
+    for(const [key,chunk] of this.chunkCache){
+      if(this.knowledgeSubmapWindow.has(this.submapOfChunk(chunk.id)))continue;
+      this.disposeChunk(chunk);this.chunkCache.delete(key);
+    }
+    this.pendingChunks=this.pendingChunks.filter(t=>this.knowledgeSubmapWindow.has(this.submapOfChunk(t.id)));
+    this.queueSignature=null;
+  }
+  invalidateHexes(hexes){
+    if(!hexes?.length)return;
+    const ids=new Set(hexes.map(p=>Math.floor(p.col/CHUNK_SIZE)+':'+Math.floor(p.row/CHUNK_SIZE)));
+    for(const [key,record] of this.chunkCache)if(ids.has(record.id)){
+      this.disposeChunk(record);this.chunkCache.delete(key);
+    }
+    this.pendingChunks=this.pendingChunks.filter(t=>!ids.has(t.id));
+    // Re-schedule only the changed chunks next time; all other buffers survive.
+    this.queueSignature=null;
+  }
   queueBuilds(visible,lod){
     const ring=new Set();
     for(const id of visible){
@@ -304,27 +350,48 @@ class GPUMap {
       }
     }
     this.activeChunkIds=ring;
-    const tasks=[],reserved=new Set();
-    const add=(id,detail)=>{
-      const key=this.chunkKey(id,detail);
-      if(!this.chunkCache.has(key)&&!reserved.has(key)){
-        tasks.push({id,lod:detail});reserved.add(key);
-      }
-    };
-    // Build the chunk under the camera FIRST. Traversing Set insertion order
-    // built only one far-away column at startup, leaving a black centre after
-    // the user zoomed before the adjacent work had finished.
     const distance=id=>{
       const [cx,cy]=id.split(':').map(Number);
       const worldX=1+1.5*(cx*CHUNK_SIZE+(CHUNK_SIZE-1)/2);
       const worldY=Math.sqrt(3)*(cy*CHUNK_SIZE+(CHUNK_SIZE-1)/2);
       return (worldX-this.cameraCenterX)**2+(worldY-this.cameraCenterY)**2;
     };
-    const byDistance=(a,b)=>distance(a)-distance(b);
-    const central=[...visible].sort(byDistance);
-    for(const id of central)add(id,FIXED_TERRAIN_STEPS);
-    for(const id of [...ring].filter(id=>!visible.has(id)).sort(byDistance))add(id,FIXED_TERRAIN_STEPS);
-    this.pendingChunks=tasks;
+    // The current viewport is top priority; surrounding ring is second.
+    // Fill the rest of the 3x3-submap window opportunistically, nearest first.
+    const priority=[...visible].sort((a,b)=>distance(a)-distance(b));
+    const prefetch=[...ring].filter(id=>!visible.has(id)).sort((a,b)=>distance(a)-distance(b));
+    const extras=[];
+    const minC=Math.max(0,Math.floor((this.cameraCenterX-1)/1.5/HEX_COLS)-1);
+    const maxC=Math.min(Math.ceil(TOTAL_COLS/HEX_COLS)-1,minC+2);
+    const centreRow=Math.round(this.cameraCenterY/Math.sqrt(3));
+    const minR=Math.max(0,Math.floor(centreRow/HEX_ROWS)-1);
+    const maxR=Math.min(Math.ceil(TOTAL_ROWS/HEX_ROWS)-1,minR+2);
+    for(let sc=minC;sc<=maxC;sc++)for(let sr=minR;sr<=maxR;sr++){
+      if(!this.knowledgeSubmapWindow.has(sc+':'+sr))continue;
+      const firstC=Math.ceil(sc*HEX_COLS/CHUNK_SIZE),lastC=Math.floor(((sc+1)*HEX_COLS-1)/CHUNK_SIZE);
+      const firstR=Math.ceil(sr*HEX_ROWS/CHUNK_SIZE),lastR=Math.floor(((sr+1)*HEX_ROWS-1)/CHUNK_SIZE);
+      for(let cx=firstC;cx<=lastC;cx++)for(let cy=firstR;cy<=lastR;cy++)
+        extras.push(cx+':'+cy);
+    }
+    extras.sort((a,b)=>distance(a)-distance(b));
+    const ordered=[...priority,...prefetch,...extras];
+    // Preserve unfinished work when zoom/camera changes; change its priority,
+    // never throw it all away and restart it from the beginning.
+    const existing=new Set(this.pendingChunks.map(t=>t.id));
+    for(const id of ordered){
+      if(!this.knowledgeSubmapWindow.has(this.submapOfChunk(id)))continue;
+      const key=this.chunkKey(id,FIXED_TERRAIN_STEPS);
+      if(!this.chunkCache.has(key) && !existing.has(id)){
+        this.pendingChunks.push({id,lod:FIXED_TERRAIN_STEPS});
+        existing.add(id);
+      }
+    }
+    const rank=new Map(),unique=[];
+    for(const id of ordered)if(!rank.has(id))rank.set(id,rank.size);
+    for(const job of this.pendingChunks)
+      if(rank.has(job.id) && !this.chunkCache.has(this.chunkKey(job.id,job.lod)))unique.push(job);
+    unique.sort((a,b)=>rank.get(a.id)-rank.get(b.id));
+    this.pendingChunks=unique.slice(0,MAX_CHUNKS);
     this.scheduleIdleChunk();
   }
   scheduleIdleChunk(){
@@ -390,6 +457,7 @@ class GPUMap {
     const lod=this.lod(state.scale);
     this.lastLod=lod;
     this.cameraCenterX=state.cameraX;this.cameraCenterY=state.cameraY;
+    this.retentionWindow();
     this.groundFaces=groundFaces;this.sampleTerrain=sample;this.tileAt=tileAt;
     const visible=new Set(tiles.map(chunkId));
     this.visibleChunkIds=visible;
@@ -398,7 +466,7 @@ class GPUMap {
     const signature=lod+'|'+[...visible].sort().join('|');
     if(signature!==this.queueSignature){
       this.queueSignature=signature;
-      this.generation++;
+      // Camera changes reprioritise queued work but do not cancel it.
       this.queueBuilds(visible,lod);
     }
     // Update which cached meshes are displayed, allowing lower-detail
