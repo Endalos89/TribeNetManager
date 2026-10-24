@@ -50,3 +50,13 @@ The Windows release workflow runs \`npm test\` (including static generation and 
 - Some text and route effects remain 2D by design; these are interface information, not terrain geometry.
 - Terrain generation itself still calls the existing JavaScript function when a **new** chunk is built. Further gains are possible by moving mesh generation into a Web Worker, introducing polygon-index buffers and using on-GPU heightfield deformation.
 - New generation rules (plain/hill transition and water-level semantics) should be tuned separately from rendering migration to avoid changing existing revealed terrain unexpectedly.
+
+
+## 24 October 2026: Smooth chunk streaming, lowland and water tuning
+
+- The GPU chunk manager preloads a **one-chunk ring** beyond visible chunks. It prioritises a low-resolution visible mesh, then sharpens to the requested LOD and warms nearby cells. Generation occurs in short idle-time jobs so pan/wheel input stays responsive. An already resident LOD is retained while its replacement loads; chunks are never deliberately hidden merely because the requested zoom crosses a detail threshold. Returning from classic mode resumes outstanding tasks. LRU disposal caps the cache at 160 chunk/LOD records and preserves visible resident geometry first.
+- The fixed seed and gameplay terrain codes are unchanged. The new \`waterHeight\` parameter sets the shared lake/ocean plane and the height of coastal intersections (default **0.10 terrain height units** versus PR base ~0.14). This is a *visual* offset and must not alter passability or introduce water into authoritative land cores.
+- PR gains world-coherent, low-amplitude \`plainsRelief\` (default 0.055) and \`plainsTexture\` (default 0.22). These gently modulate height and colour, rather than adding mountain ridges to flat terrain.
+- Ocean/lake colouring adds seeded depth/shallow-water variation. GPU wave crest lines are **static and batched by chunk**; they appear more frequently near the shoreline and are tuned with \`waveStrength\` (default 0.55). No continuous water-animation redraw is required.
+- Every Terrain Dev parameter now provides a numeric input beside its slider. Inputs clamp to declared limits; sliders are throttled to avoid repeatedly throwing away the terrain caches mid-drag. Local preset JSON exports include the new values and preserve all prior settings. The immutable world seed is not user-editable.
+- Browser regression tests must verify WebGL remains visible at zoom threshold transitions and that the numeric sea-height setting is actually applied and exported. Node tests cover the water plane, low-lying plains and fallback renderer.
