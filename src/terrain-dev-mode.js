@@ -59,7 +59,26 @@
     catch(error){feedback.textContent=error.message||'Could not read preset.';}finally{file.value='';}
   });
   actions.append(exportButton,importButton,resetButton);
-  panel.append(actions,file,feedback);wrap.appendChild(panel);
+  const performance=document.createElement('div');
+  performance.className='terrain-dev-feedback';
+  performance.setAttribute('aria-live','off');
+  performance.textContent='WebGL statistics are available when the 3D Mapper is visible.';
+  panel.append(actions,file,feedback,performance);wrap.appendChild(panel);
+  // Lightweight diagnostics update only while the development panel is open.
+  let lastUpdate=0;
+  function statsFrame(timestamp){
+    if(!panel.classList.contains('hidden')&&timestamp-lastUpdate>=600){
+      const info=root.TribeNetGPU?.getStats();
+      performance.textContent=info&&root.TribeNetGPU?.visible
+        ? 'GPU: '+info.chunks+' chunks · '+info.faces.toLocaleString()+
+          ' triangles · '+info.trees+' trees · '+info.gpuCalls+
+          ' draw calls · '+info.renderMs.toFixed(1)+' ms GPU submission'
+        : 'WebGL is inactive (software fallback or classic view).';
+      lastUpdate=timestamp;
+    }
+    root.requestAnimationFrame(statsFrame);
+  }
+  root.requestAnimationFrame(statsFrame);
   toggle.addEventListener('click',()=>{
     const open=panel.classList.toggle('hidden')===false;
     toggle.classList.toggle('active',open);toggle.setAttribute('aria-expanded',String(open));
