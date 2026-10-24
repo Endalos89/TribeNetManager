@@ -9,7 +9,7 @@ const zlib=require('node:zlib');
 const {promisify}=require('node:util');
 const gzip=promisify(zlib.gzip),gunzip=promisify(zlib.gunzip);
 
-const FORMAT=1;
+const FORMAT=2;
 const MAX_COMPRESSED=4*1024*1024;
 const MAX_EXPANDED=24*1024*1024;
 const MAX_TOTAL_BYTES=512*1024*1024;
@@ -22,9 +22,13 @@ function validateNumbers(arr,divisor=3){
 function validateChunk(data){
   if(!data||data.format!==FORMAT||!validateNumbers(data.positions)
     ||!validateNumbers(data.colors)||data.positions.length!==data.colors.length
-    ||data.positions.length<9
+    ||!validateNumbers(data.sharedPositions)||!validateNumbers(data.sharedColors)
+    ||data.sharedPositions.length!==data.sharedColors.length
+    ||data.positions.length+data.sharedPositions.length<9
     ||(data.waves!==null&&!validateNumbers(data.waves,3))
     ||!Array.isArray(data.instances)||data.instances.length>4
+    ||!Number.isSafeInteger(data.coreFaces)||data.coreFaces<0
+    ||!Number.isSafeInteger(data.sharedFaces)||data.sharedFaces<0
     ||!Number.isSafeInteger(data.faces)||data.faces<0
     ||!Number.isSafeInteger(data.trees)||data.trees<0)return false;
   const names=new Set(['trunk','broad','conifer']);
