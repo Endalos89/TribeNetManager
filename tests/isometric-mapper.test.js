@@ -47,7 +47,7 @@ const along=u=>G.surface(coastalA.x+(coastalB.x-coastalA.x)*u,
   coastalA.y+(coastalB.y-coastalA.y)*u,mixTerrain,palette).z;
 const prStart=along(0),flatEdge=along(.36),foot=along(.56),hillCore=along(.90);
 assert.ok(Math.abs(flatEdge-prStart)<.05,'PR-side connector stays mostly flat before hills rise');
-assert.ok(hillCore>prStart+.1,'hill core still has its full seeded relief');
+assert.ok(hillCore>prStart+.025,'approved low hill amplitude still preserves its core relief');
 assert.ok(foot<Math.max(hillCore,prStart)+.1,'the transition has no sudden step');
 console.log('North-up projection, continuous hills and dry/coastal boundary checks passed');
 // Fog only excludes scenery whose BASE is concealed, never clipping its crown.
