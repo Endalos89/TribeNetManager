@@ -10,6 +10,7 @@ const resultsTimeline = {
   playTimer: null,
   loadingArea: false,
   lastTerrainLoad: null,
+  gpuRecoveryAttemptedTurn: null,
   ready: false,
   // Import staging loads the target snapshot before playback can establish
   // the previous-turn baseline. Suppress intermediate draws so the user never
@@ -346,6 +347,16 @@ requestVisibleData = function requestVisibleDataWithResults() {
           maxRow:Math.max(b.maxRow,state.loadedArea.maxRow) }
       : b;
     if (state.planImport?.plan) state.routeCache = null;
+    // A transient GPU failure during partial history loading must not latch
+    // the mapper into the software fallback for the rest of the session.
+    // Retry ONCE per historical turn, only after successful non-empty data.
+    const gpu=window.TribeNetGPU;
+    if (rows.length && gpu?.failed && typeof gpu.retry==='function' &&
+      resultsTimeline.gpuRecoveryAttemptedTurn!==turnKey) {
+      resultsTimeline.gpuRecoveryAttemptedTurn=turnKey;
+      try{gpu.retry();}
+      catch(error){console.warn('WebGL recovery after historical hydration failed:',error);}
+    }
   }).catch(error => {
     if (generation !== historicalAreaGeneration) return;
     window.TribeNetKnowledge?.historicalError?.();
