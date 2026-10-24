@@ -584,6 +584,6 @@ const IsoMapper = (() => {
     new MutationObserver(sync).observe($('notesInput'),{attributes:true,attributeFilter:['disabled']});
     new MutationObserver(sync).observe($('selectedState'),{childList:true});
   }
-  return {get enabled(){return enabled;},get renderer(){return window.TribeNetGPU?.initialized&&window.TribeNetGPU?.visible?'WebGL':'Canvas2D';},get gpuStats(){return window.TribeNetGPU?.getStats();},get preloadCount(){return preloadCount;},queueGpuModel:m=>window.TribeNetGPU?.addModel(m),preloadKnown:()=>{prepareSurface();scheduleKnownTerrainPreload();},invalidateTerrain,surface:sample,withProjection,project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},get groundBuilds(){return groundBuilds;},draw:drawScene,setEnabled,setup};
+  return {get enabled(){return enabled;},get interacting(){return interactive||Boolean(state.dragging);},get renderer(){return window.TribeNetGPU?.initialized&&window.TribeNetGPU?.visible?'WebGL':'Canvas2D';},get gpuStats(){return window.TribeNetGPU?.getStats();},get preloadCount(){return preloadCount;},queueGpuModel:m=>window.TribeNetGPU?.addModel(m),preloadKnown:()=>{prepareSurface();scheduleKnownTerrainPreload();},invalidateTerrain,surface:sample,withProjection,project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},get groundBuilds(){return groundBuilds;},draw:drawScene,setEnabled,setup};
 })();
 IsoMapper.setup();
