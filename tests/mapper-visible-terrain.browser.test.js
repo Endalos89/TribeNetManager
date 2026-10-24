@@ -13,11 +13,12 @@ const {chromium}=require('playwright');
     page.on('console',m=>{if(m.type()==='error')errors.push('CONSOLE: '+m.text());});
     await page.addInitScript(()=>{
       window.fixtureRows=new Map();
+      window.areaQueryCount=0;
       const original={
         getVersion:async()=>'browser-smoke',
         getUserDataPath:async()=>'local',
         onUpdateStatus:()=>{},
-        getHexesInArea:async()=>Array.from(window.fixtureRows.values()),
+        getHexesInArea:async()=>{window.areaQueryCount++;return Array.from(window.fixtureRows.values());},
         getHex:async(id)=>window.fixtureRows.get(id)||null,
         getSubmapSummaries:async()=>[],
         getPlannerImports:async()=>[],
@@ -83,6 +84,44 @@ const {chromium}=require('playwright');
     assert.ok(actual.distinct>12,'rendered terrain has nonuniform colours, not one black/fog rectangle');
     assert.ok(actual.brightGreen+actual.blue>120,'actual terrain visible (not all black)');
     assert.equal(errors.length,0,'no browser JS or rendering errors');
+    // 3x3 submap knowledge cache: the first local query can finish, then
+    // repeated wheel/drag redraws within those same submaps do zero IO.
+    await page.waitForFunction(()=>typeof loadedSubmaps!=='undefined' && loadedSubmaps.size>=9,
+      null,{timeout:15000});
+    await page.waitForFunction(()=>{
+      const id=Math.floor(315/2)+':'+Math.floor(327/2);
+      return Boolean(window.TribeNetGPU.bestResident(id,8)?.group.visible);
+    },null,{timeout:30000});
+    const dataReuse=await page.evaluate(()=>{
+      const queries=window.areaQueryCount;
+      const gpu=window.TribeNetGPU;
+      const centreId=Math.floor(315/2)+':'+Math.floor(327/2);
+      const ref=gpu.bestResident(centreId,8);
+      const resident=ref?.ground.geometry;
+      for(const scale of [55,65,85,65,52]){
+        state.scale=scale;draw();requestVisibleData();
+      }
+      state.cameraX+=.08;state.cameraY+=.03;draw();requestVisibleData();
+      return {queries,windowSize:loadedSubmaps.size,
+        centreId,centreUUID:resident?.uuid};
+    });
+    await page.waitForTimeout(230);
+    const fetchCount=await page.evaluate(()=>window.areaQueryCount);
+    assert.equal(fetchCount,dataReuse.queries,'zooming within loaded submaps must issue no new terrain data queries');
+    assert.equal(dataReuse.windowSize,9,'keep current submap and all eight neighbours loaded');
+    const unchanged=await page.evaluate(id=>{
+      const gpu=window.TribeNetGPU;
+      const original=gpu.bestResident(id,8);
+      const geometry=original?.ground.geometry;
+      if(!geometry)return false;
+      // A newly revealed *distant* hex can never unload a previously
+      // rendered local chunk or cause its GPU mesh object to be rebuilt.
+      const coord=coordinateFor(50,50);
+      state.hexCache.set(coord,{coordinate:coord,terrain:'GH',notes:''});
+      draw();
+      return geometry===gpu.bestResident(id,8)?.ground.geometry;
+    },dataReuse.centreId);
+    assert.ok(unchanged,'revealing another distant hex must preserve cached local GPU geometry');
     const selection=await page.evaluate(()=>{
       const c=baseCenter(315,327),screen=IsoMapper.project(c,IsoMapper.surface(c.x,c.y).z);
       return {screen,picked:IsoMapper.pick(screen.x,screen.y)};
@@ -140,6 +179,22 @@ const {chromium}=require('playwright');
     assert.ok(Math.abs(unitTest.scale-.5)<1e-6,'GPU body mesh is half height');
     assert.ok(unitTest.bottom>=unitTest.ground,
       'model feet remain above visible terrain despite low analytic height');
+    const footTest=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU,leg=gpu.unitMeshes.get('leg');
+      if(!leg || leg.count<2)throw Error('Standing figure lacks leg geometry');
+      const ground=gpu.renderedGroundHeight(gpu.units[0]);
+      const values=leg.instanceMatrix.array,h=leg.geometry.parameters.height;
+      let minFoot=Infinity;
+      for(let n=0;n<leg.count;n++){
+        const offset=16*n;
+        const y=values[offset+13],scale=values[offset+5];
+        minFoot=Math.min(minFoot,y-h*scale/2);
+      }
+      return {minFoot,ground,legs:leg.count};
+    });
+    assert.ok(footTest.legs>=2,'human miniatures have visible supporting legs');
+    assert.ok(footTest.minFoot>=footTest.ground-.005,
+      'all miniature feet are above highest nearby terrain instead of sinking');
     const numericTuning=await page.evaluate(()=>{
       document.getElementById('terrainDevToggle').click();
       const field=document.getElementById('terrain-number-waterHeight');
