@@ -90,9 +90,12 @@ class GPUMap {
     }
   }
   setVisible(visible){
+    const returning=!this.visible && Boolean(visible);
     this.visible=Boolean(visible);
     if(this.canvas)this.canvas.style.display=this.visible?'block':'none';
     document.body.classList.toggle('terrain-webgl-active',this.visible && this.initialized);
+    // Resume an interrupted preload when returning from Launcher/classic mode.
+    if(returning && this.pendingChunks.length)this.scheduleIdleChunk();
   }
   invalidate(){
     for(const record of this.chunkCache.values())this.disposeChunk(record);
