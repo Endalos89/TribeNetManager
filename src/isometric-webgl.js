@@ -15,6 +15,9 @@ const MAX_CHUNKS=520;
 const PREFETCH_RING=2;
 const FIXED_TERRAIN_STEPS=8;
 const UNIT_MODEL_SCALE=.5;
+// Only change this identifier when geometry generation rules change, not
+// when the app release number increments. Known terrain/settings have separate keys.
+const MESH_GENERATOR_REVISION='terrain-fixed8-shore-20261024-r1';
 const baseTreeTrunk=new THREE.CylinderGeometry(.012,.017,.20,5);
 const baseTreeCrown=new THREE.ConeGeometry(.095,.24,6);
 const unitBox=new THREE.BoxGeometry(.12,.12,.085);
@@ -40,6 +43,8 @@ class GPUMap {
     this.generation=0;this.pendingChunks=[];this.idleBuildPending=false;this.activeChunkIds=new Set();this.visibleChunkIds=new Set();
     this.knowledgeSubmapWindow=new Set();this.lastCentreSubmap=null;
     this.groundFaces=null;this.sampleTerrain=null;this.tileAt=null;this.lastLod=FIXED_TERRAIN_STEPS;
+    this.diskMissKeys=new Set();this.diskReadBusy=false;this.cachedWrites=new Set();
+    this.diskStats={diskHits:0,diskMisses:0,diskWrites:0,diskErrors:0};
     this.groundHeightCache=new Map();this.meshRevision=0;
     this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
     this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,gpuCalls:0,renderMs:0};
@@ -117,6 +122,9 @@ class GPUMap {
     this.chunkCache.clear();
     this.stats.chunks=0;this.stats.faces=0;this.stats.trees=0;
     this.generation++;this.pendingChunks=[];this.queueSignature=null;
+    // The persistent cache is content-addressed; changing a preset changes
+    // keys rather than deleting historical meshes from disk.
+    this.diskMissKeys.clear();
     this.groundHeightCache.clear();
   }
   disposeChunk(record){
@@ -209,7 +217,8 @@ class GPUMap {
         const x=t.c.x+Math.cos(angle)*rad,y=t.c.y+Math.sin(angle)*rad;
         const p=sample(x,y);
         if(!p || p.fog || p.water || p.rock>.64)continue;
-        if(typeof IsoUnits!=='undefined' && IsoUnits.occupies(t.ref,x-t.c.x,y-t.c.y))continue;
+        // Trees are part of permanent world geometry, never dependent on
+        // where movable units happen to stand in the current turn.
         const h=scale*(.75+rnd()*.55);
         sites.push({x,y,z:p.z,size:h,conifer:t.data.terrain==='CH'||t.data.terrain==='LCM'});
       }
@@ -290,6 +299,102 @@ class GPUMap {
     }
     return best;
   }
+  // For historical playback this fingerprint uses the currently-visible
+  // (turn-filtered) terrain state, not the union of all future discoveries.
+  // The two-hex halo covers the owners of edge squares and corner triangles.
+  persistentKey(id,lod){
+    if(!this.tileAt)return null;
+    const [cx,cy]=id.split(':').map(Number),terrain=[];
+    for(let col=cx*CHUNK_SIZE-2;col<(cx+1)*CHUNK_SIZE+2;col++){
+      for(let row=cy*CHUNK_SIZE-2;row<(cy+1)*CHUNK_SIZE+2;row++){
+        if(col<0||row<0||col>=TOTAL_COLS||row>=TOTAL_ROWS)continue;
+        const cell=this.tileAt(col,row);
+        terrain.push([col,row,cell.known ? cell.data?.terrain||'?' : '?']);
+      }
+    }
+    const settings=window.TerrainSettings?.get?.()||{};
+    const stableSettings=Object.keys(settings).sort().map(k=>[k,settings[k]]);
+    return JSON.stringify([MESH_GENERATOR_REVISION,
+      window.TerrainSettings?.WORLD_SEED||1790425012,id,lod,stableSettings,terrain]);
+  }
+  serializeChunk(record){
+    const geometry=record.ground.geometry;
+    const instances=[];
+    for(const child of record.group.children){
+      if(!child.isInstancedMesh)continue;
+      const type=child.material===this.treeMaterials.trunk?'trunk':
+        child.material===this.treeMaterials.broad?'broad':
+        child.material===this.treeMaterials.conifer?'conifer':null;
+      if(type)instances.push({
+        type,matrices:Array.from(child.instanceMatrix.array.slice(0,child.count*16))
+      });
+    }
+    return {format:1,faces:record.faces,trees:record.trees,
+      positions:Array.from(geometry.getAttribute('position').array),
+      colors:Array.from(geometry.getAttribute('color').array),
+      waves:record.waves?Array.from(record.waves.geometry.getAttribute('position').array):null,
+      instances};
+  }
+  restoreChunk(id,lod,data){
+    if(!data||data.format!==1||!Array.isArray(data.positions)||
+      !Array.isArray(data.colors)||data.positions.length!==data.colors.length||
+      data.positions.length<9||data.positions.length%3)throw Error('Invalid cached ground vertices');
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(data.positions,3));
+    geometry.setAttribute('color',new THREE.Float32BufferAttribute(data.colors,3));
+    geometry.computeBoundingSphere();
+    const group=new THREE.Group(),ground=new THREE.Mesh(geometry,this.meshMaterial);
+    ground.frustumCulled=false;group.add(ground);
+    let waves=null;
+    if(data.waves?.length){
+      const waveGeometry=new THREE.BufferGeometry();
+      waveGeometry.setAttribute('position',new THREE.Float32BufferAttribute(data.waves,3));
+      waves=new THREE.LineSegments(waveGeometry,this.waveMaterial);
+      waves.frustumCulled=false;waves.renderOrder=2;group.add(waves);
+    }
+    const shared={
+      trunk:[baseTreeTrunk,this.treeMaterials.trunk],
+      broad:[baseTreeCrown,this.treeMaterials.broad],
+      conifer:[baseTreeCrown,this.treeMaterials.conifer]
+    };
+    for(const item of data.instances||[]){
+      const descriptor=shared[item.type];
+      if(!descriptor||!Array.isArray(item.matrices)||item.matrices.length%16!==0)
+        throw Error('Invalid cached forest instances');
+      const count=item.matrices.length/16;
+      if(!count)continue;
+      const inst=new THREE.InstancedMesh(descriptor[0],descriptor[1],count);
+      inst.instanceMatrix.array.set(item.matrices);
+      inst.instanceMatrix.needsUpdate=true;
+      inst.frustumCulled=false;group.add(inst);
+    }
+    const record={id,lod,key:this.chunkKey(id,lod),group,ground,waves,
+      faces:data.faces,trees:data.trees,serial:++this.meshRevision};
+    this.chunkCache.set(record.key,record);this.chunkGroup.add(group);
+    return record;
+  }
+  saveToDisk(record){
+    const api=window.tribenet?.saveTerrainMesh;
+    if(typeof api!=='function')return;
+    const key=this.persistentKey(record.id,record.lod);
+    if(!key||this.cachedWrites.has(key))return;
+    this.cachedWrites.add(key);
+    // File compression and writing happen in Electron's main process.
+    const job=()=>{
+      let payload;
+      try{payload=this.serializeChunk(record);}
+      catch(error){this.diskStats.diskErrors++;this.cachedWrites.delete(key);return;}
+      Promise.resolve().then(()=>api(key,payload)).then(()=>{
+        this.diskStats.diskWrites++;
+      }).catch(error=>{
+        this.diskStats.diskErrors++;
+        console.warn('Terrain cache write unavailable:',error);
+      }).finally(()=>this.cachedWrites.delete(key));
+    };
+    if(typeof requestIdleCallback==='function')
+      requestIdleCallback(job,{timeout:500});
+    else setTimeout(job,40);
+  }
   terrainChunk(id,lod){
     const [cx,cy]=id.split(':').map(Number),cells=[];
     for(let col=cx*CHUNK_SIZE;col<(cx+1)*CHUNK_SIZE;col++)
@@ -300,6 +405,7 @@ class GPUMap {
     this.chunkCache.set(record.key,record);this.chunkGroup.add(record.group);
     record.serial=++this.meshRevision;
     this.stats.builds++;
+    this.saveToDisk(record);
     return record;
   }
   // Submap knowledge is cached separately by renderer.js. Prewarm GPU
@@ -411,7 +517,7 @@ class GPUMap {
     this.scheduleIdleChunk();
   }
   scheduleIdleChunk(){
-    if(this.idleBuildPending || !this.pendingChunks.length || !this.visible)return;
+    if(this.idleBuildPending || this.diskReadBusy || !this.pendingChunks.length || !this.visible)return;
     const revision=this.generation;
     this.idleBuildPending=true;
     const task=(deadline)=>{
@@ -427,10 +533,37 @@ class GPUMap {
       if(!next || this.chunkCache.has(this.chunkKey(next.id,next.lod))){
         this.scheduleIdleChunk();return;
       }
+      // Try durable geometry before recalculating triangles or scenery.
+      // A disk miss is remembered so the NEXT idle slice generates it instead
+      // of repeatedly asking the filesystem. Reads are asynchronous.
+      const key=this.persistentKey(next.id,next.lod);
+      const reader=window.tribenet?.loadTerrainMesh;
+      if(key && typeof reader==='function' && !this.diskMissKeys.has(key)){
+        this.diskReadBusy=true;
+        Promise.resolve().then(()=>reader(key)).then(data=>{
+          if(data && this.persistentKey(next.id,next.lod)===key &&
+            this.chunkTouchesRetention(next.id) &&
+            !this.chunkCache.has(this.chunkKey(next.id,next.lod))){
+            this.restoreChunk(next.id,next.lod,data);
+            this.diskStats.diskHits++;this.evictUnused();this.requestLater();
+          }else if(!data){
+            this.diskStats.diskMisses++;this.diskMissKeys.add(key);
+            this.pendingChunks.unshift(next);
+          }
+        }).catch(error=>{
+          this.diskStats.diskErrors++;this.diskMissKeys.add(key);
+          this.pendingChunks.unshift(next);
+          console.warn('Terrain cache restore failed; rebuilding:',error);
+        }).finally(()=>{
+          this.diskReadBusy=false;this.scheduleIdleChunk();
+        });
+        return;
+      }
       try{
+        // If terrain knowledge changed during an async read, never upload the
+        // stale generated mesh. queueBuilds will schedule the new fingerprint.
         this.terrainChunk(next.id,next.lod);
-        this.evictUnused();
-        this.requestLater();
+        this.evictUnused();this.requestLater();
       }catch(error){
         this.failed=true;console.error('GPU terrain chunk generation failed:',error);
         this.setVisible(false);this.requestLater();return;
@@ -634,6 +767,6 @@ class GPUMap {
     this.stats.renderMs=performance.now()-started;
     this.stats.gpuCalls=this.renderer.info.render.calls;
   }
-  getStats(){return {...this.stats,terrainSubdivisions:FIXED_TERRAIN_STEPS,unitModelScale:UNIT_MODEL_SCALE,cachedChunks:this.chunkCache.size,queuedChunks:this.pendingChunks.length};}
+  getStats(){return {...this.stats,...this.diskStats,terrainSubdivisions:FIXED_TERRAIN_STEPS,unitModelScale:UNIT_MODEL_SCALE,cachedChunks:this.chunkCache.size,queuedChunks:this.pendingChunks.length};}
 }
 window.TribeNetGPU=new GPUMap();

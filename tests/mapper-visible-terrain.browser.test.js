@@ -13,12 +13,15 @@ const {chromium}=require('playwright');
     page.on('console',m=>{if(m.type()==='error')errors.push('CONSOLE: '+m.text());});
     await page.addInitScript(()=>{
       window.fixtureRows=new Map();
+      window.savedMeshes=new Map();
       window.areaQueryCount=0;
       const original={
         getVersion:async()=>'browser-smoke',
         getUserDataPath:async()=>'local',
         onUpdateStatus:()=>{},
         getHexesInArea:async()=>{window.areaQueryCount++;return Array.from(window.fixtureRows.values());},
+        loadTerrainMesh:async key=>window.savedMeshes.get(key)||null,
+        saveTerrainMesh:async (key,mesh)=>{window.savedMeshes.set(key,mesh);return true;},
         getHex:async(id)=>window.fixtureRows.get(id)||null,
         getSubmapSummaries:async()=>[],
         getPlannerImports:async()=>[],
@@ -173,28 +176,46 @@ const {chromium}=require('playwright');
       const instance=gpu.unitMeshes.get('body'),matrix=instance.instanceMatrix.array;
       const y=matrix[13],scale=matrix[5];
       const bottom=y-instance.geometry.parameters.height*scale/2;
-      return {ground,scale,bottom,reportedScale:gpu.getStats().unitModelScale};
+      const leg=gpu.unitMeshes.get('leg');
+      if(!leg || leg.count<2)throw Error('Standing figure lacks leg geometry');
+      const legValues=leg.instanceMatrix.array,h=leg.geometry.parameters.height;
+      let minFoot=Infinity;
+      for(let j=0;j<leg.count;j++){
+        const offset=16*j;
+        minFoot=Math.min(minFoot,legValues[offset+13]-h*legValues[offset+5]/2);
+      }
+      return {ground,scale,bottom,minFoot,legs:leg.count,
+        reportedScale:gpu.getStats().unitModelScale};
     });
     assert.equal(unitTest.reportedScale,.5,'all unit models use half scale');
     assert.ok(Math.abs(unitTest.scale-.5)<1e-6,'GPU body mesh is half height');
     assert.ok(unitTest.bottom>=unitTest.ground,
       'model feet remain above visible terrain despite low analytic height');
-    const footTest=await page.evaluate(()=>{
-      const gpu=window.TribeNetGPU,leg=gpu.unitMeshes.get('leg');
-      if(!leg || leg.count<2)throw Error('Standing figure lacks leg geometry');
-      const ground=gpu.renderedGroundHeight(gpu.units[0]);
-      const values=leg.instanceMatrix.array,h=leg.geometry.parameters.height;
-      let minFoot=Infinity;
-      for(let n=0;n<leg.count;n++){
-        const offset=16*n;
-        const y=values[offset+13],scale=values[offset+5];
-        minFoot=Math.min(minFoot,y-h*scale/2);
-      }
-      return {minFoot,ground,legs:leg.count};
-    });
-    assert.ok(footTest.legs>=2,'human miniatures have visible supporting legs');
-    assert.ok(footTest.minFoot>=footTest.ground-.005,
+    assert.ok(unitTest.legs>=2,'human miniatures have visible supporting legs');
+    assert.ok(unitTest.minFoot>=unitTest.ground-.005,
       'all miniature feet are above highest nearby terrain instead of sinking');
+    // A simulated application restart clears ALL GPU geometry but retains
+    // its durable mesh store. Recreate GPU buffers from saved vertices/trees,
+    // not by invoking the terrain generator again.
+    await page.waitForFunction(()=>window.savedMeshes.size>=1,null,{timeout:30000});
+    const preRestore=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU;
+      const generated=gpu.stats.builds;
+      const persisted=window.savedMeshes.size;
+      gpu.invalidate();draw();
+      return {generated,persisted};
+    });
+    await page.waitForFunction(()=>
+      window.TribeNetGPU.diskStats.diskHits>=1 && window.TribeNetGPU.stats.chunks>=1,
+      null,{timeout:30000});
+    const restored=await page.evaluate(()=>({
+      generated:window.TribeNetGPU.stats.builds,
+      diskHits:window.TribeNetGPU.diskStats.diskHits,
+      restoredForests:[...window.TribeNetGPU.chunkCache.values()].reduce((n,r)=>n+r.trees,0)
+    }));
+    assert.ok(restored.diskHits>=1,'saved terrain geometry must be restored on GPU cache miss');
+    assert.equal(restored.generated,preRestore.generated,
+      'restoring terrain from disk must not call mesh-generation code');
     const numericTuning=await page.evaluate(()=>{
       document.getElementById('terrainDevToggle').click();
       const field=document.getElementById('terrain-number-waterHeight');

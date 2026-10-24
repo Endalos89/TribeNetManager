@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { TerrainMeshDiskCache } = require('./terrain-mesh-disk-cache');
 const { TribeNetDatabase } = require('./database');
 const { TurnManagerDatabase } = require('./turn-manager-database');
 const { ResultsDatabase } = require('./results-database');
@@ -43,6 +44,7 @@ let compendiumWindow;
 let database;
 let turnManagerDatabase;
 let resultsDatabase;
+let terrainMeshDiskCache;
 let currentView = normalizeView({ page: 'index.html', screen: 'launcher' });
 let pendingStartupView = null;
 let startupViewConsumed = false;
@@ -386,6 +388,9 @@ app.whenReady().then(() => {
   database = new TribeNetDatabase(app.getPath('userData'));
   turnManagerDatabase = new TurnManagerDatabase(app.getPath('userData'));
   resultsDatabase = new ResultsDatabase(app.getPath('userData'));
+  terrainMeshDiskCache = new TerrainMeshDiskCache(app.getPath('userData'));
+  // Old LRU files can be pruned asynchronously; no first-launch delay.
+  terrainMeshDiskCache.prune().catch(error=>console.warn('Terrain cache prune:',error));
   try { syncAllResultBaselines(); }
   catch (error) { console.error('Could not sync result baselines into Turn Manager', error); }
   pendingStartupView = consumeUpdateRestoreView();
@@ -402,6 +407,8 @@ app.on('before-quit', () => {
 });
 
 ipcMain.handle('hexes:area', (_event, bounds) => database.getHexesInArea(bounds));
+ipcMain.handle('terrain-mesh:read', (_event, key) => terrainMeshDiskCache.read(key));
+ipcMain.handle('terrain-mesh:write', (_event, key, mesh) => terrainMeshDiskCache.write(key,mesh));
 ipcMain.handle('app:open-compendium', (_event, entry, key) => openCompendiumWindow(entry, key));
 ipcMain.handle('hex:get', (_event, coordinate) => database.getHex(coordinate));
 ipcMain.handle('hex:save', (_event, hex, context) => database.saveHex(hex, context));
