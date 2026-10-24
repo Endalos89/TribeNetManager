@@ -209,7 +209,7 @@ const {chromium}=require('playwright');
       const gpu=window.TribeNetGPU;
       const anchorId=Math.floor(320/2)+':'+Math.floor(327/2);
       const existing=gpu.bestResident(anchorId,8);
-      if(!existing)throw Error('Fixture's known inner-core chunk was not loaded');
+      if(!existing)throw Error('Known inner-core fixture chunk was not loaded');
       const core=existing.ground.geometry.uuid;
       const treeInstances=existing.group.children.filter(o=>o.isInstancedMesh);
       const trees=treeInstances.map(o=>o.uuid);
