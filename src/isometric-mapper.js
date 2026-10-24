@@ -43,11 +43,15 @@ const IsoMapper = (() => {
       next.set(ref,terrain);
       if(terrainSnapshot.get(ref)!==terrain)changed.add(ref);
       const notes=String(data?.notes||'');
-      nextNotes.set(ref,notes);
-      if(notesSnapshot.get(ref)!==notes)decorationsChanged=true;
+      const prior=notesSnapshot.get(ref);
+      const rivers=prior && prior.notes===notes
+        ? prior.rivers
+        : [...G.rivers(data)].sort().join(',');
+      nextNotes.set(ref,{notes,rivers});
+      if((prior?.rivers||'')!==rivers)decorationsChanged=true;
     }
     for(const ref of terrainSnapshot.keys())if(!next.has(ref))changed.add(ref);
-    for(const ref of notesSnapshot.keys())if(!nextNotes.has(ref))decorationsChanged=true;
+    for(const [ref,prior] of notesSnapshot)if(!nextNotes.has(ref) && prior.rivers)decorationsChanged=true;
     const hadMesh=Boolean(window.TribeNetGPU?.chunkCache?.size);
     terrainSnapshot.clear();notesSnapshot.clear();
     for(const [ref,terrain] of next)terrainSnapshot.set(ref,terrain);
