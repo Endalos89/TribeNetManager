@@ -448,11 +448,13 @@ class GPUMap {
     return false;
   }
   dropDistantSubmaps(){
-    for(const [key,chunk] of this.chunkCache){
-      if(this.chunkTouchesRetention(chunk.id))continue;
-      this.disposeChunk(chunk);this.chunkCache.delete(key);
-    }
-    this.pendingChunks=this.pendingChunks.filter(t=>this.chunkTouchesRetention(t.id));
+    // Crossing a 30x21 submap boundary can happen during wheel-zoom because
+    // cursor-anchored zoom changes cameraX/Y. That is NOT a reason to destroy
+    // previously uploaded GPU geometry. Keep all resident meshes while under
+    // MAX_CHUNKS; evictUnused() handles actual memory pressure using LRU.
+    // Only abandon speculative tasks for remote regions, never visible work.
+    this.pendingChunks=this.pendingChunks.filter(t=>
+      this.chunkTouchesRetention(t.id)||this.visibleChunkIds.has(t.id));
     this.queueSignature=null;
   }
   invalidateHexes(hexes){
@@ -514,6 +516,10 @@ class GPUMap {
     this.scheduleIdleChunk();
   }
   scheduleIdleChunk(){
+    // During wheel/drag gestures, rendering already-resident geometry takes
+    // priority. No disk read, mesh construction or disposal should contend
+    // with the user's camera interaction. The settled redraw resumes work.
+    if(typeof IsoMapper!=='undefined'&&IsoMapper.interacting)return;
     if(this.idleBuildPending || this.diskReadBusy || !this.pendingChunks.length || !this.visible)return;
     const revision=this.generation;
     this.idleBuildPending=true;
@@ -523,6 +529,7 @@ class GPUMap {
         this.scheduleIdleChunk();return;
       }
       if(!this.visible||!this.pendingChunks.length)return;
+      if(typeof IsoMapper!=='undefined'&&IsoMapper.interacting)return;
       if(deadline && deadline.timeRemaining()<3 && !deadline.didTimeout){
         this.scheduleIdleChunk();return;
       }
@@ -607,12 +614,15 @@ class GPUMap {
     this.groundFaces=groundFaces;this.sampleTerrain=sample;this.tileAt=tileAt;
     const visible=new Set(tiles.map(chunkId));
     this.visibleChunkIds=visible;
-    // Only rebuild a queue when the requested chunk set or LOD actually
-    // changes, not on every small camera delta or unit animation.
+    // During interaction, never create offscreen jobs simply because zoom
+    // changed the visible set. A settled frame will prioritise missing meshes
+    // and then prefetch, without interfering with wheel events.
+    const interacting=typeof IsoMapper!=='undefined'&&IsoMapper.interacting;
     const signature=lod+'|'+[...visible].sort().join('|');
-    if(signature!==this.queueSignature){
+    if(interacting){
+      this.queueSignature=null;
+    }else if(signature!==this.queueSignature){
       this.queueSignature=signature;
-      // Camera changes reprioritise queued work but do not cancel it.
       this.queueBuilds(visible,lod);
     }
     // Update which cached meshes are displayed, allowing lower-detail
