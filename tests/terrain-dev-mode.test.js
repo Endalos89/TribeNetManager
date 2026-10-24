@@ -9,7 +9,7 @@ assert.equal(G.seed(S.WORLD_SEED),G.seed(String(S.WORLD_SEED)),
   'the permanent numeric world seed must not crash geometry module initialisation');
 assert.equal(G.reliefSeed,S.WORLD_SEED);
 assert.equal(G.coreRadius,Math.sqrt(3)/(1+Math.sqrt(3)));
-assert.equal(G.subdivisions(),16);
+assert.equal(G.subdivisions(),8);
 const A={col:30,row:20},B={col:30,row:21},square=G.sharedSquare(A,B);
 assert.ok(square,'adjacent hexes have one physical shared square');
 assert.ok(Math.abs(Math.hypot(square.corners[0].x-square.corners[1].x,square.corners[0].y-square.corners[1].y)-G.coreRadius)<1e-9,'connector is a real square');
@@ -33,8 +33,17 @@ for(const n of [1,2,3,4,5,6,7,12,23])assert.equal(new Set(U.diceSlots(n).map(p=>
 const previous=S.get(),raw=S.exportPreset(),parsed=JSON.parse(raw);
 assert.equal(parsed.worldSeed,S.WORLD_SEED);
 assert.equal(parsed.format,'tribenet-terrain-preset');
+const approved={hillAmplitude:.2,mountainHeight:.5,ruggedness:.28,ridgeSharpness:4.7,
+  coastWaterShare:.35,coastRoughness:.3,rockExposure:.62,meshQuality:8,
+  unitSpread:.38,treeSize:.65,treeDensity:4.75,waterHeight:.5,
+  plainsRelief:.045,plainsTexture:.5,waveStrength:0,foothillFlatness:.21,
+  cliffExposure:.5,shoreDetail:20};
+assert.deepEqual(S.defaults(),approved,'production defaults match the exact user-approved preset');
+assert.equal(S.definitions.meshQuality.min,8);
+assert.equal(S.definitions.meshQuality.max,8);
+
 S.set({hillAmplitude:.88,meshQuality:24,ruggedness:.23});
-assert.equal(G.subdivisions(),24);
+assert.equal(G.subdivisions(),8,'camera and meshQuality controls cannot change terrain topology');
 assert.equal(S.definitions.hillAmplitude.min,0,'hill scale can be turned off');
 assert.equal(S.definitions.mountainHeight.min,0,'mountain scale can be turned off');
 assert.ok(S.definitions.waterHeight.max>=.45,'water can be adjusted above the previous limit');
@@ -59,5 +68,5 @@ assert.equal(S.value('ruggedness'),.23);
 assert.throws(()=>S.importPreset(JSON.stringify({...parsed,worldSeed:12})),/seed/);
 S.importPreset(raw);
 assert.deepEqual(S.get(),previous);
-assert.equal(G.subdivisions(),16);
+assert.equal(G.subdivisions(),8);
 console.log('Fixed world seed, rhombitrihexagon connectors, seeded weights, die layouts and developer preset tests passed.');
