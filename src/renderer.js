@@ -114,13 +114,25 @@ function buildWorldGrid() {
 }
 function showLauncher() { $('launcherView').classList.remove('hidden'); $('mapperView').classList.add('hidden'); }
 function showMapper(options = {}) {
-  // The terrain view is the default mapper experience. Keep the classic
-  // renderer available through the switch, but do not make a new user opt in.
+  // Navigation must not depend on successful optional 3D initialisation.
+  // The 3D renderer used to call showMapper() again from setEnabled(), causing
+  // duplicate launcher listeners and re-entrant navigation.
+  const overview = options?.overview !== false;
+  $('launcherView').classList.add('hidden');
+  $('mapperView').classList.remove('hidden');
   if (typeof IsoMapper !== 'undefined' && !IsoMapper.enabled && $('mapperViewToggle')?.checked) {
-    IsoMapper.setEnabled(true, { overview: false });
+    try {
+      IsoMapper.setEnabled(true, { overview: false });
+    } catch (error) {
+      console.error('Could not enable 3D mapper; opening classic mapper instead', error);
+      $('mapperViewToggle').checked = false;
+      $('isoViewControls')?.classList.add('hidden');
+      document.body.classList.remove('isometric-mode');
+      const status = $('planStatus');
+      if (status) status.textContent = '3D terrain failed to initialise. Classic Mapper is available.';
+    }
   }
-  $('launcherView').classList.add('hidden'); $('mapperView').classList.remove('hidden');
-  if (options.overview !== false) showOverview();
+  if (overview) showOverview();
   else if (state.mode === 'detail') { resizeCanvas(); requestVisibleData(); draw(); }
 }
 function showOverview() {
