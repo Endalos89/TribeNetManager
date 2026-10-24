@@ -80,25 +80,30 @@ const {chromium}=require('playwright');
     assert.equal(actual.enabled,true,'3D mapper enabled');
     assert.ok(actual.canvas.w>400 && actual.canvas.h>200,'canvas visible');
     assert.equal(actual.renderer,'WebGL','Three.js must be the active renderer');
-    // A stationary camera must not try to eagerly build the entire 3x3
-    // knowledge window. Only visible chunks and up to 96 adjacent chunks are
-    // eligible for background mesh generation.
+    // Geometry preloading must have one fixed WORLD-SPACE footprint around
+    // the camera centre, regardless of viewport zoom. Visible chunks outside
+    // the footprint are allowed as additional on-demand work.
     const preloadBudget=await page.evaluate(()=>{
       const gpu=window.TribeNetGPU;
       return {
         visible:gpu.visibleChunkIds.size,
         active:gpu.activeChunkIds.size,
+        focus:new Set(gpu.focusChunkIds),
         pending:gpu.pendingChunks.length,
         extraneous:gpu.pendingChunks.filter(job=>!gpu.activeChunkIds.has(job.id)).length,
-        prefetchTarget:gpu.getStats().prefetchTarget
+        focusTarget:gpu.getStats().focusTarget,
+        focusRadiusChunks:gpu.getStats().focusRadiusChunks
       };
     });
-    assert.ok(preloadBudget.active<=preloadBudget.visible+96,
-      'GPU preloading is bounded to visible chunks plus a small nearby ring');
+    assert.equal(preloadBudget.focusTarget,169,
+      'fixed resident neighbourhood is 13x13 2x2-hex chunks, not the viewport size');
+    assert.equal(preloadBudget.focusRadiusChunks,6);
+    assert.ok(preloadBudget.active<=preloadBudget.visible+169,
+      'GPU preloading includes only the fixed centre area plus necessary visible chunks');
     assert.ok(preloadBudget.pending<=preloadBudget.active,
-      'do not generate whole adjacent submaps while the camera is stationary');
-    assert.equal(preloadBudget.extraneous,0,'all queued GPU chunks must be needed by current view');
-    assert.ok(preloadBudget.prefetchTarget<=96);
+      'do not generate the surrounding 3x3 submaps');
+    assert.equal(preloadBudget.extraneous,0,
+      'all queued GPU chunks must be in the fixed focus area or visible viewport');
 
     assert.ok(actual.overlayBackground==='transparent' || /rgba\([^)]*,\s*0(?:\.0+)?\)/.test(actual.overlayBackground),'transparent Canvas overlay must not hide WebGL terrain');
     assert.ok(actual.gpu?.chunks>=1,'GPU chunks built');
@@ -173,6 +178,31 @@ const {chromium}=require('playwright');
     assert.ok(zoomRetention.reused,
       'all existing GPU mesh buffers survive boundary-crossing zoom unchanged');
     assert.ok(zoomRetention.interaction,'zoom interaction should suspend background terrain construction');
+    // Once all geometry within the fixed centre area is resident, zooming
+    // repeatedly must NOT change the working set, generate meshes or restore
+    // anything from disk. This is independent of visible chunk culling.
+    await page.evaluate(()=>{state.scale=52;centerOnHex(315,327);draw();});
+    await page.waitForFunction(()=>{
+      const gpu=window.TribeNetGPU;
+      return gpu.pendingChunks.length===0 && !gpu.diskReadBusy && !gpu.idleBuildPending &&
+        [...gpu.focusChunkIds].every(id=>gpu.chunkCache.has(gpu.chunkKey(id,8)));
+    },null,{timeout:120000});
+    const stableCentre=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU;
+      const before={builds:gpu.stats.builds,restored:gpu.diskStats.diskHits,
+        memoryEvictions:gpu.stats.evictions,terrainInvalidations:gpu.stats.terrainInvalidations,
+        focus:[...gpu.focusChunkIds].sort().join('|'),resident:gpu.chunkCache.size};
+      for(const scale of [80,120,65,52,95,52]){
+        state.scale=scale;draw();
+      }
+      const after={builds:gpu.stats.builds,restored:gpu.diskStats.diskHits,
+        memoryEvictions:gpu.stats.evictions,terrainInvalidations:gpu.stats.terrainInvalidations,
+        focus:[...gpu.focusChunkIds].sort().join('|'),resident:gpu.chunkCache.size};
+      return {before,after};
+    });
+    assert.deepEqual(stableCentre.after,stableCentre.before,
+      'zoom with same centre must not change GPU residency or disk/generation counters');
+
 
     const selection=await page.evaluate(()=>{
       const c=baseCenter(315,327),screen=IsoMapper.project(c,IsoMapper.surface(c.x,c.y).z);
