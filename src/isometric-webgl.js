@@ -417,8 +417,22 @@ class GPUMap {
     raycaster.setFromCamera(new THREE.Vector2(2*x/rect.width-1,1-2*y/rect.height),this.camera);
     const objects=[...this.chunkCache.values()].filter(chunk=>chunk.group.visible).map(chunk=>chunk.ground);
     const intersection=raycaster.intersectObjects(objects,false)[0];
-    if(!intersection)return null;
-    return {x:intersection.point.x/1.5,y:intersection.point.z/1.5};
+    if(intersection)return {x:intersection.point.x/1.5,y:intersection.point.z/1.5};
+    // While streaming, a newly visible tile can have no GPU mesh yet.
+    // Project the ray against the analytic surface as a temporary fallback,
+    // instead of making original hex selection non-responsive until upload.
+    const plane=new THREE.Plane(new THREE.Vector3(0,1,0),-.14);
+    let world=raycaster.ray.intersectPlane(plane,new THREE.Vector3());
+    if(!world)return null;
+    for(let i=0;i<2;i++){
+      const z=this.sampleTerrain?.(world.x/1.5,world.z/1.5)?.z;
+      if(!Number.isFinite(z))break;
+      plane.constant=-z;
+      const next=raycaster.ray.intersectPlane(plane,new THREE.Vector3());
+      if(!next)break;
+      world=next;
+    }
+    return {x:world.x/1.5,y:world.z/1.5};
   }
   renderedGroundHeight(m){
     const analytic=Number(m.z)||0;
