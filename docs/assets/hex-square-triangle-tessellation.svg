@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 570" role="img" aria-label="Three full game hexagon outlines with smaller inner hexagons; independent square regions span each adjacent pair and a triangular region spans the triple junction.">
+<rect width="700" height="570" fill="#fff"/>
+<text x="34" y="42" font-family="Arial" font-size="20" fill="#193647" font-weight="bold">Shared-region terrain tessellation (to scale)</text>
+<polygon points="314.00,244.00 256.00,344.46 140.00,344.46 82.00,244.00 140.00,143.54 256.00,143.54" fill="none" stroke="#95a4ad" stroke-width="2.1" stroke-dasharray="7 6"/>
+<polygon points="488.00,344.46 430.00,444.92 314.00,444.92 256.00,344.46 314.00,244.00 430.00,244.00" fill="none" stroke="#95a4ad" stroke-width="2.1" stroke-dasharray="7 6"/>
+<polygon points="314.00,444.92 256.00,545.38 140.00,545.38 82.00,444.92 140.00,344.46 256.00,344.46" fill="none" stroke="#95a4ad" stroke-width="2.1" stroke-dasharray="7 6"/>
+<polygon points="271.54,244.00 234.77,307.69 161.23,307.69 124.46,244.00 161.23,180.31 234.77,180.31" fill="#d1e7d7" stroke="#355f6d" stroke-width="2"/>
+<polygon points="445.54,344.46 408.77,408.15 335.23,408.15 298.46,344.46 335.23,280.77 408.77,280.77" fill="#d9e6f8" stroke="#355f6d" stroke-width="2"/>
+<polygon points="271.54,444.92 234.77,508.61 161.23,508.61 124.46,444.92 161.23,381.23 234.77,381.23" fill="#f4e4cc" stroke="#355f6d" stroke-width="2"/>
+<polygon points="271.54,244.00 335.23,280.77 298.46,344.46 234.77,307.69" fill="#87d0c0" stroke="#1b8577" stroke-width="2"/>
+<polygon points="234.77,381.23 298.46,344.46 335.23,408.15 271.54,444.92" fill="#87d0c0" stroke="#1b8577" stroke-width="2"/>
+<polygon points="161.23,307.69 234.77,307.69 234.77,381.23 161.23,381.23" fill="#87d0c0" stroke="#1b8577" stroke-width="2"/>
+<polygon points="234.77,307.69 298.46,344.46 234.77,381.23" fill="#f8c86f" stroke="#ac792b" stroke-width="2.5"/>
+<text x="198" y="240" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="21" fill="#173647">A</text><text x="198" y="258" text-anchor="middle" font-family="Arial" font-size="12" fill="#173647">INNER HEX</text>
+<text x="372" y="340.45894683899485" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="21" fill="#173647">B</text><text x="372" y="358.45894683899485" text-anchor="middle" font-family="Arial" font-size="12" fill="#173647">INNER HEX</text>
+<text x="198" y="440.91789367798975" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="21" fill="#173647">C</text><text x="198" y="458.91789367798975" text-anchor="middle" font-family="Arial" font-size="12" fill="#173647">INNER HEX</text>
+<line x1="510" y1="148" x2="262" y2="339.45894683899485" stroke="#a97026" stroke-width="2"/>
+<text x="514" y="135" font-family="Arial" font-size="15" font-weight="bold" fill="#a97026">ONE TRIANGLE</text>
+<text x="514" y="153" font-family="Arial" font-size="12" fill="#506574">3 owners (A+B+C)</text>
+<line x1="515" y1="306" x2="285" y2="294.2294734194974" stroke="#1b8577" stroke-width="2"/>
+<text x="518" y="296" font-family="Arial" font-size="15" font-weight="bold" fill="#1b8577">ONE SQUARE</text>
+<text x="518" y="314" font-family="Arial" font-size="12" fill="#506574">2 owners (A+B)</text>
+<line x1="115" y1="475" x2="140" y2="344.45894683899485" stroke="#8f9da6" stroke-width="2"/>
+<text x="35" y="501" font-family="Arial" font-size="13" fill="#526a77">Dashed original gameplay hex overlay</text>
+<text x="35" y="527" font-family="Arial" font-size="12" fill="#526a77">Selection/movement use the original hexes, not the terrain pieces.</text>
+</svg>
