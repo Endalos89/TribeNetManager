@@ -5,9 +5,12 @@
  */
 import * as THREE from 'three';
 
-const CHUNK_SIZE=4;
-const MAX_CHUNKS=160;
-const PREFETCH_RING=1;
+// Smaller chunks cap synchronous CPU work when zoomed in; GPU instancing
+// still batches trees and units across each chunk.
+const CHUNK_SIZE=2;
+const MAX_CHUNKS=256;
+// Two 2x2-chunk rings cover the same neighbourhood as one former 4x4 ring.
+const PREFETCH_RING=2;
 const INITIAL_LOD=4;
 const baseTreeTrunk=new THREE.CylinderGeometry(.012,.017,.20,5);
 const baseTreeCrown=new THREE.ConeGeometry(.095,.24,6);
