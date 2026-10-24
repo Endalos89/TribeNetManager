@@ -79,6 +79,15 @@ async function initialize() {
   $('dataPathLabel').textContent = await window.tribenet.getUserDataPath();
   populateTerrain(); bindEvents(); await refreshSummaries(); buildWorldGrid(); await refreshPlannerHistory();
   window.tribenet.onUpdateStatus(updateUpdateUI);
+  // Warm all saved terrain after launch without delaying launcher interactions.
+  // getHexesInArea is an indexed query returning mapped records only.
+  setTimeout(async () => {
+    try {
+      const rows=await window.tribenet.getHexesInArea({minCol:0,maxCol:TOTAL_COLS-1,minRow:0,maxRow:TOTAL_ROWS-1});
+      for(const row of rows)if(!state.hexCache.has(row.coordinate))state.hexCache.set(row.coordinate,row);
+      if(typeof IsoMapper!=='undefined' && IsoMapper.preloadKnown)IsoMapper.preloadKnown();
+    } catch (error) { console.warn('Terrain background preload unavailable:',error); }
+  },0);
 }
 
 function populateTerrain() {
