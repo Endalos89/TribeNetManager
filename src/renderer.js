@@ -30,9 +30,32 @@ const terrainStyle = {
   SH: ['#b8c5b0', '#1a2418'], SW: ['#527f65', '#eff8f3'], TU: ['#9eae72', '#1d2415']
 };
 
+// Updating UI metadata or fetching an already-known hex must not masquerade
+// as discovering new terrain. Revisions are changed only when the actual
+// terrain/river state of a coordinate changes.
+class TerrainKnowledgeMap extends Map {
+  constructor(...args){super(...args);this.terrainRevision=0;this.decorationRevision=0;}
+  set(ref,data){
+    const had=this.has(ref),old=had?this.get(ref):null;
+    const previous=old?.terrain||'UNKNOWN',next=data?.terrain||'UNKNOWN';
+    const oldRivers=String(old?.notes||''),newRivers=String(data?.notes||'');
+    if(!had || previous!==next)this.terrainRevision++;
+    if(!had || oldRivers!==newRivers)this.decorationRevision++;
+    return super.set(ref,data);
+  }
+  delete(ref){
+    if(!this.has(ref))return false;
+    this.terrainRevision++;this.decorationRevision++;
+    return super.delete(ref);
+  }
+  clear(){
+    if(this.size){this.terrainRevision++;this.decorationRevision++;}
+    return super.clear();
+  }
+}
 const state = {
   mode: 'overview', cameraX: 0, cameraY: 0, scale: 29, selected: null,
-  hexCache: new Map(), loadedArea: null, dragging: false, dragStart: null, summaries: new Map(),
+  hexCache: new TerrainKnowledgeMap(), loadedArea: null, dragging: false, dragStart: null, summaries: new Map(),
   planningVisible: true, scoutingVisible: true, planningPanelCollapsed: true, planImport: null, planHistory: [], routeCache: null,
   selectedUnitHex: null, selectedRouteId: null
 };
@@ -180,6 +203,17 @@ function activeSubmaps(){
   }
   return active;
 }
+// A submap's database records must be present before we permanently cache
+// its geometry; otherwise rows that already existed on disk look like newly
+// discovered terrain and cause a cascade of unnecessary mesh invalidations.
+function isTerrainKnowledgeReady(){
+  return state.mode==='detail' && activeSubmaps().every(t=>loadedSubmaps.has(t.key));
+}
+window.TribeNetKnowledge={
+  ready:isTerrainKnowledgeReady,
+  pending:()=>activeSubmaps().filter(t=>!loadedSubmaps.has(t.key)).length,
+  terrainRevision:()=>state.hexCache.terrainRevision
+};
 function invalidateLoadedSubmaps(){
   loadedSubmaps.clear();loadingSubmaps.clear();
   requestVisibleData();

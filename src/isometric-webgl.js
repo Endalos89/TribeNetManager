@@ -20,7 +20,7 @@ const FIXED_TERRAIN_STEPS=8;
 const UNIT_MODEL_SCALE=.5;
 // Only change this identifier when geometry generation rules change, not
 // when the app release number increments. Known terrain/settings have separate keys.
-const MESH_GENERATOR_REVISION='terrain-fixed8-shore-20261024-r1';
+const MESH_GENERATOR_REVISION='terrain-fixed8-shore-components-20261024-r2';
 const baseTreeTrunk=new THREE.CylinderGeometry(.012,.017,.20,5);
 const baseTreeCrown=new THREE.ConeGeometry(.095,.24,6);
 const unitBox=new THREE.BoxGeometry(.12,.12,.085);
@@ -51,7 +51,7 @@ class GPUMap {
     this.diskStats={diskHits:0,diskMisses:0,diskWrites:0,diskErrors:0};
     this.groundHeightCache=new Map();this.meshRevision=0;
     this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
-    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0};
+    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,sharedUpdates:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0,knowledgePending:0,terrainMs:0,restorationMs:0,invalidatedChunks:0};
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
     this.waveMaterial=new THREE.LineBasicMaterial({color:0xc8e9d9,transparent:true,opacity:.58,depthWrite:false});
     this.treeMaterials={
@@ -137,6 +137,7 @@ class GPUMap {
     else if(reason==='terrain')this.stats.terrainInvalidations++;
     else if(reason==='reset')this.stats.fullResets++;
     record.ground.geometry.dispose();
+    record.shared?.geometry.dispose();
     record.waves?.geometry.dispose();
     // Free per-instance GPU buffers on LRU eviction; tree geometries and
     // materials are shared and intentionally retained.
@@ -176,18 +177,23 @@ class GPUMap {
     this.camera.lookAt(x,0,z);
     this.camera.updateMatrixWorld();
   }
-  newChunk(tiles,groundFaces,sample,steps){
+  newChunk(tiles,groundFaces,sample,steps,sharedOnly=false){
     const group=new THREE.Group();
-    const coords=[],colors=[];
+    const coords=[],colors=[],sharedCoords=[],sharedColors=[];
+    let coreFaces=0,sharedFaces=0;
+    let targetCoords=coords,targetColors=colors;
     const add=(p,c)=>{
-      coords.push(p.x*1.5,p.z||0,p.y*1.5);
-      colors.push(c.r,c.g,c.b);
+      targetCoords.push(p.x*1.5,p.z||0,p.y*1.5);
+      targetColors.push(c.r,c.g,c.b);
     };
     let facesCount=0;
     for(const t of tiles){
       const faces=groundFaces(t,steps);
       for(const f of faces){
-        if(f.points.length<3)continue;
+        if(f.points.length<3 || (sharedOnly && f.region==='core'))continue;
+        const immutable=f.region==='core';
+        targetCoords=immutable?coords:sharedCoords;
+        targetColors=immutable?colors:sharedColors;
         const c=this.color.set(f.color).clone();
         const marine=f.points.every(p=>p.water) ||
           (t.water && t.n.every(n=>n && (n.terrain==='O'||n.terrain==='L')));
@@ -200,6 +206,7 @@ class GPUMap {
         for(let k=1;k<f.points.length-1;k++){
           vertex(f.points[0]);vertex(f.points[k]);vertex(f.points[k+1]);
           facesCount++;
+          if(immutable)coreFaces++;else sharedFaces++;
         }
       }
     }
@@ -210,12 +217,19 @@ class GPUMap {
     const ground=new THREE.Mesh(geometry,this.meshMaterial);
     ground.frustumCulled=false;
     group.add(ground);
+    const borderGeometry=new THREE.BufferGeometry();
+    borderGeometry.setAttribute('position',new THREE.Float32BufferAttribute(sharedCoords,3));
+    borderGeometry.setAttribute('color',new THREE.Float32BufferAttribute(sharedColors,3));
+    borderGeometry.computeBoundingSphere();
+    const shared=new THREE.Mesh(borderGeometry,this.meshMaterial);
+    shared.frustumCulled=false;
+    group.add(shared);
     let count=0;
     const sites=[];
     const density=clamp(terrainSetting('treeDensity',2.5),.5,5);
     const scale=clamp(terrainSetting('treeSize',.55),.2,1.5);
     for(const t of tiles){
-      if(!t.known||!treeKind(t.data?.terrain))continue;
+      if(sharedOnly||!t.known||!treeKind(t.data?.terrain))continue;
       const rnd=seededRandom(t.ref+':gpu-forest');
       // World-aligned jittered candidates, no re-randomisation from camera.
       const amount=Math.round(9*density*(t.data.terrain==='JG'?1.2:1));
@@ -282,7 +296,7 @@ class GPUMap {
     addTreeInstances('trunk',baseTreeTrunk,this.treeMaterials.trunk,sites,.10,1);
     addTreeInstances('broad',baseTreeCrown,this.treeMaterials.broad,sites.filter(s=>!s.conifer),.32,1.45);
     addTreeInstances('conifer',baseTreeCrown,this.treeMaterials.conifer,sites.filter(s=>s.conifer),.32,1.15);
-    return {group,ground,waves,faces:facesCount,trees:count};
+    return {group,ground,shared,waves,faces:facesCount,coreFaces,sharedFaces,trees:count};
   }
   requestLater(){
     if(this.pendingFrame)return;
@@ -336,22 +350,36 @@ class GPUMap {
         type,matrices:Array.from(child.instanceMatrix.array.slice(0,child.count*16))
       });
     }
-    return {format:1,faces:record.faces,trees:record.trees,
+    return {format:2,faces:record.faces,trees:record.trees,
+      coreFaces:record.coreFaces,sharedFaces:record.sharedFaces,
       positions:Array.from(geometry.getAttribute('position').array),
       colors:Array.from(geometry.getAttribute('color').array),
+      sharedPositions:Array.from(record.shared.geometry.getAttribute('position').array),
+      sharedColors:Array.from(record.shared.geometry.getAttribute('color').array),
       waves:record.waves?Array.from(record.waves.geometry.getAttribute('position').array):null,
       instances};
   }
   restoreChunk(id,lod,data){
-    if(!data||data.format!==1||!Array.isArray(data.positions)||
-      !Array.isArray(data.colors)||data.positions.length!==data.colors.length||
-      data.positions.length<9||data.positions.length%3)throw Error('Invalid cached ground vertices');
+    if(!data||data.format!==2||!Array.isArray(data.positions)||
+      !Array.isArray(data.colors)||!Array.isArray(data.sharedPositions)||
+      !Array.isArray(data.sharedColors)||
+      data.positions.length!==data.colors.length||
+      data.sharedPositions.length!==data.sharedColors.length||
+      data.positions.length+data.sharedPositions.length<9 ||
+      data.positions.length%3 || data.sharedPositions.length%3)
+      throw Error('Invalid cached terrain components');
     const geometry=new THREE.BufferGeometry();
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(data.positions,3));
     geometry.setAttribute('color',new THREE.Float32BufferAttribute(data.colors,3));
     geometry.computeBoundingSphere();
     const group=new THREE.Group(),ground=new THREE.Mesh(geometry,this.meshMaterial);
     ground.frustumCulled=false;group.add(ground);
+    const sharedGeometry=new THREE.BufferGeometry();
+    sharedGeometry.setAttribute('position',new THREE.Float32BufferAttribute(data.sharedPositions,3));
+    sharedGeometry.setAttribute('color',new THREE.Float32BufferAttribute(data.sharedColors,3));
+    sharedGeometry.computeBoundingSphere();
+    const shared=new THREE.Mesh(sharedGeometry,this.meshMaterial);
+    shared.frustumCulled=false;group.add(shared);
     let waves=null;
     if(data.waves?.length){
       const waveGeometry=new THREE.BufferGeometry();
@@ -359,13 +387,13 @@ class GPUMap {
       waves=new THREE.LineSegments(waveGeometry,this.waveMaterial);
       waves.frustumCulled=false;waves.renderOrder=2;group.add(waves);
     }
-    const shared={
+    const forestTypes={
       trunk:[baseTreeTrunk,this.treeMaterials.trunk],
       broad:[baseTreeCrown,this.treeMaterials.broad],
       conifer:[baseTreeCrown,this.treeMaterials.conifer]
     };
     for(const item of data.instances||[]){
-      const descriptor=shared[item.type];
+      const descriptor=forestTypes[item.type];
       if(!descriptor||!Array.isArray(item.matrices)||item.matrices.length%16!==0)
         throw Error('Invalid cached forest instances');
       const count=item.matrices.length/16;
@@ -375,8 +403,9 @@ class GPUMap {
       inst.instanceMatrix.needsUpdate=true;
       inst.frustumCulled=false;group.add(inst);
     }
-    const record={id,lod,key:this.chunkKey(id,lod),group,ground,waves,
-      faces:data.faces,trees:data.trees,serial:++this.meshRevision};
+    const record={id,lod,key:this.chunkKey(id,lod),group,ground,shared,waves,
+      faces:data.faces,coreFaces:data.coreFaces,sharedFaces:data.sharedFaces,
+      trees:data.trees,serial:++this.meshRevision};
     this.chunkCache.set(record.key,record);this.chunkGroup.add(group);
     return record;
   }
@@ -414,6 +443,38 @@ class GPUMap {
     this.stats.builds++;
     this.saveToDisk(record);
     return record;
+  }
+  refreshSharedChunk(id,lod){
+    const record=this.bestResident(id,lod);
+    if(!record||!record.dirtyShared)return false;
+    const [cx,cy]=id.split(':').map(Number),cells=[];
+    for(let col=cx*CHUNK_SIZE;col<(cx+1)*CHUNK_SIZE;col++)
+      for(let row=cy*CHUNK_SIZE;row<(cy+1)*CHUNK_SIZE;row++)
+        if(col>=0&&row>=0&&col<TOTAL_COLS&&row<TOTAL_ROWS)
+          cells.push(this.tileAt(col,row));
+    const begun=performance.now();
+    const partial=this.newChunk(cells,this.groundFaces,this.sampleTerrain,lod,true);
+    // Preserve the exact existing immutable core GPU buffer and forest
+    // instances. Only the fog/edge/corner mesh is replaced and re-persisted.
+    record.group.remove(record.shared);
+    record.shared.geometry.dispose();
+    record.shared=partial.shared;
+    partial.group.remove(partial.shared);
+    record.group.add(partial.shared);
+    if(record.waves){
+      record.group.remove(record.waves);record.waves.geometry.dispose();
+    }
+    record.waves=partial.waves;
+    if(partial.waves){partial.group.remove(partial.waves);record.group.add(partial.waves);}
+    partial.ground.geometry.dispose();
+    record.sharedFaces=partial.sharedFaces;
+    record.faces=record.coreFaces+record.sharedFaces;
+    record.serial=++this.meshRevision;
+    record.dirtyShared=false;
+    this.stats.sharedUpdates++;
+    this.stats.terrainMs+=performance.now()-begun;
+    this.saveToDisk(record);
+    return true;
   }
   // Submap knowledge is cached separately by renderer.js. Prewarm GPU
   // geometry nearest the camera and inside the current/adjacent 3x3 submaps
@@ -460,14 +521,22 @@ class GPUMap {
     // updateFocusArea() handles genuine world-space camera movement.
     this.queueSignature=null;
   }
-  invalidateHexes(hexes){
-    if(!hexes?.length)return;
-    const ids=new Set(hexes.map(p=>Math.floor(p.col/CHUNK_SIZE)+':'+Math.floor(p.row/CHUNK_SIZE)));
-    for(const [key,record] of this.chunkCache)if(ids.has(record.id)){
-      this.disposeChunk(record,'terrain');this.chunkCache.delete(key);
+  invalidateHexes(changedHexes,affectedHexes=changedHexes){
+    if(!changedHexes?.length)return;
+    const chunkId=p=>Math.floor(p.col/CHUNK_SIZE)+':'+Math.floor(p.row/CHUNK_SIZE);
+    const direct=new Set(changedHexes.map(chunkId));
+    const touched=new Set((affectedHexes||[]).map(chunkId));
+    for(const [key,record] of this.chunkCache){
+      if(direct.has(record.id)){
+        this.disposeChunk(record,'terrain');this.chunkCache.delete(key);
+      }else if(touched.has(record.id)){
+        // Neighbour discovery only affects the shared border/corner surface.
+        // Never dispose the immutable inner-core GPU buffer.
+        record.dirtyShared=true;
+      }
     }
-    this.pendingChunks=this.pendingChunks.filter(t=>!ids.has(t.id));
-    // Re-schedule only the changed chunks next time; all other buffers survive.
+    this.pendingChunks=this.pendingChunks.filter(t=>!direct.has(t.id));
+    this.stats.invalidatedChunks+=direct.size;
     this.queueSignature=null;
   }
   updateFocusArea(){
@@ -513,11 +582,13 @@ class GPUMap {
     const rank=new Map(ordered.map((id,index)=>[id,index]));
     const pendingById=new Map(this.pendingChunks.map(job=>[job.id,job]));
     for(const id of ordered){
-      if(!this.chunkCache.has(this.chunkKey(id,lod))&&!pendingById.has(id))
-        pendingById.set(id,{id,lod});
+      const resident=this.chunkCache.get(this.chunkKey(id,lod));
+      if((!resident||resident.dirtyShared)&&!pendingById.has(id))
+        pendingById.set(id,{id,lod,sharedOnly:Boolean(resident?.dirtyShared)});
     }
     this.pendingChunks=[...pendingById.values()]
-      .filter(job=>rank.has(job.id)&&!this.chunkCache.has(this.chunkKey(job.id,job.lod)))
+      .filter(job=>rank.has(job.id)&&(!this.chunkCache.has(this.chunkKey(job.id,job.lod))||
+        this.chunkCache.get(this.chunkKey(job.id,job.lod))?.dirtyShared))
       .sort((a,b)=>rank.get(a.id)-rank.get(b.id))
       .slice(0,Math.max(MAX_CHUNKS,priority.length));
     this.scheduleIdleChunk();
@@ -527,6 +598,11 @@ class GPUMap {
     // priority. No disk read, mesh construction or disposal should contend
     // with the user's camera interaction. The settled redraw resumes work.
     if(typeof IsoMapper!=='undefined'&&IsoMapper.interacting)return;
+    if(window.TribeNetKnowledge && !window.TribeNetKnowledge.ready()){
+      this.stats.knowledgePending=window.TribeNetKnowledge.pending();
+      return;
+    }
+    this.stats.knowledgePending=0;
     if(this.idleBuildPending || this.diskReadBusy || !this.pendingChunks.length || !this.visible)return;
     const revision=this.generation;
     this.idleBuildPending=true;
@@ -537,11 +613,22 @@ class GPUMap {
       }
       if(!this.visible||!this.pendingChunks.length)return;
       if(typeof IsoMapper!=='undefined'&&IsoMapper.interacting)return;
+      if(window.TribeNetKnowledge&&!window.TribeNetKnowledge.ready())return;
       if(deadline && deadline.timeRemaining()<3 && !deadline.didTimeout){
         this.scheduleIdleChunk();return;
       }
       const next=this.pendingChunks.shift();
-      if(!next || this.chunkCache.has(this.chunkKey(next.id,next.lod))){
+      if(!next){
+        this.scheduleIdleChunk();return;
+      }
+      if(next.sharedOnly){
+        try{
+          this.refreshSharedChunk(next.id,next.lod);
+          this.requestLater();
+        }catch(error){this.failed=true;console.error('GPU border mesh update failed:',error);}
+        this.scheduleIdleChunk();return;
+      }
+      if(this.chunkCache.has(this.chunkKey(next.id,next.lod))){
         this.scheduleIdleChunk();return;
       }
       // Try durable geometry before recalculating triangles or scenery.
@@ -551,12 +638,14 @@ class GPUMap {
       const reader=window.tribenet?.loadTerrainMesh;
       if(key && typeof reader==='function' && !this.diskMissKeys.has(key)){
         this.diskReadBusy=true;
+        const restoredAt=performance.now();
         Promise.resolve().then(()=>reader(key)).then(data=>{
           if(data && this.persistentKey(next.id,next.lod)===key &&
             this.activeChunkIds.has(next.id) &&
             !this.chunkCache.has(this.chunkKey(next.id,next.lod))){
             this.restoreChunk(next.id,next.lod,data);
-            this.diskStats.diskHits++;this.evictUnused();this.requestLater();
+            this.diskStats.diskHits++;this.stats.restorationMs+=performance.now()-restoredAt;
+            this.evictUnused();this.requestLater();
           }else if(!data){
             this.diskStats.diskMisses++;this.diskMissKeys.add(key);
             this.pendingChunks.unshift(next);
@@ -573,7 +662,9 @@ class GPUMap {
       try{
         // If terrain knowledge changed during an async read, never upload the
         // stale generated mesh. queueBuilds will schedule the new fingerprint.
+        const started=performance.now();
         this.terrainChunk(next.id,next.lod);
+        this.stats.terrainMs+=performance.now()-started;
         this.evictUnused();this.requestLater();
       }catch(error){
         this.failed=true;console.error('GPU terrain chunk generation failed:',error);
@@ -632,6 +723,9 @@ class GPUMap {
     }else if(signature!==this.queueSignature){
       this.queueSignature=signature;
       this.queueBuilds(visible,lod);
+    }else if(this.pendingChunks.length){
+      // Data hydration may have completed without moving the camera.
+      this.scheduleIdleChunk();
     }
     // Update which cached meshes are displayed, allowing lower-detail
     // resident chunks to cover the gap until the new target LOD exists.
@@ -654,7 +748,8 @@ class GPUMap {
     if(rect.width<=0||rect.height<=0)return null;
     const raycaster=new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(2*x/rect.width-1,1-2*y/rect.height),this.camera);
-    const objects=[...this.chunkCache.values()].filter(chunk=>chunk.group.visible).map(chunk=>chunk.ground);
+    const objects=[...this.chunkCache.values()].filter(chunk=>chunk.group.visible)
+      .flatMap(chunk=>chunk.shared?[chunk.ground,chunk.shared]:[chunk.ground]);
     const intersection=raycaster.intersectObjects(objects,false)[0];
     if(intersection)return {x:intersection.point.x/1.5,y:intersection.point.z/1.5};
     // While streaming, a newly visible tile can have no GPU mesh yet.
@@ -694,7 +789,7 @@ class GPUMap {
       [-radius*.7,-radius*.7],[radius*.7,-radius*.7],
       [-radius*.7,radius*.7],[radius*.7,radius*.7]];
     let highest=originHeight;
-    const surfaces=neighbours.map(r=>r.ground);
+    const surfaces=neighbours.flatMap(r=>r.shared?[r.ground,r.shared]:[r.ground]);
     for(const [dx,dy] of positions){
       const x=m.x+dx,y=m.y+dy;
       const analytic=this.sampleTerrain?.(x,y)?.z;

@@ -89,3 +89,42 @@ The 3×3 **submap record** window continues loading underlying gameplay terrain 
 The *Terrain Dev* statistics have been separated: **memory evicted** counts only actual LRU capacity evictions, **terrain changed** counts geometry invalidated by newly known or corrected terrain data, and **cache resets** counts explicit full invalidations (e.g. changing a terrain-generation preset). Previously, all three events were lumped together under `evicted`, obscuring the reason. The HUD also shows the stable centre-area target so zoom culling cannot be confused with GPU unloading.
 
 The full-browser regression waits for all 169 focus meshes to be cached and then zooms in and out repeatedly without changing the centre: the exact set of focus chunks, resident buffer count, number of mesh generations, disk restores, memory-pressure evictions and terrain invalidations must remain unchanged. This ensures new releases cannot accidentally reintroduce a zoom-dependent geometry preload footprint.
+
+
+## 24 October 2026 — durable core geometry and hydrated submap knowledge
+
+The mapper now distinguishes an **immutable inner-core buffer** from an independent
+**shared border/corner GPU buffer**. Inside a 2×2-hex chunk each known inner core
+is generated using the fixed 8-subdivision topology and held alongside shared
+regions (which depend on adjacent known/unknown terrain state). The core's
+GPU vertex buffer and seeded forest instances remain resident when a neighbour
+is revealed: only the shared border/corner buffer is updated. Genuine changes
+to the owner's own terrain still rebuild that owner's containing chunk.
+
+Disk storage is versioned as **format 2**, storing separate position and colour
+arrays for immutable core and transition triangles. A new generator fingerprint
+(`terrain-fixed8-shore-components-20261024-r2`) ensures older combined files
+are never misread; legacy files are left alone until ordinary disk budget
+pruning. The first v2 render can regenerate chunks once; subsequent launches
+load core+shared buffers from disk using the exact historical known-state key.
+
+A 3×3 submap **knowledge hydration barrier** prevents any disk restoration or
+geometry construction while records for one of the nine required neighbouring
+submaps are still being fetched asynchronously. This avoids repeatedly building
+fog geometry against temporarily missing known rows, then discarding it when
+those rows arrive. Existing resident geometry is still rendered during an
+outstanding request. Once all records have arrived the queued meshes resume.
+
+A revisioned Map tracks terrain-code changes and river-note changes separately.
+Zoom, pan, mouse interaction and frame redraws do not increment either revision;
+unchanged revisions mean no full terrain snapshot scan and no invalidation.
+Historical turn playback has its own visibility revision and baseline state, so
+replay discoveries continue to update the appropriate shared regions.
+
+**Terrain Dev** now shows core rebuilds, shared-border updates, awaiting
+submaps, CPU milliseconds spent generating geometry and milliseconds spent
+restoring cached geometry. The CPU metrics are cumulative and complement the
+much smaller GPU submission time. Browser tests exercise real mouse-wheel
+zoom while a database query is delayed, proving that no geometry can be built
+against incomplete knowledge, and that a neighbour reveal preserves inner-core
+GPU geometry and forest instances.

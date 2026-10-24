@@ -202,6 +202,93 @@ const {chromium}=require('playwright');
     });
     assert.deepEqual(stableCentre.after,stableCentre.before,
       'zoom with same centre must not change GPU residency or disk/generation counters');
+    // Discover a neighbour AFTER the main chunk is complete. The immutable
+    // inner-core GPU geometry and forests must survive, while only shared
+    // border/corner triangles are recomputed.
+    const neighbouringReveal=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU;
+      const anchorId=Math.floor(320/2)+':'+Math.floor(327/2);
+      const existing=gpu.bestResident(anchorId,8);
+      if(!existing)throw Error('Known inner-core fixture chunk was not loaded');
+      const core=existing.ground.geometry.uuid;
+      const treeInstances=existing.group.children.filter(o=>o.isInstancedMesh);
+      const trees=treeInstances.map(o=>o.uuid);
+      const sharedBefore=existing.shared.geometry.uuid;
+      const sharedUpdates=gpu.stats.sharedUpdates;
+      const coordinate=coordinateFor(322,327);
+      state.hexCache.set(coordinate,{...parseCoordinate(coordinate),coordinate,terrain:'O',notes:''});
+      draw();
+      const updated=gpu.bestResident(anchorId,8);
+      return {anchorId,core,trees,sharedBefore,sharedUpdates,
+        currentCore:updated?.ground.geometry.uuid,
+        currentTrees:updated?.group.children.filter(o=>o.isInstancedMesh).map(o=>o.uuid)};
+    });
+    assert.equal(neighbouringReveal.currentCore,neighbouringReveal.core,
+      'revealing a neighbour must not discard immutable core vertex buffers');
+    assert.deepEqual(neighbouringReveal.currentTrees,neighbouringReveal.trees,
+      'neighbour discovery must retain seeded forest instance GPU buffers');
+    await page.waitForFunction(({id,original})=>{
+      const gpu=window.TribeNetGPU,record=gpu.bestResident(id,8);
+      return record&&!record.dirtyShared&&
+        gpu.stats.sharedUpdates>original;
+    },{id:neighbouringReveal.anchorId,original:neighbouringReveal.sharedUpdates},{timeout:30000});
+    const sharedRefresh=await page.evaluate(id=>{
+      const gpu=window.TribeNetGPU,record=gpu.bestResident(id,8);
+      return {core:record.ground.geometry.uuid,shared:record.shared.geometry.uuid,
+        sharedUpdates:gpu.stats.sharedUpdates};
+    },neighbouringReveal.anchorId);
+    assert.equal(sharedRefresh.core,neighbouringReveal.core);
+    assert.notEqual(sharedRefresh.shared,neighbouringReveal.sharedBefore,
+      'border/corner geometry updates independently when a neighbour is discovered');
+
+    // A real async database response must block geometry generation until
+    // all current+adjacent submaps have been hydrated, even if wheel zoom
+    // occurs while the query is unresolved. Prior resident meshes stay intact.
+    await page.evaluate(()=>{
+      window.stalledTerrainQuery=false;window.releaseTerrainQuery=null;
+      const original=window.tribenet.getHexesInArea;
+      window.originalAreaRead=original;
+      window.tribenet.getHexesInArea=async bounds=>{
+        if(!window.stalledTerrainQuery){
+          window.stalledTerrainQuery=true;
+          await new Promise(resolve=>{window.releaseTerrainQuery=resolve;});
+        }
+        return original(bounds);
+      };
+      centerOnHex(355,327);
+      state.scale=52;draw();
+    });
+    await page.waitForFunction(()=>window.stalledTerrainQuery===true,null,{timeout:15000});
+    const beforeHydration=await page.evaluate(()=>({
+      builds:window.TribeNetGPU.stats.builds,
+      hits:window.TribeNetGPU.diskStats.diskHits,
+      pending:window.TribeNetKnowledge.pending(),
+      ready:window.TribeNetKnowledge.ready()
+    }));
+    assert.equal(beforeHydration.ready,false,'loading adjacent submaps is a geometry generation barrier');
+    assert.ok(beforeHydration.pending>0);
+    await page.mouse.move(700,450);
+    await page.mouse.wheel(0,-140);
+    await page.waitForTimeout(260);
+    const duringHydration=await page.evaluate(()=>({
+      builds:window.TribeNetGPU.stats.builds,
+      hits:window.TribeNetGPU.diskStats.diskHits,
+      ready:window.TribeNetKnowledge.ready()
+    }));
+    assert.equal(duringHydration.ready,false);
+    assert.equal(duringHydration.builds,beforeHydration.builds,
+      'pending submap data must prevent generation against incomplete knowledge');
+    assert.equal(duringHydration.hits,beforeHydration.hits,
+      'pending submap data must prevent uploading inappropriate old disk meshes');
+    await page.evaluate(()=>{
+      window.releaseTerrainQuery();
+      window.tribenet.getHexesInArea=window.originalAreaRead;
+    });
+    await page.waitForFunction(()=>window.TribeNetKnowledge.ready(),null,{timeout:15000});
+    await page.waitForFunction(()=>window.TribeNetGPU.chunkCache.size>=1 &&
+      window.TribeNetGPU.getStats().knowledgePending===0,null,{timeout:30000});
+    await page.evaluate(()=>{centerOnHex(315,327);state.scale=52;draw();});
+
 
 
     const selection=await page.evaluate(()=>{
