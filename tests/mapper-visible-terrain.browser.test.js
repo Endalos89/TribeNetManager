@@ -145,6 +145,35 @@ const {chromium}=require('playwright');
       return geometry===gpu.bestResident(id,8)?.ground.geometry;
     },dataReuse.centreId);
     assert.ok(unchanged,'revealing another distant hex must preserve cached local GPU geometry');
+    // A cursor-anchored zoom can move the camera centre across the boundary
+    // between 30x21 submaps. It must never DISCARD existing GPU buffers merely
+    // because the 3x3 knowledge window changed, while below the LRU budget.
+    const zoomRetention=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU;
+      const original={x:state.cameraX,y:state.cameraY,scale:state.scale};
+      centerOnHex(329,327);state.scale=52;draw();
+      const anchorBefore=gpu.lastCentreSubmap;
+      const countBefore=gpu.chunkCache.size;
+      const evictedBefore=gpu.stats.evictions;
+      const records=new Map([...gpu.chunkCache].map(([key,v])=>[key,v.ground.geometry.uuid]));
+      setZoom(155,1200,320);
+      draw();
+      const anchorAfter=gpu.lastCentreSubmap;
+      const evictedAfter=gpu.stats.evictions;
+      const reused=[...records].every(([key,uuid])=>gpu.chunkCache.get(key)?.ground.geometry.uuid===uuid);
+      const interaction=IsoMapper.interacting;
+      state.cameraX=original.x;state.cameraY=original.y;state.scale=original.scale;draw();
+      return {anchorBefore,anchorAfter,countBefore,evictedBefore,evictedAfter,reused,interaction};
+    });
+    assert.notEqual(zoomRetention.anchorAfter,zoomRetention.anchorBefore,
+      'test must cross a submap boundary during cursor-anchored zoom');
+    assert.ok(zoomRetention.countBefore<520,'test must exercise cache below GPU memory limit');
+    assert.equal(zoomRetention.evictedAfter,zoomRetention.evictedBefore,
+      'zoom must not evict resident meshes just because the camera crossed a submap boundary');
+    assert.ok(zoomRetention.reused,
+      'all existing GPU mesh buffers survive boundary-crossing zoom unchanged');
+    assert.ok(zoomRetention.interaction,'zoom interaction should suspend background terrain construction');
+
     const selection=await page.evaluate(()=>{
       const c=baseCenter(315,327),screen=IsoMapper.project(c,IsoMapper.surface(c.x,c.y).z);
       return {screen,picked:IsoMapper.pick(screen.x,screen.y)};
