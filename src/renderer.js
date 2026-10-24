@@ -108,6 +108,9 @@ async function initialize() {
     try {
       const rows=await window.tribenet.getHexesInArea({minCol:0,maxCol:TOTAL_COLS-1,minRow:0,maxRow:TOTAL_ROWS-1});
       for(const row of rows)if(!state.hexCache.has(row.coordinate))state.hexCache.set(row.coordinate,row);
+      // A successful whole-world query authoritatively hydrates every submap.
+      // It must also unlock any active mapper that opened while this ran.
+      if(Array.isArray(rows))markWholeWorldHydrated();
       if(typeof IsoMapper!=='undefined' && IsoMapper.preloadKnown)IsoMapper.preloadKnown();
     } catch (error) { console.warn('Terrain background preload unavailable:',error); }
   },0);
@@ -187,13 +190,20 @@ function visibleBounds() {
 // Changing zoom or panning inside this window NEVER re-queries the database.
 // GPU geometry has a separate bounded, lazy cache and is not tied to records.
 const loadedSubmaps=new Set(),loadingSubmaps=new Set();
-let areaRequestTimer=null;
+const HYDRATION_GRACE_MS=2400;
+let knowledgeStartedAt=0,knowledgeFailures=0,knowledgeFallbackCount=0;
+let knowledgeRetryTimer=null,knowledgeResumeTimer=null;
 const submapKey=(c,r)=>c+':'+r;
 function activeSubmaps(){
-  const nearest=nearestHex(state.cameraX,state.cameraY);
-  const col=Math.max(0,Math.min(Math.floor(TOTAL_COLS/HEX_COLS)-1,
+  // The camera is allowed outside a hex's exact polygon (e.g. while
+  // zooming off an edge). A null nearestHex must not disable DB hydration.
+  const nearest=nearestHex(state.cameraX,state.cameraY)||{
+    globalCol:Math.max(0,Math.min(TOTAL_COLS-1,Math.round((state.cameraX-1)/1.5))),
+    globalRow:Math.max(0,Math.min(TOTAL_ROWS-1,Math.round(state.cameraY/SQRT3)))
+  };
+  const col=Math.max(0,Math.min(Math.ceil(TOTAL_COLS/HEX_COLS)-1,
     Math.floor(nearest.globalCol/HEX_COLS)));
-  const row=Math.max(0,Math.min(Math.floor(TOTAL_ROWS/HEX_ROWS)-1,
+  const row=Math.max(0,Math.min(Math.ceil(TOTAL_ROWS/HEX_ROWS)-1,
     Math.floor(nearest.globalRow/HEX_ROWS)));
   const active=[];
   for(let dc=-1;dc<=1;dc++)for(let dr=-1;dr<=1;dr++){
@@ -203,57 +213,99 @@ function activeSubmaps(){
   }
   return active;
 }
-// A submap's database records must be present before we permanently cache
-// its geometry; otherwise rows that already existed on disk look like newly
-// discovered terrain and cause a cascade of unnecessary mesh invalidations.
+function isTerrainKnowledgeComplete(){
+  return state.mode==='detail'&&activeSubmaps().every(t=>loadedSubmaps.has(t.key));
+}
 function isTerrainKnowledgeReady(){
-  return state.mode==='detail' && activeSubmaps().every(t=>loadedSubmaps.has(t.key));
+  if(state.mode!=='detail')return false;
+  if(isTerrainKnowledgeComplete())return true;
+  // An IPC failure or indefinitely pending database request must never
+  // leave the entire 3D world permanently black. Render an in-memory,
+  // temporary fog-safe mesh after the grace interval. NEVER persist it
+  // until the records are confirmed fully hydrated.
+  return knowledgeStartedAt>0&&Date.now()-knowledgeStartedAt>=HYDRATION_GRACE_MS;
+}
+function finishHydration(){
+  if(isTerrainKnowledgeComplete())knowledgeStartedAt=0;
+  if(window.TribeNetGPU?.visible)window.TribeNetGPU.scheduleIdleChunk();
+}
+function ensureTerrainKnowledge(){
+  if(state.mode==='detail'&&!isTerrainKnowledgeComplete())requestVisibleData();
 }
 window.TribeNetKnowledge={
   ready:isTerrainKnowledgeReady,
+  complete:isTerrainKnowledgeComplete,
   pending:()=>activeSubmaps().filter(t=>!loadedSubmaps.has(t.key)).length,
-  terrainRevision:()=>state.hexCache.terrainRevision
+  errors:()=>knowledgeFailures,
+  fallback:()=>!isTerrainKnowledgeComplete()&&isTerrainKnowledgeReady(),
+  terrainRevision:()=>state.hexCache.terrainRevision,
+  ensure:ensureTerrainKnowledge
 };
 function invalidateLoadedSubmaps(){
   loadedSubmaps.clear();loadingSubmaps.clear();
+  knowledgeStartedAt=0;
+  clearTimeout(knowledgeRetryTimer);clearTimeout(knowledgeResumeTimer);
   requestVisibleData();
 }
 function requestVisibleData() {
   if(state.mode!=='detail')return;
-  const requested=activeSubmaps();
-  const wanted=new Set(requested.map(t=>t.key));
-  // An old submap can be forgotten only after the centre has moved outside
-  // the 3x3 window; shared neighbouring submaps remain loaded.
-  for(const key of loadedSubmaps)if(!wanted.has(key))loadedSubmaps.delete(key);
-  const missing=requested.filter(t=>!loadedSubmaps.has(t.key) && !loadingSubmaps.has(t.key));
+  const missing=activeSubmaps().filter(t=>
+    !loadedSubmaps.has(t.key)&&!loadingSubmaps.has(t.key));
   if(!missing.length)return;
-  clearTimeout(areaRequestTimer);
-  areaRequestTimer=setTimeout(async()=>{
-    // A single indexed query covers newly entered submaps, not every wheel
-    // gesture. Current and adjacent records remain untouched on small moves.
-    const minCol=Math.min(...missing.map(x=>x.col))*HEX_COLS;
-    const maxCol=Math.min(TOTAL_COLS-1,(Math.max(...missing.map(x=>x.col))+1)*HEX_COLS-1);
-    const minRow=Math.min(...missing.map(x=>x.row))*HEX_ROWS;
-    const maxRow=Math.min(TOTAL_ROWS-1,(Math.max(...missing.map(x=>x.row))+1)*HEX_ROWS-1);
-    missing.forEach(t=>loadingSubmaps.add(t.key));
-    try{
-      const rows=await window.tribenet.getHexesInArea({minCol,maxCol,minRow,maxRow});
-      for(const row of rows) {
+  // Claim work immediately. The old debounce didn't mark submaps as pending
+  // until the timer fired, so frequent map events could keep cancelling it.
+  for(const t of missing)loadingSubmaps.add(t.key);
+  if(!knowledgeStartedAt){
+    knowledgeStartedAt=Date.now();
+    clearTimeout(knowledgeResumeTimer);
+    knowledgeResumeTimer=setTimeout(()=>{
+      if(!isTerrainKnowledgeComplete()){
+        knowledgeFallbackCount++;
+        finishHydration();
+        draw();
+      }
+    },HYDRATION_GRACE_MS+20);
+  }
+  // Group new submaps into one indexed SQLite read, retaining every completed
+  // submap for this session even as the centre moves. Never re-query unchanged
+  // map knowledge merely because zoom/pan changes the current 3x3 window.
+  const minCol=Math.min(...missing.map(x=>x.col))*HEX_COLS;
+  const maxCol=Math.min(TOTAL_COLS-1,(Math.max(...missing.map(x=>x.col))+1)*HEX_COLS-1);
+  const minRow=Math.min(...missing.map(x=>x.row))*HEX_ROWS;
+  const maxRow=Math.min(TOTAL_ROWS-1,(Math.max(...missing.map(x=>x.row))+1)*HEX_ROWS-1);
+  Promise.resolve().then(()=>window.tribenet.getHexesInArea({minCol,maxCol,minRow,maxRow}))
+    .then(rows=>{
+      if(!Array.isArray(rows))throw Error('Invalid submap terrain response');
+      for(const row of rows){
         const previous=state.hexCache.get(row.coordinate);
         if(!previous || previous.terrain!==row.terrain || previous.notes!==row.notes ||
           JSON.stringify(previous)!==JSON.stringify(row))
           state.hexCache.set(row.coordinate,row);
       }
-      missing.forEach(t=>loadedSubmaps.add(t.key));
+      for(const t of missing)loadedSubmaps.add(t.key);
       state.loadedArea={minCol,maxCol,minRow,maxRow};
       if(state.planImport?.plan)state.routeCache=null;
+      finishHydration();
       draw();
-    }catch(err){
-      console.warn('Could not preload adjacent submap records:',err);
-    }finally{
-      missing.forEach(t=>loadingSubmaps.delete(t.key));
-    }
-  },100);
+    }).catch(err=>{
+      knowledgeFailures++;
+      console.warn('Could not hydrate adjacent submap terrain; retrying:',err);
+      // Error is visible in Terrain Dev. Failed requests retry independently;
+      // rendering may safely fall back to existing known data after grace.
+      clearTimeout(knowledgeRetryTimer);
+      knowledgeRetryTimer=setTimeout(()=>requestVisibleData(),Math.min(5000,400*knowledgeFailures));
+    }).finally(()=>{
+      for(const t of missing)loadingSubmaps.delete(t.key);
+      finishHydration();
+    });
+}
+function markWholeWorldHydrated(){
+  for(let col=0;col<Math.ceil(TOTAL_COLS/HEX_COLS);col++)
+    for(let row=0;row<Math.ceil(TOTAL_ROWS/HEX_ROWS);row++)
+      loadedSubmaps.add(submapKey(col,row));
+  knowledgeStartedAt=0;
+  clearTimeout(knowledgeRetryTimer);clearTimeout(knowledgeResumeTimer);
+  finishHydration();
 }
 
 function hexPath(cx, cy, radius) {

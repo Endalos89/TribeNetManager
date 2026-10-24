@@ -105,6 +105,8 @@
         ' · cores rebuilt '+info.terrainInvalidations+
         ' · shared edges updated '+info.sharedUpdates+
         ' · awaiting submaps '+info.knowledgePending+
+        (root.TribeNetKnowledge?.fallback?.()?' (temporary fallback)':'')+
+        ' · data errors '+(root.TribeNetKnowledge?.errors?.()||0)+
         ' · geometry '+Math.round(info.terrainMs)+'ms'+
         ' · disk '+Math.round(info.restorationMs)+'ms'+
         ' · cache resets '+info.fullResets

@@ -128,3 +128,35 @@ much smaller GPU submission time. Browser tests exercise real mouse-wheel
 zoom while a database query is delayed, proving that no geometry can be built
 against incomplete knowledge, and that a neighbour reveal preserves inner-core
 GPU geometry and forest instances.
+
+## 24 October 2026 — recover from a blocked first-load submap query
+
+The v2 knowledge-hydration barrier could leave the mapper completely blank
+with `GPU: 0 chunks`, `queued: 169`, and `awaiting submaps: 9` if the
+Electron SQLite IPC read failed, stalled, or never happened. The GPU scheduler
+refused to generate **any** terrain until every neighbouring submap had a
+successful recorded query, and the old request handler did not reliably retry
+errors.
+
+The loader now immediately claims and starts missing submap requests (avoids
+starvation caused by the old resetting debounce), retains successful loaded
+submap records for the entire session, retries rejected reads, and tolerates
+camera centres that lie just outside exact hex polygons. A successful global
+startup terrain read unlocks all submaps authoritatively.
+
+A **2.4-second** initial grace interval normally gives indexed SQLite queries
+time to return and preserves the protection against invalid pre-hydration
+meshes. If the request is still outstanding, the mapper unblocks and displays
+a **temporary, fog-safe in-memory terrain mesh** rather than leaving a black
+screen indefinitely. Crucially these provisional meshes are never written to
+the permanent disk geometry cache. When terrain records arrive, the existing
+change detector selectively replaces the provisional geometry and resumes
+normal rendering and persistence. Terrain Dev reports `(temporary fallback)`
+and database read errors separately from outstanding submaps.
+
+The browser regression deliberately never resolves the first database
+requests and requires the 3D mapper to render visible terrain anyway, with
+**zero provisional disk writes**. It then completes the requests and confirms
+that the normal permanent cache can be populated. The existing long-running
+zoom regression explicitly invalidates its simulated knowledge window so it
+still exercises real delayed hydration even after the global startup preload.

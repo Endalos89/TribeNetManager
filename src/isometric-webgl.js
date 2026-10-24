@@ -410,6 +410,9 @@ class GPUMap {
     return record;
   }
   saveToDisk(record){
+    // The emergency display fallback is provisional. It may contain fog
+    // where database knowledge has not yet arrived, so never persist it.
+    if(window.TribeNetKnowledge && !window.TribeNetKnowledge.complete())return;
     const api=window.tribenet?.saveTerrainMesh;
     if(typeof api!=='function')return;
     const key=this.persistentKey(record.id,record.lod);
@@ -600,6 +603,7 @@ class GPUMap {
     if(typeof IsoMapper!=='undefined'&&IsoMapper.interacting)return;
     if(window.TribeNetKnowledge && !window.TribeNetKnowledge.ready()){
       this.stats.knowledgePending=window.TribeNetKnowledge.pending();
+      window.TribeNetKnowledge.ensure?.();
       return;
     }
     this.stats.knowledgePending=0;
