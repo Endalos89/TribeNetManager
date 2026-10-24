@@ -38,7 +38,7 @@ assert.equal(first.renderer.sceneBuilds,2);
 const high=first.renderer.surface(first.center(1,1).x,first.center(1,1).y).z;
 assert.ok(high>.9,'terrain edits invalidate cell and surface caches');
 first.state.hexCache.set('1:1',{terrain:'O'});first.renderer.draw();
-assert.equal(first.renderer.surface(first.center(1,1).x,first.center(1,1).y).z,0);
+assert.equal(first.renderer.surface(first.center(1,1).x,first.center(1,1).y).z,.10,'water rendering uses chosen Terrain Dev elevation');
 first.state.scale=20;first.renderer.draw();
 assert.equal(first.renderer.sceneBuilds,4,'zoom rebuilds the mesh at its current detail level');
 console.log('Ground renderer: 4x face count, repeatable meshes, picking, cached draws, edits and zoom passed');
