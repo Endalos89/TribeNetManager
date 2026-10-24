@@ -110,7 +110,16 @@
         ' · geometry '+Math.round(info.terrainMs)+'ms'+
         ' · disk '+Math.round(info.restorationMs)+'ms'+
         ' · cache resets '+info.fullResets
-      : 'WebGL is inactive (software fallback or classic view).';
+      : (()=>{const gpu=root.TribeNetGPU;
+          const mode=root.IsoMapper?.enabled;
+          const detail=typeof state!=='undefined'&&state.mode==='detail';
+          if(!detail)return 'WebGL inactive — World Overview or launcher; open a detailed submap.';
+          if(!mode)return 'WebGL inactive — classic 2D view selected; enable 3D terrain.';
+          if(!gpu)return 'WebGL inactive — renderer module did not load.';
+          if(gpu.failed)return 'WebGL failed — '+(gpu.failureReason||'unknown rendering error; check developer console')+'.';
+          if(!gpu.initialized)return 'WebGL not initialized — detailed 3D view has not started.';
+          return 'WebGL initialized but hidden — check map visibility and renderer state.';
+        })();
   }
   toggle.addEventListener('click',()=>{
     const open=panel.classList.toggle('hidden')===false;
