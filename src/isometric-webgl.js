@@ -32,6 +32,7 @@ class GPUMap {
     this.groundFaces=null;this.sampleTerrain=null;this.tileAt=null;this.lastLod=4;
     this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,gpuCalls:0,renderMs:0};
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
+    this.waveMaterial=new THREE.LineBasicMaterial({color:0xc8e9d9,transparent:true,opacity:.58,depthWrite:false});
     this.treeMaterials={
       trunk:new THREE.MeshLambertMaterial({color:0x70523a,side:THREE.DoubleSide}),
       broad:new THREE.MeshLambertMaterial({color:0x668851,side:THREE.DoubleSide}),
@@ -152,10 +153,17 @@ class GPUMap {
       const faces=groundFaces(t,steps);
       for(const f of faces){
         if(f.points.length<3)continue;
-        const c=this.color.set(f.color);
+        const c=this.color.set(f.color).clone();
+        const marine=f.points.every(p=>p.water) ||
+          (t.water && t.n.every(n=>n && (n.terrain==='O'||n.terrain==='L')));
+        const vertex=(p)=>{
+          if(marine) {
+            const sampled=sample(p.x,p.y);
+            add(p,sampled.water && !sampled.fog?this.color.set(sampled.color):c);
+          } else add(p,c);
+        };
         for(let k=1;k<f.points.length-1;k++){
-          // Wind both sides: double sided ensures fog/coasts remain visible.
-          add(f.points[0],c);add(f.points[k],c);add(f.points[k+1],c);
+          vertex(f.points[0]);vertex(f.points[k]);vertex(f.points[k+1]);
           facesCount++;
         }
       }
@@ -187,6 +195,38 @@ class GPUMap {
       }
     }
     count=sites.length;
+    // Seeded, short pale wave crests are most frequent near a coastline.
+    // One LineSegments draw per chunk, no continuous simulation/redraw.
+    const strength=clamp(terrainSetting('waveStrength',.55),0,1);
+    const wavePoints=[];
+    if(strength>0)for(const t of tiles){
+      if(!t.known)continue;
+      const random=seededRandom(t.ref+':static-wave-ripples');
+      const attempts=Math.round((t.water?16:10)*strength);
+      for(let i=0;i<attempts;i++){
+        const angle=random()*Math.PI*2,radius=.95*Math.sqrt(random());
+        const x=t.c.x+Math.cos(angle)*radius,y=t.c.y+Math.sin(angle)*radius;
+        const p=sample(x,y);
+        if(!p?.water || p.fog)continue;
+        const neighbour=[[.14,0],[-.14,0],[0,.14],[0,-.14]]
+          .map(([dx,dy])=>sample(x+dx,y+dy));
+        const nearCoast=neighbour.some(n=>!n.water&&!n.fog);
+        if(!nearCoast && random()>.26)continue;
+        const span=nearCoast?.12+random()*.14:.05+random()*.07;
+        const direction=random()*Math.PI*2,ax=Math.cos(direction)*span/2,ay=Math.sin(direction)*span/2;
+        const left=sample(x-ax,y-ay),right=sample(x+ax,y+ay);
+        if(!left?.water||!right?.water)continue;
+        const height=p.z+.007;
+        wavePoints.push((x-ax)*1.5,height,(y-ay)*1.5,(x+ax)*1.5,height,(y+ay)*1.5);
+      }
+    }
+    let waves=null;
+    if(wavePoints.length){
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(wavePoints,3));
+      waves=new THREE.LineSegments(geometry,this.waveMaterial);
+      waves.frustumCulled=false;waves.renderOrder=2;group.add(waves);
+    }
     const addTreeInstances=(type,geometry,material,filtered,height,radius)=>{
       const n=filtered.length;
       if(!n)return;
@@ -206,7 +246,7 @@ class GPUMap {
     addTreeInstances('trunk',baseTreeTrunk,this.treeMaterials.trunk,sites,.10,1);
     addTreeInstances('broad',baseTreeCrown,this.treeMaterials.broad,sites.filter(s=>!s.conifer),.32,1.45);
     addTreeInstances('conifer',baseTreeCrown,this.treeMaterials.conifer,sites.filter(s=>s.conifer),.32,1.15);
-    return {group,ground,faces:facesCount,trees:count};
+    return {group,ground,waves,faces:facesCount,trees:count};
   }
   requestLater(){
     if(this.pendingFrame)return;
@@ -278,7 +318,10 @@ class GPUMap {
     this.idleBuildPending=true;
     const task=(deadline)=>{
       this.idleBuildPending=false;
-      if(revision!==this.generation||!this.visible||!this.pendingChunks.length)return;
+      if(revision!==this.generation){
+        this.scheduleIdleChunk();return;
+      }
+      if(!this.visible||!this.pendingChunks.length)return;
       if(deadline && deadline.timeRemaining()<3 && !deadline.didTimeout){
         this.scheduleIdleChunk();return;
       }
