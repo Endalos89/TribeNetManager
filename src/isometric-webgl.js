@@ -200,7 +200,7 @@ class GPUMap {
     this.pendingFrame=true;
     requestAnimationFrame(()=>{this.pendingFrame=false;if(this.visible && window.IsoMapper?.enabled && typeof window.draw==='function')window.draw();});
   }
-  beginFrame(tiles,groundFaces,sample,state,onDraw){
+  beginFrame(tiles,groundFaces,sample,state,onDraw,tileAt){
     if(!this.init())return false;
     this.setVisible(true);
     this.requestDraw=onDraw;
@@ -222,7 +222,11 @@ class GPUMap {
       const key=id+':'+lod;
       let record=this.chunkCache.get(key);
       if(!record && built<budget){
-        record=this.newChunk(cells,groundFaces,sample,lod);
+        const [cx,cy]=id.split(':').map(Number),full=[];
+        for(let col=cx*CHUNK_SIZE;col<(cx+1)*CHUNK_SIZE;col++)
+          for(let row=cy*CHUNK_SIZE;row<(cy+1)*CHUNK_SIZE;row++)
+            if(col>=0&&row>=0&&col<window.TOTAL_COLS&&row<window.TOTAL_ROWS)full.push(tileAt(col,row));
+        record=this.newChunk(full,groundFaces,sample,lod);
         record.key=key;
         this.chunkCache.set(key,record);this.chunkGroup.add(record.group);
         this.stats.builds++;built++;
@@ -240,7 +244,7 @@ class GPUMap {
       const chunk=this.chunkCache.get(oldest);
       this.disposeChunk(chunk);this.chunkCache.delete(oldest);
     }
-    if(built>0 && [...needed.keys()].some(id=>!this.chunkCache.has(id+':'+lod)))this.requestLater();
+    if([...needed.keys()].some(id=>!this.chunkCache.has(id+':'+lod)))this.requestLater();
     this.stats.chunks=[...this.chunkCache.values()].filter(r=>r.group.visible).length;
     this.stats.faces=[...this.chunkCache.values()].filter(r=>r.group.visible).reduce((n,r)=>n+r.faces,0);
     this.stats.trees=[...this.chunkCache.values()].filter(r=>r.group.visible).reduce((n,r)=>n+r.trees,0);
@@ -277,7 +281,7 @@ class GPUMap {
         this.object.scale.set(...item.scale);
         this.object.updateMatrix();
         mesh.setMatrixAt(i,this.object.matrix);
-        mesh.setColorAt(i,item.color);
+        this.color.setHex(item.color);mesh.setColorAt(i,this.color);
       });
       mesh.instanceMatrix.needsUpdate=true;
       if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
