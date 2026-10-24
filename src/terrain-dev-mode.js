@@ -102,7 +102,11 @@
         ' · centre area '+info.focusTarget+' ('+(2*info.focusRadiusChunks+1)+'×'+(2*info.focusRadiusChunks+1)+')' +
         ' · offscreen queued '+info.prefetchTarget+
         ' · memory evicted '+info.evictions+
-        ' · terrain changed '+info.terrainInvalidations+
+        ' · cores rebuilt '+info.terrainInvalidations+
+        ' · shared edges updated '+info.sharedUpdates+
+        ' · awaiting submaps '+info.knowledgePending+
+        ' · geometry '+Math.round(info.terrainMs)+'ms'+
+        ' · disk '+Math.round(info.restorationMs)+'ms'+
         ' · cache resets '+info.fullResets
       : 'WebGL is inactive (software fallback or classic view).';
   }
