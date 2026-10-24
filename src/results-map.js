@@ -294,9 +294,11 @@ function setHistoricalEditingState(enabled) {
 let historicalAreaRetryTimer = null;
 let historicalAreaGeneration = 0;
 function historicalAreaBounds() {
-  // Standalone Results tests do not load the interactive mapper module.
-  const submaps = typeof activeSubmaps === 'function' ? activeSubmaps() : [];
+  // Standalone Results tests do not load the interactive mapper module
+  // or its world-size constants; their viewport bounds are sufficient.
   const visible = visibleBounds();
+  if (typeof activeSubmaps !== 'function') return visible;
+  const submaps = activeSubmaps();
   return {
     minCol: Math.max(0, Math.min(visible.minCol, ...submaps.map(s => s.col * HEX_COLS))),
     maxCol: Math.min(TOTAL_COLS-1, Math.max(visible.maxCol, ...submaps.map(s => (s.col+1)*HEX_COLS-1))),
