@@ -6,7 +6,9 @@
 import * as THREE from 'three';
 
 const CHUNK_SIZE=4;
-const MAX_CHUNKS=90;
+const MAX_CHUNKS=160;
+const PREFETCH_RING=1;
+const INITIAL_LOD=4;
 const baseTreeTrunk=new THREE.CylinderGeometry(.012,.017,.20,5);
 const baseTreeCrown=new THREE.ConeGeometry(.095,.24,6);
 const unitBox=new THREE.BoxGeometry(.12,.12,.085);
@@ -26,6 +28,8 @@ class GPUMap {
     this.renderer=null;this.canvas=null;this.scene=null;this.camera=null;
     this.chunkGroup=null;this.modelGroup=null;this.chunkCache=new Map();
     this.units=[];this.visible=false;this.failed=false;this.initialized=false;
+    this.generation=0;this.pendingChunks=[];this.idleBuildPending=false;this.activeChunkIds=new Set();this.visibleChunkIds=new Set();
+    this.groundFaces=null;this.sampleTerrain=null;this.tileAt=null;this.lastLod=4;
     this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,gpuCalls:0,renderMs:0};
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
     this.treeMaterials={
@@ -93,10 +97,12 @@ class GPUMap {
     for(const record of this.chunkCache.values())this.disposeChunk(record);
     this.chunkCache.clear();
     this.stats.chunks=0;this.stats.faces=0;this.stats.trees=0;
+    this.generation++;this.pendingChunks=[];this.queueSignature=null;
   }
   disposeChunk(record){
     this.chunkGroup?.remove(record.group);
     record.ground.geometry.dispose();
+    record.waves?.geometry.dispose();
     // Free per-instance GPU buffers on LRU eviction; tree geometries and
     // materials are shared and intentionally retained.
     for(const child of record.group.children)if(child.isInstancedMesh)child.dispose();
@@ -205,7 +211,115 @@ class GPUMap {
   requestLater(){
     if(this.pendingFrame)return;
     this.pendingFrame=true;
-    requestAnimationFrame(()=>{this.pendingFrame=false;if(this.visible && typeof IsoMapper!=='undefined' && IsoMapper.enabled && typeof draw==='function')draw();});
+    requestAnimationFrame(()=>{
+      this.pendingFrame=false;
+      if(this.visible && typeof IsoMapper!=='undefined' && IsoMapper.enabled && typeof draw==='function')draw();
+    });
+  }
+  chunkKey(id,lod){return id+':'+lod;}
+  // Retain a previous mesh at another zoom level until its replacement is
+  // uploaded: a change in zoom must never hide an entire terrain chunk.
+  bestResident(id,lod){
+    const exact=this.chunkCache.get(this.chunkKey(id,lod));
+    if(exact)return exact;
+    let best=null,bestDistance=Infinity;
+    for(const item of this.chunkCache.values()){
+      if(item.id!==id)continue;
+      const distance=Math.abs(Math.log2(item.lod/lod));
+      if(distance<bestDistance){best=item;bestDistance=distance;}
+    }
+    return best;
+  }
+  terrainChunk(id,lod){
+    const [cx,cy]=id.split(':').map(Number),cells=[];
+    for(let col=cx*CHUNK_SIZE;col<(cx+1)*CHUNK_SIZE;col++)
+      for(let row=cy*CHUNK_SIZE;row<(cy+1)*CHUNK_SIZE;row++)
+        if(col>=0&&row>=0&&col<TOTAL_COLS&&row<TOTAL_ROWS)cells.push(this.tileAt(col,row));
+    const result=this.newChunk(cells,this.groundFaces,this.sampleTerrain,lod);
+    const record={...result,key:this.chunkKey(id,lod),id,lod};
+    this.chunkCache.set(record.key,record);this.chunkGroup.add(record.group);
+    this.stats.builds++;
+    return record;
+  }
+  queueBuilds(visible,lod){
+    const ring=new Set();
+    for(const id of visible){
+      const [cx,cy]=id.split(':').map(Number);
+      for(let x=-PREFETCH_RING;x<=PREFETCH_RING;x++)for(let y=-PREFETCH_RING;y<=PREFETCH_RING;y++){
+        const a=cx+x,b=cy+y;
+        if(a>=0&&b>=0&&a*CHUNK_SIZE<TOTAL_COLS&&b*CHUNK_SIZE<TOTAL_ROWS)
+          ring.add(a+':'+b);
+      }
+    }
+    this.activeChunkIds=ring;
+    const tasks=[],reserved=new Set();
+    const add=(id,detail)=>{
+      const key=this.chunkKey(id,detail);
+      if(!this.chunkCache.has(key)&&!reserved.has(key)){
+        tasks.push({id,lod:detail});reserved.add(key);
+      }
+    };
+    // First fill holes at the cheapest usable resolution, then sharpen visible
+    // chunks, and only then warm the adjacent ring.
+    for(const id of visible)if(!this.bestResident(id,lod))add(id,Math.min(INITIAL_LOD,lod));
+    for(const id of visible)add(id,lod);
+    for(const id of ring)if(!visible.has(id) && !this.bestResident(id,lod))add(id,Math.min(INITIAL_LOD,lod));
+    for(const id of ring)if(!visible.has(id))add(id,lod);
+    // Warm the immediate zoom-out class for visible tiles so crossing a zoom
+    // boundary doesn't require constructing every chunk in a single gesture.
+    const previousLod=lod<=4?2:lod<=8?4:8;
+    for(const id of visible)add(id,previousLod);
+    this.pendingChunks=tasks;
+    this.scheduleIdleChunk();
+  }
+  scheduleIdleChunk(){
+    if(this.idleBuildPending || !this.pendingChunks.length || !this.visible)return;
+    const revision=this.generation;
+    this.idleBuildPending=true;
+    const task=(deadline)=>{
+      this.idleBuildPending=false;
+      if(revision!==this.generation||!this.visible||!this.pendingChunks.length)return;
+      if(deadline && deadline.timeRemaining()<3 && !deadline.didTimeout){
+        this.scheduleIdleChunk();return;
+      }
+      const next=this.pendingChunks.shift();
+      if(!next || this.chunkCache.has(this.chunkKey(next.id,next.lod))){
+        this.scheduleIdleChunk();return;
+      }
+      try{
+        this.terrainChunk(next.id,next.lod);
+        this.evictUnused();
+        this.requestLater();
+      }catch(error){
+        this.failed=true;console.error('GPU terrain chunk generation failed:',error);
+        this.setVisible(false);this.requestLater();return;
+      }
+      this.scheduleIdleChunk();
+    };
+    // Idle work is lower priority than drag/wheel handlers and animation. A
+    // timeout lets the first visit finish on otherwise continuously busy CPUs.
+    if(typeof requestIdleCallback==='function')requestIdleCallback(task,{timeout:140});
+    else setTimeout(()=>task({timeRemaining:()=>12,didTimeout:true}),32);
+  }
+  evictUnused(){
+    if(this.chunkCache.size<=MAX_CHUNKS)return;
+    // Preserve every visible chunk and as much of the prefetched ring as will
+    // fit. Evict distant and old LODs before any on-screen geometry.
+    const keep=new Set();
+    for(const id of this.visibleChunkIds){
+      const selected=this.bestResident(id,this.lastLod);
+      if(selected)keep.add(selected.key);
+    }
+    for(const [key,record] of this.chunkCache){
+      if(this.chunkCache.size<=MAX_CHUNKS)break;
+      if(keep.has(key)||this.activeChunkIds.has(record.id))continue;
+      this.disposeChunk(record);this.chunkCache.delete(key);
+    }
+    for(const [key,record] of this.chunkCache){
+      if(this.chunkCache.size<=MAX_CHUNKS)break;
+      if(keep.has(key))continue;
+      this.disposeChunk(record);this.chunkCache.delete(key);
+    }
   }
   beginFrame(tiles,groundFaces,sample,state,onDraw,tileAt){
     if(!this.init())return false;
@@ -216,45 +330,30 @@ class GPUMap {
       document.getElementById('mapCanvas').clientHeight,
       state.scale,state.cameraX,state.cameraY);
     const lod=this.lod(state.scale);
-    const needed=new Map();
-    for(const t of tiles){
-      const key=chunkId(t);if(!needed.has(key))needed.set(key,[]);
-      needed.get(key).push(t);
+    this.lastLod=lod;
+    this.groundFaces=groundFaces;this.sampleTerrain=sample;this.tileAt=tileAt;
+    const visible=new Set(tiles.map(chunkId));
+    this.visibleChunkIds=visible;
+    // Only rebuild a queue when the requested chunk set or LOD actually
+    // changes, not on every small camera delta or unit animation.
+    const signature=lod+'|'+[...visible].sort().join('|');
+    if(signature!==this.queueSignature){
+      this.queueSignature=signature;
+      this.generation++;
+      this.queueBuilds(visible,lod);
     }
-    // Chunk geometry is generated once per zoom class or terrain revision.
-    // Limit new chunk generation to keep click/drag interactions responsive.
-    let built=0;
-    const budget=this.stats.builds===0?3:2;
-    for(const [id,cells] of needed){
-      const key=id+':'+lod;
-      let record=this.chunkCache.get(key);
-      if(!record && built<budget){
-        const [cx,cy]=id.split(':').map(Number),full=[];
-        for(let col=cx*CHUNK_SIZE;col<(cx+1)*CHUNK_SIZE;col++)
-          for(let row=cy*CHUNK_SIZE;row<(cy+1)*CHUNK_SIZE;row++)
-            if(col>=0&&row>=0&&col<TOTAL_COLS&&row<TOTAL_ROWS)full.push(tileAt(col,row));
-        record=this.newChunk(full,groundFaces,sample,lod);
-        record.key=key;
-        this.chunkCache.set(key,record);this.chunkGroup.add(record.group);
-        this.stats.builds++;built++;
-      }
-      if(record){
-        this.chunkCache.delete(key);this.chunkCache.set(key,record);
-        record.group.visible=true;
-      }
+    // Update which cached meshes are displayed, allowing lower-detail
+    // resident chunks to cover the gap until the new target LOD exists.
+    for(const record of this.chunkCache.values())record.group.visible=false;
+    let faces=0,trees=0,chunks=0;
+    for(const id of visible){
+      const record=this.bestResident(id,lod);
+      if(!record)continue;
+      record.group.visible=true;
+      this.chunkCache.delete(record.key);this.chunkCache.set(record.key,record);
+      faces+=record.faces;trees+=record.trees;chunks++;
     }
-    for(const [key,record] of this.chunkCache){
-      record.group.visible=needed.has(key.slice(0,key.lastIndexOf(':'))) && key.endsWith(':'+lod);
-    }
-    while(this.chunkCache.size>MAX_CHUNKS){
-      const oldest=this.chunkCache.keys().next().value;
-      const chunk=this.chunkCache.get(oldest);
-      this.disposeChunk(chunk);this.chunkCache.delete(oldest);
-    }
-    if([...needed.keys()].some(id=>!this.chunkCache.has(id+':'+lod)))this.requestLater();
-    this.stats.chunks=[...this.chunkCache.values()].filter(r=>r.group.visible).length;
-    this.stats.faces=[...this.chunkCache.values()].filter(r=>r.group.visible).reduce((n,r)=>n+r.faces,0);
-    this.stats.trees=[...this.chunkCache.values()].filter(r=>r.group.visible).reduce((n,r)=>n+r.trees,0);
+    this.stats.chunks=chunks;this.stats.faces=faces;this.stats.trees=trees;
     return true;
   }
   pick(x,y){
