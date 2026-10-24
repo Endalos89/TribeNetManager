@@ -76,7 +76,7 @@ const IsoMapper = (() => {
       const p=typeof parseCoordinate==='function'?parseCoordinate(ref):null;
       if(!p)continue;
       directlyChanged.push({col:p.globalCol,row:p.globalRow});
-      coreFaceCache.delete(ref);
+      for(const key of coreFaceCache.keys())if(key.startsWith(ref+':'))coreFaceCache.delete(key);
       // The owner of an edge/corner may be in a nearby chunk. Mark those
       // chunks for transition-only updates, NOT wholesale core recreation.
       for(let dc=-2;dc<=2;dc++)for(let dr=-2;dr<=2;dr++){
@@ -226,14 +226,13 @@ const IsoMapper = (() => {
     const stableCore=[];
     for(const face of G.regionMesh(steps)){
       if(face.kind==='core' && savedCore){
-        faces.push(...savedCore.slice(0,0)); // core polygon reuse is assembled after the loop
         continue;
       }
       activeRegion=face.kind==='core'?'core':'shared';
       const visible=G.regionOwners(t.col,t.row,face.kind,face.index).every(o=>known(surfaceData(o.col,o.row)));
       const points=face.points.map(p=>sample(t.c.x+p.x,t.c.y+p.y));
       if(!visible){faces.push({points,color:FOG,region:'shared'});continue;}
-      if(!microDepth){
+      if(!microDepth||face.kind==='core'){
         for(const part of shoreFaces(points))emitPart(part);
         continue;
       }
