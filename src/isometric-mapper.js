@@ -4,8 +4,8 @@ const IsoMapper = (() => {
   const G=IsoGeometry, WATER='#337f98', FOG='#253640';
   let enabled=false, labels=true, grid=false;
   const detailCache=new Map(), cellCache=new Map(), surfaceCache=new Map(), groundCache=new Map(), resourceIconCache=new Map();
-  let interactive=false, settleTimer=null, hitScale=1, sceneBuilds=0;
-  let unitSignature='', terrainSignature='', frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
+  let interactive=false, settleTimer=null, hitScale=1, sceneBuilds=0, groundBuilds=0;
+  let unitSignature='', terrainSignature='', decorationSignature='', groundLayer=null, frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
   function mapData(ref) {
     const target=state.hexCache.get(ref);
     return typeof resultsPlaybackMapData==='function' ? resultsPlaybackMapData(ref,target) : target;
@@ -27,8 +27,10 @@ const IsoMapper = (() => {
     const playbackState=typeof resultsPlayback!=='undefined' ? resultsPlayback : null;
     const playbackSignature=typeof resultsPlaybackMapData==='function' && playbackState?.active
       ? `:playback:${playbackState.baselineTurnKey||'baseline'}:${playbackState.renderRevision||0}` : '';
-    const signature=Array.from(state.hexCache,([ref,data])=>`${ref}:${data.terrain}:${data.notes||''}`).join('|')+playbackSignature;
-    if(signature!==terrainSignature){terrainSignature=signature;cellCache.clear();surfaceCache.clear();groundCache.clear();landscape=null;}
+    const signature=Array.from(state.hexCache,([ref,data])=>`${ref}:${data.terrain}`).join('|')+playbackSignature;
+    const decorations=Array.from(state.hexCache,([ref,data])=>`${ref}:${[...G.rivers(data)].sort().join(',')}`).join('|');
+    if(decorations!==decorationSignature){decorationSignature=decorations;cellCache.clear();landscape=null;}
+    if(signature!==terrainSignature){terrainSignature=signature;cellCache.clear();surfaceCache.clear();groundCache.clear();groundLayer=null;landscape=null;}
   }
   const isWater=t=>t==='O'||t==='L';
   const known=d=>d && d.terrain && d.terrain!=='UNKNOWN';
@@ -91,6 +93,25 @@ const IsoMapper = (() => {
     const ref=coordinateFor(col,row),data=mapData(ref),c=baseCenter(col,row),n=adjacent(col,row);
     return {ref,data,c,n,col,row,known:known(data),water:isWater(data?.terrain),p:project(c)};
   }
+  // Cut mixed faces at the actual shoreline so narrow beaches do not turn
+  // an entire coarse mesh triangle into land (or leave water sloping uphill).
+  function shoreFaces(points) {
+    if(points.every(p=>p.water) || points.every(p=>!p.water))return [points];
+    const land=[],sea=[];
+    for(let i=0;i<points.length;i++){
+      const a=points[i],b=points[(i+1)%points.length];
+      (a.water?sea:land).push(a);
+      if(Boolean(a.water)===Boolean(b.water))continue;
+      let dry=a.water?b:a,wet=a.water?a:b;
+      for(let j=0;j<18;j++){
+        const mid=sample((dry.x+wet.x)/2,(dry.y+wet.y)/2);
+        if(mid.water)wet=mid;else dry=mid;
+      }
+      const coast={...dry,z:0,water:false};
+      land.push(coast);sea.push({...coast,water:true,color:WATER});
+    }
+    return [land,sea].filter(p=>p.length>=3);
+  }
   function groundFaces(t) {
     // One resolution per frame avoids mismatched shared edges; distant ground
     // uses fewer faces once individual facets are below a few screen pixels.
@@ -105,12 +126,14 @@ const IsoMapper = (() => {
       const visible=G.regionOwners(t.col,t.row,face.kind,face.index).every(o=>known(surfaceData(o.col,o.row)));
       const points=face.points.map(p=>sample(t.c.x+p.x,t.c.y+p.y));
       if(!visible){faces.push({points,color:FOG});continue;}
-      const [a,b,c]=points,ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z,vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
+      for(const part of shoreFaces(points)){
+      const [a,b,c]=part,ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z,vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
       const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,len=Math.hypot(nx,ny,nz)||1;
       const light=Math.max(.78,Math.min(1.13,.94+(-nx*.35-ny*.28)/len));
-      const mixed=G.mix(points.map(p=>p.color));
-      const shade=points.every(p=>p.water)?WATER:'#'+[1,3,5].map(i=>Math.min(255,Math.round(parseInt(mixed.slice(i,i+2),16)*light)).toString(16).padStart(2,'0')).join('');
-      faces.push({points,color:shade});
+      const mixed=G.mix(part.map(p=>p.color));
+      const shade=part.every(p=>p.water)?WATER:'#'+[1,3,5].map(i=>Math.min(255,Math.round(parseInt(mixed.slice(i,i+2),16)*light)).toString(16).padStart(2,'0')).join('');
+      faces.push({points:part,color:shade});
+      }
     }
     groundCache.set(key,faces);return faces;
   }
@@ -236,11 +259,20 @@ const IsoMapper = (() => {
       buffer.width=Math.ceil((rect.width+padding*2)*dpr);buffer.height=Math.ceil((rect.height+padding*2)*dpr);
       renderCtx=buffer.getContext('2d');renderCtx.setTransform(dpr,0,0,dpr,0,0);
       frameRect={width:rect.width+padding*2,height:rect.height+padding*2};
-      renderCtx.fillStyle=FOG;renderCtx.fillRect(0,0,frameRect.width,frameRect.height);hitFaces=[];
-      const faces=[];
-      for(const t of tiles)for(const f of groundFaces(t))faces.push({...f,col:t.col,row:t.row,depth:f.points.reduce((s,p)=>s+p.y,0)/f.points.length});
-      faces.sort((a,b)=>a.depth-b.depth);
-      for(const f of faces){const points=f.points.map(p=>project(p,p.z));polygon(points,f.color,f.color);hitFaces.push({points,col:f.col,row:f.row});}
+      const groundKey=[state.cameraX,state.cameraY,state.scale,rect.width,rect.height,dpr].join(':');
+      if(!groundLayer || groundLayer.key!==groundKey){
+        groundBuilds++;
+        const ground=document.createElement('canvas');ground.width=buffer.width;ground.height=buffer.height;
+        renderCtx=ground.getContext('2d');renderCtx.setTransform(dpr,0,0,dpr,0,0);
+        renderCtx.fillStyle=FOG;renderCtx.fillRect(0,0,frameRect.width,frameRect.height);hitFaces=[];
+        const faces=[];
+        for(const t of tiles)for(const f of groundFaces(t))faces.push({...f,col:t.col,row:t.row,depth:f.points.reduce((s,p)=>s+p.y,0)/f.points.length});
+        faces.sort((a,b)=>a.depth-b.depth);
+        for(const f of faces){const points=f.points.map(p=>project(p,p.z));polygon(points,f.color,f.color);hitFaces.push({points,col:f.col,row:f.row});}
+        groundLayer={key:groundKey,canvas:ground,hits:hitFaces};
+      }
+      hitFaces=groundLayer.hits;renderCtx=buffer.getContext('2d');
+      renderCtx.drawImage(groundLayer.canvas,0,0,frameRect.width,frameRect.height);
       const jobs=[];
       // Fog is ground cover. Visible trees and mountains are drawn above it.
       for(const t of tiles){edges(t);scenery(t,jobs);}
@@ -291,6 +323,6 @@ const IsoMapper = (() => {
     new MutationObserver(sync).observe($('notesInput'),{attributes:true,attributeFilter:['disabled']});
     new MutationObserver(sync).observe($('selectedState'),{childList:true});
   }
-  return {get enabled(){return enabled;},surface:sample,withProjection,project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},draw:drawScene,setEnabled,setup};
+  return {get enabled(){return enabled;},surface:sample,withProjection,project,inverse,bounds,pick,interact,get sceneBuilds(){return sceneBuilds;},get groundBuilds(){return groundBuilds;},draw:drawScene,setEnabled,setup};
 })();
 IsoMapper.setup();

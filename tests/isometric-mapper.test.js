@@ -29,7 +29,7 @@ const hill=()=>({terrain:'GH'}),flat=()=>({terrain:'PR'});
 const p=center(30,20),n=center(30,21),mid={x:(p.x+n.x)/2,y:(p.y+n.y)/2};
 const left=G.surface(mid.x,mid.y-1e-5,hill,palette),right=G.surface(mid.x,mid.y+1e-5,hill,palette);
 assert.ok(Math.abs(left.z-right.z)<1e-4,'hill surface remains continuous through shared edge');
-assert.ok(left.z>.25,'adjoining hills must not drop to the flat plane at their shared edge');
+assert.ok(left.z>0&&left.z<.04,'hill shoulders meet in low dry valleys without coastal cliffs');
 assert.equal(left.color,right.color,'matching ground has no per-tile colour border');
 assert.equal(G.surface(mid.x,mid.y,flat,palette).color,palette(),'dry land should have no blue border tint');
 const wet=(c,r)=>c===30&&r===20?{terrain:'O'}:{terrain:'PR'};
@@ -138,9 +138,9 @@ for(const terrain of ['ALPS','HSM'])assert.equal(G.isHighMountain(terrain),true)
 for(let x=44;x<49;x+=.27)for(let y=34;y<39;y+=.31){
  const low=G.surface(x,y,()=>({terrain:'LCM'}),palette);
  const high=G.surface(x,y,()=>({terrain:'HSM'}),palette);
- assert.ok(low.z>.6&&low.z<1.25,'low ranges have connected, moderate relief');
- assert.ok(high.z>low.z+.45,'impassable ranges are clearly higher');
- assert.ok(high.z<2.5,'height remains bounded');
+ assert.ok(low.z>.4&&low.z<.9,'low ranges have connected, moderate relief');
+ assert.ok(high.z>low.z+.3,'impassable ranges are clearly higher');
+ assert.ok(high.z<1.75,'height remains bounded');
  assert.equal(JSON.stringify(first.surface(x,y,()=>({terrain:'LCM'}),palette)),JSON.stringify(second.surface(x,y,()=>({terrain:'LCM'}),palette)));
 }
 const mixedRanges=(c,r)=>({terrain:c<30?'LCM':r<21?'HSM':'GH'});
@@ -170,8 +170,8 @@ for(let x=20;x<25;x+=.17)for(let y=30;y<35;y+=.19){
  mountainRange=[Math.min(mountainRange[0],m.z),Math.max(mountainRange[1],m.z)];
 }
 assert.ok(hillStone>.4&&mountainStone>.5,'stone is present in the ground itself');
-assert.ok(hillRange[1]-hillRange[0]>.3,'hills have visible rises and valleys');
-assert.ok(mountainRange[1]>hillRange[1]+.25,'mountain silhouettes are taller');
+assert.ok(hillRange[1]-hillRange[0]>.2,'hills have visible rises and valleys');
+assert.ok(mountainRange[1]>hillRange[1]+.16,'mountain silhouettes are taller');
 assert.equal(G.treeSite('LCM',{...site,rock:.8},gentle),false,'trees avoid exposed stone');
 // Every reported hex centre keeps its land/water identity despite irregular coasts.
 const coastline=(c,r)=>({terrain:c<30?'GH':'O'});
@@ -226,3 +226,35 @@ for(const steps of [2,4,8]){
  assert.ok(Math.abs(area-3*Math.sqrt(3)/2)<1e-9,'segmented mesh covers each hex exactly once');
 }
 console.log('Core/edge/corner discovery, immutable core terrain and gap-free segmented meshes passed');
+
+// Every ocean/lake-facing edge retains a broad water apron INSIDE the land hex.
+for(const terrain of ['PR','GH','LCM','HSM'])for(const water of ['O','L'])for(const col of [29,30])for(let dir=0;dir<6;dir++){
+ const row=20,c=center(col,row),other=neighbour(col,row,dir),n=center(...other);
+ const lookup=(x,y)=>({terrain:x===other[0]&&y===other[1]?water:terrain});
+ const at=t=>G.surface(c.x+(n.x-c.x)*t,c.y+(n.y-c.y)*t,lookup,palette);
+ assert.equal(at(G.coreRadius/2).water,false,'central land is preserved');
+ let wet=0;
+ for(let i=0;i<100;i++)if(at(G.coreRadius/2+(1-G.coreRadius)/2*(i+.5)/100).water)wet++;
+ assert.ok(wet>=87&&wet<=93,`coastal land-side edge water share ${wet}%`);
+ assert.equal(at(.5).z,0,'shared hex border is navigable level water');
+}
+// Corners shared with water also contain water, but wait for ALL three owners.
+for(const water of ['O','L']){
+ const c=center(30,20),v={x:c.x+G.corners[0].x,y:c.y+G.corners[0].y};
+ const owners=G.regionAt(v.x,v.y).owners,sea=owners.find(o=>o.col!==30||o.row!==20);
+ const lookup=(x,y)=>({terrain:x===sea.col&&y===sea.row?water:'GH'});
+ assert.equal(G.surface(v.x,v.y,lookup,palette).water,true);
+ const hidden=owners.find(o=>o!==sea);
+ assert.equal(G.surface(v.x,v.y,(x,y)=>x===hidden.col&&y===hidden.row?null:lookup(x,y),palette).fog,true);
+}
+console.log('Ocean/lake coastal land edges reserve about 90% water across all orientations');
+// Hill shoulders are low before neighbours are known; mountains retain cliffs.
+{
+ const c=center(30,20),n=center(30,21);
+ for(const terrain of ['GH','HSM']){
+  const lookup=(col,row)=>({terrain:col===30&&row===21?'L':terrain});
+  const s=G.surface(c.x+(n.x-c.x)*G.coreRadius/2,c.y+(n.y-c.y)*G.coreRadius/2,lookup,palette);
+  if(terrain==='GH')assert.ok(s.z<.04,'hill reaches its coastal shoulder without a cliff');
+  else assert.ok(s.z>.9,'high mountain keeps a steep coastal face');
+ }
+}

@@ -42,3 +42,18 @@ assert.equal(first.renderer.surface(first.center(1,1).x,first.center(1,1).y).z,0
 first.state.scale=20;first.renderer.draw();
 assert.equal(first.renderer.sceneBuilds,4,'zoom rebuilds the mesh at its current detail level');
 console.log('Ground renderer: 4x face count, repeatable meshes, picking, cached draws, edits and zoom passed');
+
+// Decoration changes preserve both the terrain geometry and its raster layer.
+const cached=fixture();cached.renderer.draw();
+const groundBuilds=cached.renderer.groundBuilds;
+cached.state.hexCache.set('1:1',{terrain:'PR',notes:'A harmless note'});cached.renderer.draw();
+assert.equal(cached.renderer.sceneBuilds,1,'plain notes do not invalidate scenery');
+cached.state.hexCache.set('1:1',{terrain:'PR',notes:'[Rivers: N]'});cached.renderer.draw();
+assert.equal(cached.renderer.groundBuilds,groundBuilds,'river edits reuse ground raster');
+cached.env.IsoUnits.prepare=()=> '1:1';cached.renderer.draw();
+assert.equal(cached.renderer.groundBuilds,groundBuilds,'unit clearings reuse ground raster');
+cached.state.cameraX+=.1;cached.renderer.draw();
+assert.equal(cached.renderer.groundBuilds,groundBuilds,'short pan reuses overscan');
+cached.state.hexCache.set('1:1',{terrain:'GH'});cached.renderer.draw();
+assert.equal(cached.renderer.groundBuilds,groundBuilds+1,'terrain changes invalidate ground raster');
+console.log('Ground raster cache survives notes, river edits, unit clearings and small pans');

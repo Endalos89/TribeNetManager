@@ -161,20 +161,29 @@
     const region=regionAt(x,y),rgb=[0,0,0];
     const owners=region.owners.map(o=>({...o,data:lookup(o.col,o.row)}));
     if(owners.some(o=>!o.data?.terrain||o.data.terrain==='UNKNOWN'))return {x,y,z:.14,color:'#253640',water:false,rock:0,fog:true};
-    let total=0,hills=0,low=0,high=0,snow=0,coastLand=0,coastWater=0;
+    let total=0,hills=0,low=0,high=0,snow=0,hillShoulder=0,coastLand=0,coastWater=0;
     for(const owner of owners){
       const terrain=owner.data.terrain,w=owner.weight;
       if(water(terrain)){coastWater+=w;continue;}
       coastLand+=w;total+=w;hills+=isHill(terrain)?w:0;low+=isLowMountain(terrain)?w:0;high+=isHighMountain(terrain)?w:0;snow+=['LSM','HSM','ALPS'].includes(terrain)?w:0;
+      if(isHill(terrain)){
+        // Every hill has low outer shoulders from its first reveal. This gives
+        // coastal hills room to descend inside the core without ever consulting
+        // an unknown neighbour, and joins inland hills through low valleys.
+        const c=center(owner.col,owner.row);
+        const rim=apothem*coreRadius-Math.max(...normals.map(n=>(x-c.x)*n.x+(y-c.y)*n.y));
+        hillShoulder+=w*smooth(rim/.54);
+      }
       const color=palette(terrain);[1,3,5].forEach((p,i)=>rgb[i]+=parseInt(color.slice(p,p+2),16)*w);
     }
-    // One signed land/water field forms the coastline across hex ownership.
-    // Bounded world-space erosion creates angular headlands/inlets; both land
-    // and water hex centres retain their reported identity. Unknown is ignored.
-    const shoreline=(noise(x*1.4,y*1.4,419)-.5)*.44+(noise(x*4.3,y*4.3,557)-.5)*.12;
+    // Reserve roughly 90% of the land-side shared strip for navigable water.
+    // smooth(.95)=.99275: the final 5% of a two-owner connector is dry.
+    // Bounded seeded variation preserves a useful water apron on every coast.
+    const shoreline=noise(x*1.4,y*1.4,419)-.5;
     const coastTotal=coastLand+coastWater;
     const landFraction=coastTotal?coastLand/coastTotal:1;
-    const coastField=landFraction-.5+shoreline*4*landFraction*(1-landFraction);
+    const threshold=.99275+shoreline*.004;
+    const coastField=landFraction-threshold;
     if(coastField<=0)return {x,y,z:0,color:'#337f98',water:true,rock:0};
     const weights=total?{hill:hills/total,low:low/total,high:high/total,snow:snow/total}:{hill:0,low:0,high:0,snow:0};
     const {broad,ridge,detail}=relief(x,y);
@@ -182,16 +191,19 @@
     const hillHeight=.18+.53*smooth(broad);
     const lowHeight=.60+.16*broad+.34*ridge*ridge;
     const highHeight=1.27+.23*broad+.83*Math.pow(ridge,3);
-    const raw=.14+weights.hill*hillHeight+weights.low*lowHeight+weights.high*highHeight;
-    // Coast is part of the volume. A broad, height-limited slope approaches
-    // sea level; it does not squeeze the entire hill into a thin edge strip.
-    // Shared strips have a fixed physical width. The height limit widens
-    // inland as the land owner takes over, joining its unchanged core relief.
-    const distance=coastField>=.499?3:.32*coastField/(.5-coastField);
-    const coastHeight=.66*distance+.24*distance*distance;
-    const coastalRaw=Math.min(raw,coastHeight);
-    const layer=.10+weights.hill*.025+weights.low*.035+weights.high*.065;
-    const z=layeredHeight(coastalRaw,layer);
+    const shoulder=total?hillShoulder/total:0;
+    const raw=.14*(1-weights.hill)+.02*weights.hill+(2/3)*(shoulder*(hillHeight+.18)+weights.low*lowHeight+weights.high*highHeight);
+    // Hills ease into level water with a flat beach tangent. Mountains retain
+    // a steep rocky coastal face. The core boundary still joins unchanged.
+    const inland=Math.max(0,Math.min(1,coastField/(1-threshold)));
+    const mountain=weights.low+weights.high;
+    const slope=smooth(inland);
+    const cliff=1-Math.pow(1-inland,3);
+    const coastalRaw=raw*(slope*(1-mountain)+cliff*mountain);
+    const layer=(.10+weights.hill*.025+weights.low*.035+weights.high*.065)*(2/3);
+    // Suppress terracing at hill beaches, retaining strata farther inland.
+    const terraces=mountain+(1-mountain)*smooth(inland);
+    const z=coastalRaw*(1-terraces)+layeredHeight(coastalRaw,layer)*terraces;
     let land=total?rgb.map(n=>n/total):[37,54,64];
     // Strata exposure belongs to the ground, never separate boulder props.
     // Broken patches expose some hill stone; mountain shoulders expose more.
@@ -203,10 +215,10 @@
       weights.high*(.38+.48*patch)*(.65+.35*riser));
     const stone=[132,136,119];
     land=land.map((v,i)=>v*(1-rock)+stone[i]*rock);
-    const snowCover=weights.snow*smooth((z-(weights.high>weights.low?1.64:.86))/.38);
+    const snowCover=weights.snow*smooth((z-(.14+(2/3)*((weights.high>weights.low?1.64:.86)-.14)))/(.38*2/3));
     land=land.map((v,i)=>v*(1-snowCover)+[224,233,230][i]*snowCover);
     // Low ground becomes beach then grass/stone, independent of hex edges.
-    const shore=smooth(distance/.38),bank=[185,178,138];
+    const shore=smooth(inland/.75),bank=[185,178,138].map((v,i)=>v*(1-mountain)+stone[i]*mountain);
     const color='#'+land.map((v,i)=>Math.round(bank[i]*(1-shore)+v*shore).toString(16).padStart(2,'0')).join('');
     return {x,y,z,color,water:false,rock};
   }
