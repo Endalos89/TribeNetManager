@@ -311,10 +311,19 @@ class GPUMap {
         tasks.push({id,lod:detail});reserved.add(key);
       }
     };
-    // One world-space mesh resolution, regardless of zoom. Visible chunks are
-    // always scheduled first, followed by an offscreen prefetch ring.
-    for(const id of visible)add(id,FIXED_TERRAIN_STEPS);
-    for(const id of ring)if(!visible.has(id))add(id,FIXED_TERRAIN_STEPS);
+    // Build the chunk under the camera FIRST. Traversing Set insertion order
+    // built only one far-away column at startup, leaving a black centre after
+    // the user zoomed before the adjacent work had finished.
+    const distance=id=>{
+      const [cx,cy]=id.split(':').map(Number);
+      const worldX=1+1.5*(cx*CHUNK_SIZE+(CHUNK_SIZE-1)/2);
+      const worldY=Math.sqrt(3)*(cy*CHUNK_SIZE+(CHUNK_SIZE-1)/2);
+      return (worldX-this.cameraCenterX)**2+(worldY-this.cameraCenterY)**2;
+    };
+    const byDistance=(a,b)=>distance(a)-distance(b);
+    const central=[...visible].sort(byDistance);
+    for(const id of central)add(id,FIXED_TERRAIN_STEPS);
+    for(const id of [...ring].filter(id=>!visible.has(id)).sort(byDistance))add(id,FIXED_TERRAIN_STEPS);
     this.pendingChunks=tasks;
     this.scheduleIdleChunk();
   }
@@ -380,6 +389,7 @@ class GPUMap {
       state.scale,state.cameraX,state.cameraY);
     const lod=this.lod(state.scale);
     this.lastLod=lod;
+    this.cameraCenterX=state.cameraX;this.cameraCenterY=state.cameraY;
     this.groundFaces=groundFaces;this.sampleTerrain=sample;this.tileAt=tileAt;
     const visible=new Set(tiles.map(chunkId));
     this.visibleChunkIds=visible;
