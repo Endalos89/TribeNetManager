@@ -387,13 +387,13 @@ class GPUMap {
       waves=new THREE.LineSegments(waveGeometry,this.waveMaterial);
       waves.frustumCulled=false;waves.renderOrder=2;group.add(waves);
     }
-    const shared={
+    const forestTypes={
       trunk:[baseTreeTrunk,this.treeMaterials.trunk],
       broad:[baseTreeCrown,this.treeMaterials.broad],
       conifer:[baseTreeCrown,this.treeMaterials.conifer]
     };
     for(const item of data.instances||[]){
-      const descriptor=shared[item.type];
+      const descriptor=forestTypes[item.type];
       if(!descriptor||!Array.isArray(item.matrices)||item.matrices.length%16!==0)
         throw Error('Invalid cached forest instances');
       const count=item.matrices.length/16;
@@ -748,7 +748,8 @@ class GPUMap {
     if(rect.width<=0||rect.height<=0)return null;
     const raycaster=new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(2*x/rect.width-1,1-2*y/rect.height),this.camera);
-    const objects=[...this.chunkCache.values()].filter(chunk=>chunk.group.visible).map(chunk=>chunk.ground);
+    const objects=[...this.chunkCache.values()].filter(chunk=>chunk.group.visible)
+      .flatMap(chunk=>chunk.shared?[chunk.ground,chunk.shared]:[chunk.ground]);
     const intersection=raycaster.intersectObjects(objects,false)[0];
     if(intersection)return {x:intersection.point.x/1.5,y:intersection.point.z/1.5};
     // While streaming, a newly visible tile can have no GPU mesh yet.
