@@ -327,12 +327,22 @@ class GPUMap {
     const [cx,cy]=id.split(':').map(Number);
     return Math.floor(cx*CHUNK_SIZE/HEX_COLS)+':'+Math.floor(cy*CHUNK_SIZE/HEX_ROWS);
   }
+  chunkTouchesRetention(id){
+    // A 2x2 chunk can straddle a 21-row submap boundary. Keep it when
+    // EITHER adjacent submap is retained, rather than evicting visible land.
+    const [cx,cy]=id.split(':').map(Number);
+    for(let c=cx*CHUNK_SIZE;c<(cx+1)*CHUNK_SIZE;c++)
+      for(let r=cy*CHUNK_SIZE;r<(cy+1)*CHUNK_SIZE;r++)
+        if(this.knowledgeSubmapWindow.has(Math.floor(c/HEX_COLS)+':'+Math.floor(r/HEX_ROWS)))
+          return true;
+    return false;
+  }
   dropDistantSubmaps(){
     for(const [key,chunk] of this.chunkCache){
-      if(this.knowledgeSubmapWindow.has(this.submapOfChunk(chunk.id)))continue;
+      if(this.chunkTouchesRetention(chunk.id))continue;
       this.disposeChunk(chunk);this.chunkCache.delete(key);
     }
-    this.pendingChunks=this.pendingChunks.filter(t=>this.knowledgeSubmapWindow.has(this.submapOfChunk(t.id)));
+    this.pendingChunks=this.pendingChunks.filter(t=>this.chunkTouchesRetention(t.id));
     this.queueSignature=null;
   }
   invalidateHexes(hexes){
@@ -374,8 +384,8 @@ class GPUMap {
     const maxR=Math.min(Math.ceil(TOTAL_ROWS/HEX_ROWS)-1,minR+2);
     for(let sc=minC;sc<=maxC;sc++)for(let sr=minR;sr<=maxR;sr++){
       if(!this.knowledgeSubmapWindow.has(sc+':'+sr))continue;
-      const firstC=Math.ceil(sc*HEX_COLS/CHUNK_SIZE),lastC=Math.floor(((sc+1)*HEX_COLS-1)/CHUNK_SIZE);
-      const firstR=Math.ceil(sr*HEX_ROWS/CHUNK_SIZE),lastR=Math.floor(((sr+1)*HEX_ROWS-1)/CHUNK_SIZE);
+      const firstC=Math.floor(sc*HEX_COLS/CHUNK_SIZE),lastC=Math.floor(((sc+1)*HEX_COLS-1)/CHUNK_SIZE);
+      const firstR=Math.floor(sr*HEX_ROWS/CHUNK_SIZE),lastR=Math.floor(((sr+1)*HEX_ROWS-1)/CHUNK_SIZE);
       for(let cx=firstC;cx<=lastC;cx++)for(let cy=firstR;cy<=lastR;cy++)
         extras.push(cx+':'+cy);
     }
@@ -385,7 +395,7 @@ class GPUMap {
     // never throw it all away and restart it from the beginning.
     const existing=new Set(this.pendingChunks.map(t=>t.id));
     for(const id of ordered){
-      if(!this.knowledgeSubmapWindow.has(this.submapOfChunk(id)))continue;
+      if(!this.chunkTouchesRetention(id))continue;
       const key=this.chunkKey(id,FIXED_TERRAIN_STEPS);
       if(!this.chunkCache.has(key) && !existing.has(id)){
         this.pendingChunks.push({id,lod:FIXED_TERRAIN_STEPS});
