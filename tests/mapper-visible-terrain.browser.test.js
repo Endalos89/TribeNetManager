@@ -104,6 +104,11 @@ const {chromium}=require('playwright');
     });
     assert.ok(zoomContinuity.before>=1&&zoomContinuity.after>=1,
       'zooming must never blink out already-resident terrain chunks');
+    await page.waitForFunction(()=>{
+      const gpu=window.TribeNetGPU;
+      const id=Math.floor(315/2)+':'+Math.floor(327/2);
+      return Boolean(gpu.bestResident(id,gpu.lastLod)?.group.visible);
+    },null,{timeout:30000});
     const groundTest=await page.evaluate(()=>{
       const p=baseCenter(315,327);
       const height=window.TribeNetGPU.renderedGroundHeight({x:p.x,y:p.y,z:-.1});
