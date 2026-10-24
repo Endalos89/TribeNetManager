@@ -24,8 +24,8 @@ function fixture(reverse=false){
 }
 const first=fixture(),second=fixture(true);
 first.renderer.draw();second.renderer.draw();
-assert.equal(G.groundSubdivisions,8,'underlying detail grid doubles subdivisions for 4x base faces');
-assert.equal(first.fills.length,9*G.regionMesh(8).length,'all ground triangles are clipped to exact reveal sections');
+assert.equal(G.groundSubdivisions,16,'close-up terrain uses finer facets');
+assert.equal(first.fills.length,9*G.regionMesh(16).length,'all ground triangles are clipped to exact reveal sections');
 assert.deepEqual(first.fills,second.fills,'installation/discovery order cannot change rendered geometry');
 assert.ok(first.fills.every(f=>f.points.every(p=>p.every(Number.isFinite))));
 const p=first.renderer.project(first.center(1,1));
@@ -57,3 +57,12 @@ assert.equal(cached.renderer.groundBuilds,groundBuilds,'short pan reuses oversca
 cached.state.hexCache.set('1:1',{terrain:'GH'});cached.renderer.draw();
 assert.equal(cached.renderer.groundBuilds,groundBuilds+1,'terrain changes invalidate ground raster');
 console.log('Ground raster cache survives notes, river edits, unit clearings and small pans');
+
+const panning=fixture();panning.renderer.draw();
+const painted=panning.fills.length;
+panning.state.cameraX+=2;panning.renderer.draw();
+assert.equal(panning.renderer.sceneBuilds,2,'large pan rebuilds composition');
+assert.equal(panning.fills.length,painted,'large pan reuses world hex rasters without repainting faces');
+const screen=panning.renderer.project(panning.center(1,1),0),world=panning.renderer.inverse(screen.x,screen.y);
+assert.ok(Math.abs(world.x-panning.center(1,1).x)<1e-9);
+assert.ok(Math.abs(world.y-panning.center(1,1).y)<1e-9);

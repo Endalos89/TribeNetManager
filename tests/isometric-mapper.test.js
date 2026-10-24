@@ -29,7 +29,7 @@ const hill=()=>({terrain:'GH'}),flat=()=>({terrain:'PR'});
 const p=center(30,20),n=center(30,21),mid={x:(p.x+n.x)/2,y:(p.y+n.y)/2};
 const left=G.surface(mid.x,mid.y-1e-5,hill,palette),right=G.surface(mid.x,mid.y+1e-5,hill,palette);
 assert.ok(Math.abs(left.z-right.z)<1e-4,'hill surface remains continuous through shared edge');
-assert.ok(left.z>0&&left.z<.04,'hill shoulders meet in low dry valleys without coastal cliffs');
+assert.ok(left.z>.25,'connected hills retain elevation through shared borders');
 assert.equal(left.color,right.color,'matching ground has no per-tile colour border');
 assert.equal(G.surface(mid.x,mid.y,flat,palette).color,palette(),'dry land should have no blue border tint');
 const wet=(c,r)=>c===30&&r===20?{terrain:'O'}:{terrain:'PR'};
@@ -235,7 +235,7 @@ for(const terrain of ['PR','GH','LCM','HSM'])for(const water of ['O','L'])for(co
  assert.equal(at(G.coreRadius/2).water,false,'central land is preserved');
  let wet=0;
  for(let i=0;i<100;i++)if(at(G.coreRadius/2+(1-G.coreRadius)/2*(i+.5)/100).water)wet++;
- assert.ok(wet>=87&&wet<=93,`coastal land-side edge water share ${wet}%`);
+ assert.ok(wet>=45&&wet<=75,`coastal land-side edge water share ${wet}%`);
  assert.equal(at(.5).z,0,'shared hex border is navigable level water');
 }
 // Corners shared with water also contain water, but wait for ALL three owners.
@@ -247,14 +247,14 @@ for(const water of ['O','L']){
  const hidden=owners.find(o=>o!==sea);
  assert.equal(G.surface(v.x,v.y,(x,y)=>x===hidden.col&&y===hidden.row?null:lookup(x,y),palette).fog,true);
 }
-console.log('Ocean/lake coastal land edges reserve about 90% water across all orientations');
-// Hill shoulders are low before neighbours are known; mountains retain cliffs.
+console.log('Ocean/lake coastal land edges reserve about 60% water across all orientations');
+// Inner relief remains unchanged beside water; mountains retain their height.
 {
  const c=center(30,20),n=center(30,21);
  for(const terrain of ['GH','HSM']){
   const lookup=(col,row)=>({terrain:col===30&&row===21?'L':terrain});
   const s=G.surface(c.x+(n.x-c.x)*G.coreRadius/2,c.y+(n.y-c.y)*G.coreRadius/2,lookup,palette);
-  if(terrain==='GH')assert.ok(s.z<.04,'hill reaches its coastal shoulder without a cliff');
+  if(terrain==='GH')assert.ok(s.z>.25,'hill core retains its own relief at the coast');
   else assert.ok(s.z>.9,'high mountain keeps a steep coastal face');
  }
 }

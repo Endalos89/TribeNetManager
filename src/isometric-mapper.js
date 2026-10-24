@@ -3,6 +3,8 @@
 const IsoMapper = (() => {
   const G=IsoGeometry, WATER='#337f98', FOG='#253640';
   let enabled=false, labels=true, grid=false;
+  const terrainRasterCache=new Map();
+  let terrainRasterBytes=0;
   const detailCache=new Map(), cellCache=new Map(), surfaceCache=new Map(), groundCache=new Map(), resourceIconCache=new Map();
   let interactive=false, settleTimer=null, hitScale=1, sceneBuilds=0, groundBuilds=0;
   let unitSignature='', terrainSignature='', decorationSignature='', groundLayer=null, frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
@@ -30,19 +32,19 @@ const IsoMapper = (() => {
     const signature=Array.from(state.hexCache,([ref,data])=>`${ref}:${data.terrain}`).join('|')+playbackSignature;
     const decorations=Array.from(state.hexCache,([ref,data])=>`${ref}:${[...G.rivers(data)].sort().join(',')}`).join('|');
     if(decorations!==decorationSignature){decorationSignature=decorations;cellCache.clear();landscape=null;}
-    if(signature!==terrainSignature){terrainSignature=signature;cellCache.clear();surfaceCache.clear();groundCache.clear();groundLayer=null;landscape=null;}
+    if(signature!==terrainSignature){terrainSignature=signature;cellCache.clear();surfaceCache.clear();groundCache.clear();terrainRasterCache.clear();terrainRasterBytes=0;groundLayer=null;landscape=null;}
   }
   const isWater=t=>t==='O'||t==='L';
   const known=d=>d && d.terrain && d.terrain!=='UNKNOWN';
   const color=t=>terrainStyle[t]?.[0] || FOG;
   function withProjection(fn) {const previous=frameRect;frameRect=canvas.getBoundingClientRect();try{return fn();}finally{frameRect=previous;}}
   function project(p,z=null) {
-    const r=frameRect||canvas.getBoundingClientRect(), q=G.project(p.x-state.cameraX,p.y-state.cameraY,z??sample(p.x,p.y).z);
+    const r=frameRect||canvas.getBoundingClientRect(), q=G.project((p.x-state.cameraX)*1.5,(p.y-state.cameraY)*1.5,z??sample(p.x,p.y).z);
     return {x:r.width/2+q.x*state.scale,y:r.height/2+q.y*state.scale};
   }
   function inverse(x,y) {
     const r=canvas.getBoundingClientRect(),q=G.unproject((x-r.width/2)/state.scale,(y-r.height/2)/state.scale);
-    return {x:q.x+state.cameraX,y:q.y+state.cameraY};
+    return {x:q.x/1.5+state.cameraX,y:q.y/1.5+state.cameraY};
   }
   function bounds() {
     const r=canvas.getBoundingClientRect(),pad=Math.max(250,state.scale*1.7);
@@ -115,7 +117,7 @@ const IsoMapper = (() => {
   function groundFaces(t) {
     // One resolution per frame avoids mismatched shared edges; distant ground
     // uses fewer faces once individual facets are below a few screen pixels.
-    const steps=state.scale<28?2:state.scale<43?4:G.groundSubdivisions,key=`${t.ref}:${steps}`;
+    const steps=state.scale<28?2:state.scale<43?4:state.scale<65?8:G.groundSubdivisions,key=`${t.ref}:${steps}`;
     if(groundCache.has(key))return groundCache.get(key);
     const faces=[];
     if(!t.known || (t.water&&t.n.every(n=>known(n)&&isWater(n.terrain)))){
@@ -250,7 +252,7 @@ const IsoMapper = (() => {
     for(let col=b.minCol;col<=b.maxCol;col++)for(let row=b.minRow;row<=b.maxRow;row++){
       const t=tile(col,row);if(t.p.x < -pad || t.p.x>rect.width+pad || t.p.y < -pad || t.p.y>rect.height+pad)continue;tiles.push(t);
     }
-    const shift=landscape?G.project(landscape.cameraX-state.cameraX,landscape.cameraY-state.cameraY):{x:0,y:0};
+    const shift=landscape?G.project((landscape.cameraX-state.cameraX)*1.5,(landscape.cameraY-state.cameraY)*1.5):{x:0,y:0};
     let dx=shift.x*state.scale,dy=shift.y*state.scale;
     const needsBuild=!landscape || landscape.scale!==state.scale || landscape.width!==rect.width || landscape.height!==rect.height || landscape.dpr!==dpr || Math.abs(dx)>160 || Math.abs(dy)>160;
     if(needsBuild && (!interactive || !landscape)){
@@ -265,10 +267,34 @@ const IsoMapper = (() => {
         const ground=document.createElement('canvas');ground.width=buffer.width;ground.height=buffer.height;
         renderCtx=ground.getContext('2d');renderCtx.setTransform(dpr,0,0,dpr,0,0);
         renderCtx.fillStyle=FOG;renderCtx.fillRect(0,0,frameRect.width,frameRect.height);hitFaces=[];
-        const faces=[];
-        for(const t of tiles)for(const f of groundFaces(t))faces.push({...f,col:t.col,row:t.row,depth:f.points.reduce((s,p)=>s+p.y,0)/f.points.length});
-        faces.sort((a,b)=>a.depth-b.depth);
-        for(const f of faces){const points=f.points.map(p=>project(p,p.z));polygon(points,f.color,f.color);hitFaces.push({points,col:f.col,row:f.row});}
+        // Cache each world hex independently of the camera. A pan only
+        // composites existing rasters; newly visible hexes pay the mesh cost.
+        const ordered=[...tiles].sort((a,b)=>a.c.y-b.c.y||a.c.x-b.c.x);
+        for(const t of ordered){
+          const key=`${t.ref}:${state.scale}:${dpr}`;
+          let raster=terrainRasterCache.get(key);
+          if(!raster){
+            const faces=groundFaces(t).slice().sort((a,b)=>a.points.reduce((s,p)=>s+p.y,0)/a.points.length-b.points.reduce((s,p)=>s+p.y,0)/b.points.length).map(f=>({...f,points:f.points.map(p=>{
+              const q=G.project((p.x-t.c.x)*1.5,(p.y-t.c.y)*1.5,p.z);
+              return {x:q.x*state.scale,y:q.y*state.scale};
+            })}));
+            const all=faces.flatMap(f=>f.points),left=Math.floor(Math.min(...all.map(p=>p.x)))-2,top=Math.floor(Math.min(...all.map(p=>p.y)))-2;
+            const width=Math.ceil(Math.max(...all.map(p=>p.x)))-left+2,height=Math.ceil(Math.max(...all.map(p=>p.y)))-top+2;
+            const image=document.createElement('canvas');image.width=Math.ceil(width*dpr);image.height=Math.ceil(height*dpr);
+            const previous=renderCtx;renderCtx=image.getContext('2d');renderCtx.setTransform(dpr,0,0,dpr,0,0);
+            for(const f of faces)polygon(f.points.map(p=>({x:p.x-left,y:p.y-top})),f.color,f.color);
+            renderCtx=previous;raster={image,left,top,width,height,faces};
+            raster.bytes=image.width*image.height*4;terrainRasterBytes+=raster.bytes;
+            terrainRasterCache.set(key,raster);
+            // Bounded LRU, including scale variants.
+            while(terrainRasterCache.size>1 && (terrainRasterCache.size>384||terrainRasterBytes>96*1024*1024)){
+              const oldest=terrainRasterCache.keys().next().value;terrainRasterBytes-=terrainRasterCache.get(oldest).bytes;terrainRasterCache.delete(oldest);
+            }
+          }else{terrainRasterCache.delete(key);terrainRasterCache.set(key,raster);}
+          const origin=project(t.c,0);
+          renderCtx.drawImage(raster.image,origin.x+raster.left,origin.y+raster.top,raster.width,raster.height);
+          for(const f of raster.faces)hitFaces.push({points:f.points.map(p=>({x:p.x+origin.x,y:p.y+origin.y})),col:t.col,row:t.row});
+        }
         groundLayer={key:groundKey,canvas:ground,hits:hitFaces};
       }
       hitFaces=groundLayer.hits;renderCtx=buffer.getContext('2d');

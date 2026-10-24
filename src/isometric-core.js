@@ -41,7 +41,7 @@
   // Layered terrain v2: independent of scenery, reports and installation state.
   const reliefSeed='tribenet-world:relief-v2';
   const reliefHash=seed(reliefSeed);
-  const groundSubdivisions=8; // 6 * 8² = 384 ground faces, previously 96.
+  const groundSubdivisions=16; // Fine terrain: 1,536 base faces; cached per level of detail.
   function noise(x,y,salt=0) {
     const ix=Math.floor(x),iy=Math.floor(y),u=smooth(x-ix),v=smooth(y-iy);
     const value=(a,b)=>{
@@ -161,28 +161,19 @@
     const region=regionAt(x,y),rgb=[0,0,0];
     const owners=region.owners.map(o=>({...o,data:lookup(o.col,o.row)}));
     if(owners.some(o=>!o.data?.terrain||o.data.terrain==='UNKNOWN'))return {x,y,z:.14,color:'#253640',water:false,rock:0,fog:true};
-    let total=0,hills=0,low=0,high=0,snow=0,hillShoulder=0,coastLand=0,coastWater=0;
+    let total=0,hills=0,low=0,high=0,snow=0,coastLand=0,coastWater=0;
     for(const owner of owners){
       const terrain=owner.data.terrain,w=owner.weight;
       if(water(terrain)){coastWater+=w;continue;}
       coastLand+=w;total+=w;hills+=isHill(terrain)?w:0;low+=isLowMountain(terrain)?w:0;high+=isHighMountain(terrain)?w:0;snow+=['LSM','HSM','ALPS'].includes(terrain)?w:0;
-      if(isHill(terrain)){
-        // Every hill has low outer shoulders from its first reveal. This gives
-        // coastal hills room to descend inside the core without ever consulting
-        // an unknown neighbour, and joins inland hills through low valleys.
-        const c=center(owner.col,owner.row);
-        const rim=apothem*coreRadius-Math.max(...normals.map(n=>(x-c.x)*n.x+(y-c.y)*n.y));
-        hillShoulder+=w*smooth(rim/.54);
-      }
       const color=palette(terrain);[1,3,5].forEach((p,i)=>rgb[i]+=parseInt(color.slice(p,p+2),16)*w);
     }
-    // Reserve roughly 90% of the land-side shared strip for navigable water.
-    // smooth(.95)=.99275: the final 5% of a two-owner connector is dry.
-    // Bounded seeded variation preserves a useful water apron on every coast.
-    const shoreline=noise(x*1.4,y*1.4,419)-.5;
+    // About 60% of the land-side connector is water; seeded detail breaks
+    // straight shorelines without changing either inner hex.
+    const shoreline=(noise(x*2.3,y*2.3,419)-.5)*.10+(noise(x*8.1,y*8.1,557)-.5)*.06;
     const coastTotal=coastLand+coastWater;
     const landFraction=coastTotal?coastLand/coastTotal:1;
-    const threshold=.99275+shoreline*.004;
+    const threshold=.896+shoreline;
     const coastField=landFraction-threshold;
     if(coastField<=0)return {x,y,z:0,color:'#337f98',water:true,rock:0};
     const weights=total?{hill:hills/total,low:low/total,high:high/total,snow:snow/total}:{hill:0,low:0,high:0,snow:0};
@@ -191,8 +182,7 @@
     const hillHeight=.18+.53*smooth(broad);
     const lowHeight=.60+.16*broad+.34*ridge*ridge;
     const highHeight=1.27+.23*broad+.83*Math.pow(ridge,3);
-    const shoulder=total?hillShoulder/total:0;
-    const raw=.14*(1-weights.hill)+.02*weights.hill+(2/3)*(shoulder*(hillHeight+.18)+weights.low*lowHeight+weights.high*highHeight);
+    const raw=.14+(2/3)*(weights.hill*hillHeight+weights.low*lowHeight+weights.high*highHeight);
     // Hills ease into level water with a flat beach tangent. Mountains retain
     // a steep rocky coastal face. The core boundary still joins unchanged.
     const inland=Math.max(0,Math.min(1,coastField/(1-threshold)));
@@ -200,7 +190,7 @@
     const slope=smooth(inland);
     const cliff=1-Math.pow(1-inland,3);
     const coastalRaw=raw*(slope*(1-mountain)+cliff*mountain);
-    const layer=(.10+weights.hill*.025+weights.low*.035+weights.high*.065)*(2/3);
+    const layer=(.10+weights.hill*.025+weights.low*.035+weights.high*.065)*(1/3);
     // Suppress terracing at hill beaches, retaining strata farther inland.
     const terraces=mountain+(1-mountain)*smooth(inland);
     const z=coastalRaw*(1-terraces)+layeredHeight(coastalRaw,layer)*terraces;
