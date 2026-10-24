@@ -36,7 +36,9 @@ const IsoMapper = (() => {
   function prepareSurface() {
     const terrainRevision=Number(state.hexCache?.terrainRevision??-1);
     const decorationRevision=Number(state.hexCache?.decorationRevision??-1);
-    const playbackRevision=Number(window.resultsPlayback?.renderRevision??0);
+    const playback=window.resultsPlayback;
+    const playbackRevision=[playback?.renderRevision??0,Boolean(playback?.active),
+      Boolean(playback?.baselineLoaded),playback?.startTurnKey||''].join(':');
     // Zoom, pan, selection and frame animation cannot change the underlying
     // knowledge revision. They must NEVER rescan the entire terrain Map or
     // invalidate GPU buffers.
