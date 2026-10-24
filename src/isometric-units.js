@@ -214,6 +214,10 @@
       .map(m=>({...m,x:point.x+m.x,y:point.y+m.y,z:IsoMapper.surface(point.x+m.x,point.y+m.y).z,heading:options.heading}))
       .sort((a,b)=>a.y-b.y);
     if(!models.length)return false;
+    if(root.TribeNetGPU?.initialized && root.TribeNetGPU.visible){
+      for(const model of models)root.TribeNetGPU.addModel(model);
+      return true;
+    }
     const scale=typeof state!=='undefined'&&Number.isFinite(state.scale)?state.scale:50;
     for(const m of models){
       const p=IsoMapper.project(m,m.z);ctx.beginPath();ctx.ellipse(p.x,p.y,scale*.14,scale*.026,0,0,Math.PI*2);ctx.fillStyle='#142b2944';ctx.fill();
@@ -230,7 +234,22 @@
     if(drawn.has(key))return;drawn.add(key);
     const b=layout(point,code,type,offset,extra,snapshot),r=canvas.getBoundingClientRect();
     if(b.x+b.w<0 || b.x>r.width || b.y+b.h<0 || b.y>r.height)return;
-    hits.push(b);IsoMapper.withProjection(()=>{ctx.save();
+    hits.push(b);
+    if(root.TribeNetGPU?.initialized && root.TribeNetGPU.visible){
+      b.models.forEach(model=>root.TribeNetGPU.addModel(model));
+      ctx.save();
+      if(String(state.selectedUnit)===String(code)){
+        const p=IsoMapper.project(b.position,IsoMapper.surface(b.position.x,b.position.y).z);
+        ctx.beginPath();ctx.ellipse(p.x,p.y,state.scale*.43,state.scale*.17,0,0,Math.PI*2);
+        ctx.strokeStyle='#58d4ef';ctx.lineWidth=2;ctx.stroke();
+      }
+      ctx.font='700 11px Segoe UI';ctx.textAlign='center';ctx.textBaseline='alphabetic';
+      ctx.strokeStyle='#172c29';ctx.lineWidth=3;ctx.strokeText(b.text,b.anchor.x,b.anchor.y);
+      ctx.fillStyle=String(state.selectedUnit)===String(code)?'#ffffff':'#ffe4a4';
+      ctx.fillText(b.text,b.anchor.x,b.anchor.y);
+      ctx.restore();return;
+    }
+    IsoMapper.withProjection(()=>{ctx.save();
     const selected=String(state.selectedUnit)===String(code);
     const origin=Number.isFinite(point.x)&&Number.isFinite(point.y)?point:baseCenter(point.globalCol,point.globalRow);
     const center=IsoMapper.project({x:origin.x+(b.models[0]?.x-origin.x||0),y:origin.y+(b.models[0]?.y-origin.y||0)},b.models[0]?.z||0);
