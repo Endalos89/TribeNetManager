@@ -5,6 +5,8 @@ const U=require('../src/isometric-units');
 const centre=(c,r)=>({x:1+1.5*c,y:Math.sqrt(3)/2+Math.sqrt(3)*(r+(c%2?.5:0))});
 assert.equal(S.WORLD_SEED,1790425012);
 assert.equal(G.WORLD_SEED,S.WORLD_SEED);
+assert.equal(G.seed(S.WORLD_SEED),G.seed(String(S.WORLD_SEED)),
+  'the permanent numeric world seed must not crash geometry module initialisation');
 assert.equal(G.reliefSeed,S.WORLD_SEED);
 assert.equal(G.coreRadius,Math.sqrt(3)/(1+Math.sqrt(3)));
 assert.equal(G.subdivisions(),16);
