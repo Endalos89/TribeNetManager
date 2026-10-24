@@ -11,11 +11,11 @@ const CHUNK_SIZE=2;
 // Keep enough GPU chunks for the current submap and nearby regions; geometry
 // is still bounded by LRU. Nine whole submaps of GPU meshes would be excessive.
 const MAX_CHUNKS=520;
-// Two 2x2-chunk rings cover the same neighbourhood as one former 4x4 ring.
-const PREFETCH_RING=2;
-// Generate only a modest offscreen margin. The 3x3 SUBMAP DATA window is
-// separate and must never imply eagerly building all of its GPU geometry.
-const MAX_OFFSCREEN_PREFETCH=96;
+// One constant world-space (13x13) geometry neighbourhood is warmed around
+// the camera centre, regardless of zoom scale or viewport dimensions.
+// Chunks remain resident until memory pressure requires LRU eviction.
+const FOCUS_RADIUS_CHUNKS=6;
+const FOCUS_HYSTERESIS_CHUNKS=3;
 const FIXED_TERRAIN_STEPS=8;
 const UNIT_MODEL_SCALE=.5;
 // Only change this identifier when geometry generation rules change, not
@@ -45,12 +45,13 @@ class GPUMap {
     this.units=[];this.visible=false;this.failed=false;this.initialized=false;
     this.generation=0;this.pendingChunks=[];this.idleBuildPending=false;this.activeChunkIds=new Set();this.visibleChunkIds=new Set();
     this.knowledgeSubmapWindow=new Set();this.lastCentreSubmap=null;
+    this.focusChunk=null;this.focusChunkIds=new Set();
     this.groundFaces=null;this.sampleTerrain=null;this.tileAt=null;this.lastLod=FIXED_TERRAIN_STEPS;
     this.diskMissKeys=new Set();this.diskReadBusy=false;this.cachedWrites=new Set();
     this.diskStats={diskHits:0,diskMisses:0,diskWrites:0,diskErrors:0};
     this.groundHeightCache=new Map();this.meshRevision=0;
     this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
-    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,gpuCalls:0,renderMs:0,evictions:0,prefetchTarget:0};
+    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0};
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
     this.waveMaterial=new THREE.LineBasicMaterial({color:0xc8e9d9,transparent:true,opacity:.58,depthWrite:false});
     this.treeMaterials={
@@ -121,7 +122,7 @@ class GPUMap {
     if(returning && this.pendingChunks.length)this.scheduleIdleChunk();
   }
   invalidate(){
-    for(const record of this.chunkCache.values())this.disposeChunk(record);
+    for(const record of this.chunkCache.values())this.disposeChunk(record,'reset');
     this.chunkCache.clear();
     this.stats.chunks=0;this.stats.faces=0;this.stats.trees=0;
     this.generation++;this.pendingChunks=[];this.queueSignature=null;
@@ -130,9 +131,11 @@ class GPUMap {
     this.diskMissKeys.clear();
     this.groundHeightCache.clear();
   }
-  disposeChunk(record){
+  disposeChunk(record,reason='lru'){
     this.chunkGroup?.remove(record.group);
-    this.stats.evictions++;
+    if(reason==='lru')this.stats.evictions++;
+    else if(reason==='terrain')this.stats.terrainInvalidations++;
+    else if(reason==='reset')this.stats.fullResets++;
     record.ground.geometry.dispose();
     record.waves?.geometry.dispose();
     // Free per-instance GPU buffers on LRU eviction; tree geometries and
@@ -452,67 +455,71 @@ class GPUMap {
     // cursor-anchored zoom changes cameraX/Y. That is NOT a reason to destroy
     // previously uploaded GPU geometry. Keep all resident meshes while under
     // MAX_CHUNKS; evictUnused() handles actual memory pressure using LRU.
-    // Only abandon speculative tasks for remote regions, never visible work.
-    this.pendingChunks=this.pendingChunks.filter(t=>
-      this.chunkTouchesRetention(t.id)||this.visibleChunkIds.has(t.id));
+    // Data-window changes do not change the GPU retention area. Meshes and
+    // queued tasks are world-coordinate based, not submap or zoom based.
+    // updateFocusArea() handles genuine world-space camera movement.
     this.queueSignature=null;
   }
   invalidateHexes(hexes){
     if(!hexes?.length)return;
     const ids=new Set(hexes.map(p=>Math.floor(p.col/CHUNK_SIZE)+':'+Math.floor(p.row/CHUNK_SIZE)));
     for(const [key,record] of this.chunkCache)if(ids.has(record.id)){
-      this.disposeChunk(record);this.chunkCache.delete(key);
+      this.disposeChunk(record,'terrain');this.chunkCache.delete(key);
     }
     this.pendingChunks=this.pendingChunks.filter(t=>!ids.has(t.id));
     // Re-schedule only the changed chunks next time; all other buffers survive.
     this.queueSignature=null;
   }
-  queueBuilds(visible,lod){
-    const ring=new Set();
-    for(const id of visible){
-      const [cx,cy]=id.split(':').map(Number);
-      for(let x=-PREFETCH_RING;x<=PREFETCH_RING;x++)for(let y=-PREFETCH_RING;y<=PREFETCH_RING;y++){
-        const a=cx+x,b=cy+y;
-        if(a>=0&&b>=0&&a*CHUNK_SIZE<TOTAL_COLS&&b*CHUNK_SIZE<TOTAL_ROWS)
-          ring.add(a+':'+b);
+  updateFocusArea(){
+    // IsoGeometry.regionAt resolves the hex beneath the CAMERA CENTRE; no
+    // viewport scale is consulted, and mouse-anchored zoom only updates this
+    // when it actually moves far enough into a different world area.
+    const region=window.IsoGeometry.regionAt(this.cameraCenterX,this.cameraCenterY);
+    const cx=Math.max(0,Math.floor(region.col/CHUNK_SIZE));
+    const cy=Math.max(0,Math.floor(region.row/CHUNK_SIZE));
+    if(!this.focusChunk ||
+      Math.abs(cx-this.focusChunk.cx)>FOCUS_HYSTERESIS_CHUNKS ||
+      Math.abs(cy-this.focusChunk.cy)>FOCUS_HYSTERESIS_CHUNKS){
+      this.focusChunk={cx,cy};
+    }
+    const ids=new Set();
+    for(let dx=-FOCUS_RADIUS_CHUNKS;dx<=FOCUS_RADIUS_CHUNKS;dx++){
+      for(let dy=-FOCUS_RADIUS_CHUNKS;dy<=FOCUS_RADIUS_CHUNKS;dy++){
+        const x=this.focusChunk.cx+dx,y=this.focusChunk.cy+dy;
+        if(x>=0&&y>=0&&x*CHUNK_SIZE<TOTAL_COLS&&y*CHUNK_SIZE<TOTAL_ROWS)
+          ids.add(x+':'+y);
       }
     }
+    this.focusChunkIds=ids;
+    this.stats.focusTarget=ids.size;
+    return ids;
+  }
+  queueBuilds(visible,lod){
+    const focus=this.updateFocusArea();
     const distance=id=>{
       const [cx,cy]=id.split(':').map(Number);
-      const worldX=1+1.5*(cx*CHUNK_SIZE+(CHUNK_SIZE-1)/2);
-      const worldY=Math.sqrt(3)*(cy*CHUNK_SIZE+(CHUNK_SIZE-1)/2);
-      return (worldX-this.cameraCenterX)**2+(worldY-this.cameraCenterY)**2;
+      return (cx-this.focusChunk.cx)**2+(cy-this.focusChunk.cy)**2;
     };
-    // The visible viewport is the only mandatory geometry. Prefetch at most
-    // 96 additional 2x2 chunks in its immediate two-chunk ring, not the whole
-    // 3x3 submap DATA cache (~1,400 meshes). Otherwise the 520-entry GPU LRU
-    // evicts meshes while background work is still filling distant submaps.
+    // The preload area always occupies the same WORLD footprint. Zoom only
+    // changes which resident chunks are drawn. At extreme zoom-out, ensure
+    // additional on-screen chunks are loaded even beyond this fixed radius.
     const priority=[...visible].sort((a,b)=>distance(a)-distance(b));
-    const prefetch=[...ring].filter(id=>!visible.has(id))
+    const extra=[...focus].filter(id=>!visible.has(id))
       .sort((a,b)=>distance(a)-distance(b));
-    const offscreenLimit=Math.max(0,Math.min(MAX_OFFSCREEN_PREFETCH,
-      MAX_CHUNKS-priority.length));
-    const ordered=[...priority,...prefetch.slice(0,offscreenLimit)];
-    // Not all ring chunks are necessarily retained when zoomed far out.
+    const extraBudget=Math.max(0,MAX_CHUNKS-priority.length);
+    const ordered=[...priority,...extra.slice(0,extraBudget)];
     this.activeChunkIds=new Set(ordered);
-    this.stats.prefetchTarget=Math.min(prefetch.length,offscreenLimit);
-    // Preserve unfinished work when zoom/camera changes; change its priority,
-    // never throw it all away and restart it from the beginning.
-    const existing=new Set(this.pendingChunks.map(t=>t.id));
+    this.stats.prefetchTarget=Math.min(extra.length,extraBudget);
+    const rank=new Map(ordered.map((id,index)=>[id,index]));
+    const pendingById=new Map(this.pendingChunks.map(job=>[job.id,job]));
     for(const id of ordered){
-      if(!this.chunkTouchesRetention(id))continue;
-      const key=this.chunkKey(id,FIXED_TERRAIN_STEPS);
-      if(!this.chunkCache.has(key) && !existing.has(id)){
-        this.pendingChunks.push({id,lod:FIXED_TERRAIN_STEPS});
-        existing.add(id);
-      }
+      if(!this.chunkCache.has(this.chunkKey(id,lod))&&!pendingById.has(id))
+        pendingById.set(id,{id,lod});
     }
-    const rank=new Map(),unique=[];
-    for(const id of ordered)if(!rank.has(id))rank.set(id,rank.size);
-    for(const job of this.pendingChunks)
-      if(rank.has(job.id) && !this.chunkCache.has(this.chunkKey(job.id,job.lod)))unique.push(job);
-    unique.sort((a,b)=>rank.get(a.id)-rank.get(b.id));
-    this.pendingChunks=unique.slice(0,Math.max(MAX_CHUNKS,priority.length));
+    this.pendingChunks=[...pendingById.values()]
+      .filter(job=>rank.has(job.id)&&!this.chunkCache.has(this.chunkKey(job.id,job.lod)))
+      .sort((a,b)=>rank.get(a.id)-rank.get(b.id))
+      .slice(0,Math.max(MAX_CHUNKS,priority.length));
     this.scheduleIdleChunk();
   }
   scheduleIdleChunk(){
@@ -546,7 +553,7 @@ class GPUMap {
         this.diskReadBusy=true;
         Promise.resolve().then(()=>reader(key)).then(data=>{
           if(data && this.persistentKey(next.id,next.lod)===key &&
-            this.chunkTouchesRetention(next.id) &&
+            this.activeChunkIds.has(next.id) &&
             !this.chunkCache.has(this.chunkKey(next.id,next.lod))){
             this.restoreChunk(next.id,next.lod,data);
             this.diskStats.diskHits++;this.evictUnused();this.requestLater();
@@ -618,7 +625,8 @@ class GPUMap {
     // changed the visible set. A settled frame will prioritise missing meshes
     // and then prefetch, without interfering with wheel events.
     const interacting=typeof IsoMapper!=='undefined'&&IsoMapper.interacting;
-    const signature=lod+'|'+[...visible].sort().join('|');
+    const focus=this.updateFocusArea();
+    const signature=this.focusChunk.cx+':'+this.focusChunk.cy+'|'+lod+'|'+[...visible].sort().join('|');
     if(interacting){
       this.queueSignature=null;
     }else if(signature!==this.queueSignature){
