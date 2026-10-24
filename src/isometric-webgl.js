@@ -42,7 +42,7 @@ class GPUMap {
   constructor(){
     this.renderer=null;this.canvas=null;this.scene=null;this.camera=null;
     this.chunkGroup=null;this.modelGroup=null;this.chunkCache=new Map();
-    this.units=[];this.visible=false;this.failed=false;this.initialized=false;
+    this.units=[];this.visible=false;this.failed=false;this.initialized=false;this.failureReason='';
     this.generation=0;this.pendingChunks=[];this.idleBuildPending=false;this.activeChunkIds=new Set();this.visibleChunkIds=new Set();
     this.knowledgeSubmapWindow=new Set();this.lastCentreSubmap=null;
     this.focusChunk=null;this.focusChunkIds=new Set();
@@ -101,14 +101,14 @@ class GPUMap {
       this.initialized=true;
       this.setVisible(this.visible);
       this.canvas.addEventListener('webglcontextlost',event=>{
-        event.preventDefault();this.failed=true;this.initialized=false;
+        event.preventDefault();this.failureReason='WebGL context lost';this.failed=true;this.initialized=false;
         console.error('Mapper GPU context lost; switching to software terrain');
         this.setVisible(false);
         if(typeof window.draw==='function')window.draw();
       },false);
       return true;
     }catch(error){
-      this.failed=true;console.error('Three.js terrain renderer unavailable; using Canvas fallback:',error);
+      this.failed=true;this.failureReason='WebGL initialization: '+(error?.message||String(error));console.error('Three.js terrain renderer unavailable; using Canvas fallback:',error);
       this.canvas?.remove();this.canvas=null;this.renderer=null;
       return false;
     }
