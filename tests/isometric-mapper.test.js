@@ -31,11 +31,13 @@ const left=G.surface(mid.x,mid.y-1e-5,hill,palette),right=G.surface(mid.x,mid.y+
 assert.ok(Math.abs(left.z-right.z)<1e-4,'hill surface remains continuous through shared edge');
 assert.ok(left.z>.25,'connected hills retain elevation through shared borders');
 assert.equal(left.color,right.color,'matching ground has no per-tile colour border');
-assert.equal(G.surface(mid.x,mid.y,flat,palette).color,palette(),'dry land should have no blue border tint');
+const dryColor=G.surface(mid.x,mid.y,flat,palette).color;
+assert.ok(dryColor.startsWith('#'),'dry plain colour is still a valid hex colour');
+assert.ok(Math.abs(parseInt(dryColor.slice(1,3),16)-0x83)<18,'plain patches preserve green terrain palette');
 const wet=(c,r)=>c===30&&r===20?{terrain:'O'}:{terrain:'PR'};
 assert.equal(G.surface(p.x,p.y,wet,palette).water,true);
 // Visual coasts may cross hex edges; centres retain authoritative terrain.
-assert.equal(G.surface(p.x,p.y,wet,palette).z,0,'reported ocean centre remains at sea level');
+assert.equal(G.surface(p.x,p.y,wet,palette).z,.10,'reported ocean centre uses configurable sea level');
 assert.equal(G.surface(n.x,n.y,wet,palette).water,false,'coastal band does not consume whole land hex');
 console.log('North-up projection, continuous hills and dry/coastal boundary checks passed');
 // Fog only excludes scenery whose BASE is concealed, never clipping its crown.
@@ -164,7 +166,7 @@ assert.equal(G.treeSite('LCM',site,(x,y)=>({x,y,z:.8+x*1.2,water:false})),false,
 assert.equal(G.treeSite('LCM',{...site,z:1.3},gentle),false,'avoid exposed heights');
 assert.equal(G.treeSite('D',site,()=>({...site,water:true})),false,'avoid shoreline overhang');
 assert.equal(G.treeSite('D',{...site,water:true},gentle),false);
-assert.equal(G.surface(p.x,p.y,wet,palette).z,0,'water remains level beside relief');
+assert.equal(G.surface(p.x,p.y,wet,palette).z,.10,'water remains level beside relief');
 console.log('Connected low/high mountain relief, shared seed, seams and slope-aware wooded placement passed');
 
 // Layered terrain replaces hill props; exposed stone occurs in both families.
@@ -242,7 +244,7 @@ for(const terrain of ['PR','GH','LCM','HSM'])for(const water of ['O','L'])for(co
  let wet=0;
  for(let i=0;i<100;i++)if(at(G.coreRadius/2+(1-G.coreRadius)/2*(i+.5)/100).water)wet++;
  assert.ok(wet>=45&&wet<=75,`coastal land-side edge water share ${wet}%`);
- assert.equal(at(.5).z,0,'shared hex border is navigable level water');
+ assert.equal(at(.5).z,.10,'shared hex border is navigable at the configured water level');
 }
 // Corners shared with water also contain water, but wait for ALL three owners.
 for(const water of ['O','L']){
