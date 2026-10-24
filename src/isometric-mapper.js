@@ -11,7 +11,7 @@ const IsoMapper = (() => {
   let unitSignature='', decorationSignature='', groundLayer=null, frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
   // Track individual terrain changes rather than hashing every known cell and
   // invalidating the whole world whenever one newly discovered hex arrives.
-  const terrainSnapshot=new Map();
+  const terrainSnapshot=new Map(),notesSnapshot=new Map();
   function mapData(ref) {
     const target=state.hexCache.get(ref);
     return typeof resultsPlaybackMapData==='function' ? resultsPlaybackMapData(ref,target) : target;
@@ -33,23 +33,26 @@ const IsoMapper = (() => {
     return surfaceCache.get(key);
   }
   function prepareSurface() {
-    const next=new Map(),changed=new Set();
-    for(const [ref] of state.hexCache){
+    const next=new Map(),nextNotes=new Map(),changed=new Set();
+    let decorationsChanged=false;
+    // String comparisons avoid repeated river parsing on *every* animation
+    // frame. Terrain chunks are invalidated by terrain values only; notes
+    // affect the overlay but don't require regenerating the GPU world.
+    for(const [ref,data] of state.hexCache){
       const terrain=mapData(ref)?.terrain||'UNKNOWN';
       next.set(ref,terrain);
       if(terrainSnapshot.get(ref)!==terrain)changed.add(ref);
+      const notes=String(data?.notes||'');
+      nextNotes.set(ref,notes);
+      if(notesSnapshot.get(ref)!==notes)decorationsChanged=true;
     }
     for(const ref of terrainSnapshot.keys())if(!next.has(ref))changed.add(ref);
+    for(const ref of notesSnapshot.keys())if(!nextNotes.has(ref))decorationsChanged=true;
     const hadMesh=Boolean(window.TribeNetGPU?.chunkCache?.size);
-    terrainSnapshot.clear();
+    terrainSnapshot.clear();notesSnapshot.clear();
     for(const [ref,terrain] of next)terrainSnapshot.set(ref,terrain);
-
-    const decorations=Array.from(state.hexCache,([ref,data])=>`${ref}:${[...G.rivers(data)].sort().join(',')}`).join('|');
-    if(decorations!==decorationSignature){
-      decorationSignature=decorations;
-      // Rivers and decorations are overlays; never delete GPU land meshes.
-      landscape=null;
-    }
+    for(const [ref,notes] of nextNotes)notesSnapshot.set(ref,notes);
+    if(decorationsChanged){landscape=null;}
     if(changed.size===0)return;
 
     // Clear analytic samples (which may blend up to three owners), but retain
