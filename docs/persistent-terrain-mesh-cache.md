@@ -69,3 +69,14 @@ the terrain generation count.
 
 
 Terrain Dev reports resident GPU chunks, pending work, the offscreen prefetch target and eviction count, in addition to disk hits and mesh generations. The 3x3 data window is **not** a promise that all nine entire submaps are kept as GPU meshes.
+
+
+## 24 October 2026 — prevent zoom-driven cache eviction
+
+Camera movement caused by cursor-anchored wheel zoom can move the camera **centre** into a neighbouring submap even when the user is still viewing largely the same terrain. The earlier `dropDistantSubmaps()` implementation immediately disposed all GPU chunks outside the current 3×3 knowledge window, regardless of GPU usage. Consequently `evictions` increased despite only 168–177 chunks being resident under a 520-chunk limit, causing expensive disk restoration and mesh reconstruction on zoom-out.
+
+**Retention invariant:** Submap transitions never evict already-uploaded GPU geometry while the cache remains below its memory limit. Crossing the boundary may cancel speculative *pending jobs*, but resident meshes are retained. `evictUnused()` alone performs LRU memory-pressure eviction when the resident count exceeds `MAX_CHUNKS`. Actual terrain knowledge changes and Terrain Dev adjustments still invalidate affected meshes as appropriate; disk copies persist.
+
+**Interaction invariant:** While `IsoMapper.interacting` is true during wheel zoom or drag, scheduled idle geometry and disk loads pause. Rendering continues to reuse already-uploaded meshes. On the settled redraw (~150ms after interaction), missing visible meshes and the nearby prefetch margin are queued again. This avoids a burst of CPU triangulation or GPU buffer disposal interrupting zoom events.
+
+A real WebGL browser test uses cursor-anchored zoom close to a 30-column submap boundary and verifies the boundary actually changes, the GPU cache remains below capacity, the number of evictions does not increase, and resident Three.js mesh geometries retain identical UUIDs. Tests must fail if boundary changes start destructively purging GPU chunks again.
