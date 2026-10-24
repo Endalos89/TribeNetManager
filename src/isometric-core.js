@@ -267,7 +267,17 @@
       ? 1-(1-setting('coastWaterShare',.6))*midpointWaterWeight+shoreline
       : setting('coastWaterShare',.6);
     const coastField=landFraction-threshold;
-    if(coastField<=0)return {x,y,z:0,color:'#337f98',water:true,rock:0};
+    // Ocean and lake surfaces share one adjustable physical level. Colour varies
+    // gently with world-space noise and is lighter in the coastal shallows;
+    // this never changes the categorical water/land ownership.
+    const waterLevel=setting('waterHeight',.10);
+    if(coastField<=0){
+      const shallows=coastLand>0 ? smooth(coastLand*2.0) : 0;
+      const ripple=(noise(x*.73,y*.73,831)-.5)*11+(noise(x*2.1,y*2.1,419)-.5)*5;
+      const depthColor=[38,105,137],shoreColor=[65,147,158];
+      const channels=depthColor.map((c,i)=>Math.max(0,Math.min(255,Math.round(c*(1-shallows)+shoreColor[i]*shallows+ripple))));
+      return {x,y,z:waterLevel,color:'#'+channels.map(c=>c.toString(16).padStart(2,'0')).join(''),water:true,rock:0};
+    }
     const weights=total?{hill:hills/total,low:low/total,high:high/total,snow:snow/total}:{hill:0,low:0,high:0,snow:0};
     const {broad,ridge,detail}=relief(x,y);
     // Distinct silhouette families, even with identical ground colours.
@@ -275,19 +285,30 @@
     const ridgeTerm=Math.pow(ridge,setting('ridgeSharpness',2.8));
     const lowHeight=.60+.16*broad+.42*ridgeTerm+setting('ruggedness',.15)*(detail-.5);
     const highHeight=1.27+.23*broad+setting('mountainHeight',.83)*ridgeTerm+setting('ruggedness',.15)*2*(detail-.5);
-    const raw=.14+(2/3)*(weights.hill*hillHeight+weights.low*lowHeight+weights.high*highHeight);
+    // Plains have slight broad undulations and patchy colours, not mountain-like
+    // terracing. Adjacent hills blend through the established shared weights.
+    const plainFraction=Math.max(0,1-weights.hill-weights.low-weights.high);
+    const plainVariation=setting('plainsRelief',.055)*((broad-.5)*.75+(detail-.5)*.25);
+    const raw=.14+plainFraction*plainVariation+(2/3)*(weights.hill*hillHeight+weights.low*lowHeight+weights.high*highHeight);
     // Hills ease into level water with a flat beach tangent. Mountains retain
     // a steep rocky coastal face. The core boundary still joins unchanged.
     const inland=Math.max(0,Math.min(1,coastField/(1-threshold)));
     const mountain=weights.low+weights.high;
     const slope=smooth(inland);
     const cliff=1-Math.pow(1-inland,3);
-    const coastalRaw=raw*(slope*(1-mountain)+cliff*mountain);
+    // Land meets the actual water plane. PR now sits only ~.04 units above
+    // default water rather than behaving like a large cliff over z=0.
+    const coastalRaw=waterLevel+(raw-waterLevel)*(slope*(1-mountain)+cliff*mountain);
     const layer=(.10+weights.hill*.025+weights.low*.035+weights.high*.065)*(1/3);
     // Suppress terracing at hill beaches, retaining strata farther inland.
     const terraces=mountain+(1-mountain)*smooth(inland);
     const z=coastalRaw*(1-terraces)+layeredHeight(coastalRaw,layer)*terraces;
     let land=total?rgb.map(n=>n/total):[37,54,64];
+    // Add world-coherent grassy patches without sculpting artificial hills.
+    const colourNoise=(noise(x*1.38+83,y*1.38-27,177)-.5)*.7+
+      (noise(x*4.25,y*4.25,519)-.5)*.3;
+    const variation=plainFraction*setting('plainsTexture',.22)*colourNoise;
+    land=land.map((v,i)=>Math.max(0,Math.min(255,v*(1+variation*(i===1?1.15:.78)))));
     // Strata exposure belongs to the ground, never separate boulder props.
     // Broken patches expose some hill stone; mountain shoulders expose more.
     const band=coastalRaw/layer-Math.floor(coastalRaw/layer);
