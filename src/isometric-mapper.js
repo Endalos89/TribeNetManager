@@ -118,44 +118,70 @@ const IsoMapper = (() => {
     }
     return [land,sea].filter(p=>p.length>=3);
   }
-  function groundFaces(t,requestedSteps=null) {
-    // One resolution per frame avoids mismatched shared edges; distant ground
-    // uses fewer faces once individual facets are below a few screen pixels.
-    const baseSteps=requestedSteps ?? (state.scale<28?2:state.scale<43?4:state.scale<65?8:G.subdivisions());
+  // Keep one terrain topology at every zoom. Only shoreline-crossing
+  // triangles receive additional *local* sampling, controlled separately by
+  // Shore Detail, to resolve an irregular coast at three-owner corners.
+  function refineShoreline(triangle,depth,out) {
+    if(depth<=0){out.push(triangle);return;}
+    const mid=(a,b)=>sample((a.x+b.x)/2,(a.y+b.y)/2);
+    const [a,b,c]=triangle,ab=mid(a,b),bc=mid(b,c),ca=mid(c,a);
+    const centre=sample((a.x+b.x+c.x)/3,(a.y+b.y+c.y)/3);
+    const flags=[a,b,c,ab,bc,ca,centre].map(p=>Boolean(p.water));
+    if(flags.every(v=>v===flags[0])){out.push(triangle);return;}
+    refineShoreline([a,ab,ca],depth-1,out);
+    refineShoreline([ab,b,bc],depth-1,out);
+    refineShoreline([ca,bc,c],depth-1,out);
+    refineShoreline([ab,bc,ca],depth-1,out);
+  }
+  function groundFaces(t,_requestedSteps=null) {
+    const steps=8;
     const coastal=t.known && t.n.some(n=>known(n) && (isWater(n.terrain)!==t.water));
-    const minimum=state.scale<38?8:state.scale<78?16:Math.round(window.TerrainSettings?.value('shoreDetail')??24);
-    const steps=coastal?Math.max(baseSteps,minimum):baseSteps,key=`${t.ref}:${steps}`;
+    const detail=Number(window.TerrainSettings?.value('shoreDetail')??20);
+    const microDepth=coastal?Math.max(0,Math.min(3,Math.ceil(Math.log2(detail/steps)))):0;
+    const key=`${t.ref}:${steps}:${microDepth}`;
     if(groundCache.has(key))return groundCache.get(key);
     const faces=[];
     if(!t.known || (t.water&&t.n.every(n=>known(n)&&isWater(n.terrain)))){
-      faces.push({points:G.corners.map(p=>offset(t.c,p,1,t.known?sample(t.c.x,t.c.y).z:.14)),color:t.known?sample(t.c.x,t.c.y).color:FOG});
+      const point=sample(t.c.x,t.c.y);
+      faces.push({points:G.corners.map(p=>offset(t.c,p,1,t.known?point.z:.14)),color:t.known?point.color:FOG});
       groundCache.set(key,faces);return faces;
     }
-    for(const face of G.regionMesh(steps)){
-      const visible=G.regionOwners(t.col,t.row,face.kind,face.index).every(o=>known(surfaceData(o.col,o.row)));
-      const points=face.points.map(p=>sample(t.c.x+p.x,t.c.y+p.y));
-      if(!visible){faces.push({points,color:FOG});continue;}
-      for(const part of shoreFaces(points)){
+    const emitPart=part=>{
       const [a,b,c]=part,ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z,vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
       const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,len=Math.hypot(nx,ny,nz)||1;
       const light=Math.max(.78,Math.min(1.13,.94+(-nx*.35-ny*.28)/len));
-      const mixed=G.mix(part.map(p=>p.color));
-      const wet=part.every(p=>p.water);
+      const mixed=G.mix(part.map(p=>p.color)),wet=part.every(p=>p.water);
       const steepness=Math.hypot(nx,ny)/(Math.abs(nz)+1e-8);
       const cliff=wet?0:Math.max(0,Math.min(1,(steepness-.48)/.68));
       const rockWeight=wet?0:part.reduce((n,p)=>n+(p.rock||0),0)/part.length;
-      const exposure=window.TerrainSettings?.value('cliffExposure')??.85;
-      const stone=[120,120,108];
+      const exposure=window.TerrainSettings?.value('cliffExposure')??.85,stone=[120,120,108];
       const shade=wet?mixed:'#'+[1,3,5].map((i,k)=>{
         const base=parseInt(mixed.slice(i,i+2),16)*light;
         const amount=Math.min(.96,cliff*exposure*(.72+.28*rockWeight));
         return Math.max(0,Math.min(255,Math.round(base*(1-amount)+stone[k]*amount))).toString(16).padStart(2,'0');
       }).join('');
       faces.push({points:part,color:shade});
+    };
+    for(const face of G.regionMesh(steps)){
+      const visible=G.regionOwners(t.col,t.row,face.kind,face.index).every(o=>known(surfaceData(o.col,o.row)));
+      const points=face.points.map(p=>sample(t.c.x+p.x,t.c.y+p.y));
+      if(!visible){faces.push({points,color:FOG});continue;}
+      if(!microDepth){
+        for(const part of shoreFaces(points))emitPart(part);
+        continue;
+      }
+      // Splitting only near the land/water contour preserves the eight-step
+      // inland terrain mesh while providing curved coastlines without costly
+      // whole-hex high-LOD rebuilds.
+      for(let k=1;k<points.length-1;k++){
+        const triangles=[];
+        refineShoreline([points[0],points[k],points[k+1]],microDepth,triangles);
+        for(const triangle of triangles)for(const part of shoreFaces(triangle))emitPart(part);
       }
     }
     groundCache.set(key,faces);return faces;
   }
+
   function pick(x,y) {
     // The GPU raycaster reads the actual elevated world-space mesh.
     if(window.TribeNetGPU?.initialized && window.TribeNetGPU.visible){

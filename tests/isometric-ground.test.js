@@ -24,8 +24,8 @@ function fixture(reverse=false){
 }
 const first=fixture(),second=fixture(true);
 first.renderer.draw();second.renderer.draw();
-assert.equal(G.groundSubdivisions,16,'close-up terrain uses finer facets');
-assert.equal(first.fills.length,9*G.regionMesh(16).length,'all ground triangles are clipped to exact reveal sections');
+assert.equal(G.groundSubdivisions,8,'terrain mesh stays at eight subdivisions for all zoom levels');
+assert.equal(first.fills.length,9*G.regionMesh(8).length,'ground geometry always uses fixed eight-step reveal sections');
 assert.deepEqual(first.fills,second.fills,'installation/discovery order cannot change rendered geometry');
 assert.ok(first.fills.every(f=>f.points.every(p=>p.every(Number.isFinite))));
 const p=first.renderer.project(first.center(1,1));
@@ -38,10 +38,10 @@ assert.equal(first.renderer.sceneBuilds,2);
 const high=first.renderer.surface(first.center(1,1).x,first.center(1,1).y).z;
 assert.ok(high>.9,'terrain edits invalidate cell and surface caches');
 first.state.hexCache.set('1:1',{terrain:'O'});first.renderer.draw();
-assert.equal(first.renderer.surface(first.center(1,1).x,first.center(1,1).y).z,.10,'water rendering uses chosen Terrain Dev elevation');
+assert.equal(first.renderer.surface(first.center(1,1).x,first.center(1,1).y).z,.5,'water rendering uses approved Terrain Dev sea level');
 first.state.scale=20;first.renderer.draw();
 assert.equal(first.renderer.sceneBuilds,4,'zoom rebuilds the mesh at its current detail level');
-console.log('Ground renderer: 4x face count, repeatable meshes, picking, cached draws, edits and zoom passed');
+console.log('Ground renderer: fixed mesh topology, repeatable meshes, picking, cached draws, edits and zoom passed');
 
 // Decoration changes preserve both the terrain geometry and its raster layer.
 const cached=fixture();cached.renderer.draw();
