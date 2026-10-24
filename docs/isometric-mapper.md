@@ -1,5 +1,8 @@
 # 3D Mapper
 
+> **Renderer since October 2026:** The 3D Mapper uses [Three.js/WebGL](threejs-webgl-mapper.md) for terrain, forests and unit miniatures, with a transparent Canvas 2D overlay for gameplay controls and labels. The original 2D mode and WebGL fallback remain available. Earlier Canvas-only rendering notes below describe the historical implementation.
+
+
 > **Current geometry, placement and tuning contract (24 October 2026):** see [World Terrain Generation & Shared-Region Rendering v1.2](hex-terrain-generation-design.md). It supersedes historical notes below about the 62% core inset, release-version terrain seeds, fixed compass unit slots and moving units merely sitting on an original-game-hex border. Inner terrain hexes are now ~63.4% radius with shared squares and triangles, using one permanent seed derived from repository creation, die-like unit layouts and a local-only Terrain Dev JSON preset panel.
 
 
