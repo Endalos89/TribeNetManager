@@ -273,6 +273,13 @@ window.TribeNetKnowledge={
   errors:()=>knowledgeFailures,
   historicalError:()=>{knowledgeFailures++;},
   historicalSettled:finishHydration,
+  historicalReset:()=>{
+    knowledgeStartedAt=0;
+    clearTimeout(knowledgeResumeTimer);
+    // The next selected result turn has its own knowledge snapshot; it must
+    // never inherit the previous turn's hydration or grace timer.
+    finishHydration();
+  },
   fallback:()=>!isTerrainKnowledgeComplete()&&isTerrainKnowledgeReady(),
   terrainRevision:()=>state.hexCache.terrainRevision,
   ensure:ensureTerrainKnowledge
