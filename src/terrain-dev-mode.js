@@ -82,7 +82,23 @@
     try{tuning.importPreset(await selected.text());for(const [name,f] of fields){f.range.value=tuning.value(name);f.update();}drawNow();feedback.textContent='Preset loaded for local preview.';}
     catch(error){feedback.textContent=error.message||'Could not read preset.';}finally{file.value='';}
   });
-  actions.append(exportButton,importButton,resetButton);
+  const retryButton=document.createElement('button');retryButton.type='button';retryButton.className='button';retryButton.textContent='Retry WebGL';
+  retryButton.title='Discard GPU meshes and try to recreate the graphics context. Does not delete map data.';
+  retryButton.addEventListener('click',()=>{
+    const gpu=root.TribeNetGPU;
+    if(!gpu?.retry){feedback.textContent='No WebGL renderer is available to retry.';return;}
+    try{gpu.retry();feedback.textContent=gpu.failed?'WebGL retry failed: '+gpu.failureReason:'WebGL restart requested.';}
+    catch(error){feedback.textContent='WebGL retry failed: '+(error?.message||String(error));}
+    updateStats();
+  });
+  const copyButton=document.createElement('button');copyButton.type='button';copyButton.className='button';copyButton.textContent='Copy diagnostics';
+  copyButton.addEventListener('click',async()=>{
+    try{
+      await navigator.clipboard.writeText(performance.textContent);
+      feedback.textContent='Diagnostics copied.';
+    }catch(error){feedback.textContent='Clipboard unavailable; please select and copy the diagnostics text.';}
+  });
+  actions.append(exportButton,importButton,resetButton,retryButton,copyButton);
   const performance=document.createElement('div');
   performance.className='terrain-dev-feedback';
   performance.setAttribute('aria-live','off');
@@ -91,9 +107,30 @@
   // No background timers while Terrain Dev is closed.
   let statsTimer=null;
   function updateStats(){
-    const info=root.TribeNetGPU?.getStats();
-    performance.textContent=info&&root.TribeNetGPU?.visible
-      ? 'GPU: '+info.chunks+' chunks · '+info.faces.toLocaleString()+
+    const gpu=root.TribeNetGPU;
+    const info=gpu?.getStats();
+    // IsoMapper is declared with top-level const in isometric-mapper.js;
+    // it is NOT window.IsoMapper. That old lookup falsely reported classic
+    // view whenever software fallback drew a 3D map.
+    const mode=typeof IsoMapper!=='undefined' && IsoMapper.enabled;
+    const detail=typeof state!=='undefined'&&state.mode==='detail';
+    const selected=$('mapperViewToggle')?.checked;
+    const active=gpu?.visible&&gpu?.initialized&&!gpu.failed;
+    const history=typeof resultsTimeline!=='undefined'?resultsTimeline:null;
+    const hexes=typeof state!=='undefined'?state.hexCache:null;
+    const known=hexes?[...hexes.values()].filter(row=>row?.terrain&&row.terrain!=='UNKNOWN').length:0;
+    const load=history?.lastTerrainLoad;
+    const details=' · Toggle '+(selected?'on':'off')+
+      ' · mapper '+(mode?'3D':'classic')+
+      ' · GPU '+(!gpu?'missing':gpu.failed?'failed':active?'active':gpu.initialized?'hidden':'not initialized')+
+      ' · terrain known '+known+'/'+(hexes?.size||0)+
+      (history?.turn?' · result '+history.turn.turnKey+
+        ' (knowledge '+(history.turn.knowledgeTurnKey||'initial')+')':'')+
+      (load?' · history query '+(load.status||'?')+' '+(load.count??0)+' rows':'')+
+      ' · failed reason '+(gpu?.failureReason||'none');
+    retryButton.disabled=!gpu;
+    if(active&&info){
+      performance.textContent='GPU: '+info.chunks+' chunks · '+info.faces.toLocaleString()+
         ' triangles · '+info.trees+' trees · '+info.gpuCalls+
         ' draw calls · '+info.renderMs.toFixed(1)+' ms GPU submission' +
         ' · Disk restored '+info.diskHits+' · generated '+info.builds+
@@ -109,18 +146,18 @@
         ' · data errors '+(root.TribeNetKnowledge?.errors?.()||0)+
         ' · geometry '+Math.round(info.terrainMs)+'ms'+
         ' · disk '+Math.round(info.restorationMs)+'ms'+
-        ' · cache resets '+info.fullResets
-      : (()=>{const gpu=root.TribeNetGPU;
-          const mode=root.IsoMapper?.enabled;
-          const detail=typeof state!=='undefined'&&state.mode==='detail';
-          if(!detail)return 'WebGL inactive — World Overview or launcher; open a detailed submap.';
-          if(!mode)return 'WebGL inactive — classic 2D view selected; enable 3D terrain.';
-          if(!gpu)return 'WebGL inactive — renderer module did not load.';
-          if(gpu.failed)return 'WebGL failed — '+(gpu.failureReason||'unknown rendering error; check developer console')+'.';
-          if(!gpu.initialized)return 'WebGL not initialized — detailed 3D view has not started.';
-          return 'WebGL initialized but hidden — check map visibility and renderer state.';
-        })();
+        ' · cache resets '+info.fullResets+details;
+    }else{
+      const reason=!detail?'World Overview or launcher':
+        !selected&&!mode?'Classic 2D view selected':
+        !gpu?'WebGL renderer module missing':
+        gpu.failed?'WebGL failed — '+(gpu.failureReason||'unknown rendering error'):
+        mode?'Software-rendered 3D (GPU not visible)':
+        '3D toggle is on but mapper mode is classic';
+      performance.textContent=reason+details;
+    }
   }
+
   toggle.addEventListener('click',()=>{
     const open=panel.classList.toggle('hidden')===false;
     toggle.classList.toggle('active',open);toggle.setAttribute('aria-expanded',String(open));
