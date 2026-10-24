@@ -39,6 +39,16 @@ assert.equal(G.surface(p.x,p.y,wet,palette).water,true);
 // Visual coasts may cross hex edges; centres retain authoritative terrain.
 assert.equal(G.surface(p.x,p.y,wet,palette).z,.10,'reported ocean centre uses configurable sea level');
 assert.equal(G.surface(n.x,n.y,wet,palette).water,false,'coastal band does not consume whole land hex');
+// Heights are eased *within* mixed terrain pieces; the flat PR side must
+// contain a gradual foothill before the GH core reaches its full elevation.
+const coastalA=center(30,20),coastalB=center(30,21);
+const mixTerrain=(c,r)=>({terrain:c===30&&r===20?'PR':'GH'});
+const along=u=>G.surface(coastalA.x+(coastalB.x-coastalA.x)*u,
+  coastalA.y+(coastalB.y-coastalA.y)*u,mixTerrain,palette).z;
+const prStart=along(0),flatEdge=along(.36),foot=along(.56),hillCore=along(.90);
+assert.ok(Math.abs(flatEdge-prStart)<.05,'PR-side connector stays mostly flat before hills rise');
+assert.ok(hillCore>prStart+.1,'hill core still has its full seeded relief');
+assert.ok(foot<Math.max(hillCore,prStart)+.1,'the transition has no sudden step');
 console.log('North-up projection, continuous hills and dry/coastal boundary checks passed');
 // Fog only excludes scenery whose BASE is concealed, never clipping its crown.
 assert.equal(G.sceneryVisible(0,0,[false,false,false,false,false,false]),true);
