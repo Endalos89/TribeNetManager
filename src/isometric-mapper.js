@@ -40,7 +40,7 @@ const IsoMapper = (() => {
       if(terrainSnapshot.get(ref)!==terrain)changed.add(ref);
     }
     for(const ref of terrainSnapshot.keys())if(!next.has(ref))changed.add(ref);
-    const firstLoad=terrainSnapshot.size===0;
+    const hadMesh=Boolean(window.TribeNetGPU?.chunkCache?.size);
     terrainSnapshot.clear();
     for(const [ref,terrain] of next)terrainSnapshot.set(ref,terrain);
 
@@ -59,7 +59,9 @@ const IsoMapper = (() => {
     landscape=null;groundLayer=null;
     const affected=new Set();
     for(const ref of changed){
-      const p=parseCoordinate(ref);
+      const p=typeof parseCoordinate==='function'
+        ? parseCoordinate(ref)
+        : (()=>{const [col,row]=ref.split(':').map(Number);return Number.isFinite(col)&&Number.isFinite(row)?{globalCol:col,globalRow:row}:null;})();
       if(!p)continue;
       for(let dc=-2;dc<=2;dc++)for(let dr=-2;dr<=2;dr++){
         const col=p.globalCol+dc,row=p.globalRow+dr;
@@ -69,8 +71,10 @@ const IsoMapper = (() => {
     }
     for(const key of groundCache.keys())
       if(affected.has(key.slice(0,key.indexOf(':'))))groundCache.delete(key);
-    if(!firstLoad)window.TribeNetGPU?.invalidateHexes?.([...affected].map(ref=>{
-      const p=parseCoordinate(ref);
+    if(hadMesh)window.TribeNetGPU?.invalidateHexes?.([...affected].map(ref=>{
+      const p=typeof parseCoordinate==='function'
+        ? parseCoordinate(ref)
+        : (()=>{const [col,row]=ref.split(':').map(Number);return Number.isFinite(col)&&Number.isFinite(row)?{globalCol:col,globalRow:row}:null;})();
       return p?{col:p.globalCol,row:p.globalRow}:null;
     }).filter(Boolean));
     // During initial startup the GPU has no generated terrain yet.
