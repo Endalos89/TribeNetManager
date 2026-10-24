@@ -83,6 +83,8 @@ contextBridge.exposeInMainWorld('ravenpost', {
 });
 
 contextBridge.exposeInMainWorld('tribenet', {
+  loadTerrainMesh: key => ipcRenderer.invoke('terrain-mesh:read',key),
+  saveTerrainMesh: (key,mesh) => ipcRenderer.invoke('terrain-mesh:write',key,mesh),
   getHexesInArea: bounds => ipcRenderer.invoke('hexes:area', bounds),
   getHex: coordinate => ipcRenderer.invoke('hex:get', coordinate),
   saveHex: (hex, context) => ipcRenderer.invoke('hex:save', hex, context),
