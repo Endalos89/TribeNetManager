@@ -287,31 +287,77 @@ function setHistoricalEditingState(enabled) {
   $('fogHexButton').disabled = enabled;
 }
 
+// Results terrain is versioned separately from live hex knowledge. Load the
+// complete 3x3 submap neighbourhood before permanent GPU mesh generation.
+// The previous loader referenced areaRequestTimer, which was removed from
+// renderer.js, causing a ReferenceError and a completely fog-grey 3D map.
+let historicalAreaRetryTimer = null;
+let historicalAreaGeneration = 0;
+function historicalAreaBounds() {
+  const submaps = activeSubmaps();
+  const visible = visibleBounds();
+  return {
+    minCol: Math.max(0, Math.min(visible.minCol, ...submaps.map(s => s.col * HEX_COLS))),
+    maxCol: Math.min(TOTAL_COLS-1, Math.max(visible.maxCol, ...submaps.map(s => (s.col+1)*HEX_COLS-1))),
+    minRow: Math.max(0, Math.min(visible.minRow, ...submaps.map(s => s.row * HEX_ROWS))),
+    maxRow: Math.min(TOTAL_ROWS-1, Math.max(visible.maxRow, ...submaps.map(s => (s.row+1)*HEX_ROWS-1)))
+  };
+}
+function areaContainsArea(outer, inner) {
+  return Boolean(outer && inner && outer.minCol<=inner.minCol &&
+    outer.maxCol>=inner.maxCol && outer.minRow<=inner.minRow &&
+    outer.maxRow>=inner.maxRow);
+}
 requestVisibleData = function requestVisibleDataWithResults() {
   if (!resultsTimeline.turn) return originalRequestVisibleData();
-  if (state.mode !== 'detail') return;
-  clearTimeout(areaRequestTimer);
-  areaRequestTimer = setTimeout(async () => {
-    if (resultsTimeline.loadingArea) return;
-    resultsTimeline.loadingArea = true;
-    try {
-      const b = visibleBounds();
-      const knowledgeKey = resultKnowledgeTurnKey();
-      const rows = knowledgeKey
-        ? await window.tribenet.getResultHexesInArea(b, knowledgeKey)
-        : (resultsTimeline.turn.startHexKnowledge || []).filter(row => row.globalCol >= b.minCol && row.globalCol <= b.maxCol && row.globalRow >= b.minRow && row.globalRow <= b.maxRow);
-      state.hexCache.clear();
-      for (const row of rows) state.hexCache.set(row.coordinate, row);
-      if (window.resultsPlayback?.active && typeof window.resultsPlaybackEnsureBaseline === 'function') {
-        await window.resultsPlaybackEnsureBaseline(b);
-      }
-      state.loadedArea = b;
-      if (state.planImport?.plan) state.routeCache = null;
-      draw();
-    } finally {
-      resultsTimeline.loadingArea = false;
+  if (state.mode !== 'detail' || resultsTimeline.loadingArea || historicalAreaRetryTimer !== null) return;
+  const b = historicalAreaBounds();
+  if (areaContainsArea(state.loadedArea, b)) return;
+  const generation = historicalAreaGeneration;
+  const turnKey = resultsTimeline.turn.turnKey;
+  const knowledgeKey = resultKnowledgeTurnKey();
+  // Claim the request immediately: repeated GPU frames must not repeatedly
+  // cancel a debounce before the historical SQLite query can start.
+  resultsTimeline.loadingArea = true;
+  Promise.resolve().then(async () => {
+    const rows = knowledgeKey
+      ? await window.tribenet.getResultHexesInArea(b, knowledgeKey)
+      : (resultsTimeline.turn.startHexKnowledge || []).filter(row =>
+          row.globalCol >= b.minCol && row.globalCol <= b.maxCol &&
+          row.globalRow >= b.minRow && row.globalRow <= b.maxRow);
+    if (generation !== historicalAreaGeneration || turnKey !== resultsTimeline.turn?.turnKey) return;
+    if (!Array.isArray(rows)) throw Error('Invalid historical terrain response');
+    // Keep previous submap records within this historical turn while panning.
+    // Never erase the entire cache just because the centre moved slightly.
+    for (const row of rows) if (row?.coordinate) state.hexCache.set(row.coordinate, row);
+    if (window.resultsPlayback?.active && typeof window.resultsPlaybackEnsureBaseline === 'function') {
+      await window.resultsPlaybackEnsureBaseline(b);
     }
-  }, 55);
+    state.loadedArea = state.loadedArea
+      ? { minCol:Math.min(b.minCol,state.loadedArea.minCol),
+          maxCol:Math.max(b.maxCol,state.loadedArea.maxCol),
+          minRow:Math.min(b.minRow,state.loadedArea.minRow),
+          maxRow:Math.max(b.maxRow,state.loadedArea.maxRow) }
+      : b;
+    if (state.planImport?.plan) state.routeCache = null;
+  }).catch(error => {
+    if (generation !== historicalAreaGeneration) return;
+    window.TribeNetKnowledge?.historicalError?.();
+    console.warn('Historical submap knowledge failed; retrying:', error);
+    clearTimeout(historicalAreaRetryTimer);
+    historicalAreaRetryTimer = setTimeout(() => {
+      historicalAreaRetryTimer = null;
+      requestVisibleData();
+    }, 600);
+  }).finally(() => {
+    if (generation !== historicalAreaGeneration) return;
+    resultsTimeline.loadingArea = false;
+    window.TribeNetKnowledge?.historicalSettled?.();
+    draw();
+    // Panning while a read is in progress may require a second area.
+    if (!historicalAreaRetryTimer && !areaContainsArea(state.loadedArea, historicalAreaBounds()))
+      requestVisibleData();
+  });
 };
 
 refreshSummaries = async function refreshHistoricalSummaries() {
@@ -510,9 +556,14 @@ async function applyResultTurn(turnKey, options = {}) {
   const startState = await buildResultStartState(turnKey);
   if (!startState || !startState.turnKey) return null;
   resultsTimeline.turn = startState;
+  historicalAreaGeneration++;
+  clearTimeout(historicalAreaRetryTimer);
+  historicalAreaRetryTimer = null;
+  resultsTimeline.loadingArea = false;
   if (persist) localStorage.setItem(RESULT_TURN_STORAGE_KEY, turnKey);
   state.hexCache.clear();
   state.loadedArea = null;
+  window.TribeNetKnowledge?.historicalReset?.();
   await syncPlannerOverlayToResultTurn(turnKey, null, { redraw: false });
   updateMapTimelineUI();
   await refreshSummaries();
