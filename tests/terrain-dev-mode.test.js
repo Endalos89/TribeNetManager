@@ -46,7 +46,7 @@ const mountain=G.surface(c.x,c.y,()=>({terrain:'HSM'}),palette);
 assert.equal(ocean.z,.45,'water level may be increased to 0.45');
 assert.ok(flat.z>ocean.z,'land stays just above the raised water plane');
 assert.ok(mountain.z<flat.z+.12,'setting mountain height to zero removes its baseline peak');
-S.set({hillAmplitude:.53,mountainHeight:.83,waterHeight:.10,foothillFlatness:.20});
+S.set({hillAmplitude:.88,mountainHeight:.83,waterHeight:.10,foothillFlatness:.20});
 S.set({waterHeight:.125,plainsRelief:.08,plainsTexture:.3,waveStrength:.75});
 const oceanCenter=centre(30,20),sea=G.surface(oceanCenter.x,oceanCenter.y,()=>({terrain:'O'}),()=> '#337f98');
 assert.equal(sea.z,.125,'water level adjusts the physical ocean plane');
