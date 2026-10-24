@@ -47,8 +47,10 @@
   // Layered terrain v2: independent of scenery, reports and installation state.
   const reliefSeed=WORLD_SEED;
   const reliefHash=seed(reliefSeed);
-  const groundSubdivisions=16; // Runtime high-detail value may be adjusted locally in Terrain Dev.
-  const subdivisions=()=>Math.max(8,Math.min(32,Math.round(setting('meshQuality',16))));
+  // Fixed world-space mesh fidelity prevents zoom-dependent coastline shape
+  // changes. The shoreline contour has separate local refinement in Mapper.
+  const groundSubdivisions=8;
+  const subdivisions=()=>8;
   function noise(x,y,salt=0) {
     const ix=Math.floor(x),iy=Math.floor(y),u=smooth(x-ix),v=smooth(y-iy);
     const value=(a,b)=>{
