@@ -1,0 +1,14 @@
+/* Editable local terrain controls overlay; never alters saved turn data. */
+.terrain-dev-panel{position:absolute;z-index:33;left:12px;top:14px;width:min(365px,calc(100% - 36px));max-height:calc(100% - 45px);overflow:auto;padding:14px;background:rgba(15,27,34,.96);border:1px solid #5c867e;border-radius:12px;box-shadow:0 8px 28px #0008;color:#edf4ec;font:12px Segoe UI,sans-serif;}
+.terrain-dev-panel.hidden{display:none;}
+.terrain-dev-head{display:flex;flex-direction:column;gap:3px;margin-bottom:10px;}
+.terrain-dev-head strong{font-size:14px;}
+.terrain-dev-head small{color:#9cb6b5;}
+.terrain-dev-sliders{display:grid;gap:9px;}
+.terrain-dev-row{display:grid;grid-template-columns:120px minmax(80px,1fr) 39px;gap:8px;align-items:center;}
+.terrain-dev-row input{width:100%;accent-color:#91d6b0;cursor:pointer;}
+.terrain-dev-row output{text-align:right;font-variant-numeric:tabular-nums;color:#ffe2a4;}
+.terrain-dev-regions{display:block;margin:14px 0 10px;}
+.terrain-dev-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.terrain-dev-actions button{font-size:11px;}
+.terrain-dev-feedback{min-height:18px;padding-top:8px;color:#b7d2cc;}
