@@ -67,7 +67,7 @@ const {chromium}=require('playwright');
         if(b>r*1.2 && b>g*.7 && b>70)blue++;
         distinct.add([r>>4,g>>4,b>>4].join(','));
       }
-      return {mode:state.mode,enabled:IsoMapper.enabled,renderer:IsoMapper.renderer,
+      return {overlayBackground:getComputedStyle(overlay).backgroundColor,mode:state.mode,enabled:IsoMapper.enabled,renderer:IsoMapper.renderer,
         gpu:IsoMapper.gpuStats,terrainCache:state.hexCache.size,
         canvas:{w,h},nonBlack,brightGreen,blue,distinct:distinct.size,preloaded:IsoMapper.preloadCount};
     });
@@ -76,6 +76,7 @@ const {chromium}=require('playwright');
     assert.equal(actual.enabled,true,'3D mapper enabled');
     assert.ok(actual.canvas.w>400 && actual.canvas.h>200,'canvas visible');
     assert.equal(actual.renderer,'WebGL','Three.js must be the active renderer');
+    assert.ok(actual.overlayBackground==='transparent' || /rgba\([^)]*,\s*0(?:\.0+)?\)/.test(actual.overlayBackground),'transparent Canvas overlay must not hide WebGL terrain');
     assert.ok(actual.gpu?.chunks>=1,'GPU chunks built');
     assert.ok(actual.gpu?.faces>=50,'GPU terrain triangles uploaded');
     assert.ok(actual.gpu?.gpuCalls>=1,'actual WebGL draw calls executed');
