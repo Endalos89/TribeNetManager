@@ -117,7 +117,12 @@ class GPUMap {
   }
   size(width,height,scale,cameraX,cameraY){
     const w=Math.max(1,Math.round(width)),h=Math.max(1,Math.round(height));
-    this.renderer.setSize(w,h,false);
+    // WebGLRenderer.setSize reallocates the drawing buffer. Never do that
+    // on camera pans or unit animations when CSS dimensions are unchanged.
+    if(this.viewportW!==w || this.viewportH!==h){
+      this.renderer.setSize(w,h,false);
+      this.viewportW=w;this.viewportH=h;
+    }
     this.camera.left=-w/(2*scale);
     this.camera.right=w/(2*scale);
     this.camera.top=h/(2*scale);
