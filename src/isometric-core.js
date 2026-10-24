@@ -155,6 +155,15 @@
     }));
     return {center:mid,corners,tangent:{x:tx,y:ty},normal:{x:nx,y:ny},halfSize:half,owners:canon([from,to])};
   }
+  function sharedTriangle(col,row,index) {
+    const source=center(col,row),junction={x:source.x+corners[index].x,y:source.y+corners[index].y};
+    const owners=canon(regionOwners(col,row,'corner',index));
+    const vertices=owners.map(o=>{
+      const c=center(o.col,o.row);
+      return {x:c.x+(junction.x-c.x)*coreRadius,y:c.y+(junction.y-c.y)*coreRadius};
+    });
+    return {owners,corners:vertices,center:{x:vertices.reduce((a,p)=>a+p.x,0)/3,y:vertices.reduce((a,p)=>a+p.y,0)/3}};
+  }
   function regionAt(x,y) {
     const guess=Math.round((x-1)/1.5);let col=guess,row=0,best=Infinity;
     for(let c=guess-1;c<=guess+1;c++){
@@ -283,6 +292,6 @@
   function sceneryVisible(x,y,neighbours) {
     return neighbours.every((known,i)=>known || x*Math.cos((i+.5)*Math.PI/3)+y*Math.sin((i+.5)*Math.PI/3)<Math.sqrt(3)/2*coreRadius-.04);
   }
-  const api={WORLD_SEED,coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,subdivisions,sharedSquare,pairFraction,cornerInfluences,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
+  const api={WORLD_SEED,coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,subdivisions,sharedSquare,sharedTriangle,pairFraction,cornerInfluences,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
   if(typeof module!=='undefined' && module.exports) module.exports=api; else root.IsoGeometry=api;
 })(typeof window!=='undefined'?window:globalThis);
