@@ -89,9 +89,12 @@ const {chromium}=require('playwright');
     assert.doesNotMatch(failureDiagnostic,/classic 2D view selected/i);
     await page.evaluate(()=>{
       const rows=[];
+      // Exercise the full real-world terrain catalogue, not just the four
+      // uncomplicated land types used by older WebGL smoke tests.
+      const terrains=TERRAIN.map(item=>item[0]).filter(code=>code!=='UNKNOWN');
       for(let col=307;col<=323;col++)for(let row=319;row<=335;row++){
         const coordinate=coordinateFor(col,row);
-        const terrain=['D','CH','PR','GH'][(col+row)%4];
+        const terrain=terrains[(col*13+row*7)%terrains.length];
         rows.push({...parseCoordinate(coordinate),coordinate,terrain,notes:''});
       }
       for(const req of window.delayedHistoricalReads.splice(0))req.resolve(rows);
