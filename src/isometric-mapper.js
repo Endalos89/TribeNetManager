@@ -398,10 +398,15 @@ const IsoMapper = (() => {
     if(value && state.scale<43)state.scale=52;
     if(value)scheduleKnownTerrainPreload();
     const toggle=$('mapperViewToggle');if(toggle)toggle.checked=Boolean(value);
-    showMapper({overview:options.overview !== false});
+    // Rendering mode changes never navigate to the mapper themselves. The
+    // launcher has exactly one owner for navigation (renderer.showMapper).
+    if (state.mode==='detail' && !$('mapperView').classList.contains('hidden')) {
+      resizeCanvas();
+      requestVisibleData();
+      draw();
+    }
   }
   function setup() {
-    $('openMapperButton').addEventListener('click',()=>setEnabled(Boolean($('mapperViewToggle')?.checked)));
     $('isoLabels').addEventListener('change',e=>{labels=e.target.checked;draw();});
     $('isoGrid').addEventListener('change',e=>{grid=e.target.checked;draw();});
     const field=document.createElement('fieldset');field.id='riverEdgeEditor';field.className='river-edge-editor';
