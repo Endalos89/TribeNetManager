@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write
 
+# Rapid mapper fixes must not publish an older installer after a newer one.
+concurrency:
+  group: tribenet-release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release:
     runs-on: windows-latest
