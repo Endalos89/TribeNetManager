@@ -212,7 +212,7 @@ class GPUMap {
           .map(([dx,dy])=>sample(x+dx,y+dy));
         const nearCoast=neighbour.some(n=>!n.water&&!n.fog);
         if(!nearCoast && random()>.26)continue;
-        const span=nearCoast?.12+random()*.14:.05+random()*.07;
+        const span=nearCoast ? .12+random()*.14 : .05+random()*.07;
         const direction=random()*Math.PI*2,ax=Math.cos(direction)*span/2,ay=Math.sin(direction)*span/2;
         const left=sample(x-ax,y-ay),right=sample(x+ax,y+ay);
         if(!left?.water||!right?.water)continue;
@@ -456,6 +456,6 @@ class GPUMap {
     this.stats.renderMs=performance.now()-started;
     this.stats.gpuCalls=this.renderer.info.render.calls;
   }
-  getStats(){return {...this.stats};}
+  getStats(){return {...this.stats,cachedChunks:this.chunkCache.size,queuedChunks:this.pendingChunks.length};}
 }
 window.TribeNetGPU=new GPUMap();
