@@ -126,7 +126,7 @@
       {x:(target.x*square.tangent.x+target.y*square.normal.x)*scale,
        y:(target.x*square.tangent.y+target.y*square.normal.y)*scale}:
       {x:target.x*scale,y:target.y*scale};
-    const spread=slotCodes.length>1?.32:.52;
+    const spread=slotCodes.length>1 ? 0.32 : 0.52;
     const heading=first&&next?
       Math.atan2(baseCenter(next.globalCol,next.globalRow).y-baseCenter(first.globalCol,first.globalRow).y,
                   baseCenter(next.globalCol,next.globalRow).x-baseCenter(first.globalCol,first.globalRow).x):null;
