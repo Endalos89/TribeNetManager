@@ -143,6 +143,50 @@ const {chromium}=require('playwright');
   for(const key of ['resident','hidden','workerBuilds','evictions'])
     assert.equal(postStop.after[key],postStop.before[key],
       'post-drag settle cannot trigger '+key+' change');
+  // Regression: after an authoritative change to an already known hex,
+  // the visible core stays mounted while its replacement is prepared.
+  // In the old implementation invalidateHexes immediately disposed this
+  // mesh, creating a conspicuous hole on the post-pan redraw.
+  const staged=await page.evaluate(()=>{
+    const gpu=window.TribeNetGPU,ref=coordinateFor(311,327);
+    const oldHex=state.hexCache.get(ref);
+    const id=Math.floor(311/gpu.getStats().chunkSize)+':'+Math.floor(327/gpu.getStats().chunkSize);
+    const prior=gpu.bestResident(id,8);
+    if(!prior||!prior.group.visible)throw Error('Known centre mesh is not visible');
+    const before={group:prior.group,geometry:prior.ground.geometry,
+      residents:gpu.chunkCache.size,bytes:gpu.residency.bytes};
+    state.hexCache.set(ref,{...oldHex,terrain:oldHex.terrain==='D'?'CH':'D'});
+    draw();
+    const intermediate=gpu.bestResident(id,8);
+    return {id,before,oldStillVisible:intermediate?.group.visible,
+      sameGroup:intermediate?.group===before.group,
+      sameGeometry:intermediate?.ground.geometry===before.geometry,
+      dirtyCore:intermediate?.dirtyCore,
+      residents:gpu.chunkCache.size,bytes:gpu.residency.bytes};
+  });
+  assert.ok(staged.oldStillVisible&&staged.sameGroup&&staged.sameGeometry,
+    'old core must remain drawn while a changed terrain chunk awaits rebuilding');
+  assert.ok(staged.dirtyCore,'a changed known core must be queued for replacement');
+  assert.equal(staged.residents,staged.before.residents);
+  await page.waitForFunction(id=>{
+    const gpu=window.TribeNetGPU,r=gpu.bestResident(id,8);
+    return r&&!r.dirtyCore&&gpu.worldGeometryComplete;
+  },staged.id,{timeout:90000});
+  const swapped=await page.evaluate(id=>{
+    const gpu=window.TribeNetGPU,r=gpu.bestResident(id,8);
+    return {group:r.group,visible:r.group.visible,
+      present:gpu.chunkGroup.children.includes(r.group),
+      resident:gpu.chunkCache.size,bytes:gpu.residency.bytes,
+      limit:gpu.residency.maxBytes,dirty:r.dirtyCore};
+  },staged.id);
+  assert.ok(swapped.visible&&swapped.present,
+    'replacement must remain visible and attached to Three.js scene');
+  assert.notEqual(swapped.group,staged.before.group,
+    'old and newly generated terrain meshes must have different identities');
+  assert.equal(swapped.resident,staged.before.residents,
+    'atomic replacement does not leak an extra resident chunk');
+  assert.ok(swapped.bytes<=swapped.limit,
+    'replacement must release the old GPU buffer within the memory budget');
   const grounding=await page.evaluate(()=>{
     const gpu=window.TribeNetGPU,point=baseCenter(311,327);
     const previousRay=gpu.downRay.intersectObjects;
