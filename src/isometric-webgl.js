@@ -334,7 +334,7 @@ class GPUMap {
           const ax=Math.fround(a.x*1.5),ay=Math.fround(a.y*1.5);
           const bx=Math.fround(b.x*1.5),by=Math.fround(b.y*1.5);
           const dx=Math.fround(d.x*1.5),dy=Math.fround(d.y*1.5);
-          if(Math.abs((bx-ax)*(dy-ay)-(by-ay)*(dx-ax))<1e-8)continue;
+          if((bx-ax)*(dy-ay)-(by-ay)*(dx-ax)===0)continue;
           vertex(a);vertex(b);vertex(d);
           facesCount++;
           if(immutable)coreFaces++;else sharedFaces++;
