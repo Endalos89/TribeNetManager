@@ -55,6 +55,7 @@ jobs:
           node tests/mapper-hydration-startup.browser.test.js
           node tests/mapper-historical-hydration.browser.test.js
           node tests/mapper-historical-startup-legacy-timer.browser.test.js
+          node tests/mapper-sparse-terrain-reuse.browser.test.js
 
       - name: Assign release version
         shell: pwsh
