@@ -13,7 +13,7 @@ class TerrainManualRecorder {
   start(snapshot,meta={}){
     if(this.active)throw Error('Terrain recording is already running');
     if(typeof snapshot!=='function')throw Error('A snapshot callback is required');
-    this.snapshot=snapshot;this.meta=meta;this.started=this.now();
+    this.snapshot=snapshot;this.meta=meta;this.started=this.now();this.startedAt=this.clock();
     this.events=[];this.dropped=0;this.active=true;this.stopping=false;
     this.event('recording-started');
     // Observe render changes, idle uploads and the post-pan settle handler.
@@ -38,7 +38,7 @@ class TerrainManualRecorder {
         this.clearEvery(this.timer);this.timer=null;this.active=false;
         resolve({
           format:'tribenet-terrain-manual-diagnostic-v1',
-          started:this.clock(),elapsedMs:Math.round(this.now()-this.started),
+          started:this.startedAt,elapsedMs:Math.round(this.now()-this.started),
           settings:this.meta,postStopIdleMs:idleMs,
           droppedEvents:this.dropped,events:[...this.events]
         });
