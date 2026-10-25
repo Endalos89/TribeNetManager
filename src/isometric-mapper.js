@@ -89,11 +89,21 @@ const IsoMapper = (() => {
       for(const key of coreFaceCache.keys())if(key.startsWith(ref+':'))coreFaceCache.delete(key);
       // The owner of an edge/corner may be in a nearby chunk. Mark those
       // chunks for transition-only updates, NOT wholesale core recreation.
-      for(let dc=-2;dc<=2;dc++)for(let dr=-2;dr<=2;dr++){
-        const col=p.globalCol+dc,row=p.globalRow+dr;
+      // Six edge neighbours are the only other owners of this hex's
+      // squares/triangles. The old 5x5 square rebuilt distant, unaffected
+      // shared transitions every time a report revealed new terrain.
+      const odd=p.globalCol%2?1:0;
+      const neighbors=[
+        [p.globalCol+1,p.globalRow+odd],
+        [p.globalCol,p.globalRow+1],
+        [p.globalCol-1,p.globalRow+odd],
+        [p.globalCol-1,p.globalRow+odd-1],
+        [p.globalCol,p.globalRow-1],
+        [p.globalCol+1,p.globalRow+odd-1]
+      ];
+      for(const [col,row] of neighbors)
         if(col>=0&&row>=0&&col<TOTAL_COLS&&row<TOTAL_ROWS)
           affected.add(coordinateFor(col,row));
-      }
     }
     for(const key of groundCache.keys())
       if(affected.has(key.replace(/:\d+:\d+$/, '')))groundCache.delete(key);
