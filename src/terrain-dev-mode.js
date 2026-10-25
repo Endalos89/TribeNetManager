@@ -141,6 +141,7 @@
         ' · saved '+info.diskWrites+' · misses '+info.diskMisses+
         ' · resident '+info.cachedChunks+' · queued '+info.queuedChunks+
         ' · centre area '+info.focusTarget+' ('+(2*info.focusRadiusChunks+1)+'×'+(2*info.focusRadiusChunks+1)+')' +
+        ' · world prepared '+(info.worldGeometryComplete?'yes':'no')+
         ' · discovered meshes '+(info.knownChunkTargets||0)+
         ' · background preparation '+info.prefetchTarget+
         ' · memory evicted '+info.evictions+
@@ -159,6 +160,8 @@
         ' · worker failures '+(info.workerFailures||0)+
         ' · GPU phase '+info.frameMs.toFixed(1)+'ms (peak '+info.maxFrameMs.toFixed(1)+'ms)'+
         ' · unit buffers rebuilt '+info.unitBufferRebuilds+
+        ' · static world model calculations '+(root.IsoUnits?.worldModelStats?.recalculations||0)+
+        ' · static model reuse '+(root.IsoUnits?.worldModelStats?.reused||0)+
         ' · unit ground calculations '+info.groundCalculations+
         ' · camera-only frames '+info.cameraOnlyFrames+details;
     }else{
