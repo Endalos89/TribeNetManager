@@ -175,12 +175,19 @@ const {chromium}=require('playwright');
   // In the old implementation invalidateHexes immediately disposed this
   // mesh, creating a conspicuous hole on the post-pan redraw.
   const staged=await page.evaluate(()=>{
-    const gpu=window.TribeNetGPU,ref=coordinateFor(311,327);
+    const gpu=window.TribeNetGPU;
     centerOnHex(311,327);state.scale=130;draw();
-    const oldHex=state.hexCache.get(ref);
-    const id=Math.floor(311/gpu.getStats().chunkSize)+':'+Math.floor(327/gpu.getStats().chunkSize);
-    const prior=gpu.bestResident(id,8);
-    if(!prior||!prior.group.visible)throw Error('Known centre mesh is not visible');
+    // Choose a chunk that is actually visible in the current renderer state.
+    // Earlier camera tests can leave the original centre chunk out of view.
+    const prior=[...gpu.chunkCache.values()].find(r=>r.known&&r.group.visible);
+    if(!prior)throw Error('No known visible mesh available for staged replacement');
+    const id=prior.id,[cx,cy]=id.split(':').map(Number);
+    const oldHex=[...state.hexCache.values()].find(row=>
+      Math.floor(row.globalCol/gpu.getStats().chunkSize)===cx&&
+      Math.floor(row.globalRow/gpu.getStats().chunkSize)===cy&&
+      row.terrain!=='UNKNOWN');
+    if(!oldHex)throw Error('Visible chunk has no known hex for replacement');
+    const ref=oldHex.coordinate;
     const before={group:prior.group.uuid,geometry:prior.ground.geometry.uuid,
       residents:gpu.chunkCache.size,bytes:gpu.residency.bytes};
     state.hexCache.set(ref,{...oldHex,terrain:oldHex.terrain==='D'?'CH':'D'});
