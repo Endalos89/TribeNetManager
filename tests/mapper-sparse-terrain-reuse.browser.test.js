@@ -71,7 +71,9 @@ const {chromium}=require('playwright');
       cached:gpu.chunkCache.size,
       knownTargets:gpu.knownChunkIds.size,
       fogInActive:[...gpu.activeChunkIds].filter(id=>!gpu.knownChunkIds.has(id)).length,
-      saves:window.cachedMeshes.size
+      saves:window.cachedMeshes.size,
+      worldReady:gpu.worldGeometryComplete,
+      unitRecalculations:IsoUnits.worldModelStats.recalculations
     });
     const before=snapshot();
     for(const col of [315,345,315,285,315]){
@@ -143,6 +145,10 @@ const {chromium}=require('playwright');
     assert.equal(fidelity[part].sameLength,true,part+' must preserve existing mesh vertex layout');
     assert.ok(fidelity[part].maxDelta<.0001,part+' must visually match the established generator');
   }
+  assert.equal(report.before.worldReady,true,
+    'when discovered terrain is fully prepared, disable the terrain job scheduler');
+  assert.equal(report.after.worldReady,true,
+    'zoom/pan must not re-enter the static world terrain scheduling path');
   assert.equal(report.before.reads,1,'only one historical-world query for selected turn');
   const offThread=await page.evaluate(()=>({
     workerBuilds:window.TribeNetGPU.stats.workerBuilds,
