@@ -183,7 +183,10 @@ function build(id,sharedOnly=false){
         else cc.push(...fc);
       };
       for(let k=1;k<face.points.length-1;k++){
-        vert(face.points[0]);vert(face.points[k]);vert(face.points[k+1]);
+        const a=face.points[0],b=face.points[k],c=face.points[k+1];
+        if(Math.abs((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))<1e-8)
+          continue; // clipped sliver has no stable float32 coverage
+        vert(a);vert(b);vert(c);
         if(immutable)coreFaces++;else sharedFaces++;
       }
     }
