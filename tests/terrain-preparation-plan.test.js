@@ -52,6 +52,16 @@ cache.get('5:5:8').dirtyShared=true;
 plan=planWorldGeometry({knownIds:known,visibleIds:visible,resident,lod,
   maxChunks:4096,anchor:{cx:18,cy:18}});
 assert.deepEqual(plan.jobs,[{id:'5:5',lod:8,sharedOnly:true}]);
+cache.get('5:5:8').dirtyCore=true;
+plan=planWorldGeometry({knownIds:known,visibleIds:visible,resident,lod,
+  maxChunks:4096,anchor:{cx:18,cy:18}});
+assert.deepEqual(plan.jobs,[{id:'5:5',lod:8,sharedOnly:false}],
+  'dirty core must schedule a full replacement while original remains resident');
+cache.get('5:5:8').dirtyCore=false;
+cache.get('5:5:8').dirtyShared=false;
+plan=planWorldGeometry({knownIds:known,visibleIds:visible,resident,lod,
+  maxChunks:4096,anchor:{cx:18,cy:18}});
+assert.equal(plan.jobs.length,0,'clean replacement is not rebuilt again');
 const compact=planWorldGeometry({knownIds:known,visibleIds:visible,resident:()=>null,
   maxChunks:150,anchor:{cx:18,cy:18}});
 assert.equal(compact.ids.length,150);
