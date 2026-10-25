@@ -383,16 +383,16 @@ class GPUMap {
         child.material===this.treeMaterials.broad?'broad':
         child.material===this.treeMaterials.conifer?'conifer':null;
       if(type)instances.push({
-        type,matrices:Array.from(child.instanceMatrix.array.slice(0,child.count*16))
+        type,matrices:child.instanceMatrix.array.slice(0,child.count*16)
       });
     }
     return {format:2,known:Boolean(record.known),faces:record.faces,trees:record.trees,
       coreFaces:record.coreFaces,sharedFaces:record.sharedFaces,
-      positions:Array.from(geometry.getAttribute('position').array),
-      colors:Array.from(geometry.getAttribute('color').array),
-      sharedPositions:Array.from(record.shared.geometry.getAttribute('position').array),
-      sharedColors:Array.from(record.shared.geometry.getAttribute('color').array),
-      waves:record.waves?Array.from(record.waves.geometry.getAttribute('position').array):null,
+      positions:geometry.getAttribute('position').array,
+      colors:geometry.getAttribute('color').array,
+      sharedPositions:record.shared.geometry.getAttribute('position').array,
+      sharedColors:record.shared.geometry.getAttribute('color').array,
+      waves:record.waves?record.waves.geometry.getAttribute('position').array:null,
       instances};
   }
   restoreChunk(id,lod,data){
@@ -451,7 +451,7 @@ class GPUMap {
     };
     for(const item of data.instances||[]){
       const descriptor=forestTypes[item.type];
-      if(!descriptor||!Array.isArray(item.matrices)||item.matrices.length%16!==0)
+      if(!descriptor||!(Array.isArray(item.matrices)||item.matrices instanceof Float32Array)||item.matrices.length%16!==0)
         throw Error('Invalid cached forest instances');
       const count=item.matrices.length/16;
       if(!count)continue;
