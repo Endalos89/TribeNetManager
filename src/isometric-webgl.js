@@ -1113,6 +1113,10 @@ class GPUMap {
       chunkSize:CHUNK_SIZE,totalCols:TOTAL_COLS,totalRows:TOTAL_ROWS,
       unproject:window.IsoGeometry.unproject
     })||new Set(tiles.map(chunkId));
+    // Only the fixed-zoom envelope is protected against memory eviction.
+    // Rendering existing resident meshes is separate from residency priority.
+    // This ensures distant meshes can still be reclaimed under real pressure.
+    const protectedVisible=new Set(visible);
     // Keep every resident discovered mesh enabled, regardless of camera zoom,
     // camera centre or the delayed post-drag redraw. THREE performs actual
     // frustum culling for the camera; do not use the workset envelope as a
@@ -1122,7 +1126,7 @@ class GPUMap {
     for(const record of this.chunkCache.values())
       if(record.known)visible.add(record.id);
     this.worldChunksPinned=true;
-    this.visibleChunkIds=visible;
+    this.visibleChunkIds=protectedVisible;
     // Camera movement never changes the world-wide preparation targets.
     // The static Visibility Zoom Lock affects what is drawn/pinned, while
     // every discovered chunk is prepared once independent of zoom.
