@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three';
 import { TerrainResidencyPolicy, DEFAULT_MAX_CHUNKS } from './terrain-residency.js';
+import { knownGeometryChunks } from './terrain-world-workset.js';
 
 // Smaller chunks cap synchronous CPU work when zoomed in; GPU instancing
 // still batches trees and units across each chunk.
@@ -44,6 +45,7 @@ class GPUMap {
     this.renderer=null;this.canvas=null;this.scene=null;this.camera=null;
     this.chunkGroup=null;this.modelGroup=null;this.chunkCache=new Map();
     this.residency=new TerrainResidencyPolicy();this.shownRecords=new Set();
+    this.knownChunkIds=new Set();
     this.renderSerial=0;this.groundRevision=0;this.lastUnitSignature=null;this.frameStartedAt=0;
     this.units=[];this.visible=false;this.failed=false;this.initialized=false;this.failureReason='';
     this.generation=0;this.pendingChunks=[];this.idleBuildPending=false;this.activeChunkIds=new Set();this.visibleChunkIds=new Set();
@@ -598,6 +600,17 @@ class GPUMap {
     this.stats.focusTarget=ids.size;
     return ids;
   }
+  setWorldKnowledge(terrain,parseCoordinate){
+    // Called on terrain-knowledge revision, not by camera movement.
+    // The workset describes the discovered world, independent of view scale.
+    const next=knownGeometryChunks(terrain,parseCoordinate,{
+      chunkSize:CHUNK_SIZE,totalCols:TOTAL_COLS,totalRows:TOTAL_ROWS
+    });
+    if(next.size===this.knownChunkIds.size &&
+      [...next].every(id=>this.knownChunkIds.has(id)))return;
+    this.knownChunkIds=next;
+    this.queueSignature=null;
+  }
   queueBuilds(visible,lod){
     const focus=this.updateFocusArea();
     const distance=id=>{
@@ -610,10 +623,17 @@ class GPUMap {
     const priority=[...visible].sort((a,b)=>distance(a)-distance(b));
     const extra=[...focus].filter(id=>!visible.has(id))
       .sort((a,b)=>distance(a)-distance(b));
+    // Precompute revealed-world geometry once, even when it is temporarily
+    // offscreen. Camera movement merely changes draw visibility; the geometry
+    // cache is not scoped to a viewport or 3x3 submap window.
+    const discovered=[...this.knownChunkIds]
+      .filter(id=>!visible.has(id)&&!focus.has(id))
+      .sort((a,b)=>distance(a)-distance(b));
     const extraBudget=Math.max(0,MAX_CHUNKS-priority.length);
-    const ordered=[...priority,...extra.slice(0,extraBudget)];
+    const ordered=[...priority,...extra,...discovered]
+      .slice(0,Math.max(MAX_CHUNKS,priority.length));
     this.activeChunkIds=new Set(ordered);
-    this.stats.prefetchTarget=Math.min(extra.length,extraBudget);
+    this.stats.prefetchTarget=ordered.length-priority.length;
     const rank=new Map(ordered.map((id,index)=>[id,index]));
     const pendingById=new Map(this.pendingChunks.map(job=>[job.id,job]));
     for(const id of ordered){
