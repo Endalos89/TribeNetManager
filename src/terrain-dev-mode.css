@@ -25,6 +25,12 @@
   white-space:pre;tab-size:2;}
 .terrain-dev-report[hidden],.terrain-dev-actions button[hidden]{display:none;}
 
-/* Render-only visibility envelope tuning; independent of terrain generation. */
-.terrain-dev-visibility{margin-top:14px;}
-.terrain-dev-visibility-help{display:block;line-height:1.4;margin:2px 0 11px;color:#a9c6bc;}
+/* Keep the terrain visibility lock ABOVE the long terrain-settings list.
+   A visible first-screen location is essential for the control to be found. */
+.terrain-dev-visibility-box{display:flex;flex-direction:column;gap:8px;
+  border:1px solid #547e74;border-radius:7px;padding:10px;
+  margin:0 0 16px;}
+.terrain-dev-visibility-box>strong{font-size:12px;}
+.terrain-dev-visibility{margin-top:0;}
+.terrain-dev-visibility>span{font-size:11px;}
+.terrain-dev-visibility-help{display:block;line-height:1.4;margin:0;color:#a9c6bc;}
