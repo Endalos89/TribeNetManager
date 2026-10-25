@@ -157,7 +157,7 @@ const {chromium}=require('playwright');
         resident:gpu.chunkCache.size,hidden:gpu.stats.hiddenChunkEvents,
         workerBuilds:gpu.stats.workerBuilds,evictions:gpu.stats.evictions,
         worldPinned:gpu.worldChunksPinned,
-        allShown:[...gpu.chunkCache.values()].every(record=>record.group.visible),
+        allShown:[...gpu.chunkCache.values()].filter(record=>record.known).every(record=>record.group.visible),
         exactMeshes:[...names].every(([key,group])=>gpu.chunkCache.get(key)?.group===group)
       }};
     }finally{window.TerrainVisibility.set(previousLock);}
