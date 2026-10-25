@@ -38,6 +38,7 @@ jobs:
           node tests/terrain-residency.test.js
           node tests/terrain-world-workset.test.js
           node tests/terrain-preparation-plan.test.js
+          node tests/terrain-foothill-blend.test.js
           node tests/terrain-diagnostic.test.js
           node tests/terrain-manual-recorder.test.js
           node tests/terrain-visibility.test.js
