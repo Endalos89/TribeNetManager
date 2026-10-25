@@ -49,6 +49,9 @@ assert.deepEqual(T.delta({builds:10,evictions:4,diskWrites:0},
   assert.equal(report.phases.length,3);
   assert.deepEqual(report.phases.map(p=>p.frames),[90,144,90]);
   for(const phase of report.phases){
+    assert.equal(phase.settle.frames,90,'diagnostic must monitor 90 post-stop frames');
+    assert.ok(phase.settle.samples.length>=30);
+    assert.ok(phase.postStopChanges);
     assert.equal(phase.draw.count,phase.frames);
     assert.equal(phase.draw.p99,3);
     assert.equal(phase.changes.builds,0);
