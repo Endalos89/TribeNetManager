@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "build:mapper": "esbuild src/isometric-webgl.js --bundle --platform=browser --format=iife --target=chrome125 --outfile=src/isometric-webgl.bundle.js",
+    "build:mapper": "node scripts/build-mapper.js",
     "prestart": "npm run build:mapper",
     "pretest": "npm run build:mapper",
     "pretest:mapper": "npm run build:mapper",
