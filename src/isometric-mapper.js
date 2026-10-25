@@ -448,6 +448,7 @@ const IsoMapper = (() => {
   // Canvas 2D remains an interaction/labels/routes layer and is never painted
   // opaque in this path. Existing Orders and scouting drawing stay unchanged.
   function drawWebGLScene(){
+    const wholeFrameStart=performance.now();
     const gpu=window.TribeNetGPU;
     if(!gpu || gpu.failed)return false;
     const units=IsoUnits.prepare();
@@ -502,6 +503,7 @@ const IsoMapper = (() => {
     if(typeof drawResultsPlaybackOverlay==='function')drawResultsPlaybackOverlay();
     updateCenterReadout();
     gpu.endFrame();
+    gpu.noteCompleteFrame(performance.now()-wholeFrameStart);
     frameRect=null;
     return true;
   }
