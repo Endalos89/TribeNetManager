@@ -177,16 +177,15 @@ const {chromium}=require('playwright');
   const staged=await page.evaluate(()=>{
     const gpu=window.TribeNetGPU;
     centerOnHex(311,327);state.scale=130;draw();
-    // Choose a chunk that is actually visible in the current renderer state.
-    // Earlier camera tests can leave the original centre chunk out of view.
-    const prior=[...gpu.chunkCache.values()].find(r=>r.known&&r.group.visible);
-    if(!prior)throw Error('No known visible mesh available for staged replacement');
-    const id=prior.id,[cx,cy]=id.split(':').map(Number);
-    const oldHex=[...state.hexCache.values()].find(row=>
-      Math.floor(row.globalCol/gpu.getStats().chunkSize)===cx&&
-      Math.floor(row.globalRow/gpu.getStats().chunkSize)===cy&&
-      row.terrain!=='UNKNOWN');
-    if(!oldHex)throw Error('Visible chunk has no known hex for replacement');
+    // The geometry workset includes fog-only halo chunks, so choose
+    // a visible record anchored by an authoritative KNOWN hex instead.
+    const unit=gpu.getStats().chunkSize;
+    const selection=[...state.hexCache.values()].map(row=>{
+      const id=Math.floor(row.globalCol/unit)+':'+Math.floor(row.globalRow/unit);
+      return {row,id,record:gpu.bestResident(id,8)};
+    }).find(o=>o.row.terrain!=='UNKNOWN'&&o.record?.group.visible);
+    if(!selection)throw Error('No visible known-hex mesh for replacement');
+    const {id,record:prior,row:oldHex}=selection;
     const ref=oldHex.coordinate;
     const before={group:prior.group.uuid,geometry:prior.ground.geometry.uuid,
       residents:gpu.chunkCache.size,bytes:gpu.residency.bytes};
