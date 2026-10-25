@@ -64,6 +64,33 @@ const {chromium}=require('playwright');
     return gpu.worldGeometryComplete&&gpu.chunkCache.size===gpu.knownChunkIds.size&&
       gpu.pendingChunks.length===0&&gpu.diskStats.diskWrites>0;
   },null,{timeout:95000});
+  // Simulate a late LIVE terrain request while a historical turn is selected.
+  // It must not overwrite the historical snapshot or shrink its world bounds.
+  const staleLive=await page.evaluate(async()=>{
+    const original=window.tribenet.getHexesInArea;
+    const before=state.hexCache.size;
+    const previousRevision=state.hexCache.terrainRevision;
+    const foreign=coordinateFor(510,510);
+    window.tribenet.getHexesInArea=async()=>[
+      {...parseCoordinate(foreign),coordinate:foreign,terrain:'GH',notes:'stale live read'}
+    ];
+    try{
+      invalidateLoadedSubmaps();
+      originalRequestVisibleData();
+      await new Promise(resolve=>setTimeout(resolve,150));
+      return {before,after:state.hexCache.size,
+        revisionChanged:state.hexCache.terrainRevision!==previousRevision,
+        foreignPresent:state.hexCache.has(foreign),
+        hydrated:window.TribeNetKnowledge.complete(),
+        worldLoaded:resultsTimeline.lastTerrainLoad?.status==='loaded',
+        historyReads:window.historicalRowsRead};
+    }finally{window.tribenet.getHexesInArea=original;}
+  });
+  assert.equal(staleLive.after,staleLive.before);
+  assert.equal(staleLive.revisionChanged,false);
+  assert.equal(staleLive.foreignPresent,false);
+  assert.ok(staleLive.hydrated&&staleLive.worldLoaded);
+  assert.equal(staleLive.historyReads,1,'stale live response cannot trigger extra history loads');
   const baseline=await page.evaluate(()=>{
     const gpu=window.TribeNetGPU;
     const before={
