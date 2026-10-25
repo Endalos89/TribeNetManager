@@ -331,7 +331,10 @@ class GPUMap {
         };
         for(let k=1;k<f.points.length-1;k++){
           const a=f.points[0],b=f.points[k],d=f.points[k+1];
-          if(Math.abs((b.x-a.x)*(d.y-a.y)-(b.y-a.y)*(d.x-a.x))<1e-8)continue;
+          const ax=Math.fround(a.x*1.5),ay=Math.fround(a.y*1.5);
+          const bx=Math.fround(b.x*1.5),by=Math.fround(b.y*1.5);
+          const dx=Math.fround(d.x*1.5),dy=Math.fround(d.y*1.5);
+          if(Math.abs((bx-ax)*(dy-ay)-(by-ay)*(dx-ax))<1e-8)continue;
           vertex(a);vertex(b);vertex(d);
           facesCount++;
           if(immutable)coreFaces++;else sharedFaces++;
