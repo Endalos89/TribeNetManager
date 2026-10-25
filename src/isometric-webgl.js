@@ -53,6 +53,7 @@ class GPUMap {
     this.worldRows=[];this.worldPalette={};this.worldKnowledgeRevision=0;
     this.meshWorker=null;this.meshWorkerReady=false;this.meshWorkerBusy=false;
     this.meshWorkerJob=null;this.meshWorkerFailed=false;
+    this.workerRequestSerial=0;
     this.renderSerial=0;this.groundRevision=0;this.lastUnitSignature=null;this.frameStartedAt=0;
     this.completeFrameTimes=[];
     this.units=[];this.visible=false;this.failed=false;this.initialized=false;this.failureReason='';
@@ -65,7 +66,7 @@ class GPUMap {
     this.diskStats={diskHits:0,diskMisses:0,diskWrites:0,diskErrors:0};
     this.groundHeightCache=new Map();this.meshRevision=0;
     this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
-    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,sharedUpdates:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0,knowledgePending:0,terrainMs:0,restorationMs:0,invalidatedChunks:0,groundCalculations:0,unitBufferRebuilds:0,cameraOnlyFrames:0,frameMs:0,maxFrameMs:0,workerBuilds:0,workerFailures:0,workerTimeMs:0,workerUploadMs:0};
+    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,sharedUpdates:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0,knowledgePending:0,terrainMs:0,restorationMs:0,invalidatedChunks:0,groundCalculations:0,unitBufferRebuilds:0,cameraOnlyFrames:0,frameMs:0,maxFrameMs:0,workerBuilds:0,workerFailures:0,workerTimeMs:0,workerUploadMs:0,workerStaleResponses:0};
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
     this.waveMaterial=new THREE.LineBasicMaterial({color:0xc8e9d9,transparent:true,opacity:.58,depthWrite:false});
     this.treeMaterials={
@@ -757,6 +758,13 @@ class GPUMap {
       return;
     }
     const job=this.meshWorkerJob;
+    // Reset, historical turn switches and new terrain knowledge can invalidate
+    // a worker task while its message is still in flight. A response belongs
+    // exclusively to its originating job; never consume a newer job's slot.
+    if(!job || message.requestId!==job.requestId){
+      this.stats.workerStaleResponses++;
+      return;
+    }
     this.meshWorkerBusy=false;this.meshWorkerJob=null;
     if(message.type==='stale'||message.revision!==this.worldKnowledgeRevision){
       this.queueSignature=null;this.requestLater();this.scheduleIdleChunk();return;
@@ -914,8 +922,10 @@ class GPUMap {
       if(this.meshWorker && this.meshWorkerReady){
         if(this.meshWorkerBusy){this.pendingChunks.unshift(next);return;}
         this.meshWorkerBusy=true;
+        next.requestId=++this.workerRequestSerial;
         this.meshWorkerJob=next;
-        this.meshWorker.postMessage({type:'build',id:next.id,lod:next.lod,
+        this.meshWorker.postMessage({type:'build',requestId:next.requestId,
+          id:next.id,lod:next.lod,
           sharedOnly:next.sharedOnly,revision:this.worldKnowledgeRevision});
         return;
       }
