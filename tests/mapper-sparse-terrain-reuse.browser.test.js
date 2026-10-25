@@ -82,6 +82,46 @@ const {chromium}=require('playwright');
     }
     return {before,after:snapshot()};
   });
+  const fidelity=await page.evaluate(()=>{
+    const gpu=window.TribeNetGPU;
+    const record=[...gpu.chunkCache.values()].find(x=>x.known&&x.faces>1000);
+    if(!record)return {missing:true};
+    const [cx,cy]=record.id.split(':').map(Number),cells=[];
+    for(let c=cx*2;c<cx*2+2;c++)for(let r=cy*2;r<cy*2+2;r++)
+      cells.push(gpu.tileAt(c,r));
+    const original=gpu.newChunk(cells,gpu.groundFaces,gpu.sampleTerrain,8);
+    const check=(a,b)=>{
+      const x=a.array,y=b.array;
+      if(x.length!==y.length)return {sameLength:false,left:x.length,right:y.length};
+      let maxDelta=0;
+      for(let i=0;i<x.length;i++)
+        maxDelta=Math.max(maxDelta,Math.abs(x[i]-y[i]));
+      return {sameLength:true,maxDelta,count:x.length};
+    };
+    const comparison={
+      facesOriginal:original.faces,facesWorker:record.faces,
+      treesOriginal:original.trees,treesWorker:record.trees,
+      corePos:check(original.ground.geometry.getAttribute('position'),
+        record.ground.geometry.getAttribute('position')),
+      coreColor:check(original.ground.geometry.getAttribute('color'),
+        record.ground.geometry.getAttribute('color')),
+      sharedPos:check(original.shared.geometry.getAttribute('position'),
+        record.shared.geometry.getAttribute('position')),
+      sharedColor:check(original.shared.geometry.getAttribute('color'),
+        record.shared.geometry.getAttribute('color'))
+    };
+    original.ground.geometry.dispose();original.shared.geometry.dispose();
+    original.waves?.geometry.dispose();
+    original.group.children.filter(x=>x.isInstancedMesh).forEach(x=>x.dispose());
+    return comparison;
+  });
+  assert.ok(!fidelity.missing,'worker-generated known terrain must be available');
+  assert.equal(fidelity.facesOriginal,fidelity.facesWorker,'worker must preserve original terrain triangle count');
+  assert.equal(fidelity.treesOriginal,fidelity.treesWorker,'worker must preserve original forest density');
+  for(const part of ['corePos','coreColor','sharedPos','sharedColor']){
+    assert.equal(fidelity[part].sameLength,true,part+' must preserve existing mesh vertex layout');
+    assert.ok(fidelity[part].maxDelta<.0001,part+' must visually match the established generator');
+  }
   assert.equal(report.before.reads,1,'only one historical-world query for selected turn');
   const offThread=await page.evaluate(()=>({
     workerBuilds:window.TribeNetGPU.stats.workerBuilds,
