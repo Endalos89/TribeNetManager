@@ -39,6 +39,7 @@ jobs:
           node tests/terrain-world-workset.test.js
           node tests/terrain-preparation-plan.test.js
           node tests/terrain-diagnostic.test.js
+          node tests/terrain-manual-recorder.test.js
           node tests/terrain-visibility.test.js
           node tests/terrain-mesh-disk-cache.test.js
           node tests/results-playback.test.js
