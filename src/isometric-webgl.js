@@ -4,13 +4,14 @@
  * This file is bundled locally with Three.js; no CDN or remote assets.
  */
 import * as THREE from 'three';
+import { TerrainResidencyPolicy, DEFAULT_MAX_CHUNKS } from './terrain-residency.js';
 
 // Smaller chunks cap synchronous CPU work when zoomed in; GPU instancing
 // still batches trees and units across each chunk.
 const CHUNK_SIZE=2;
 // Keep enough GPU chunks for the current submap and nearby regions; geometry
 // is still bounded by LRU. Nine whole submaps of GPU meshes would be excessive.
-const MAX_CHUNKS=520;
+const MAX_CHUNKS=DEFAULT_MAX_CHUNKS; // capacity backstop; measured bytes are the primary limit
 // One constant world-space (13x13) geometry neighbourhood is warmed around
 // the camera centre, regardless of zoom scale or viewport dimensions.
 // Chunks remain resident until memory pressure requires LRU eviction.
@@ -42,6 +43,8 @@ class GPUMap {
   constructor(){
     this.renderer=null;this.canvas=null;this.scene=null;this.camera=null;
     this.chunkGroup=null;this.modelGroup=null;this.chunkCache=new Map();
+    this.residency=new TerrainResidencyPolicy();this.shownRecords=new Set();
+    this.renderSerial=0;this.groundRevision=0;this.lastUnitSignature=null;this.frameStartedAt=0;
     this.units=[];this.visible=false;this.failed=false;this.initialized=false;this.failureReason='';
     this.generation=0;this.pendingChunks=[];this.idleBuildPending=false;this.activeChunkIds=new Set();this.visibleChunkIds=new Set();
     this.knowledgeSubmapWindow=new Set();this.lastCentreSubmap=null;
@@ -51,7 +54,7 @@ class GPUMap {
     this.diskStats={diskHits:0,diskMisses:0,diskWrites:0,diskErrors:0};
     this.groundHeightCache=new Map();this.meshRevision=0;
     this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
-    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,sharedUpdates:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0,knowledgePending:0,terrainMs:0,restorationMs:0,invalidatedChunks:0};
+    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,sharedUpdates:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0,knowledgePending:0,terrainMs:0,restorationMs:0,invalidatedChunks:0,groundCalculations:0,unitBufferRebuilds:0,cameraOnlyFrames:0,frameMs:0,maxFrameMs:0};
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
     this.waveMaterial=new THREE.LineBasicMaterial({color:0xc8e9d9,transparent:true,opacity:.58,depthWrite:false});
     this.treeMaterials={
@@ -141,7 +144,8 @@ class GPUMap {
   }
   invalidate(){
     for(const record of this.chunkCache.values())this.disposeChunk(record,'reset');
-    this.chunkCache.clear();
+    this.chunkCache.clear();this.shownRecords.clear();this.lastUnitSignature=null;
+    this.groundRevision++;this.groundHeightCache.clear();
     this.stats.chunks=0;this.stats.faces=0;this.stats.trees=0;
     this.generation++;this.pendingChunks=[];this.queueSignature=null;
     // The persistent cache is content-addressed; changing a preset changes
@@ -150,6 +154,8 @@ class GPUMap {
     this.groundHeightCache.clear();
   }
   disposeChunk(record,reason='lru'){
+    this.shownRecords.delete(record.key);
+    this.residency.release(record);
     this.chunkGroup?.remove(record.group);
     if(reason==='lru')this.stats.evictions++;
     else if(reason==='terrain')this.stats.terrainInvalidations++;
@@ -368,7 +374,7 @@ class GPUMap {
         type,matrices:Array.from(child.instanceMatrix.array.slice(0,child.count*16))
       });
     }
-    return {format:2,faces:record.faces,trees:record.trees,
+    return {format:2,known:Boolean(record.known),faces:record.faces,trees:record.trees,
       coreFaces:record.coreFaces,sharedFaces:record.sharedFaces,
       positions:Array.from(geometry.getAttribute('position').array),
       colors:Array.from(geometry.getAttribute('color').array),
@@ -423,7 +429,9 @@ class GPUMap {
     }
     const record={id,lod,key:this.chunkKey(id,lod),group,ground,shared,waves,
       faces:data.faces,coreFaces:data.coreFaces,sharedFaces:data.sharedFaces,
-      trees:data.trees,serial:++this.meshRevision};
+      trees:data.trees,known:data.known!==false,serial:++this.meshRevision};
+    record.group.visible=false;
+    this.residency.register(record);
     this.chunkCache.set(record.key,record);this.chunkGroup.add(group);
     return record;
   }
@@ -458,7 +466,9 @@ class GPUMap {
       for(let row=cy*CHUNK_SIZE;row<(cy+1)*CHUNK_SIZE;row++)
         if(col>=0&&row>=0&&col<TOTAL_COLS&&row<TOTAL_ROWS)cells.push(this.tileAt(col,row));
     const result=this.newChunk(cells,this.groundFaces,this.sampleTerrain,lod);
-    const record={...result,key:this.chunkKey(id,lod),id,lod};
+    const record={...result,key:this.chunkKey(id,lod),id,lod,known:cells.some(cell=>cell.known)};
+    record.group.visible=false;
+    this.residency.register(record);
     this.chunkCache.set(record.key,record);this.chunkGroup.add(record.group);
     record.serial=++this.meshRevision;
     this.stats.builds++;
@@ -491,6 +501,7 @@ class GPUMap {
     record.sharedFaces=partial.sharedFaces;
     record.faces=record.coreFaces+record.sharedFaces;
     record.serial=++this.meshRevision;
+    this.residency.update(record);
     record.dirtyShared=false;
     this.stats.sharedUpdates++;
     this.stats.terrainMs+=performance.now()-begun;
@@ -544,6 +555,9 @@ class GPUMap {
   }
   invalidateHexes(changedHexes,affectedHexes=changedHexes){
     if(!changedHexes?.length)return;
+    this.groundRevision++;
+    this.groundHeightCache.clear();
+    this.lastUnitSignature=null;
     const chunkId=p=>Math.floor(p.col/CHUNK_SIZE)+':'+Math.floor(p.row/CHUNK_SIZE);
     const direct=new Set(changedHexes.map(chunkId));
     const touched=new Set((affectedHexes||[]).map(chunkId));
@@ -705,27 +719,20 @@ class GPUMap {
     else setTimeout(()=>task({timeRemaining:()=>12,didTimeout:true}),32);
   }
   evictUnused(){
-    if(this.chunkCache.size<=MAX_CHUNKS)return;
-    // Preserve every visible chunk and as much of the prefetched ring as will
-    // fit. Evict distant and old LODs before any on-screen geometry.
-    const keep=new Set();
-    for(const id of this.visibleChunkIds){
-      const selected=this.bestResident(id,this.lastLod);
-      if(selected)keep.add(selected.key);
-    }
-    for(const [key,record] of this.chunkCache){
-      if(this.chunkCache.size<=MAX_CHUNKS)break;
-      if(keep.has(key)||this.activeChunkIds.has(record.id))continue;
-      this.disposeChunk(record);this.chunkCache.delete(key);
-    }
-    for(const [key,record] of this.chunkCache){
-      if(this.chunkCache.size<=MAX_CHUNKS)break;
-      if(keep.has(key))continue;
-      this.disposeChunk(record);this.chunkCache.delete(key);
+    // Camera scale and camera centre do not determine residency. Known world
+    // geometry remains resident until an actual measured memory limit is hit.
+    // All eviction happens at allocation time, never during a camera frame.
+    if(!this.residency.overBudget(this.chunkCache.size))return;
+    for(const record of this.residency.candidates(
+      this.chunkCache,this.visibleChunkIds,this.activeChunkIds)){
+      if(!this.residency.overBudget(this.chunkCache.size))break;
+      this.disposeChunk(record,'lru');
+      this.chunkCache.delete(record.key);
     }
   }
   beginFrame(tiles,groundFaces,sample,state,onDraw,tileAt){
     if(!this.init())return false;
+    this.frameStartedAt=performance.now();
     this.setVisible(true);
     this.requestDraw=onDraw;
     this.units.length=0;
@@ -754,17 +761,23 @@ class GPUMap {
       // Data hydration may have completed without moving the camera.
       this.scheduleIdleChunk();
     }
-    // Update which cached meshes are displayed, allowing lower-detail
-    // resident chunks to cover the gap until the new target LOD exists.
-    for(const record of this.chunkCache.values())record.group.visible=false;
+    // Rendering only toggles scene visibility. No cache rebuilds, disk reads,
+    // cache-order mutations or memory disposal are allowed in this path.
+    const nextShown=new Set();
     let faces=0,trees=0,chunks=0;
     for(const id of visible){
-      const record=this.bestResident(id,lod);
+      const record=this.chunkCache.get(this.chunkKey(id,lod));
       if(!record)continue;
-      record.group.visible=true;
-      this.chunkCache.delete(record.key);this.chunkCache.set(record.key,record);
+      if(!record.group.visible)record.group.visible=true;
+      record.lastUsed=++this.renderSerial;
+      nextShown.add(record.key);
       faces+=record.faces;trees+=record.trees;chunks++;
     }
+    for(const key of this.shownRecords)if(!nextShown.has(key)){
+      const record=this.chunkCache.get(key);
+      if(record)record.group.visible=false;
+    }
+    this.shownRecords=nextShown;
     this.stats.chunks=chunks;this.stats.faces=faces;this.stats.trees=trees;
     return true;
   }
@@ -799,6 +812,13 @@ class GPUMap {
   // centre-point raycast. On steep hills the surrounding triangle used to
   // swallow the front half of the figure even when its centre was above land.
   renderedGroundHeight(m){
+    // A stationary unit is grounded once per actual terrain revision, not on
+    // every camera frame. The generated world mesh is invariant under zoom.
+    const radius=m.kind==='carts'?.145:m.kind==='horses'||m.mounted?.115:.085;
+    const key=this.groundRevision+':'+m.x.toFixed(5)+':'+m.y.toFixed(5)+':'+radius;
+    const cached=this.groundHeightCache.get(key);
+    if(cached!==undefined)return cached;
+    this.stats.groundCalculations++;
     const originHeight=Number.isFinite(m.z)?m.z:0;
     const region=window.IsoGeometry.regionAt(m.x,m.y);
     const cx=Math.floor(region.col/CHUNK_SIZE),cy=Math.floor(region.row/CHUNK_SIZE);
@@ -807,11 +827,6 @@ class GPUMap {
       const record=this.bestResident((cx+dx)+':'+(cy+dy),FIXED_TERRAIN_STEPS);
       if(record?.group.visible)neighbours.push(record);
     }
-    const radius=m.kind==='carts'?.145:m.kind==='horses'||m.mounted?.115:.085;
-    const key=neighbours.map(r=>r.key+'#'+r.serial).sort().join('|')+
-      ':'+m.x.toFixed(5)+':'+m.y.toFixed(5)+':'+radius;
-    const cached=this.groundHeightCache.get(key);
-    if(cached!==undefined)return cached;
     const positions=[[0,0],[-radius,0],[radius,0],[0,-radius],[0,radius],
       [-radius*.7,-radius*.7],[radius*.7,-radius*.7],
       [-radius*.7,radius*.7],[radius*.7,radius*.7]];
@@ -833,6 +848,14 @@ class GPUMap {
   }
   addModel(m){if(m && Number.isFinite(m.x)&&Number.isFinite(m.y))this.units.push(m);}
   updateUnits(){
+    const signature=this.groundRevision+'|'+this.units.map(m=>
+      [m.kind,m.x,m.y,m.z,m.mounted,m.heading].join(':')).join('|');
+    if(signature===this.lastUnitSignature){
+      this.stats.cameraOnlyFrames++;
+      return;
+    }
+    this.lastUnitSignature=signature;
+    this.stats.unitBufferRebuilds++;
     const kinds={body:[],head:[],leg:[],horse:[],horseLeg:[],cart:[],wheel:[]};
     const personColor=m=>m.kind==='warriors'?0xb7614e:m.kind==='actives'?0x4c9f95:0xd4b86c;
     const scale=UNIT_MODEL_SCALE;
@@ -903,7 +926,12 @@ class GPUMap {
     this.renderer.render(this.scene,this.camera);
     this.stats.renderMs=performance.now()-started;
     this.stats.gpuCalls=this.renderer.info.render.calls;
+    this.stats.frameMs=performance.now()-this.frameStartedAt;
+    this.stats.maxFrameMs=Math.max(this.stats.maxFrameMs,this.stats.frameMs);
   }
-  getStats(){return {...this.stats,...this.diskStats,terrainSubdivisions:FIXED_TERRAIN_STEPS,unitModelScale:UNIT_MODEL_SCALE,cachedChunks:this.chunkCache.size,queuedChunks:this.pendingChunks.length};}
+  getStats(){return {...this.stats,...this.diskStats,terrainSubdivisions:FIXED_TERRAIN_STEPS,
+    unitModelScale:UNIT_MODEL_SCALE,cachedChunks:this.chunkCache.size,
+    residentBytes:this.residency.bytes,limitBytes:this.residency.maxBytes,
+    queuedChunks:this.pendingChunks.length};}
 }
 window.TribeNetGPU=new GPUMap();
