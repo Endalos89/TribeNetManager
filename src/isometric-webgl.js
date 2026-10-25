@@ -844,12 +844,16 @@ class GPUMap {
     return this.worldGeometryComplete;
   }
   queueBuilds(visible,lod){
-    const hydrated=window.TribeNetKnowledge?.complete?.()!==false;
+    // The geometry residency workset is always discovered-world based, even
+    // while the current submap/database read is still hydrating. Waiting for
+    // hydration controls WHEN jobs are allowed to run, not WHICH chunks are
+    // prepared. Previously "temporary fallback" queued only camera-visible
+    // chunks, causing new terrain to pop in after every close-zoom pan.
     const plan=planWorldGeometry({
       knownIds:this.knownChunkIds,visibleIds:visible,lod,
       maxChunks:MAX_CHUNKS,
       anchor:this.focusChunk||{cx:0,cy:0},
-      prepareBackground:hydrated,
+      prepareBackground:true,
       resident:(id,steps)=>this.chunkCache.get(this.chunkKey(id,steps))
     });
     this.activeChunkIds=plan.active;
@@ -1016,9 +1020,9 @@ class GPUMap {
     // visibility envelope also keeps its scene group visible during zoom-in;
     // zooming farther out can only expand this envelope, never leave gaps.
     this.visibleChunkIds=visible;
-    // During interaction, never create offscreen jobs simply because zoom
-    // changed the visible set. A settled frame will prioritise missing meshes
-    // and then prefetch, without interfering with wheel events.
+    // Camera movement never changes the world-wide preparation targets.
+    // The static Visibility Zoom Lock affects what is drawn/pinned, while
+    // every discovered chunk is prepared once independent of zoom.
     if(!this.worldGeometryComplete){
       // Only preparation needs a focus neighbourhood, sorted viewport list
       // or streaming signature. Once known geometry is complete, frame time
@@ -1028,8 +1032,9 @@ class GPUMap {
         // The work queue is constructed once per knowledge/hydration revision.
         // Moving the camera does not reorder or recreate background jobs;
         // it changes only which already-prepared objects are visible.
-        const signature=this.worldKnowledgeRevision+':'+lod+':'+
-          (window.TribeNetKnowledge?.complete?.()?'hydrated':'provisional');
+        const signature=this.worldKnowledgeRevision+':'+lod;
+        // World preparation depends on terrain revision and mesh fidelity,
+        // not camera zoom, viewport area or provisional hydration status.
         if(signature!==this.queueSignature){
           this.updateFocusArea();
           this.queueSignature=signature;
