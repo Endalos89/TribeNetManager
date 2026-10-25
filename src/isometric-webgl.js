@@ -48,6 +48,7 @@ class GPUMap {
     this.chunkGroup=null;this.modelGroup=null;this.chunkCache=new Map();
     this.residency=new TerrainResidencyPolicy();this.shownRecords=new Set();
     this.knownChunkIds=new Set();this.worldGeometryComplete=false;
+    this.worldChunksPinned=false;
     this.terrainCodeSnapshot=new Map();
     this.snapshotInitialized=false;
     this.meshFingerprints=new Map();
@@ -320,7 +321,8 @@ class GPUMap {
       const geometry=new THREE.BufferGeometry();
       geometry.setAttribute('position',new THREE.Float32BufferAttribute(wavePoints,3));
       waves=new THREE.LineSegments(geometry,this.waveMaterial);
-      waves.frustumCulled=false;waves.renderOrder=2;group.add(waves);
+      waveGeometry.computeBoundingSphere();
+      waves.frustumCulled=true;waves.renderOrder=2;group.add(waves);
     }
     const addTreeInstances=(type,geometry,material,filtered,height,radius)=>{
       const n=filtered.length;
@@ -426,13 +428,13 @@ class GPUMap {
     geometry.setAttribute('color',new THREE.Float32BufferAttribute(data.colors,3));
     geometry.computeBoundingSphere();
     const group=new THREE.Group(),ground=new THREE.Mesh(geometry,this.meshMaterial);
-    ground.frustumCulled=false;group.add(ground);
+    ground.frustumCulled=true;group.add(ground);
     const sharedGeometry=new THREE.BufferGeometry();
     sharedGeometry.setAttribute('position',new THREE.Float32BufferAttribute(data.sharedPositions,3));
     sharedGeometry.setAttribute('color',new THREE.Float32BufferAttribute(data.sharedColors,3));
     sharedGeometry.computeBoundingSphere();
     const shared=new THREE.Mesh(sharedGeometry,this.meshMaterial);
-    shared.frustumCulled=false;group.add(shared);
+    shared.frustumCulled=true;group.add(shared);
     let waves=null;
     if(data.waves?.length){
       const waveGeometry=new THREE.BufferGeometry();
@@ -454,6 +456,7 @@ class GPUMap {
           mesh.setMatrixAt(i,this.object.matrix);
         });
         mesh.instanceMatrix.needsUpdate=true;
+        mesh.computeBoundingSphere();mesh.frustumCulled=true;
         group.add(mesh);
       };
       add(baseTreeTrunk,this.treeMaterials.trunk,sites,.10,1);
@@ -474,7 +477,7 @@ class GPUMap {
       const inst=new THREE.InstancedMesh(descriptor[0],descriptor[1],count);
       inst.instanceMatrix.array.set(item.matrices);
       inst.instanceMatrix.needsUpdate=true;
-      inst.frustumCulled=false;group.add(inst);
+      inst.computeBoundingSphere();inst.frustumCulled=true;group.add(inst);
     }
     const record={id,lod,key:this.chunkKey(id,lod),group,ground,shared,waves,
       faces:data.faces,coreFaces:data.coreFaces,sharedFaces:data.sharedFaces,
@@ -1016,9 +1019,16 @@ class GPUMap {
       chunkSize:CHUNK_SIZE,totalCols:TOTAL_COLS,totalRows:TOTAL_ROWS,
       unproject:window.IsoGeometry.unproject
     })||new Set(tiles.map(chunkId));
-    // Geometry stays resident independently of either zoom. The STATIC
-    // visibility envelope also keeps its scene group visible during zoom-in;
-    // zooming farther out can only expand this envelope, never leave gaps.
+    // A small revealed world fits comfortably in memory. Keep ALL of its
+    // resident meshes enabled while panning/zooming and rely on Three.js's
+    // per-mesh frustum culling (with valid bounding spheres). Previously a
+    // tiny camera move toggled whole chunk groups to hidden, and the delayed
+    // settle redraw made the terrain appear to unload. A virtual zoom value
+    // of 170 is deliberately NOT a substitute for stable mesh visibility.
+    const pinnedWorld=this.knownChunkIds.size<=128 &&
+      this.residency.bytes<=96*1024*1024;
+    if(pinnedWorld)for(const id of this.knownChunkIds)visible.add(id);
+    this.worldChunksPinned=pinnedWorld;
     this.visibleChunkIds=visible;
     // Camera movement never changes the world-wide preparation targets.
     // The static Visibility Zoom Lock affects what is drawn/pinned, while
@@ -1232,6 +1242,7 @@ class GPUMap {
     residentBytes:this.residency.bytes,limitBytes:this.residency.maxBytes,
     knownChunkTargets:this.knownChunkIds.size,chunkSize:CHUNK_SIZE,
     visibilityZoom:window.TerrainVisibility?.get?.()??0,
+    worldChunksPinned:this.worldChunksPinned,
     worldGeometryComplete:this.worldGeometryComplete,
     queuedChunks:this.pendingChunks.length};}
 }
