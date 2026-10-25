@@ -230,8 +230,11 @@ self.onmessage=event=>{
         self.postMessage({type:'stale',id:m.id,revision:m.revision});
         return;
       }
+      const start=performance.now();
       const result=build(m.id,Boolean(m.sharedOnly));
-      self.postMessage({type:'built',id:m.id,revision,sharedOnly:m.sharedOnly,mesh:result},
+      const elapsed=performance.now()-start;
+      self.postMessage({type:'built',id:m.id,revision,sharedOnly:m.sharedOnly,
+        elapsed,mesh:result},
         [result.positions.buffer,result.colors.buffer,
           result.sharedPositions.buffer,result.sharedColors.buffer,result.waves.buffer]);
     }
