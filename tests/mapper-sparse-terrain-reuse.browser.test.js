@@ -76,17 +76,26 @@ const {chromium}=require('playwright');
       unitRecalculations:IsoUnits.worldModelStats.recalculations
     });
     const before=snapshot();
+    const frameTimes=[];
     let queueRebuilds=0;
     const originalQueueBuilds=gpu.queueBuilds;
     gpu.queueBuilds=function(...args){queueRebuilds++;return originalQueueBuilds.apply(this,args);};
     for(const col of [315,345,315,285,315]){
       centerOnHex(col,327);
       for(const zoom of [35,130,180,52]){
+        const start=performance.now();
         state.scale=zoom;draw();requestVisibleData();
+        frameTimes.push(performance.now()-start);
       }
     }
     gpu.queueBuilds=originalQueueBuilds;
-    return {before,after:snapshot(),queueRebuilds};
+    const ordered=frameTimes.slice().sort((a,b)=>a-b);
+    return {before,after:snapshot(),queueRebuilds,
+      cameraFrames:{count:ordered.length,
+        p95:ordered[Math.ceil(ordered.length*.95)-1],
+        p99:ordered[Math.ceil(ordered.length*.99)-1],
+        max:ordered[ordered.length-1]}
+    };
   });
   const stationary=await page.evaluate(()=>{
     const p=parseCoordinate(coordinateFor(315,327));
@@ -149,6 +158,13 @@ const {chromium}=require('playwright');
     assert.equal(fidelity[part].sameLength,true,part+' must preserve existing mesh vertex layout');
     assert.ok(fidelity[part].maxDelta<.0001,part+' must visually match the established generator');
   }
+  // CI uses software WebGL; the threshold detects 500ms-scale JS stalls
+  // without claiming a physical 60 FPS guarantee on the user's machine.
+  assert.ok(report.cameraFrames.p95<125,
+    'fully cached camera frame p95 must avoid long main-thread stalls');
+  assert.ok(report.cameraFrames.p99<300,
+    'fully cached camera frame p99 must avoid half-second stalls');
+  console.log('STATIC_CAMERA_FRAME_TIMINGS',JSON.stringify(report.cameraFrames));
   assert.equal(report.queueRebuilds,0,
     'camera pan/zoom must not reconstruct the world geometry work queue');
   const immutableNotes=await page.evaluate(()=>{
