@@ -59,6 +59,7 @@ jobs:
           node tests/mapper-historical-hydration.browser.test.js
           node tests/mapper-historical-startup-legacy-timer.browser.test.js
           node tests/mapper-sparse-terrain-reuse.browser.test.js
+          node tests/mapper-historical-84-reuse.browser.test.js
           node tests/mapper-large-world-performance.browser.test.js
           node tests/mapper-persistent-restart.browser.test.js
 
