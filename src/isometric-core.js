@@ -114,8 +114,20 @@
   // Both square and triangle use the SAME split at their shared edge midpoint.
   // A and B cores are always pure: at the middle, B's seeded influence is 25–75%.
   function pairSplit(t,beta) {
+    // The old two straight segments met at the seeded midpoint with
+    // different slopes (2*beta versus 2*(1-beta)), making a hard ridge
+    // across every shared square. Cubic Hermite interpolation keeps exactly
+    // the SAME seeded midpoint and pure core endpoints, but is C1 across
+    // the midpoint and flat-tangent where it joins each immutable core.
     t=Math.max(0,Math.min(1,t));
-    return t<=.5 ? 2*t*beta : beta+2*(t-.5)*(1-beta);
+    const hermite=(a,b,m0,m1,u)=>{
+      const u2=u*u,u3=u2*u;
+      return (2*u3-3*u2+1)*a+(u3-2*u2+u)*m0+
+        (-2*u3+3*u2)*b+(u3-u2)*m1;
+    };
+    return t<=.5
+      ? hermite(0,beta,0,.5,t*2)
+      : hermite(beta,1,.5,0,(t-.5)*2);
   }
   function barycentric(p,a,b,c) {
     const den=(b.y-c.y)*(a.x-c.x)+(c.x-b.x)*(a.y-c.y);
@@ -417,6 +429,6 @@
   function sceneryVisible(x,y,neighbours) {
     return neighbours.every((known,i)=>known || x*Math.cos((i+.5)*Math.PI/3)+y*Math.sin((i+.5)*Math.PI/3)<Math.sqrt(3)/2*coreRadius-.04);
   }
-  const api={WORLD_SEED,coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,subdivisions,sharedSquare,sharedTriangle,pairFraction,cornerInfluences,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,coastalLanding,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
+  const api={WORLD_SEED,coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,subdivisions,sharedSquare,sharedTriangle,pairFraction,pairSplit,cornerInfluences,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,coastalLanding,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
   if(typeof module!=='undefined' && module.exports) module.exports=api; else root.IsoGeometry=api;
 })(typeof window!=='undefined'?window:globalThis);
