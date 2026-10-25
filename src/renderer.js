@@ -5,6 +5,13 @@ const HEX_ROWS = 21;
 const TOTAL_COLS = MAP_COLS * HEX_COLS;
 const TOTAL_ROWS = MAP_ROWS * HEX_ROWS;
 const SQRT3 = Math.sqrt(3);
+// Compatibility for installed renderer/Results modules built before the
+// 2026-10-24 terrain loader refactor. The old historical loader still invokes
+// clearTimeout(areaRequestTimer); an undeclared binding throws synchronously
+// inside the WebGL frame, preventing the historical map from ever hydrating.
+// Modern Results loading uses its own independently owned retry timer.
+var areaRequestTimer = null;
+window.TribeNetRuntime = { terrainLoaderRevision:'20261025-legacy-timer-compat' };
 
 const TERRAIN = [
   ['UNKNOWN', 'Unknown'], ['ALPS', 'Alps'], ['AR', 'Arid'], ['BH', 'Brush Hill'], ['BR', 'Brush'],
