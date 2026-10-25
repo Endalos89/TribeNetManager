@@ -1022,16 +1022,15 @@ class GPUMap {
       chunkSize:CHUNK_SIZE,totalCols:TOTAL_COLS,totalRows:TOTAL_ROWS,
       unproject:window.IsoGeometry.unproject
     })||new Set(tiles.map(chunkId));
-    // A small revealed world fits comfortably in memory. Keep ALL of its
-    // resident meshes enabled while panning/zooming and rely on Three.js's
-    // per-mesh frustum culling (with valid bounding spheres). Previously a
-    // tiny camera move toggled whole chunk groups to hidden, and the delayed
-    // settle redraw made the terrain appear to unload. A virtual zoom value
-    // of 170 is deliberately NOT a substitute for stable mesh visibility.
-    const pinnedWorld=this.knownChunkIds.size<=128 &&
-      this.residency.bytes<=96*1024*1024;
-    if(pinnedWorld)for(const id of this.knownChunkIds)visible.add(id);
-    this.worldChunksPinned=pinnedWorld;
+    // Keep every resident discovered mesh enabled, regardless of camera zoom,
+    // camera centre or the delayed post-drag redraw. THREE performs actual
+    // frustum culling for the camera; do not use the workset envelope as a
+    // second visibility switch. That switch caused terrain to disappear on
+    // the 150ms settle redraw even though geometry was still resident.
+    // Actual memory pressure remains governed by the residency policy.
+    for(const record of this.chunkCache.values())
+      if(record.known)visible.add(record.id);
+    this.worldChunksPinned=true;
     this.visibleChunkIds=visible;
     // Camera movement never changes the world-wide preparation targets.
     // The static Visibility Zoom Lock affects what is drawn/pinned, while
