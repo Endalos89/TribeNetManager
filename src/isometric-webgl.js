@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { TerrainResidencyPolicy, DEFAULT_MAX_CHUNKS } from './terrain-residency.js';
 import { knownGeometryChunks } from './terrain-world-workset.js';
+import geometryWorkerSource from 'virtual:tribenet-geometry-worker';
 
 // Smaller chunks cap synchronous CPU work when zoomed in; GPU instancing
 // still batches trees and units across each chunk.
@@ -663,7 +664,10 @@ class GPUMap {
   ensureMeshWorker(){
     if(this.meshWorker||this.meshWorkerFailed||typeof Worker==='undefined')return Boolean(this.meshWorker);
     try{
-      const worker=new Worker('terrain-geometry-worker.js');
+      const url=URL.createObjectURL(new Blob([geometryWorkerSource],
+        {type:'application/javascript'}));
+      const worker=new Worker(url);
+      this.meshWorkerUrl=url;
       this.meshWorker=worker;this.meshWorkerReady=false;
       worker.onmessage=event=>this.handleWorkerMessage(event.data);
       worker.onerror=error=>{
@@ -673,6 +677,7 @@ class GPUMap {
         if(this.meshWorkerJob)this.pendingChunks.unshift(this.meshWorkerJob);
         this.meshWorkerJob=null;
         worker.terminate();this.meshWorker=null;
+      if(this.meshWorkerUrl){URL.revokeObjectURL(this.meshWorkerUrl);this.meshWorkerUrl=null;}
         this.scheduleIdleChunk();
       };
       this.sendWorkerKnowledge();
@@ -736,6 +741,7 @@ class GPUMap {
       this.stats.workerFailures++;
       this.meshWorkerFailed=true;this.meshWorkerReady=false;
       this.meshWorker?.terminate();this.meshWorker=null;
+      if(this.meshWorkerUrl){URL.revokeObjectURL(this.meshWorkerUrl);this.meshWorkerUrl=null;}
       if(job)this.pendingChunks.unshift(job);
       console.warn('World geometry worker failed; falling back:',message.error);
       this.scheduleIdleChunk();return;
