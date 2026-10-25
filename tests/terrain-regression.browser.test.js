@@ -7,7 +7,7 @@ const {chromium}=require('playwright');
 (async()=>{
   const browser=await chromium.launch({channel:process.env.CHROME_CHANNEL || 'msedge',headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--no-sandbox']});
   try{
-   for(const fixture of [{name:'hill-mountain-coast',col:317,row:327},{name:'landing-cove',col:42,row:100}]){
+   for(const fixture of [{name:'hill-mountain-coast',col:317,row:327},{name:'landing-cove',col:28,row:100},{name:'landing-ascent',col:18,row:100}]){
     const page=await browser.newPage({viewport:{width:1400,height:900},deviceScaleFactor:1});
     const errors=[];
     page.on('pageerror',e=>errors.push('PAGE: '+e.stack));
@@ -38,14 +38,14 @@ const {chromium}=require('playwright');
     await page.evaluate(({col,row,name})=>{
       for(let c=col-5;c<=col+5;c++)for(let r=row-5;r<=row+5;r++){
         const coordinate=coordinateFor(c,r);
-        const terrain=name==='landing-cove'?(c===col&&r===row?'O':'LAM'):
+        const terrain=name!=='hill-mountain-coast'?(c===col&&r===row?'O':'LAM'):
           c>318?'O':c===318?'LAM':c===317?'GH':r<327?'CH':'PR';
         const data={...parseCoordinate(coordinate),coordinate,terrain,notes:''};
         window.fixtureRows.set(coordinate,data);state.hexCache.set(coordinate,data);
       }
     },fixture);
     await page.click('#openMapperButton');
-    await page.evaluate(({col,row})=>{showDetail();centerOnHex(col,row);state.scale=140;draw();},fixture);
+    await page.evaluate(({col,row,name})=>{showDetail();centerOnHex(col,name==='hill-mountain-coast'?row:row-1);state.scale=name==='hill-mountain-coast'?140:200;draw();},fixture);
     await page.waitForFunction(()=>IsoMapper.renderer==='WebGL'&&IsoMapper.gpuStats?.chunks>=1,null,{timeout:30000});
     await page.waitForFunction(()=>!IsoMapper.gpuStats?.queuedChunks,null,{timeout:60000});
     await page.waitForTimeout(1000);
