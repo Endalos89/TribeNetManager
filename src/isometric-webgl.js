@@ -820,7 +820,7 @@ class GPUMap {
         }
         this.scheduleIdleChunk();return;
       }
-      if(this.chunkCache.has(this.chunkKey(next.id,next.lod))){
+      if(!next.sharedOnly&&this.chunkCache.has(this.chunkKey(next.id,next.lod))){
         this.scheduleIdleChunk();return;
       }
       // Try durable geometry before recalculating triangles or scenery.
