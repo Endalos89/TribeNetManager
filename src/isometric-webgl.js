@@ -25,7 +25,7 @@ const FIXED_TERRAIN_STEPS=8;
 const UNIT_MODEL_SCALE=.5;
 // Only change this identifier when geometry generation rules change, not
 // when the app release number increments. Known terrain/settings have separate keys.
-const MESH_GENERATOR_REVISION='terrain-fixed8-shore-components-chunk4-20261025-r3';
+const MESH_GENERATOR_REVISION='terrain-fixed8-shore-components-foothill-smooth-20261025-r4';
 const baseTreeTrunk=new THREE.CylinderGeometry(.012,.017,.20,5);
 const baseTreeCrown=new THREE.ConeGeometry(.095,.24,6);
 const unitBox=new THREE.BoxGeometry(.12,.12,.085);
