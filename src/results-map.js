@@ -21,6 +21,10 @@ const resultsTimeline = {
 // the shared timeline explicitly because top-level `const` bindings are not
 // properties on `window`.
 window.resultsTimeline = resultsTimeline;
+// This marker distinguishes the repaired historical loader from an old
+// results-map.js retained by an incomplete application upgrade.
+if (window.TribeNetRuntime)
+  window.TribeNetRuntime.historicalLoaderRevision='20261025-turn-scoped-hydration';
 
 function resultActualRows() {
   const rows = resultsTimeline.resultTurns?.length
