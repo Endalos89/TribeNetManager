@@ -164,14 +164,146 @@
   performance.className='terrain-dev-feedback';
   performance.setAttribute('aria-live','off');
   performance.textContent='WebGL statistics are available when the 3D Mapper is visible.';
-  panel.append(actions,file,feedback,reportHelp,reportOutput,performance);
+  // Controls are armed by default but only applied inside a manual recording.
+  // Normal startup and map loading are never frozen by simply opening Terrain Dev.
+  const manualBox=document.createElement('section');
+  manualBox.className='terrain-dev-visibility-box';
+  const manualTitle=document.createElement('strong');
+  manualTitle.textContent='Manual Terrain Isolation Diagnostic';
+  const manualHelp=document.createElement('small');
+  manualHelp.textContent='During recording: disable terrain mesh frustum culling and pause background geometry/eviction. Pan or zoom normally, then Stop. A passive 2-second idle window follows without forcing redraws. Settings automatically restore afterward.';
+  const makeManualOption=(id,label)=>{
+    const line=document.createElement('label');line.className='terrain-dev-regions';
+    const field=document.createElement('input');field.type='checkbox';field.id=id;
+    field.checked=true;line.append(field,document.createTextNode(' '+label));
+    return {line,field};
+  };
+  const noCulling=makeManualOption('terrainDisableFrustumCulling',
+    'Disable Three.js terrain frustum culling (during recording)');
+  const freezeWork=makeManualOption('terrainFreezeBackground',
+    'Freeze background terrain processing (during recording)');
+  const manualButtons=document.createElement('div');
+  manualButtons.className='terrain-dev-actions';
+  const manualStart=document.createElement('button');
+  manualStart.type='button';manualStart.id='terrainStartManualRecording';
+  manualStart.className='button accent';manualStart.textContent='Start Recording';
+  const manualStop=document.createElement('button');
+  manualStop.type='button';manualStop.id='terrainStopManualRecording';
+  manualStop.className='button';manualStop.textContent='Stop Recording';manualStop.disabled=true;
+  const manualCopy=document.createElement('button');
+  manualCopy.type='button';manualCopy.id='terrainCopyManualReport';
+  manualCopy.className='button';manualCopy.textContent='Copy Manual Report';manualCopy.hidden=true;
+  const manualReportOutput=document.createElement('textarea');
+  manualReportOutput.id='terrainManualReport';manualReportOutput.className='terrain-dev-report';
+  manualReportOutput.readOnly=true;manualReportOutput.hidden=true;
+  const manualStatus=document.createElement('div');
+  manualStatus.className='terrain-dev-feedback';manualStatus.setAttribute('role','status');
+  manualButtons.append(manualStart,manualStop,manualCopy);
+  manualBox.append(manualTitle,manualHelp,noCulling.line,freezeWork.line,
+    manualButtons,manualStatus,manualReportOutput);
+  panel.append(actions,file,feedback,reportHelp,reportOutput,manualBox,performance);
   wrap.appendChild(panel);
   // No background timers while Terrain Dev is closed.
   let statsTimer=null,diagnosticRunning=false,cancelDiagnostic=false;
   let diagnosticReport='';
+  let manualActive=false,manualStopping=false,manualReport='',manualBackup=null;
+  let manualSafetyTimer=null;
+  const isValidTerrainView=()=>{
+    const gpu=root.TribeNetGPU;
+    return typeof state!=='undefined'&&state.mode==='detail'&&
+      typeof IsoMapper!=='undefined'&&IsoMapper.enabled&&
+      gpu?.initialized&&gpu.visible&&!gpu.failed;
+  };
+  function applyManualOptions(){
+    if(!manualActive||manualStopping)return;
+    const gpu=root.TribeNetGPU;
+    try{
+      gpu.setTerrainDiagnosticOptions({
+        disableFrustumCulling:noCulling.field.checked,
+        freezeBackground:freezeWork.field.checked});
+      if(typeof root.draw==='function')root.draw();
+      manualStatus.textContent='Recording camera movement and terrain lifecycle; no game data is modified.';
+    }catch(error){
+      manualStatus.textContent='Could not apply diagnostic option: '+(error?.message||String(error));
+    }
+  }
+  noCulling.field.addEventListener('change',applyManualOptions);
+  freezeWork.field.addEventListener('change',applyManualOptions);
+  manualStart.addEventListener('click',async()=>{
+    if(manualActive||diagnosticRunning)return;
+    if(!isValidTerrainView()){
+      manualStatus.textContent='Open an active 3D detail map before starting a manual recording.';
+      return;
+    }
+    const gpu=root.TribeNetGPU,info=gpu.getStats();
+    // Prevent an unloaded map or an over-budget world from being frozen.
+    if(freezeWork.field.checked&&(!info.worldGeometryComplete||
+      info.missingKnownChunks>0||info.residentBytes>info.limitBytes)){
+      manualStatus.textContent='Wait for terrain preparation to finish, or untick Freeze background processing to record while loading.';
+      return;
+    }
+    manualBackup={disableFrustumCulling:gpu.debugDisableTerrainCulling,
+      freezeBackground:gpu.debugFreezeBackground};
+    try{
+      const history=typeof resultsTimeline!=='undefined'?resultsTimeline:null;
+      gpu.startTerrainRecording({
+        turn:history?.turn?.turnKey||'live',
+        knowledgeTurn:history?.turn?.knowledgeTurnKey||'live',
+        initialScale:state.scale,
+        visibilityZoom:root.TerrainVisibility?.get?.()??null});
+      manualActive=true;manualStopping=false;manualReport='';
+      manualReportOutput.hidden=true;manualReportOutput.value='';
+      manualCopy.hidden=true;manualStart.disabled=true;manualStop.disabled=false;
+      applyManualOptions();
+      // Safety limit: a forgotten recording cannot hold geometry uploads indefinitely.
+      manualSafetyTimer=setTimeout(()=>{if(manualActive&&!manualStopping)manualStop.click();},120000);
+    }catch(error){
+      manualStatus.textContent='Recording could not start: '+(error?.message||String(error));
+      try{gpu.setTerrainDiagnosticOptions(manualBackup);}catch(_){}
+      manualActive=false;manualStart.disabled=false;manualStop.disabled=true;
+    }
+  });
+  manualStop.addEventListener('click',async()=>{
+    if(!manualActive||manualStopping)return;
+    manualStopping=true;manualStop.disabled=true;
+    clearTimeout(manualSafetyTimer);manualSafetyTimer=null;
+    manualStatus.textContent='Observing another 2 seconds of idle processing without triggering any redraws…';
+    const gpu=root.TribeNetGPU;
+    try{
+      const report=await gpu.stopTerrainRecording();
+      manualReport='TribeNet Terrain Dev — Passive Manual Terrain Diagnostic\\n'
+        +'Post-stop observation: '+report.postStopIdleMs+'ms (no forced redraws)\\n'
+        +'Copy this report into ChatGPT.\\n\\n'
+        +JSON.stringify(report,null,2);
+      manualReportOutput.value=manualReport;
+      manualReportOutput.hidden=false;manualCopy.hidden=false;
+      manualStatus.textContent='Recording complete. Copy Manual Report and paste it into ChatGPT.';
+    }catch(error){
+      manualStatus.textContent='Recording failed: '+(error?.message||String(error));
+    }finally{
+      // Diagnostic isolation is temporary. Never leave loading frozen afterward.
+      try{gpu.setTerrainDiagnosticOptions(manualBackup||{
+        disableFrustumCulling:false,freezeBackground:false});}
+      catch(error){console.warn('Could not restore terrain diagnostic options',error);}
+      manualActive=false;manualStopping=false;manualStart.disabled=false;
+      manualStop.disabled=true;
+      if(typeof root.draw==='function')root.draw();
+    }
+  });
+  manualCopy.addEventListener('click',async()=>{
+    if(!manualReport)return;
+    try{
+      await navigator.clipboard.writeText(manualReport);
+      manualStatus.textContent='Manual report copied. Paste it into ChatGPT.';
+    }catch(error){
+      manualReportOutput.focus();manualReportOutput.select();
+      manualStatus.textContent='Select the report and press Ctrl+C to copy.';
+    }
+  });
   const setDiagnosticControls=running=>{
     diagnosticRunning=running;
     diagnosticButton.disabled=running;
+    manualStart.disabled=running||manualActive;
     stopButton.hidden=!running;
     copyReportButton.hidden=running||!diagnosticReport;
   };
@@ -191,7 +323,7 @@
     feedback.textContent='Stopping after the current frame and restoring your original view…';
   });
   diagnosticButton.addEventListener('click',async()=>{
-    if(diagnosticRunning)return;
+    if(diagnosticRunning||manualActive)return;
     const gpu=root.TribeNetGPU;
     if(!root.TerrainDiagnostic || typeof state==='undefined' ||
       state.mode!=='detail'||typeof IsoMapper==='undefined'||
@@ -317,6 +449,9 @@
         ' · centre area '+info.focusTarget+' ('+(2*info.focusRadiusChunks+1)+'×'+(2*info.focusRadiusChunks+1)+')' +
         ' · world prepared '+(info.worldGeometryComplete?'yes':'no')+
         ' · visibility zoom '+(info.visibilityZoom??'unknown')+
+        ' · culling disabled '+Boolean(info.terrainCullingDisabled)+
+        ' · background frozen '+Boolean(info.terrainBackgroundFrozen)+
+        ' · manual recording '+Boolean(info.terrainRecording)+
         ' · prepared known '+(info.readyKnownChunks||0)+'/'+(info.knownChunkTargets||0)+
         ' · missing known '+(info.missingKnownChunks||0)+
         ' · locked-visible known '+(info.lockedVisibleChunks||0)+
