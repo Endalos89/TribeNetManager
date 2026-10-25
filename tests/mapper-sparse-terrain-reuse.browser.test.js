@@ -82,6 +82,27 @@ const {chromium}=require('playwright');
     }
     return {before,after:snapshot()};
   });
+  const stationary=await page.evaluate(()=>{
+    const p=parseCoordinate(coordinateFor(315,327));
+    const sample={people:{Warriors:50,Actives:0,Inactives:0}};
+    const first=IsoUnits.layout(p,'0485','Tribe',0,'',sample);
+    const before=IsoUnits.worldModelStats;
+    let same=true;
+    for(const scale of [45,90,180,35,52]){
+      state.scale=scale;state.cameraX+=.03;state.cameraY-=.01;
+      const next=IsoUnits.layout(p,'0485','Tribe',0,'',sample);
+      if(next.models!==first.models)same=false;
+    }
+    const after=IsoUnits.worldModelStats;
+    state.scale=52;centerOnHex(315,327);
+    return {same,before,after,hasModels:first.models.length>0};
+  });
+  assert.ok(stationary.hasModels);
+  assert.ok(stationary.same,'zoom and pan must use identical stationary unit world models');
+  assert.equal(stationary.after.recalculations,stationary.before.recalculations,
+    'camera movement cannot calculate stationary unit ground heights again');
+  assert.ok(stationary.after.reused>stationary.before.reused,
+    'stationary model world positions should be reused');
   const fidelity=await page.evaluate(()=>{
     const gpu=window.TribeNetGPU;
     const record=[...gpu.chunkCache.values()].find(x=>x.known&&x.faces>1000);
