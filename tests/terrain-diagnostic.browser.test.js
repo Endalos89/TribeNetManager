@@ -58,6 +58,35 @@ const {chromium}=require('playwright');
     known:state.hexCache.size
   }));
   await page.click('#terrainDevToggle');
+  await page.fill('#terrainVisibilityZoomNumber','42');
+  await page.locator('#terrainVisibilityZoomNumber').dispatchEvent('change');
+  const visibility=await page.evaluate(()=>{
+    const gpu=window.TribeNetGPU;
+    const before={builds:gpu.stats.builds,resident:gpu.chunkCache.size,
+      resets:gpu.stats.fullResets};
+    const coverage=[];
+    for(const zoom of [70,95,130,170,190]){
+      state.scale=zoom;draw();
+      coverage.push([...gpu.visibleChunkIds]
+        .filter(id=>gpu.knownChunkIds.has(id)).sort());
+    }
+    state.scale=25;draw();
+    const wide=new Set(gpu.visibleChunkIds);
+    state.scale=75;draw();
+    return {setting:window.TerrainVisibility.get(),
+      coverage,wide:[...wide],before,after:{
+        builds:gpu.stats.builds,resident:gpu.chunkCache.size,
+        resets:gpu.stats.fullResets}};
+  });
+  assert.equal(visibility.setting,42);
+  for(const target of visibility.coverage)
+    assert.deepEqual(target,visibility.coverage[0],
+      'zooming in must never hide previously visible known terrain chunks');
+  for(const id of visibility.coverage[0])
+    assert.ok(visibility.wide.includes(id),
+      'zooming out farther than virtual zoom must still display all known chunks');
+  assert.deepEqual(visibility.after,visibility.before,
+    'changing visibility zoom or camera cannot regenerate or dispose terrain');
   await page.click('#terrainRunDiagnostic');
   await page.waitForFunction(()=>{
     const output=document.getElementById('terrainDiagnosticReport');
