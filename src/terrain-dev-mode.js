@@ -271,9 +271,9 @@
     const gpu=root.TribeNetGPU;
     try{
       const report=await gpu.stopTerrainRecording();
-      manualReport='TribeNet Terrain Dev — Passive Manual Terrain Diagnostic\\n'
-        +'Post-stop observation: '+report.postStopIdleMs+'ms (no forced redraws)\\n'
-        +'Copy this report into ChatGPT.\\n\\n'
+      manualReport='TribeNet Terrain Dev — Passive Manual Terrain Diagnostic\n'
+        +'Post-stop observation: '+report.postStopIdleMs+'ms (no forced redraws)\n'
+        +'Copy this report into ChatGPT.\n\n'
         +JSON.stringify(report,null,2);
       manualReportOutput.value=manualReport;
       manualReportOutput.hidden=false;manualCopy.hidden=false;
