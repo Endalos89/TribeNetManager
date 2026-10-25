@@ -1215,8 +1215,19 @@ class GPUMap {
   getStats(){
     const sorted=[...this.completeFrameTimes].sort((a,b)=>a-b);
     const percentile=p=>sorted.length?sorted[Math.ceil(sorted.length*p)-1]:0;
+    const readyKnown=[...this.knownChunkIds].filter(id=>{
+      const resident=this.chunkCache.get(this.chunkKey(id,this.lastLod));
+      return Boolean(resident&&!resident.dirtyShared);
+    }).length;
+    const neededVisible=[...this.visibleChunkIds].filter(id=>this.knownChunkIds.has(id));
+    const missingVisible=neededVisible.filter(id=>
+      !this.chunkCache.has(this.chunkKey(id,this.lastLod))).length;
     return {...this.stats,...this.diskStats,fullFrameP95:percentile(.95),
-      fullFrameP99:percentile(.99),terrainSubdivisions:FIXED_TERRAIN_STEPS,
+      fullFrameP99:percentile(.99),
+      readyKnownChunks:readyKnown,
+      missingKnownChunks:this.knownChunkIds.size-readyKnown,
+      lockedVisibleChunks:neededVisible.length,missingVisibleChunks:missingVisible,
+      terrainSubdivisions:FIXED_TERRAIN_STEPS,
     unitModelScale:UNIT_MODEL_SCALE,cachedChunks:this.chunkCache.size,
     residentBytes:this.residency.bytes,limitBytes:this.residency.maxBytes,
     knownChunkTargets:this.knownChunkIds.size,chunkSize:CHUNK_SIZE,
