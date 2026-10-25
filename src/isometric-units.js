@@ -35,6 +35,25 @@
     return models.map((m,i)=>{const a=phase+i*2.399963229728653,r=.46*Math.sqrt((i+.5)/models.length);return {...m,x:Math.cos(a)*r,y:Math.sin(a)*r};});
   }
   const drawn=new Set();let hits=[],clearings=new Set(),occupants=new Map();
+  // The model formation belongs to the world, not the camera. Only project
+  // its cached coordinates into screen space when zooming or panning.
+  const worldModels=new Map();
+  let worldModelsRevision='';
+  const unitModelStats={recalculations:0,reused:0};
+  function cachedWorldModels(key,create){
+    if(worldModels.has(key)){
+      unitModelStats.reused++;
+      return worldModels.get(key);
+    }
+    const result=create();
+    worldModels.set(key,result);
+    unitModelStats.recalculations++;
+    if(worldModels.size>1200){
+      const first=worldModels.keys().next().value;
+      worldModels.delete(first);
+    }
+    return result;
+  }
   function record(code,snapshot) {
     if(snapshot)return snapshot;
     return (state.planImport?.plan?.unitStats || []).find(u=>String(u.unit)===String(code)) ||
@@ -132,10 +151,27 @@
     const heading=first&&next?
       Math.atan2(baseCenter(next.globalCol,next.globalRow).y-baseCenter(first.globalCol,first.globalRow).y,
                   baseCenter(next.globalCol,next.globalRow).x-baseCenter(first.globalCol,first.globalRow).x):null;
-    const models=formation(counts,String(point.coordinate||'')+':'+code).map(m=>{
+    const revision=[
+      state.hexCache?.terrainRevision??0,
+      root.resultsPlayback?.renderRevision??0,
+      resultsTimeline.turn?.turnKey||'',
+      tuning?.value('unitSpread')??.38
+    ].join('|');
+    if(worldModelsRevision!==revision){
+      worldModels.clear();worldModelsRevision=revision;
+    }
+    const cacheKey=JSON.stringify([
+      code,point.coordinate||null,position.x,position.y,
+      shift.x,shift.y,spread,heading,slot,slotCodes,
+      counts?.warriors,counts?.actives,counts?.inactives,
+      counts?.horses,counts?.carts,counts?.mounted
+    ]);
+    const models=cachedWorldModels(cacheKey,()=>formation(
+      counts,String(point.coordinate||'')+':'+code
+    ).map(m=>{
       const x=position.x+shift.x+m.x*spread,y=position.y+shift.y+m.y*spread;
       return {...m,x,y,z:IsoMapper.surface(x,y).z,heading};
-    }).sort((a,b)=>a.y-b.y);
+    }).sort((a,b)=>a.y-b.y));
     const labelPrefix=type==='Element'?'E':type==='Tribe'?'T':type==='Fleet'?'F':'U';
     const text=labelPrefix+' '+code+(extra?' '+extra:'');
     const anchor=IsoMapper.project({x:position.x+shift.x,y:position.y+shift.y+.56});
@@ -307,7 +343,7 @@
       ctx.strokeStyle='#ffe18a';ctx.lineWidth=Math.max(1.5,state.scale*.04);ctx.stroke();ctx.restore();
     });
   }
-  const api={diceSlots,resetSelection:()=>{cycle=null;},nextSelection,unitsAt,composition,modelCount,formation,layout,draw,drawScout,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];},clickHex,drawSelectionHighlight};
+  const api={diceSlots,resetSelection:()=>{cycle=null;},nextSelection,unitsAt,composition,modelCount,formation,layout,draw,drawScout,prepare,occupies,beginFrame:()=>{drawn.clear();hits=[];},clickHex,drawSelectionHighlight,get worldModelStats(){return {...unitModelStats,resident:worldModels.size};}};
   if(typeof module!=='undefined' && module.exports)module.exports=api;
   else {
     root.IsoUnits=api;
