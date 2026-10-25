@@ -123,6 +123,66 @@ const {chromium}=require('playwright');
   assert.ok(Number.isFinite(grounding.first));
   assert.equal(grounding.first,grounding.again);
   assert.ok(grounding.calculations<=1);
+  // The original zoom lock only changed visibility. Simulate the exact
+  // reported case: a historical map with records already in memory, but
+  // hydration stuck in temporary fallback while zoomed all the way in.
+  // Every known chunk must be queued *before* the camera moves, not lazily
+  // discovered when a close-zoom pan reaches an unprepared neighbour.
+  const provisional=await page.evaluate(()=>{
+    const gpu=window.TribeNetGPU,knowledge=window.TribeNetKnowledge;
+    const originalComplete=knowledge.complete,originalReady=knowledge.ready;
+    const previousLock=window.TerrainVisibility.get();
+    try{
+      window.TerrainVisibility.set(195);
+      knowledge.complete=()=>false;
+      knowledge.ready=()=>true;
+      gpu.invalidate();
+      state.scale=200;
+      centerOnHex(311,327);
+      draw();
+      const target=[...gpu.knownChunkIds].sort();
+      const planned=()=>{
+        const plannedIds=new Set([
+          ...gpu.chunkCache.values()].map(record=>record.id));
+        for(const job of gpu.pendingChunks)plannedIds.add(job.id);
+        if(gpu.meshWorkerJob)plannedIds.add(gpu.meshWorkerJob.id);
+        for(const item of gpu.completedUploads)plannedIds.add(item.job.id);
+        return [...plannedIds].sort();
+      };
+      const before={
+        target,planned:planned(),visible:[...gpu.visibleChunkIds].sort(),
+        signature:gpu.queueSignature,revision:gpu.worldKnowledgeRevision,
+        resident:gpu.chunkCache.size
+      };
+      // A tiny pan and two zoom changes must not replan the workset.
+      const originalQueue=gpu.queueBuilds;
+      let replans=0;
+      gpu.queueBuilds=function(...args){
+        replans++;return originalQueue.apply(this,args);
+      };
+      try{
+        state.cameraY+=.03;draw();
+        state.scale=180;draw();
+        state.scale=200;draw();
+      }finally{gpu.queueBuilds=originalQueue;}
+      return {...before,
+        afterPlanned:planned(),afterRevision:gpu.worldKnowledgeRevision,
+        afterSignature:gpu.queueSignature,replans};
+    }finally{
+      knowledge.complete=originalComplete;
+      knowledge.ready=originalReady;
+      window.TerrainVisibility.set(previousLock);
+    }
+  });
+  assert.ok(provisional.target.length>=10);
+  assert.deepEqual(provisional.planned,provisional.target,
+    'every known mesh must be planned even in provisional hydration at close zoom');
+  assert.deepEqual(provisional.afterPlanned,provisional.target,
+    'tiny pan must not discard world geometry preparation targets');
+  assert.equal(provisional.replans,0,
+    'camera movement cannot trigger chunk loading or queue reconstruction');
+  assert.equal(provisional.afterRevision,provisional.revision);
+  assert.equal(provisional.afterSignature,provisional.signature);
   assert.deepEqual(errors,[]);
   console.log('HISTORICAL_84_HEX_CAMERA_REUSE_PASS',JSON.stringify({baseline,grounding}));
  }finally{await browser.close();}
