@@ -894,7 +894,10 @@ class GPUMap {
       // of repeatedly asking the filesystem. Reads are asynchronous.
       const key=this.persistentKey(next.id,next.lod);
       const reader=window.tribenet?.loadTerrainMesh;
-      if(key && typeof reader==='function' && !this.diskMissKeys.has(key)){
+      // A shared-only transition owns the existing immutable core buffer.
+      // Restoring a full disk mesh here would overwrite the core, or worse,
+      // discard the pending border update when a valid cache entry exists.
+      if(!next.sharedOnly && key && typeof reader==='function' && !this.diskMissKeys.has(key)){
         this.diskReadBusy=true;
         const restoredAt=performance.now();
         Promise.resolve().then(()=>reader(key)).then(data=>{
@@ -983,20 +986,24 @@ class GPUMap {
     // During interaction, never create offscreen jobs simply because zoom
     // changed the visible set. A settled frame will prioritise missing meshes
     // and then prefetch, without interfering with wheel events.
-    const interacting=typeof IsoMapper!=='undefined'&&IsoMapper.interacting;
-    const focus=this.updateFocusArea();
-    const signature=this.focusChunk.cx+':'+this.focusChunk.cy+'|'+lod+'|'+
-      (window.TribeNetKnowledge?.complete?.()?'hydrated':'provisional')+'|'+[...visible].sort().join('|');
-    if(this.worldGeometryComplete){
-      // Static world: pan/zoom is exclusively a camera and visibility update.
-    }else if(interacting){
-      this.queueSignature=null;
-    }else if(signature!==this.queueSignature){
-      this.queueSignature=signature;
-      this.queueBuilds(visible,lod);
-    }else if(this.pendingChunks.length){
-      // Data hydration may have completed without moving the camera.
-      this.scheduleIdleChunk();
+    if(!this.worldGeometryComplete){
+      // Only preparation needs a focus neighbourhood, sorted viewport list
+      // or streaming signature. Once known geometry is complete, frame time
+      // belongs to camera projection and already-resident mesh visibility.
+      const interacting=typeof IsoMapper!=='undefined'&&IsoMapper.interacting;
+      if(interacting){
+        this.queueSignature=null;
+      }else{
+        this.updateFocusArea();
+        const signature=this.focusChunk.cx+':'+this.focusChunk.cy+'|'+lod+'|'+
+          (window.TribeNetKnowledge?.complete?.()?'hydrated':'provisional')+'|'+[...visible].sort().join('|');
+        if(signature!==this.queueSignature){
+          this.queueSignature=signature;
+          this.queueBuilds(visible,lod);
+        }else if(this.pendingChunks.length){
+          this.scheduleIdleChunk();
+        }
+      }
     }
     // Rendering only toggles scene visibility. No cache rebuilds, disk reads,
     // cache-order mutations or memory disposal are allowed in this path.
