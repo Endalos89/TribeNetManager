@@ -59,6 +59,41 @@
     row.append(text,range,number);sliders.appendChild(row);fields.set(name,{range,number,update});
   }
   panel.appendChild(sliders);
+  // Virtual zoom controls *GPU chunk visibility*, never the player's view
+  // or terrain generation. It is intentionally not part of geometry presets.
+  const visibilityRow=document.createElement('label');
+  visibilityRow.className='terrain-dev-row terrain-dev-visibility';
+  const visibilityName=document.createElement('span');
+  visibilityName.textContent='Visibility zoom';
+  const visibilityRange=document.createElement('input');
+  visibilityRange.type='range';visibilityRange.id='terrainVisibilityZoom';
+  visibilityRange.min=root.TerrainVisibility?.MIN||20;
+  visibilityRange.max=root.TerrainVisibility?.MAX||200;
+  visibilityRange.step=1;
+  const visibilityNumber=document.createElement('input');
+  visibilityNumber.type='number';visibilityNumber.id='terrainVisibilityZoomNumber';
+  visibilityNumber.className='terrain-dev-number';
+  visibilityNumber.min=visibilityRange.min;visibilityNumber.max=visibilityRange.max;
+  visibilityNumber.step=1;
+  const visibilityHelp=document.createElement('small');
+  visibilityHelp.className='terrain-dev-visibility-help';
+  visibilityHelp.textContent='Hidden GPU visibility scale. A lower value keeps more terrain visible while zoomed in; higher values reduce GPU work. The camera zoom stays unchanged.';
+  function syncVisibility(){
+    const value=root.TerrainVisibility?.get?.()??42;
+    visibilityRange.value=String(value);
+    visibilityNumber.value=String(value);
+  }
+  function applyVisibility(value){
+    root.TerrainVisibility?.set?.(value);
+    syncVisibility();
+    // Changing visibility never invalidates meshes or saves game data.
+    if(typeof root.draw==='function')root.draw();
+  }
+  visibilityRange.addEventListener('input',()=>applyVisibility(visibilityRange.value));
+  visibilityNumber.addEventListener('change',()=>applyVisibility(visibilityNumber.value));
+  syncVisibility();
+  visibilityRow.append(visibilityName,visibilityRange,visibilityNumber);
+  panel.append(visibilityRow,visibilityHelp);
   const regionLabel=document.createElement('label');regionLabel.className='terrain-dev-regions';
   const regionInput=document.createElement('input');regionInput.type='checkbox';
   regionInput.addEventListener('change',()=>{showRegions=regionInput.checked;drawNow();});
@@ -206,6 +241,7 @@
           known:rows.filter(row=>row?.terrain&&row.terrain!=='UNKNOWN').length,
           total:rows.length,targets:info.knownChunkTargets,
           prepared:info.worldGeometryComplete,
+          visibilityZoom:root.TerrainVisibility?.get?.()??42,
           hydrated:root.TribeNetKnowledge?.complete?.()??false,
           fallback:root.TribeNetKnowledge?.fallback?.()??false
         }
@@ -267,6 +303,7 @@
         ' · resident '+info.cachedChunks+' · queued '+info.queuedChunks+
         ' · centre area '+info.focusTarget+' ('+(2*info.focusRadiusChunks+1)+'×'+(2*info.focusRadiusChunks+1)+')' +
         ' · world prepared '+(info.worldGeometryComplete?'yes':'no')+
+        ' · visibility zoom '+(info.visibilityZoom??'unknown')+
         ' · discovered meshes '+(info.knownChunkTargets||0)+
         ' · background preparation '+info.prefetchTarget+
         ' · memory evicted '+info.evictions+
