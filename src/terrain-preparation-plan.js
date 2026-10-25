@@ -22,8 +22,10 @@ function planWorldGeometry({
   const jobs=[];
   for(const id of ids){
     const mesh=resident(id,lod);
-    if(mesh&&!mesh.dirtyShared)continue;
-    jobs.push({id,lod,sharedOnly:Boolean(mesh?.dirtyShared)});
+    // A changed core remains drawn until its replacement uploads.
+    // Such a chunk still needs a FULL build, not a shared-border-only job.
+    if(mesh&&!mesh.dirtyShared&&!mesh.dirtyCore)continue;
+    jobs.push({id,lod,sharedOnly:Boolean(mesh?.dirtyShared&&!mesh?.dirtyCore)});
   }
   return {
     ids, jobs, active:new Set(ids),
