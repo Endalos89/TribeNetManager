@@ -46,6 +46,9 @@ class GPUMap {
     this.chunkGroup=null;this.modelGroup=null;this.chunkCache=new Map();
     this.residency=new TerrainResidencyPolicy();this.shownRecords=new Set();
     this.knownChunkIds=new Set();
+    this.worldRows=[];this.worldPalette={};this.worldKnowledgeRevision=0;
+    this.meshWorker=null;this.meshWorkerReady=false;this.meshWorkerBusy=false;
+    this.meshWorkerJob=null;this.meshWorkerFailed=false;
     this.renderSerial=0;this.groundRevision=0;this.lastUnitSignature=null;this.frameStartedAt=0;
     this.units=[];this.visible=false;this.failed=false;this.initialized=false;this.failureReason='';
     this.generation=0;this.pendingChunks=[];this.idleBuildPending=false;this.activeChunkIds=new Set();this.visibleChunkIds=new Set();
@@ -56,7 +59,7 @@ class GPUMap {
     this.diskStats={diskHits:0,diskMisses:0,diskWrites:0,diskErrors:0};
     this.groundHeightCache=new Map();this.meshRevision=0;
     this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
-    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,sharedUpdates:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0,knowledgePending:0,terrainMs:0,restorationMs:0,invalidatedChunks:0,groundCalculations:0,unitBufferRebuilds:0,cameraOnlyFrames:0,frameMs:0,maxFrameMs:0};
+    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,sharedUpdates:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0,knowledgePending:0,terrainMs:0,restorationMs:0,invalidatedChunks:0,groundCalculations:0,unitBufferRebuilds:0,cameraOnlyFrames:0,frameMs:0,maxFrameMs:0,workerBuilds:0,workerFailures:0,workerTimeMs:0,workerUploadMs:0};
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
     this.waveMaterial=new THREE.LineBasicMaterial({color:0xc8e9d9,transparent:true,opacity:.58,depthWrite:false});
     this.treeMaterials={
@@ -150,6 +153,10 @@ class GPUMap {
     this.groundRevision++;this.groundHeightCache.clear();
     this.stats.chunks=0;this.stats.faces=0;this.stats.trees=0;
     this.generation++;this.pendingChunks=[];this.queueSignature=null;
+    // Existing worker output is ignored after any terrain preset reset.
+    this.worldKnowledgeRevision++;
+    this.meshWorkerBusy=false;this.meshWorkerJob=null;
+    if(this.meshWorker && this.worldRows.length)this.sendWorkerKnowledge();
     // The persistent cache is content-addressed; changing a preset changes
     // keys rather than deleting historical meshes from disk.
     this.diskMissKeys.clear();
@@ -386,9 +393,10 @@ class GPUMap {
       instances};
   }
   restoreChunk(id,lod,data){
-    if(!data||data.format!==2||!Array.isArray(data.positions)||
-      !Array.isArray(data.colors)||!Array.isArray(data.sharedPositions)||
-      !Array.isArray(data.sharedColors)||
+    const numericArray=value=>Array.isArray(value)||value instanceof Float32Array;
+    if(!data||data.format!==2||!numericArray(data.positions)||
+      !numericArray(data.colors)||!numericArray(data.sharedPositions)||
+      !numericArray(data.sharedColors)||
       data.positions.length!==data.colors.length||
       data.sharedPositions.length!==data.sharedColors.length||
       data.positions.length+data.sharedPositions.length<9 ||
@@ -412,6 +420,26 @@ class GPUMap {
       waveGeometry.setAttribute('position',new THREE.Float32BufferAttribute(data.waves,3));
       waves=new THREE.LineSegments(waveGeometry,this.waveMaterial);
       waves.frustumCulled=false;waves.renderOrder=2;group.add(waves);
+    }
+    if(data.treeSites?.length){
+      const sites=data.treeSites;
+      const add=(geometry,material,filtered,height,radius)=>{
+        if(!filtered.length)return;
+        const mesh=new THREE.InstancedMesh(geometry,material,filtered.length);
+        mesh.frustumCulled=false;
+        filtered.forEach((tree,i)=>{
+          this.object.position.set(tree.x*1.5,tree.z+height*tree.size,tree.y*1.5);
+          this.object.rotation.set(0,0,0);
+          this.object.scale.set(tree.size*radius,tree.size,tree.size*radius);
+          this.object.updateMatrix();
+          mesh.setMatrixAt(i,this.object.matrix);
+        });
+        mesh.instanceMatrix.needsUpdate=true;
+        group.add(mesh);
+      };
+      add(baseTreeTrunk,this.treeMaterials.trunk,sites,.10,1);
+      add(baseTreeCrown,this.treeMaterials.broad,sites.filter(t=>!t.conifer),.32,1.45);
+      add(baseTreeCrown,this.treeMaterials.conifer,sites.filter(t=>t.conifer),.32,1.15);
     }
     const forestTypes={
       trunk:[baseTreeTrunk,this.treeMaterials.trunk],
@@ -601,6 +629,15 @@ class GPUMap {
     return ids;
   }
   setWorldKnowledge(terrain,parseCoordinate){
+    this.worldRows=[...terrain].filter(([,type])=>type&&type!=='UNKNOWN')
+      .map(([coordinate,type])=>{
+        const p=parseCoordinate(coordinate);
+        return {coordinate,globalCol:p.globalCol,globalRow:p.globalRow,terrain:type};
+      }).filter(row=>Number.isFinite(row.globalCol)&&Number.isFinite(row.globalRow));
+    this.worldPalette=typeof terrainStyle!=='undefined'
+      ?Object.fromEntries(Object.entries(terrainStyle).map(([key,value])=>[key,value[0]])):{};
+    this.worldKnowledgeRevision++;
+    this.sendWorkerKnowledge();
     // Called on terrain-knowledge revision, not by camera movement.
     // The workset describes the discovered world, independent of view scale.
     const next=knownGeometryChunks(terrain,parseCoordinate,{
@@ -610,6 +647,101 @@ class GPUMap {
       [...next].every(id=>this.knownChunkIds.has(id)))return;
     this.knownChunkIds=next;
     this.queueSignature=null;
+  }
+  ensureMeshWorker(){
+    if(this.meshWorker||this.meshWorkerFailed||typeof Worker==='undefined')return Boolean(this.meshWorker);
+    try{
+      const worker=new Worker('terrain-geometry-worker.js');
+      this.meshWorker=worker;this.meshWorkerReady=false;
+      worker.onmessage=event=>this.handleWorkerMessage(event.data);
+      worker.onerror=error=>{
+        console.warn('World geometry worker unavailable; using synchronous recovery:',error.message);
+        this.stats.workerFailures++;
+        this.meshWorkerFailed=true;this.meshWorkerBusy=false;this.meshWorkerReady=false;
+        if(this.meshWorkerJob)this.pendingChunks.unshift(this.meshWorkerJob);
+        this.meshWorkerJob=null;
+        worker.terminate();this.meshWorker=null;
+        this.scheduleIdleChunk();
+      };
+      this.sendWorkerKnowledge();
+      return true;
+    }catch(error){
+      this.meshWorkerFailed=true;this.stats.workerFailures++;
+      console.warn('Cannot start world geometry worker:',error);
+      return false;
+    }
+  }
+  sendWorkerKnowledge(){
+    if(!this.meshWorker)return;
+    this.meshWorkerReady=false;
+    this.meshWorker.postMessage({type:'knowledge',revision:this.worldKnowledgeRevision,
+      rows:this.worldRows,palette:this.worldPalette,settings:window.TerrainSettings?.get?.()||{}});
+  }
+  applySharedWorkerResult(job,mesh){
+    const record=this.chunkCache.get(this.chunkKey(job.id,job.lod));
+    if(!record?.dirtyShared)return;
+    record.group.remove(record.shared);
+    record.shared.geometry.dispose();
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(mesh.sharedPositions,3));
+    g.setAttribute('color',new THREE.Float32BufferAttribute(mesh.sharedColors,3));
+    g.computeBoundingSphere();
+    record.shared=new THREE.Mesh(g,this.meshMaterial);
+    record.shared.frustumCulled=false;
+    record.group.add(record.shared);
+    if(record.waves){
+      record.group.remove(record.waves);
+      record.waves.geometry.dispose();
+      record.waves=null;
+    }
+    if(mesh.waves?.length){
+      const wavesGeometry=new THREE.BufferGeometry();
+      wavesGeometry.setAttribute('position',new THREE.Float32BufferAttribute(mesh.waves,3));
+      record.waves=new THREE.LineSegments(wavesGeometry,this.waveMaterial);
+      record.waves.frustumCulled=false;record.waves.renderOrder=2;
+      record.group.add(record.waves);
+    }
+    record.sharedFaces=mesh.sharedFaces;
+    record.faces=record.coreFaces+record.sharedFaces;
+    record.serial=++this.meshRevision;record.dirtyShared=false;
+    this.residency.update(record);
+    this.stats.sharedUpdates++;
+    this.saveToDisk(record);
+  }
+  handleWorkerMessage(message){
+    if(message.type==='ready'){
+      if(message.revision!==this.worldKnowledgeRevision)return;
+      this.meshWorkerReady=true;
+      this.scheduleIdleChunk();
+      return;
+    }
+    const job=this.meshWorkerJob;
+    this.meshWorkerBusy=false;this.meshWorkerJob=null;
+    if(message.type==='stale'||message.revision!==this.worldKnowledgeRevision){
+      this.queueSignature=null;this.requestLater();this.scheduleIdleChunk();return;
+    }
+    if(message.type==='error'){
+      this.stats.workerFailures++;
+      this.meshWorkerFailed=true;this.meshWorkerReady=false;
+      this.meshWorker?.terminate();this.meshWorker=null;
+      if(job)this.pendingChunks.unshift(job);
+      console.warn('World geometry worker failed; falling back:',message.error);
+      this.scheduleIdleChunk();return;
+    }
+    if(message.type==='built' && job && !this.chunkCache.has(this.chunkKey(job.id,job.lod)) ||
+      message.type==='built'&&job?.sharedOnly){
+      const started=performance.now();
+      if(job.sharedOnly)this.applySharedWorkerResult(job,message.mesh);
+      else {
+        this.restoreChunk(job.id,job.lod,message.mesh);
+        this.stats.builds++;
+        this.saveToDisk(this.chunkCache.get(this.chunkKey(job.id,job.lod)));
+      }
+      this.stats.workerBuilds++;
+      this.stats.workerUploadMs+=performance.now()-started;
+      this.evictUnused();this.requestLater();
+    }
+    this.scheduleIdleChunk();
   }
   queueBuilds(visible,lod){
     // Never prepare the 169 focus chunks simply because the camera points
@@ -650,13 +782,16 @@ class GPUMap {
     // priority. No disk read, mesh construction or disposal should contend
     // with the user's camera interaction. The settled redraw resumes work.
     if(typeof IsoMapper!=='undefined'&&IsoMapper.interacting)return;
+    // The background worker owns CPU-intensive terrain construction.
+    // GPU objects are uploaded on the UI thread only after worker completion.
+    if(this.ensureMeshWorker() && !this.meshWorkerReady)return;
     if(window.TribeNetKnowledge && !window.TribeNetKnowledge.ready()){
       this.stats.knowledgePending=window.TribeNetKnowledge.pending();
       window.TribeNetKnowledge.ensure?.();
       return;
     }
     this.stats.knowledgePending=0;
-    if(this.idleBuildPending || this.diskReadBusy || !this.pendingChunks.length || !this.visible)return;
+    if(this.idleBuildPending || this.diskReadBusy || this.meshWorkerBusy || !this.pendingChunks.length || !this.visible)return;
     const revision=this.generation;
     this.idleBuildPending=true;
     const task=(deadline)=>{
@@ -674,7 +809,7 @@ class GPUMap {
       if(!next){
         this.scheduleIdleChunk();return;
       }
-      if(next.sharedOnly){
+      if(next.sharedOnly && !this.meshWorkerReady){
         try{
           this.refreshSharedChunk(next.id,next.lod);
           this.requestLater();
@@ -714,6 +849,14 @@ class GPUMap {
         }).finally(()=>{
           this.diskReadBusy=false;this.scheduleIdleChunk();
         });
+        return;
+      }
+      if(this.meshWorker && this.meshWorkerReady){
+        if(this.meshWorkerBusy){this.pendingChunks.unshift(next);return;}
+        this.meshWorkerBusy=true;
+        this.meshWorkerJob=next;
+        this.meshWorker.postMessage({type:'build',id:next.id,lod:next.lod,
+          sharedOnly:next.sharedOnly,revision:this.worldKnowledgeRevision});
         return;
       }
       try{
