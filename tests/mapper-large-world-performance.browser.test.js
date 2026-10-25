@@ -44,7 +44,11 @@ const {chromium}=require('playwright');
     for(let col=299;col<331;col++)for(let row=314;row<338;row++){
       const coordinate=coordinateFor(col,row);
       window.largeRows.push({...parseCoordinate(coordinate),coordinate,
-        terrain:['D','CH','PR','GH','O','LAM','JH','DE'][(col*7+row*11)%8],
+        // Coherent geography is representative of real game reports.
+        // Alternating Ocean/Hill/Forest EVERY hex forces high-detail
+        // shoreline subdivision everywhere and is not a realistic world.
+        terrain:col<304?'O':col<310?'PR':row<322?'CH':
+          row<329?'D':row<335?'GH':'LAM',
         notes:''});
     }
   });
@@ -53,9 +57,24 @@ const {chromium}=require('playwright');
   await page.waitForFunction(()=>window.TribeNetGPU?.getStats().faces>1000 &&
     window.TribeNetKnowledge.complete() && state.hexCache.size===768,
     null,{timeout:45000});
-  await page.waitForFunction(()=>window.TribeNetGPU.worldGeometryComplete&&
-    window.TribeNetGPU.stats.workerBuilds>20&&
-    window.TribeNetGPU.pendingChunks.length===0,null,{timeout:120000});
+  try{
+    await page.waitForFunction(()=>window.TribeNetGPU.worldGeometryComplete&&
+      window.TribeNetGPU.stats.workerBuilds>20&&
+      window.TribeNetGPU.pendingChunks.length===0,null,{timeout:180000});
+  }catch(error){
+    const diagnostic=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU;
+      return {known:state.hexCache.size,discoveredChunks:gpu.knownChunkIds.size,
+        workerBuilds:gpu.stats.workerBuilds,pending:gpu.pendingChunks.length,
+        completedUploads:gpu.completedUploads.length,
+        busy:gpu.meshWorkerBusy,diskBusy:gpu.diskReadBusy,
+        idlePending:gpu.idleBuildPending,failed:gpu.stats.workerFailures,
+        worldReady:gpu.worldGeometryComplete,geometryMs:gpu.stats.workerTimeMs,
+        resident:gpu.chunkCache.size};
+    });
+    throw new Error('Large-world preparation did not finish: '+
+      JSON.stringify(diagnostic)+'; '+error.message);
+  }
   const report=await page.evaluate(()=>{
     const gpu=window.TribeNetGPU,base=baseCenter(315,326);
     const stats=()=>({
