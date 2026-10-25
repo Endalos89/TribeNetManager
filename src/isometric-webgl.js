@@ -796,7 +796,11 @@ class GPUMap {
     const task=deadline=>{
       this.uploadScheduled=false;
       if(generation!==this.generation)return;
-      if(typeof IsoMapper!=='undefined'&&IsoMapper.interacting){
+      // A database query can begin AFTER the worker started preparing a
+      // chunk. Never upload completed geometry while the historical/live
+      // knowledge barrier is pending, even if an old build finishes now.
+      if((typeof IsoMapper!=='undefined'&&IsoMapper.interacting)||
+         (window.TribeNetKnowledge&&!window.TribeNetKnowledge.ready())){
         setTimeout(()=>this.scheduleCompletedUpload(),75);
         return;
       }
@@ -912,6 +916,12 @@ class GPUMap {
         this.diskReadBusy=true;
         const restoredAt=performance.now();
         Promise.resolve().then(()=>reader(key)).then(data=>{
+          if(window.TribeNetKnowledge && !window.TribeNetKnowledge.ready()){
+            // Keep the request rather than uploading a mesh against a stale
+            // world snapshot while neighbouring submaps are still arriving.
+            this.pendingChunks.unshift(next);
+            return;
+          }
           if(data && this.persistentKey(next.id,next.lod)===key &&
             this.activeChunkIds.has(next.id) &&
             !this.chunkCache.has(this.chunkKey(next.id,next.lod))){
