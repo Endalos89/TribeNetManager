@@ -109,6 +109,40 @@ const {chromium}=require('playwright');
     assert.equal(baseline.after[key],baseline.before[key],'close camera should not alter '+key);
   assert.equal(baseline.after.complete,true);
   assert.ok(baseline.p99<250,'static camera zoom/pan must avoid half-second stalls');
+  const postStop=await page.evaluate(async()=>{
+    const gpu=window.TribeNetGPU;
+    const previousLock=window.TerrainVisibility.get();
+    window.TerrainVisibility.set(170);
+    const before={resident:gpu.chunkCache.size,hidden:gpu.stats.hiddenChunkEvents,
+      workerBuilds:gpu.stats.workerBuilds,evictions:gpu.stats.evictions};
+    const names=new Map([...gpu.chunkCache].map(([key,row])=>[key,row.group]));
+    try{
+      state.scale=190;
+      for(let i=0;i<22;i++){
+        state.cameraX+=.022;
+        state.cameraY+=.009;
+        IsoMapper.interact();
+        draw();
+      }
+      await new Promise(resolve=>setTimeout(resolve,420));
+      draw();
+      return {before,after:{
+        resident:gpu.chunkCache.size,hidden:gpu.stats.hiddenChunkEvents,
+        workerBuilds:gpu.stats.workerBuilds,evictions:gpu.stats.evictions,
+        worldPinned:gpu.worldChunksPinned,
+        allShown:[...gpu.chunkCache.values()].every(record=>record.group.visible),
+        exactMeshes:[...names].every(([key,group])=>gpu.chunkCache.get(key)?.group===group)
+      }};
+    }finally{window.TerrainVisibility.set(previousLock);}
+  });
+  assert.equal(postStop.after.worldPinned,true,'84 known hexes should pin all revealed scene meshes');
+  assert.equal(postStop.after.allShown,true,
+    'a tiny close-zoom pan and its settle redraw cannot hide known GPU terrain groups');
+  assert.equal(postStop.after.exactMeshes,true,
+    'no terrain mesh identity may change when interaction finishes');
+  for(const key of ['resident','hidden','workerBuilds','evictions'])
+    assert.equal(postStop.after[key],postStop.before[key],
+      'post-drag settle cannot trigger '+key+' change');
   const grounding=await page.evaluate(()=>{
     const gpu=window.TribeNetGPU,point=baseCenter(311,327);
     const previousRay=gpu.downRay.intersectObjects;
