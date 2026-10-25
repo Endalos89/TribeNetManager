@@ -756,6 +756,7 @@ class GPUMap {
         this.saveToDisk(this.chunkCache.get(this.chunkKey(job.id,job.lod)));
       }
       this.stats.workerBuilds++;
+      this.stats.workerTimeMs+=Number(message.elapsed||0);
       this.stats.workerUploadMs+=performance.now()-started;
       this.evictUnused();this.requestLater();
     }
