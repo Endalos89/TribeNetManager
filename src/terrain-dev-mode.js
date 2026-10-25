@@ -127,7 +127,11 @@
       (history?.turn?' · result '+history.turn.turnKey+
         ' (knowledge '+(history.turn.knowledgeTurnKey||'initial')+')':'')+
       (load?' · history query '+(load.status||'?')+' '+(load.count??0)+' rows':'')+
-      ' · failed reason '+(gpu?.failureReason||'none');
+      ' · failed reason '+(gpu?.failureReason||'none')+
+      ' · renderer source '+(root.TribeNetRuntime?.terrainLoaderRevision||'unmarked')+
+      ' · history source '+(root.TribeNetRuntime?.historicalLoaderRevision||'unmarked')+
+      (gpu?.failureStack?' · failure stack '+gpu.failureStack.replace(/\\s+/g,' ').slice(0,1800):'')+
+      (load?.error?' · historical data error '+load.error:'');
     retryButton.disabled=!gpu;
     if(active&&info){
       performance.textContent='GPU: '+info.chunks+' chunks · '+info.faces.toLocaleString()+
