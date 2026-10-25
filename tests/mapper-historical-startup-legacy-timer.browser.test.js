@@ -98,6 +98,37 @@ const {chromium}=require('playwright');
    assert.ok(ready.reads>0);
    assert.equal(ready.lastTerrainLoad.status,'loaded');
    assert.ok(ready.lastTerrainLoad.count>=300);
-   console.log('HISTORICAL_STARTUP_LEGACY_TIMER_PASS',JSON.stringify({opened,ready}));
+   const revisit=await page.evaluate(()=>{
+     const gpu=window.TribeNetGPU;
+     const before={
+       queries:window.historicalQueryCount,
+       known:state.hexCache.size,
+       loadedArea:{...state.loadedArea},
+       resets:gpu.stats.fullResets,
+       invalidations:gpu.stats.terrainInvalidations
+     };
+     // Revisit the same known submap and travel beyond its boundaries.
+     // Neither action is a terrain-knowledge event in a static result turn.
+     for(const col of [315,375,315,270,315]){
+       centerOnHex(col,327);
+       for(const scale of [130,32,180,52]){
+         state.scale=scale;draw();requestVisibleData();
+       }
+     }
+     return {before,after:{
+       queries:window.historicalQueryCount,
+       known:state.hexCache.size,
+       loadedArea:{...state.loadedArea},
+       resets:gpu.stats.fullResets,
+       invalidations:gpu.stats.terrainInvalidations
+     }};
+   });
+   assert.equal(revisit.before.queries,1,'selected historical turn queries knowledge once');
+   assert.equal(revisit.after.queries,1,'pan/zoom across submaps must not reload historical terrain');
+   assert.equal(revisit.after.known,revisit.before.known,'camera does not mutate terrain data');
+   assert.deepEqual(revisit.after.loadedArea,revisit.before.loadedArea);
+   assert.equal(revisit.after.resets,revisit.before.resets);
+   assert.equal(revisit.after.invalidations,revisit.before.invalidations);
+   console.log('HISTORICAL_STARTUP_LEGACY_TIMER_PASS',JSON.stringify({opened,ready,revisit}));
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
