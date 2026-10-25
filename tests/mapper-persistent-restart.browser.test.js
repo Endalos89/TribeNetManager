@@ -42,7 +42,7 @@ const {chromium}=require('playwright');
       onUpdateStatus:()=>{},getHexesInArea:async()=>[],
       getHex:async()=>null,getSubmapSummaries:async()=>[],getPlannerImports:async()=>[],
       listResultTurns:async()=>[earlier,current],
-      getResultTurn:async key=>({...key==='906-05'?earlier:current,units:[],events:[]}),
+      getResultTurn:async key=>({...(key==='906-05'?earlier:current),units:[],events:[]}),
       getResultSubmapSummaries:async()=>[],
       getResultHexesInArea:async bounds=>known.filter(x=>x.globalCol>=bounds.minCol&&
         x.globalCol<=bounds.maxCol&&x.globalRow>=bounds.minRow&&x.globalRow<=bounds.maxRow),
