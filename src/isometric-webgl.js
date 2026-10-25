@@ -25,7 +25,7 @@ const FIXED_TERRAIN_STEPS=8;
 const UNIT_MODEL_SCALE=.5;
 // Only change this identifier when geometry generation rules change, not
 // when the app release number increments. Known terrain/settings have separate keys.
-const MESH_GENERATOR_REVISION='terrain-fixed8-shore-components-foothill-smooth-20261025-r4';
+const MESH_GENERATOR_REVISION='terrain-fixed8-seam-coves-20261025-r5';
 const baseTreeTrunk=new THREE.CylinderGeometry(.012,.017,.20,5);
 const baseTreeCrown=new THREE.ConeGeometry(.095,.24,6);
 const unitBox=new THREE.BoxGeometry(.12,.12,.085);
@@ -330,7 +330,9 @@ class GPUMap {
           } else add(p,c);
         };
         for(let k=1;k<f.points.length-1;k++){
-          vertex(f.points[0]);vertex(f.points[k]);vertex(f.points[k+1]);
+          const a=f.points[0],b=f.points[k],d=f.points[k+1];
+          if(Math.abs((b.x-a.x)*(d.y-a.y)-(b.y-a.y)*(d.x-a.x))<1e-8)continue;
+          vertex(a);vertex(b);vertex(d);
           facesCount++;
           if(immutable)coreFaces++;else sharedFaces++;
         }
