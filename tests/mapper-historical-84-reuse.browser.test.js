@@ -176,6 +176,7 @@ const {chromium}=require('playwright');
   // mesh, creating a conspicuous hole on the post-pan redraw.
   const staged=await page.evaluate(()=>{
     const gpu=window.TribeNetGPU,ref=coordinateFor(311,327);
+    centerOnHex(311,327);state.scale=130;draw();
     const oldHex=state.hexCache.get(ref);
     const id=Math.floor(311/gpu.getStats().chunkSize)+':'+Math.floor(327/gpu.getStats().chunkSize);
     const prior=gpu.bestResident(id,8);
