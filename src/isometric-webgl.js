@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three';
 import { TerrainResidencyPolicy, DEFAULT_MAX_CHUNKS } from './terrain-residency.js';
+import { TerrainManualRecorder } from './terrain-manual-recorder.js';
 import { knownGeometryChunks } from './terrain-world-workset.js';
 import { planWorldGeometry } from './terrain-preparation-plan.js';
 import geometryWorkerSource from 'virtual:tribenet-geometry-worker';
@@ -70,6 +71,9 @@ class GPUMap {
     this.groundHeightCache=new Map();this.meshRevision=0;
     this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
     this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,sharedUpdates:0,hiddenChunkEvents:0,shownChunkEvents:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0,knowledgePending:0,terrainMs:0,restorationMs:0,invalidatedChunks:0,groundCalculations:0,unitBufferRebuilds:0,cameraOnlyFrames:0,frameMs:0,maxFrameMs:0,workerBuilds:0,workerFailures:0,workerTimeMs:0,workerUploadMs:0,workerStaleResponses:0};
+    this.debugDisableTerrainCulling=false;this.debugFreezeBackground=false;
+    this.deferredTerrainChanges=new Map();this.deferredSharedChanges=new Map();
+    this.terrainRecorder=new TerrainManualRecorder();this.lastRecordedFrame=0;
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
     this.waveMaterial=new THREE.LineBasicMaterial({color:0xc8e9d9,transparent:true,opacity:.58,depthWrite:false});
     this.treeMaterials={
@@ -89,6 +93,68 @@ class GPUMap {
     this.object=new THREE.Object3D();
     this.color=new THREE.Color();
   }
+  terrainDiagnosticSnapshot(){
+    const groups=[...this.chunkCache.values()];
+    return {
+      camera:typeof state!=='undefined'?{
+        x:Number(state.cameraX.toFixed(4)),y:Number(state.cameraY.toFixed(4)),
+        zoom:Number(state.scale.toFixed(2)),dragging:Boolean(state.dragging)}:null,
+      interacting:typeof IsoMapper!=='undefined'&&IsoMapper.interacting,
+      resident:groups.length,knownTargets:this.knownChunkIds.size,
+      enabledGroups:groups.filter(r=>r.group.visible).length,
+      disabledGroups:groups.filter(r=>!r.group.visible).length,
+      residentMiB:Number((this.residency.bytes/1048576).toFixed(2)),
+      memoryLimitMiB:Number((this.residency.maxBytes/1048576).toFixed(0)),
+      queued:this.pendingChunks.length,completedUploads:this.completedUploads.length,
+      workerBusy:this.meshWorkerBusy,diskBusy:this.diskReadBusy,
+      worldComplete:this.worldGeometryComplete,hydrated:window.TribeNetKnowledge?.complete?.(),
+      cullingDisabled:this.debugDisableTerrainCulling,
+      backgroundFrozen:this.debugFreezeBackground,
+      drawnCalls:this.stats.gpuCalls,drawnTriangles:this.renderer?.info?.render?.triangles||0,
+      builds:this.stats.builds,diskHits:this.diskStats.diskHits,
+      evictions:this.stats.evictions,invalidations:this.stats.terrainInvalidations,
+      resets:this.stats.fullResets,hidden:this.stats.hiddenChunkEvents,
+      shown:this.stats.shownChunkEvents,sharedUpdates:this.stats.sharedUpdates
+    };
+  }
+  recordTerrainEvent(type,details){this.terrainRecorder.event(type,details);}
+  applyTerrainDiagnosticCulling(record){
+    for(const child of record.group.children)
+      if(child.isMesh||child.isLine||child.isLineSegments)
+        child.frustumCulled=!this.debugDisableTerrainCulling;
+  }
+  setTerrainDiagnosticOptions({disableFrustumCulling,freezeBackground}={}){
+    if(typeof freezeBackground==='boolean'&&freezeBackground &&
+       !this.debugFreezeBackground&&this.residency.overBudget(this.chunkCache.size))
+      throw Error('Cannot freeze: resident terrain already exceeds its memory budget');
+    if(typeof disableFrustumCulling==='boolean' &&
+       disableFrustumCulling!==this.debugDisableTerrainCulling){
+      this.debugDisableTerrainCulling=disableFrustumCulling;
+      for(const record of this.chunkCache.values())this.applyTerrainDiagnosticCulling(record);
+      this.recordTerrainEvent('terrain-culling-changed',{disabled:disableFrustumCulling});
+    }
+    if(typeof freezeBackground==='boolean' &&
+       freezeBackground!==this.debugFreezeBackground){
+      this.debugFreezeBackground=freezeBackground;
+      this.recordTerrainEvent('background-freeze-changed',{frozen:freezeBackground});
+      if(!freezeBackground){
+        const direct=[...this.deferredTerrainChanges.values()];
+        const shared=[...this.deferredSharedChanges.values()];
+        this.deferredTerrainChanges.clear();this.deferredSharedChanges.clear();
+        if(direct.length)this.invalidateHexes(direct,shared);
+        this.scheduleCompletedUpload();this.scheduleIdleChunk();this.evictUnused();
+      }
+    }
+    return {disableFrustumCulling:this.debugDisableTerrainCulling,
+      freezeBackground:this.debugFreezeBackground};
+  }
+  startTerrainRecording(metadata={}){
+    this.terrainRecorder.start(()=>this.terrainDiagnosticSnapshot(),{
+      ...metadata,initialOptions:{
+        disableFrustumCulling:this.debugDisableTerrainCulling,
+        freezeBackground:this.debugFreezeBackground}});
+  }
+  stopTerrainRecording(){return this.terrainRecorder.stop({idleMs:2000});}
   init(){
     if(this.initialized)return true;
     if(this.failed)return false;
@@ -175,6 +241,7 @@ class GPUMap {
     this.groundHeightCache.clear();
   }
   disposeChunk(record,reason='lru'){
+    this.recordTerrainEvent('chunk-disposed',{id:record.id,reason});
     this.worldGeometryComplete=false;
     this.shownRecords.delete(record.key);
     this.residency.release(record);
@@ -485,6 +552,7 @@ class GPUMap {
       faces:data.faces,coreFaces:data.coreFaces,sharedFaces:data.sharedFaces,
       trees:data.trees,known:data.known!==false,serial:++this.meshRevision};
     record.group.visible=false;
+    this.applyTerrainDiagnosticCulling(record);
     this.residency.register(record);
     this.chunkCache.set(record.key,record);this.chunkGroup.add(group);
     return record;
@@ -536,6 +604,7 @@ class GPUMap {
     this.residency.register(record);
     this.chunkCache.set(record.key,record);this.chunkGroup.add(record.group);
     record.serial=++this.meshRevision;
+    this.recordTerrainEvent('chunk-generated',{id,lod});
     this.stats.builds++;
     this.saveToDisk(record);
     return record;
@@ -566,6 +635,7 @@ class GPUMap {
     record.sharedFaces=partial.sharedFaces;
     record.faces=record.coreFaces+record.sharedFaces;
     record.serial=++this.meshRevision;
+    this.applyTerrainDiagnosticCulling(record);
     this.residency.update(record);
     record.dirtyShared=false;
     this.stats.sharedUpdates++;
@@ -619,6 +689,15 @@ class GPUMap {
   }
   invalidateHexes(changedHexes,affectedHexes=changedHexes){
     if(!changedHexes?.length)return;
+    if(this.debugFreezeBackground){
+      for(const p of changedHexes)this.deferredTerrainChanges.set(p.col+':'+p.row,p);
+      for(const p of affectedHexes)this.deferredSharedChanges.set(p.col+':'+p.row,p);
+      this.recordTerrainEvent('invalidation-deferred',{changed:changedHexes.length,
+        affected:affectedHexes.length});
+      return;
+    }
+    this.recordTerrainEvent('terrain-knowledge-invalidated',{changed:changedHexes.length,
+      affected:affectedHexes.length});
     this.worldGeometryComplete=false;
     this.groundRevision++;
     this.groundHeightCache.clear();
@@ -754,6 +833,7 @@ class GPUMap {
     record.sharedFaces=mesh.sharedFaces;
     record.faces=record.coreFaces+record.sharedFaces;
     record.serial=++this.meshRevision;record.dirtyShared=false;
+    this.applyTerrainDiagnosticCulling(record);
     this.residency.update(record);
     this.stats.sharedUpdates++;
     this.saveToDisk(record);
@@ -796,11 +876,13 @@ class GPUMap {
     this.scheduleIdleChunk();
   }
   scheduleCompletedUpload(){
+    if(this.debugFreezeBackground)return;
     if(this.uploadScheduled||!this.completedUploads.length)return;
     this.uploadScheduled=true;
     const generation=this.generation;
     const task=deadline=>{
       this.uploadScheduled=false;
+      if(this.debugFreezeBackground)return;
       if(generation!==this.generation)return;
       // A database query can begin AFTER the worker started preparing a
       // chunk. Never upload completed geometry while the historical/live
@@ -869,6 +951,7 @@ class GPUMap {
     this.scheduleIdleChunk();
   }
   scheduleIdleChunk(){
+    if(this.debugFreezeBackground)return;
     // During wheel/drag gestures, rendering already-resident geometry takes
     // priority. No disk read, mesh construction or disposal should contend
     // with the user's camera interaction. The settled redraw resumes work.
@@ -887,6 +970,7 @@ class GPUMap {
     this.idleBuildPending=true;
     const task=(deadline)=>{
       this.idleBuildPending=false;
+      if(this.debugFreezeBackground)return;
       if(revision!==this.generation){
         this.scheduleIdleChunk();return;
       }
@@ -926,6 +1010,11 @@ class GPUMap {
         this.diskReadBusy=true;
         const restoredAt=performance.now();
         Promise.resolve().then(()=>reader(key)).then(data=>{
+          if(this.debugFreezeBackground){
+            this.pendingChunks.unshift(next);
+            this.recordTerrainEvent('disk-restore-deferred',{id:next.id});
+            return;
+          }
           if(window.TribeNetKnowledge && !window.TribeNetKnowledge.ready()){
             // Keep the request rather than uploading a mesh against a stale
             // world snapshot while neighbouring submaps are still arriving.
@@ -983,6 +1072,7 @@ class GPUMap {
     else setTimeout(()=>task({timeRemaining:()=>12,didTimeout:true}),32);
   }
   evictUnused(){
+    if(this.debugFreezeBackground)return;
     // Camera scale and camera centre do not determine residency. Known world
     // geometry remains resident until an actual measured memory limit is hit.
     // All eviction happens at allocation time, never during a camera frame.
@@ -1074,6 +1164,9 @@ class GPUMap {
     }
     this.shownRecords=nextShown;
     this.stats.chunks=chunks;this.stats.faces=faces;this.stats.trees=trees;
+    if(this.terrainRecorder.active&&performance.now()-this.lastRecordedFrame>150){
+      this.lastRecordedFrame=performance.now();this.recordTerrainEvent('camera-frame');
+    }
     return true;
   }
   pick(x,y){
@@ -1245,6 +1338,9 @@ class GPUMap {
     knownChunkTargets:this.knownChunkIds.size,chunkSize:CHUNK_SIZE,
     visibilityZoom:window.TerrainVisibility?.get?.()??0,
     worldChunksPinned:this.worldChunksPinned,
+    terrainCullingDisabled:this.debugDisableTerrainCulling,
+    terrainBackgroundFrozen:this.debugFreezeBackground,
+    terrainRecording:this.terrainRecorder.active,
     worldGeometryComplete:this.worldGeometryComplete,
     queuedChunks:this.pendingChunks.length};}
 }
