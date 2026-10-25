@@ -140,6 +140,75 @@ const {chromium}=require('playwright');
     'Draw CPU:', 'Frame interval:', 'AFTER PANNING STOPS',
     'Post-stop samples:', 'Counters Δ:', 'Final: generated='
   ])assert.ok(result.text.includes(snippet),'report missing '+snippet);
+  // Manual controls are opt-in: checked switches must not freeze ordinary
+  // map loading until the user explicitly starts a recording.
+  const optionsBefore=await page.evaluate(()=>{
+    const gpu=window.TribeNetGPU;
+    return {cullingCheckbox:document.querySelector('#terrainDisableFrustumCulling').checked,
+      freezeCheckbox:document.querySelector('#terrainFreezeBackground').checked,
+      culling:gpu.debugDisableTerrainCulling,frozen:gpu.debugFreezeBackground,
+      resident:gpu.chunkCache.size};
+  });
+  assert.ok(optionsBefore.cullingCheckbox&&optionsBefore.freezeCheckbox);
+  assert.equal(optionsBefore.culling,false);
+  assert.equal(optionsBefore.frozen,false);
+  await page.click('#terrainStartManualRecording');
+  const during=await page.evaluate(()=>{
+    const gpu=window.TribeNetGPU;
+    const record=[...gpu.chunkCache.values()].find(r=>r.known);
+    if(!record)throw Error('No known geometry available for manual recording test');
+    const allUnculled=[...gpu.chunkCache.values()].every(r=>
+      r.group.children.filter(child=>child.isMesh||child.isLine||child.isLineSegments)
+        .every(child=>child.frustumCulled===false));
+    const payload=gpu.serializeChunk(record);
+    // Exercise the RESTORE path as well as meshes which were already resident.
+    gpu.disposeChunk(record,'test');
+    gpu.chunkCache.delete(record.key);
+    const restored=gpu.restoreChunk(record.id,record.lod,payload);
+    const restoredUnculled=restored.group.children
+      .filter(child=>child.isMesh||child.isLine||child.isLineSegments)
+      .every(child=>child.frustumCulled===false);
+    const before=gpu.stats.terrainInvalidations;
+    const oldBuilds=gpu.stats.builds;
+    gpu.invalidateHexes([{col:315,row:327}],[{col:315,row:327}]);
+    state.cameraX+=.08;state.cameraY+=.03;IsoMapper.interact();draw();
+    return {frozen:gpu.debugFreezeBackground,culling:gpu.debugDisableTerrainCulling,
+      allUnculled,restoredUnculled,deferred:gpu.deferredTerrainChanges.size,
+      invalidationsBefore:before,invalidationsAfter:gpu.stats.terrainInvalidations,
+      buildsBefore:oldBuilds,buildsAfter:gpu.stats.builds,
+      isRecording:gpu.terrainRecorder.active};
+  });
+  assert.ok(during.isRecording&&during.culling&&during.frozen);
+  assert.ok(during.allUnculled&&during.restoredUnculled,
+    'frustum toggle must apply to resident and subsequently restored terrain');
+  assert.ok(during.deferred>0,'terrain invalidations are deferred while frozen');
+  assert.equal(during.invalidationsAfter,during.invalidationsBefore);
+  assert.equal(during.buildsAfter,during.buildsBefore);
+  await page.click('#terrainStopManualRecording');
+  await page.waitForFunction(()=>document.getElementById('terrainManualReport').value
+    .includes('idle-observation-complete'),null,{timeout:15000});
+  const manual=await page.evaluate(()=>{
+    const gpu=window.TribeNetGPU;
+    const text=document.getElementById('terrainManualReport').value;
+    const data=JSON.parse(text.slice(text.indexOf('{')));
+    return {data,copyHidden:document.getElementById('terrainCopyManualReport').hidden,
+      recordActive:gpu.terrainRecorder.active,frozen:gpu.debugFreezeBackground,
+      culling:gpu.debugDisableTerrainCulling,
+      allCullingRestored:[...gpu.chunkCache.values()].every(r=>
+        r.group.children.filter(child=>child.isMesh||child.isLine||child.isLineSegments)
+          .every(child=>child.frustumCulled===true)),
+      deferred:gpu.deferredTerrainChanges.size};
+  });
+  assert.ok(!manual.copyHidden&&!manual.recordActive);
+  assert.ok(!manual.frozen&&!manual.culling,'isolation is restored after recording');
+  assert.ok(manual.allCullingRestored,'all retained terrain restores normal culling');
+  assert.equal(manual.deferred,0,'deferred invalidation is flushed on resume');
+  assert.equal(manual.data.postStopIdleMs,2000);
+  assert.ok(manual.data.elapsedMs>=2000);
+  assert.ok(manual.data.events.some(e=>e.type==='invalidation-deferred'));
+  assert.ok(manual.data.events.some(e=>e.type==='idle-observation-start'));
+  assert.ok(manual.data.events.some(e=>e.type==='idle-observation-complete'));
+  assert.ok(manual.data.events.some(e=>e.type==='passive-sample'));
   assert.deepEqual(errors,[]);
   console.log('TERRAIN_DEV_RUN_DIAGNOSTIC_BROWSER_PASS',JSON.stringify({
     restored:result.scale,readCount:result.reads,builds:result.builds,
