@@ -184,8 +184,14 @@ function build(id,sharedOnly=false){
       };
       for(let k=1;k<face.points.length-1;k++){
         const a=face.points[0],b=face.points[k],c=face.points[k+1];
-        if(Math.abs((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))<1e-8)
-          continue; // clipped sliver has no stable float32 coverage
+        // Use the EXACT float32 positions that the GPU will receive.
+        // At distant world coordinates distinct JS vertices can quantise to
+        // one line, leaving dark zero-area needle triangles.
+        const ax=Math.fround(a.x*1.5),ay=Math.fround(a.y*1.5);
+        const bx=Math.fround(b.x*1.5),by=Math.fround(b.y*1.5);
+        const cx=Math.fround(c.x*1.5),cy=Math.fround(c.y*1.5);
+        if(Math.abs((bx-ax)*(cy-ay)-(by-ay)*(cx-ax))<1e-8)
+          continue;
         vert(a);vert(b);vert(c);
         if(immutable)coreFaces++;else sharedFaces++;
       }
