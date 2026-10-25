@@ -15,3 +15,12 @@
 
 .terrain-dev-row .terrain-dev-number{width:100%;min-width:0;padding:5px 2px;background:#10232a;color:#ffe4ae;border:1px solid #4a7069;border-radius:5px;font:600 12px Segoe UI,sans-serif;text-align:center;font-variant-numeric:tabular-nums;box-sizing:border-box;}
 .terrain-dev-row .terrain-dev-number:focus{outline:2px solid #90d7b6;outline-offset:1px;}
+
+/* Local diagnostic report is selectable even when system clipboard is denied. */
+.terrain-dev-report-help{display:block;margin:9px 0 3px;color:#b7d2cc;line-height:1.45;}
+.terrain-dev-report{display:block;width:100%;height:200px;min-height:120px;
+  box-sizing:border-box;resize:vertical;margin:8px 0;padding:9px;
+  border:1px solid #5c867e;border-radius:6px;
+  background:#101d24;color:#e6f1ea;font:11px/1.5 Consolas,monospace;
+  white-space:pre;tab-size:2;}
+.terrain-dev-report[hidden],.terrain-dev-actions button[hidden]{display:none;}
