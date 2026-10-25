@@ -99,6 +99,11 @@ const {chromium}=require('playwright');
     assert.equal(preloadBudget.focusTarget,169,
       'fixed resident neighbourhood is 13x13 2x2-hex chunks, not the viewport size');
     assert.equal(preloadBudget.focusRadiusChunks,6);
+    // Fog that has not been revealed is drawn by the scene/overlay, rather
+    // than materialised into hundreds of CPU-expensive throwaway meshes.
+    assert.ok(preloadBudget.knownTargets>0,'fixture contains revealed terrain');
+    assert.ok(preloadBudget.active<=preloadBudget.knownTargets,
+      'geometry workset must exclude unknown fog-only focus chunks');
     assert.ok(preloadBudget.active<=preloadBudget.visible+169+preloadBudget.knownTargets,
       'GPU precomputation may include discovered-world chunks, but not arbitrary fog outside the focus ring');
     assert.ok(preloadBudget.pending<=preloadBudget.active,
@@ -179,14 +184,14 @@ const {chromium}=require('playwright');
     assert.ok(zoomRetention.reused,
       'all existing GPU mesh buffers survive boundary-crossing zoom unchanged');
     assert.ok(zoomRetention.interaction,'zoom interaction should suspend background terrain construction');
-    // Once all geometry within the fixed centre area is resident, zooming
+    // Once all discovered-world geometry is resident, zooming
     // repeatedly must NOT change the working set, generate meshes or restore
     // anything from disk. This is independent of visible chunk culling.
     await page.evaluate(()=>{state.scale=52;centerOnHex(315,327);draw();});
     await page.waitForFunction(()=>{
       const gpu=window.TribeNetGPU;
       return gpu.pendingChunks.length===0 && !gpu.diskReadBusy && !gpu.idleBuildPending &&
-        [...gpu.focusChunkIds].every(id=>gpu.chunkCache.has(gpu.chunkKey(id,8)));
+        [...gpu.knownChunkIds].every(id=>gpu.chunkCache.has(gpu.chunkKey(id,8)));
     },null,{timeout:120000});
     const stableCentre=await page.evaluate(()=>{
       const gpu=window.TribeNetGPU;
