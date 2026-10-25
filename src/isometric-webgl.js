@@ -612,28 +612,26 @@ class GPUMap {
     this.queueSignature=null;
   }
   queueBuilds(visible,lod){
-    const focus=this.updateFocusArea();
+    // Never prepare the 169 focus chunks simply because the camera points
+    // towards them. Unknown fog is already represented by the scene background
+    // and '?' Canvas overlay; generating hundreds of four-hex fog meshes
+    // wastes CPU time and creates provisional geometry that is never saved.
+    const known=this.knownChunkIds;
+    const centre=this.updateFocusArea();
     const distance=id=>{
       const [cx,cy]=id.split(':').map(Number);
       return (cx-this.focusChunk.cx)**2+(cy-this.focusChunk.cy)**2;
     };
-    // The preload area always occupies the same WORLD footprint. Zoom only
-    // changes which resident chunks are drawn. At extreme zoom-out, ensure
-    // additional on-screen chunks are loaded even beyond this fixed radius.
-    const priority=[...visible].sort((a,b)=>distance(a)-distance(b));
-    const extra=[...focus].filter(id=>!visible.has(id))
+    const priority=[...visible].filter(id=>known.has(id))
       .sort((a,b)=>distance(a)-distance(b));
-    // Precompute revealed-world geometry once, even when it is temporarily
-    // offscreen. Camera movement merely changes draw visibility; the geometry
-    // cache is not scoped to a viewport or 3x3 submap window.
-    const discovered=[...this.knownChunkIds]
-      .filter(id=>!visible.has(id)&&!focus.has(id))
-      .sort((a,b)=>distance(a)-distance(b));
-    const extraBudget=Math.max(0,MAX_CHUNKS-priority.length);
-    const ordered=[...priority,...extra,...discovered]
-      .slice(0,Math.max(MAX_CHUNKS,priority.length));
+    const hydrated=window.TribeNetKnowledge?.complete?.()!==false;
+    // During a stalled database read, provisional fallback may show existing
+    // known terrain but must not precompute and then invalidate a fog world.
+    const background=hydrated?[...known].filter(id=>!visible.has(id))
+      .sort((a,b)=>distance(a)-distance(b)):[];
+    const ordered=[...priority,...background].slice(0,MAX_CHUNKS);
     this.activeChunkIds=new Set(ordered);
-    this.stats.prefetchTarget=ordered.length-priority.length;
+    this.stats.prefetchTarget=background.length;
     const rank=new Map(ordered.map((id,index)=>[id,index]));
     const pendingById=new Map(this.pendingChunks.map(job=>[job.id,job]));
     for(const id of ordered){
@@ -644,8 +642,7 @@ class GPUMap {
     this.pendingChunks=[...pendingById.values()]
       .filter(job=>rank.has(job.id)&&(!this.chunkCache.has(this.chunkKey(job.id,job.lod))||
         this.chunkCache.get(this.chunkKey(job.id,job.lod))?.dirtyShared))
-      .sort((a,b)=>rank.get(a.id)-rank.get(b.id))
-      .slice(0,Math.max(MAX_CHUNKS,priority.length));
+      .sort((a,b)=>rank.get(a.id)-rank.get(b.id));
     this.scheduleIdleChunk();
   }
   scheduleIdleChunk(){
@@ -771,7 +768,8 @@ class GPUMap {
     // and then prefetch, without interfering with wheel events.
     const interacting=typeof IsoMapper!=='undefined'&&IsoMapper.interacting;
     const focus=this.updateFocusArea();
-    const signature=this.focusChunk.cx+':'+this.focusChunk.cy+'|'+lod+'|'+[...visible].sort().join('|');
+    const signature=this.focusChunk.cx+':'+this.focusChunk.cy+'|'+lod+'|'+
+      (window.TribeNetKnowledge?.complete?.()?'hydrated':'provisional')+'|'+[...visible].sort().join('|');
     if(interacting){
       this.queueSignature=null;
     }else if(signature!==this.queueSignature){
