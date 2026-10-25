@@ -92,16 +92,17 @@ const {chromium}=require('playwright');
         pending:gpu.pendingChunks.length,
         extraneous:gpu.pendingChunks.filter(job=>!gpu.activeChunkIds.has(job.id)).length,
         focusTarget:gpu.getStats().focusTarget,
-        focusRadiusChunks:gpu.getStats().focusRadiusChunks
+        focusRadiusChunks:gpu.getStats().focusRadiusChunks,
+        knownTargets:gpu.knownChunkIds.size
       };
     });
     assert.equal(preloadBudget.focusTarget,169,
       'fixed resident neighbourhood is 13x13 2x2-hex chunks, not the viewport size');
     assert.equal(preloadBudget.focusRadiusChunks,6);
-    assert.ok(preloadBudget.active<=preloadBudget.visible+169,
-      'GPU preloading includes only the fixed centre area plus necessary visible chunks');
+    assert.ok(preloadBudget.active<=preloadBudget.visible+169+preloadBudget.knownTargets,
+      'GPU precomputation may include discovered-world chunks, but not arbitrary fog outside the focus ring');
     assert.ok(preloadBudget.pending<=preloadBudget.active,
-      'do not generate the surrounding 3x3 submaps');
+      'queued work must be within the discovered world or visible focus');
     assert.equal(preloadBudget.extraneous,0,
       'all queued GPU chunks must be in the fixed focus area or visible viewport');
 
@@ -202,6 +203,27 @@ const {chromium}=require('playwright');
     });
     assert.deepEqual(stableCentre.after,stableCentre.before,
       'zoom with same centre must not change GPU residency or disk/generation counters');
+    const cameraOnly=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU;
+      const example={kind:'actives',x:baseCenter(315,327).x,
+        y:baseCenter(315,327).y,z:IsoMapper.surface(baseCenter(315,327).x,
+        baseCenter(315,327).y).z,mounted:false,heading:0};
+      gpu.units=[example];gpu.lastUnitSignature=null;gpu.updateUnits();
+      const before={buffers:gpu.stats.unitBufferRebuilds,
+        grounding:gpu.stats.groundCalculations,bytes:gpu.residency.bytes,
+        resident:gpu.chunkCache.size,units:gpu.unitMeshes.get('body')?.count};
+      // Same world and unit position; changing only camera scale may alter
+      // display size but cannot upload unit buffers or ground the unit again.
+      for(const scale of [60,100,175,50]){
+        state.scale=scale;gpu.units=[example];gpu.updateUnits();
+      }
+      const after={buffers:gpu.stats.unitBufferRebuilds,
+        grounding:gpu.stats.groundCalculations,bytes:gpu.residency.bytes,
+        resident:gpu.chunkCache.size,units:gpu.unitMeshes.get('body')?.count};
+      return {before,after};
+    });
+    assert.deepEqual(cameraOnly.after,cameraOnly.before,
+      'camera-only changes must not re-ground stationary units, upload their buffers, or evict geometry');
     // Discover a neighbour AFTER the main chunk is complete. The immutable
     // inner-core GPU geometry and forests must survive, while only shared
     // border/corner triangles are recomputed.
