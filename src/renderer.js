@@ -237,7 +237,10 @@ function historicalKnowledgeComplete(){
   if(!timeline?.turn||timeline.loadingArea)return false;
   const load=timeline.lastTerrainLoad;
   if(load?.status!=='loaded'||load.turnKey!==timeline.turn.turnKey)return false;
-  const b=state.loadedArea;
+  // The Results loader requests the complete world once for a turn.
+  // Do not use state.loadedArea here: an older live-map IPC response can
+  // overwrite that shared field with a smaller 3x3 window after hydration.
+  const b=load.bounds;
   return Boolean(b&&b.minCol<=0&&b.minRow<=0&&
     b.maxCol>=TOTAL_COLS-1&&b.maxRow>=TOTAL_ROWS-1);
 }
@@ -333,6 +336,9 @@ function requestVisibleData() {
   const maxRow=Math.min(TOTAL_ROWS-1,(Math.max(...missing.map(x=>x.row))+1)*HEX_ROWS-1);
   Promise.resolve().then(()=>window.tribenet.getHexesInArea({minCol,maxCol,minRow,maxRow}))
     .then(rows=>{
+      // Live requests can settle after the user selects a historical turn.
+      // They must never mutate historical hex knowledge or its loaded area.
+      if(window.resultsTimeline?.turn)return;
       if(!Array.isArray(rows))throw Error('Invalid submap terrain response');
       for(const row of rows){
         const previous=state.hexCache.get(row.coordinate);
