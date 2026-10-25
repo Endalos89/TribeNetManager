@@ -16,8 +16,23 @@ const MAX_TOTAL_BYTES=512*1024*1024;
 const MAX_FILES=18000;
 
 function validateNumbers(arr,divisor=3){
-  return Array.isArray(arr)&&arr.length%divisor===0&&arr.length<=3_000_000
-    &&arr.every(n=>typeof n==='number'&&Number.isFinite(n));
+  if(!(Array.isArray(arr)||arr instanceof Float32Array))return false;
+  if(arr.length%divisor!==0||arr.length>3_000_000)return false;
+  for(const n of arr)if(typeof n!=='number'||!Number.isFinite(n))return false;
+  return true;
+}
+function plainMesh(mesh){
+  // Typed arrays cross the Electron IPC boundary without allocating millions
+  // of JS numbers in the renderer's interaction thread. Convert them on the
+  // Electron main side, where gzip/JSON work already happens.
+  const numbers=a=>a===null?null:Array.from(a);
+  return {...mesh,
+    positions:numbers(mesh.positions),colors:numbers(mesh.colors),
+    sharedPositions:numbers(mesh.sharedPositions),
+    sharedColors:numbers(mesh.sharedColors),
+    waves:numbers(mesh.waves),
+    instances:mesh.instances.map(row=>({...row,matrices:numbers(row.matrices)}))
+  };
 }
 function validateChunk(data){
   if(!data||data.format!==FORMAT||!validateNumbers(data.positions)
@@ -65,7 +80,7 @@ class TerrainMeshDiskCache{
   async write(key,mesh){
     if(!validateChunk(mesh))throw Error('Invalid terrain mesh payload');
     const file=this.fileFor(key);
-    const output=Buffer.from(JSON.stringify({key,mesh}),'utf8');
+    const output=Buffer.from(JSON.stringify({key,mesh:plainMesh(mesh)}),'utf8');
     if(output.length>MAX_EXPANDED)throw Error('Terrain mesh exceeds uncompressed limit');
     const compressed=await gzip(output,{level:4});
     if(compressed.length>MAX_COMPRESSED)throw Error('Terrain mesh exceeds compressed limit');
