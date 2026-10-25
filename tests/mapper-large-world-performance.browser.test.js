@@ -143,8 +143,28 @@ const {chromium}=require('playwright');
       previously:resident,changed:'331:326'};
   });
   assert.equal(revision.after.revision,revision.before.revision+1);
-  await page.waitForFunction(()=>window.TribeNetGPU.worldGeometryComplete&&
-    window.TribeNetGPU.pendingChunks.length===0,null,{timeout:45000});
+  try{
+    await page.waitForFunction(()=>window.TribeNetGPU.worldGeometryComplete&&
+      window.TribeNetGPU.pendingChunks.length===0,null,{timeout:45000});
+  }catch(error){
+    const stateInfo=await page.evaluate(()=>{
+      const gpu=window.TribeNetGPU;
+      const missing=[...gpu.knownChunkIds].filter(id=>
+        !gpu.chunkCache.has(gpu.chunkKey(id,8)));
+      return {known:gpu.knownChunkIds.size,resident:gpu.chunkCache.size,
+        missing,dirty:[...gpu.chunkCache.values()].filter(x=>x.dirtyShared).map(x=>x.id),
+        busy:gpu.meshWorkerBusy,ready:gpu.meshWorkerReady,
+        job:gpu.meshWorkerJob,pending:gpu.pendingChunks,
+        idle:gpu.idleBuildPending,disk:gpu.diskReadBusy,
+        uploads:gpu.completedUploads.length,
+        signature:gpu.queueSignature,worldRevision:gpu.worldKnowledgeRevision,
+        workerBuilds:gpu.stats.workerBuilds,failures:gpu.stats.workerFailures,
+        active:gpu.visible,interaction:IsoMapper.interacting,
+        prepared:gpu.worldGeometryComplete};
+    });
+    throw new Error('Post-discovery terrain stalled: '+JSON.stringify(stateInfo)+
+      '; original: '+error.message);
+  }
   const aftermath=await page.evaluate(()=>{
     const gpu=window.TribeNetGPU;
     return {updated:gpu.stats.workerBuilds,stale:gpu.stats.workerStaleResponses,
