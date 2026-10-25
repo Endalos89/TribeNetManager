@@ -96,15 +96,15 @@ const {chromium}=require('playwright');
         knownTargets:gpu.knownChunkIds.size
       };
     });
-    assert.equal(preloadBudget.focusTarget,169,
-      'fixed resident neighbourhood is 13x13 2x2-hex chunks, not the viewport size');
-    assert.equal(preloadBudget.focusRadiusChunks,6);
+    assert.equal(preloadBudget.focusTarget,49,
+      'fixed world-space resident neighbourhood is 7x7 4x4-hex chunks');
+    assert.equal(preloadBudget.focusRadiusChunks,3);
     // Fog that has not been revealed is drawn by the scene/overlay, rather
     // than materialised into hundreds of CPU-expensive throwaway meshes.
     assert.ok(preloadBudget.knownTargets>0,'fixture contains revealed terrain');
     assert.ok(preloadBudget.active<=preloadBudget.knownTargets,
       'geometry workset must exclude unknown fog-only focus chunks');
-    assert.ok(preloadBudget.active<=preloadBudget.visible+169+preloadBudget.knownTargets,
+    assert.ok(preloadBudget.active<=preloadBudget.visible+49+preloadBudget.knownTargets,
       'GPU precomputation may include discovered-world chunks, but not arbitrary fog outside the focus ring');
     assert.ok(preloadBudget.pending<=preloadBudget.active,
       'queued work must be within the discovered world or visible focus');
@@ -123,13 +123,13 @@ const {chromium}=require('playwright');
     await page.waitForFunction(()=>typeof loadedSubmaps!=='undefined' && loadedSubmaps.size>=9,
       null,{timeout:15000});
     await page.waitForFunction(()=>{
-      const id=Math.floor(315/2)+':'+Math.floor(327/2);
+      const id=Math.floor(315/window.TribeNetGPU.getStats().chunkSize)+':'+Math.floor(327/window.TribeNetGPU.getStats().chunkSize);
       return Boolean(window.TribeNetGPU.bestResident(id,8)?.group.visible);
     },null,{timeout:30000});
     const dataReuse=await page.evaluate(()=>{
       const queries=window.areaQueryCount;
       const gpu=window.TribeNetGPU;
-      const centreId=Math.floor(315/2)+':'+Math.floor(327/2);
+      const centreId=Math.floor(315/window.TribeNetGPU.getStats().chunkSize)+':'+Math.floor(327/window.TribeNetGPU.getStats().chunkSize);
       const ref=gpu.bestResident(centreId,8);
       const resident=ref?.ground.geometry;
       for(const scale of [55,65,85,65,52]){
@@ -234,7 +234,7 @@ const {chromium}=require('playwright');
     // border/corner triangles are recomputed.
     const neighbouringReveal=await page.evaluate(()=>{
       const gpu=window.TribeNetGPU;
-      const anchorId=Math.floor(320/2)+':'+Math.floor(327/2);
+      const anchorId=Math.floor(320/window.TribeNetGPU.getStats().chunkSize)+':'+Math.floor(327/window.TribeNetGPU.getStats().chunkSize);
       const existing=gpu.bestResident(anchorId,8);
       if(!existing)throw Error('Known inner-core fixture chunk was not loaded');
       const core=existing.ground.geometry.uuid;
@@ -242,7 +242,7 @@ const {chromium}=require('playwright');
       const trees=treeInstances.map(o=>o.uuid);
       const sharedBefore=existing.shared.geometry.uuid;
       const sharedUpdates=gpu.stats.sharedUpdates;
-      const coordinate=coordinateFor(322,327);
+      const coordinate=coordinateFor(324,327);
       state.hexCache.set(coordinate,{...parseCoordinate(coordinate),coordinate,terrain:'O',notes:''});
       draw();
       const updated=gpu.bestResident(anchorId,8);
@@ -353,7 +353,7 @@ const {chromium}=require('playwright');
       'camera changes must never produce alternate terrain LOD meshes');
     await page.waitForFunction(()=>{
       const gpu=window.TribeNetGPU;
-      const id=Math.floor(315/2)+':'+Math.floor(327/2);
+      const id=Math.floor(315/window.TribeNetGPU.getStats().chunkSize)+':'+Math.floor(327/window.TribeNetGPU.getStats().chunkSize);
       return Boolean(gpu.bestResident(id,gpu.lastLod)?.group.visible);
     },null,{timeout:30000});
     const groundTest=await page.evaluate(()=>{
