@@ -1076,28 +1076,22 @@ class GPUMap {
     if(cached!==undefined)return cached;
     this.stats.groundCalculations++;
     const originHeight=Number.isFinite(m.z)?m.z:0;
-    const region=window.IsoGeometry.regionAt(m.x,m.y);
-    const cx=Math.floor(region.col/CHUNK_SIZE),cy=Math.floor(region.row/CHUNK_SIZE);
-    const neighbours=[];
-    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
-      const record=this.bestResident((cx+dx)+':'+(cy+dy),FIXED_TERRAIN_STEPS);
-      if(record?.group.visible)neighbours.push(record);
-    }
+    // Terrain mesh vertices are derived from the deterministic analytical
+    // surface. Sampling the miniature footprint is sufficient to place units,
+    // and costs O(9) rather than nine raycasts through thousands of triangles.
+    // Mesh raycasting here used to cause >1 second pauses when 4x4 geometry
+    // batches were visible at close zoom.
     const positions=[[0,0],[-radius,0],[radius,0],[0,-radius],[0,radius],
       [-radius*.7,-radius*.7],[radius*.7,-radius*.7],
       [-radius*.7,radius*.7],[radius*.7,radius*.7]];
     let highest=originHeight;
-    const surfaces=neighbours.flatMap(r=>r.shared?[r.ground,r.shared]:[r.ground]);
     for(const [dx,dy] of positions){
-      const x=m.x+dx,y=m.y+dy;
-      const analytic=this.sampleTerrain?.(x,y)?.z;
+      const analytic=this.sampleTerrain?.(m.x+dx,m.y+dy)?.z;
       if(Number.isFinite(analytic))highest=Math.max(highest,analytic);
-      if(!surfaces.length)continue;
-      this.downRay.set(new THREE.Vector3(x*1.5,30,y*1.5),this.downDirection);
-      this.downRay.near=0;this.downRay.far=60;
-      const hit=this.downRay.intersectObjects(surfaces,false)[0];
-      if(hit)highest=Math.max(highest,hit.point.y);
     }
+    // The rendered ground consists of flat triangles interpolating nearby
+    // height samples; leave a small clearance against local interpolation.
+    highest+=.025;
     if(this.groundHeightCache.size>2500)this.groundHeightCache.clear();
     this.groundHeightCache.set(key,highest);
     return highest;
