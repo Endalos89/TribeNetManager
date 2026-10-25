@@ -125,6 +125,38 @@
     return [u,v,1-u-v];
   }
   const midpoint=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+  // Rare, deterministic landing coves on coastal HILL or MOUNTAIN edges.
+  // Only the already-revealed shared edge/corner can contain these details;
+  // the inner cores and game movement rules are never changed.
+  function coastalLanding(region,owners,x,y){
+    if(region.kind==='core')return null;
+    const wet=owners.filter(o=>water(o.data?.terrain));
+    const steep=owners.filter(o=>isHill(o.data?.terrain)||
+      isLowMountain(o.data?.terrain)||isHighMountain(o.data?.terrain));
+    if(!wet.length||!steep.length)return null;
+    // A triangle may own three hexes. Use the most strongly represented
+    // water/hill pair; each pair keeps the same seed on adjacent triangles.
+    const pairs=[];
+    for(const a of wet)for(const b of steep){
+      const sorted=canon([a,b]),key=sorted.map(ownerKey).join('|');
+      pairs.push({a,b,key,score:a.weight+b.weight});
+    }
+    pairs.sort((a,b)=>b.score-a.score||a.key.localeCompare(b.key));
+    const pair=pairs[0],chance=fraction('landing:'+pair.key);
+    if(chance>=.115)return null;
+    const A=center(pair.a.col,pair.a.row),B=center(pair.b.col,pair.b.row);
+    const dx=B.x-A.x,dy=B.y-A.y,distance=Math.hypot(dx,dy);
+    const mx=(A.x+B.x)/2,my=(A.y+B.y)/2;
+    // Subtle offsets, but the same location and heading from either owner.
+    const shift=(fraction('landing-lane:'+pair.key)-.5)*.22;
+    const lateral=((x-mx)*(-dy)+(y-my)*dx)/distance-shift;
+    const width=.28+.08*fraction('landing-width:'+pair.key);
+    const beach=smooth((width-Math.abs(lateral))/.16);
+    const pathChance=fraction('landing-path:'+pair.key)<.38;
+    const routeWidth=.055+.018*fraction('landing-route-width:'+pair.key);
+    const path=pathChance?smooth((routeWidth+.065-Math.abs(lateral))/.065):0;
+    return {beach,path,rocky:fraction('landing-material:'+pair.key)<.48,key:pair.key};
+  }
   function cornerInfluences(position,owners,junction) {
     const sorted=canon(owners);
     const vertices=sorted.map(o=>{const c=center(o.col,o.row);return {x:c.x+(junction.x-c.x)*coreRadius,y:c.y+(junction.y-c.y)*coreRadius};});
@@ -299,7 +331,7 @@
     // transition. A mostly-PR square should be broad, flat foothills rather
     // than a diagonal wall from the first hint of GH / mountains.
     const flatness=setting('foothillFlatness',.20);
-    const foothill=w=>smooth((w-flatness)/(1-flatness));
+    const foothill=w=>smooth((w-flatness*.35)/(1-flatness*.35));
     const mountFoot=w=>smooth((w-flatness*.65)/(1-flatness*.65));
     const base=Math.max(.14,setting('waterHeight',.10)+.025);
     const raw=base+plainFraction*plainVariation+
@@ -311,9 +343,16 @@
     const mountain=weights.low+weights.high;
     const slope=smooth(inland);
     const cliff=1-Math.pow(1-inland,3);
+    const landing=coastWater>0?coastalLanding(region,owners,x,y):null;
+    // An occasional slender approach gently reduces the cliff grade across
+    // the shared coastal connector. This never alters an inner hex core.
+    const approach=landing?.path
+      ?landing.path*smooth(inland/.16)*(1-smooth((inland-.80)/.20)):0;
+    const coastalSlope=slope*(1-mountain)+
+      (cliff*(1-.62*approach)+slope*.62*approach)*mountain;
     // Land meets the actual water plane. PR now sits only ~.04 units above
     // default water rather than behaving like a large cliff over z=0.
-    const coastalRaw=waterLevel+(raw-waterLevel)*(slope*(1-mountain)+cliff*mountain);
+    const coastalRaw=waterLevel+(raw-waterLevel)*coastalSlope;
     const layer=(.10+weights.hill*.025+weights.low*.035+weights.high*.065)*(1/3);
     // Avoid a contour-shaped shelf where a flat PR/lowland core meets GH/CH
     // hills. Strata quantisation depends on the hill-weighted layer height:
@@ -327,7 +366,16 @@
     const hillPlainConnector=coastWater<1e-8&&mountain<1e-8&&weights.hill>0&&weights.hill<1
       ?smooth(weights.hill/.12)*(1-smooth((weights.hill-.82)/.18)):0;
     const terraces=(mountain+(1-mountain)*smooth(inland))*(1-hillPlainConnector);
-    const z=coastalRaw*(1-terraces)+layeredHeight(coastalRaw,layer)*terraces;
+    let z=coastalRaw*(1-terraces)+layeredHeight(coastalRaw,layer)*terraces;
+    // Blend the two fully resolved surfaces, rather than quantising a layer
+    // thickness that changes along the shared PR-to-GH/CH connector. The
+    // latter causes a raised contour even with perfectly flat input hills.
+    if(coastWater<1e-8 && mountain<1e-8 && weights.hill>0 && weights.hill<1){
+      const f=foothill(weights.hill);
+      const plainZ=layeredHeight(base+plainVariation,.10/3);
+      const hillZ=layeredHeight(base+(2/3)*hillHeight,.125/3);
+      z=plainZ*(1-f)+hillZ*f;
+    }
     let land=total?rgb.map(n=>n/total):[37,54,64];
     // Add world-coherent grassy patches without sculpting artificial hills.
     const colourNoise=(noise(x*1.38+83,y*1.38-27,177)-.5)*.7+
@@ -348,7 +396,20 @@
     land=land.map((v,i)=>v*(1-snowCover)+[224,233,230][i]*snowCover);
     // Low ground becomes beach then grass/stone, independent of hex edges.
     const shore=smooth(inland/.75),bank=[185,178,138].map((v,i)=>v*(1-mountain)+stone[i]*mountain);
-    const color='#'+land.map((v,i)=>Math.round(bank[i]*(1-shore)+v*shore).toString(16).padStart(2,'0')).join('');
+    land=land.map((v,i)=>bank[i]*(1-shore)+v*shore);
+    if(landing){
+      // Short shingle/sand coves rather than continuous coastal bands.
+      const cove=landing.beach*(1-smooth((inland-.07)/.31));
+      const material=landing.rocky?[155,148,124]:[203,181,137];
+      land=land.map((v,i)=>v*(1-cove*.82)+material[i]*cove*.82);
+      if(landing.path){
+        const track=landing.path*smooth((inland-.08)/.20)*
+          (1-smooth((inland-.78)/.22));
+        const dust=landing.rocky?[142,137,119]:[159,145,109];
+        land=land.map((v,i)=>v*(1-track*.58)+dust[i]*track*.58);
+      }
+    }
+    const color='#'+land.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
     return {x,y,z,color,water:false,rock};
   }
   // Keep scenery bases inside the revealed polygon. Raised crowns may extend
