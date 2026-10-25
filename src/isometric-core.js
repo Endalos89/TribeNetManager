@@ -315,8 +315,18 @@
     // default water rather than behaving like a large cliff over z=0.
     const coastalRaw=waterLevel+(raw-waterLevel)*(slope*(1-mountain)+cliff*mountain);
     const layer=(.10+weights.hill*.025+weights.low*.035+weights.high*.065)*(1/3);
-    // Suppress terracing at hill beaches, retaining strata farther inland.
-    const terraces=mountain+(1-mountain)*smooth(inland);
+    // Avoid a contour-shaped shelf where a flat PR/lowland core meets GH/CH
+    // hills. Strata quantisation depends on the hill-weighted layer height:
+    // even when the *raw* elevation is flat, that changing layer thickness
+    // creates artificial high/low rings in the shared edge and corner.
+    //
+    // Fade strata out only inside mixed plains-to-hill connectors. The
+    // transition starts and ends with zero derivative, so both immutable
+    // inner cores retain their original heights and the coastal/mountain
+    // terrain systems remain untouched.
+    const hillPlainConnector=mountain<1e-8&&weights.hill>0&&weights.hill<1
+      ?smooth(weights.hill/.12)*(1-smooth((weights.hill-.82)/.18)):0;
+    const terraces=(mountain+(1-mountain)*smooth(inland))*(1-hillPlainConnector);
     const z=coastalRaw*(1-terraces)+layeredHeight(coastalRaw,layer)*terraces;
     let land=total?rgb.map(n=>n/total):[37,54,64];
     // Add world-coherent grassy patches without sculpting artificial hills.
