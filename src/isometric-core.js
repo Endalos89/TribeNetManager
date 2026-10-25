@@ -300,18 +300,26 @@
     // Water weight goes 0 -> seeded midpoint weight in that half. The
     // threshold must be calibrated to this pair, not to a fixed 0.6 field.
     const waterOwners=owners.filter(o=>water(o.data.terrain));
-    let midpointWaterWeight=.5;
+    const waterShare=setting('coastWaterShare',.6);
+    let midpointWaterWeight=.5,edgeThreshold=null;
     if(region.kind==='edge' && waterOwners.length===1 && owners.length===2) {
-      const canonical=canon(owners);
-      const midpointB=pairFraction(canonical);
-      midpointWaterWeight=ownerKey(waterOwners[0])===ownerKey(canonical[0])
-        ? 1-midpointB : midpointB;
+      const canonical=canon(owners),beta=pairFraction(canonical);
+      const waterFirst=ownerKey(waterOwners[0])===ownerKey(canonical[0]);
+      midpointWaterWeight=waterFirst?1-beta:beta;
+      // Preserve the approved *geometric* coastal water share after making
+      // pairSplit C1-smooth. A linear midpoint-weight threshold would move
+      // the coast despite unchanged Terrain Dev settings.
+      const shorelineT=waterFirst
+        ? .5+.5*waterShare : .5-.5*waterShare;
+      edgeThreshold=waterFirst
+        ? pairSplit(shorelineT,beta) : 1-pairSplit(shorelineT,beta);
     } else if(region.kind==='corner' && waterOwners.length) {
       midpointWaterWeight=waterOwners.length/owners.length;
     }
     const threshold=coastWater>0
-      ? 1-(1-setting('coastWaterShare',.6))*midpointWaterWeight+shoreline
-      : setting('coastWaterShare',.6);
+      ?(edgeThreshold===null
+        ?1-(1-waterShare)*midpointWaterWeight:edgeThreshold)+shoreline
+      :waterShare;
     const coastField=landFraction-threshold;
     // Ocean and lake surfaces share one adjustable physical level. Colour varies
     // gently with world-space noise and is lighter in the coastal shallows;
