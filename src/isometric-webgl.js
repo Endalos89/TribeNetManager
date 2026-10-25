@@ -69,7 +69,7 @@ class GPUMap {
     this.diskStats={diskHits:0,diskMisses:0,diskWrites:0,diskErrors:0};
     this.groundHeightCache=new Map();this.meshRevision=0;
     this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
-    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,sharedUpdates:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0,knowledgePending:0,terrainMs:0,restorationMs:0,invalidatedChunks:0,groundCalculations:0,unitBufferRebuilds:0,cameraOnlyFrames:0,frameMs:0,maxFrameMs:0,workerBuilds:0,workerFailures:0,workerTimeMs:0,workerUploadMs:0,workerStaleResponses:0};
+    this.requestDraw=null;this.pendingFrame=false;this.stats={chunks:0,faces:0,trees:0,builds:0,sharedUpdates:0,hiddenChunkEvents:0,shownChunkEvents:0,gpuCalls:0,renderMs:0,evictions:0,terrainInvalidations:0,fullResets:0,focusTarget:0,focusRadiusChunks:FOCUS_RADIUS_CHUNKS,prefetchTarget:0,knowledgePending:0,terrainMs:0,restorationMs:0,invalidatedChunks:0,groundCalculations:0,unitBufferRebuilds:0,cameraOnlyFrames:0,frameMs:0,maxFrameMs:0,workerBuilds:0,workerFailures:0,workerTimeMs:0,workerUploadMs:0,workerStaleResponses:0};
     this.meshMaterial=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthWrite:true});
     this.waveMaterial=new THREE.LineBasicMaterial({color:0xc8e9d9,transparent:true,opacity:.58,depthWrite:false});
     this.treeMaterials={
@@ -1064,14 +1064,14 @@ class GPUMap {
     for(const id of visible){
       const record=this.chunkCache.get(this.chunkKey(id,lod));
       if(!record)continue;
-      if(!record.group.visible)record.group.visible=true;
+      if(!record.group.visible){record.group.visible=true;this.stats.shownChunkEvents++;}
       record.lastUsed=++this.renderSerial;
       nextShown.add(record.key);
       faces+=record.faces;trees+=record.trees;chunks++;
     }
     for(const key of this.shownRecords)if(!nextShown.has(key)){
       const record=this.chunkCache.get(key);
-      if(record)record.group.visible=false;
+      if(record?.group.visible){record.group.visible=false;this.stats.hiddenChunkEvents++;}
     }
     this.shownRecords=nextShown;
     this.stats.chunks=chunks;this.stats.faces=faces;this.stats.trees=trees;
