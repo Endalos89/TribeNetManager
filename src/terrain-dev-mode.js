@@ -153,7 +153,11 @@
         ' · disk '+Math.round(info.restorationMs)+'ms'+
         ' · cache resets '+info.fullResets+
         ' · resident memory '+(info.residentBytes/1048576).toFixed(1)+'/'+(info.limitBytes/1048576).toFixed(0)+' MiB'+
-        ' · full CPU frame '+info.frameMs.toFixed(1)+'ms (peak '+info.maxFrameMs.toFixed(1)+'ms)'+
+        ' · pre-GPU-inclusive frame '+(info.fullFrameMs||0).toFixed(1)+'ms (peak '+(info.fullFramePeak||0).toFixed(1)+'ms, p95 '+(info.fullFrameP95||0).toFixed(1)+'ms, p99 '+(info.fullFrameP99||0).toFixed(1)+'ms)'+
+        ' · worker geometry '+(info.workerTimeMs||0).toFixed(0)+'ms / '+(info.workerBuilds||0)+' meshes'+
+        ' · worker uploads '+(info.workerUploadMs||0).toFixed(0)+'ms'+
+        ' · worker failures '+(info.workerFailures||0)+
+        ' · GPU phase '+info.frameMs.toFixed(1)+'ms (peak '+info.maxFrameMs.toFixed(1)+'ms)'+
         ' · unit buffers rebuilt '+info.unitBufferRebuilds+
         ' · unit ground calculations '+info.groundCalculations+
         ' · camera-only frames '+info.cameraOnlyFrames+details;
