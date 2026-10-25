@@ -233,6 +233,7 @@ const IsoMapper = (() => {
     let activeRegion='shared';
     const emitPart=part=>{
       const [a,b,c]=part,ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z,vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
+      if(Math.abs(ux*vy-uy*vx)<1e-8)return;
       const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,len=Math.hypot(nx,ny,nz)||1;
       const light=Math.max(.78,Math.min(1.13,.94+(-nx*.35-ny*.28)/len));
       const mixed=G.mix(part.map(p=>p.color)),wet=part.every(p=>p.water);
@@ -256,7 +257,17 @@ const IsoMapper = (() => {
       }
       activeRegion=face.kind==='core'?'core':'shared';
       const visible=G.regionOwners(t.col,t.row,face.kind,face.index).every(o=>known(surfaceData(o.col,o.row)));
-      const points=face.points.map(p=>sample(t.c.x+p.x,t.c.y+p.y));
+      const centre={x:t.c.x+face.points.reduce((v,p)=>v+p.x,0)/face.points.length,
+        y:t.c.y+face.points.reduce((v,p)=>v+p.y,0)/face.points.length};
+      const points=face.points.map(p=>{
+        const x=t.c.x+p.x,y=t.c.y+p.y,original=sample(x,y);
+        if(!visible||!original.fog)return original;
+        for(const epsilon of [1e-5,1e-4,.001]){
+          const inner=sample(x+(centre.x-x)*epsilon,y+(centre.y-y)*epsilon);
+          if(!inner.fog)return {...inner,x,y};
+        }
+        return original;
+      });
       if(!visible){faces.push({points,color:FOG,region:'shared'});continue;}
       if(!microDepth||face.kind==='core'){
         for(const part of shoreFaces(points))emitPart(part);
