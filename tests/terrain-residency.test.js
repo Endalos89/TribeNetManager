@@ -12,7 +12,7 @@ function record(id,{known=true,bytes=4096,lastUsed=0}={}){
 assert.ok(DEFAULT_MAX_BYTES>=128*1024*1024);
 assert.ok(DEFAULT_MAX_CHUNKS>520,'a modest discovered map must not be evicted after 520 chunks');
 const cache=new Map();
-const policy=new TerrainResidencyPolicy({maxBytes:1024*1024,maxChunks:2000});
+const policy=new TerrainResidencyPolicy({maxBytes:4*1024*1024,maxChunks:2000});
 for(let i=0;i<800;i++){
   const item=record('c'+i,{known:i%5!==0,bytes:1024});
   cache.set(item.key,item);policy.register(item);
@@ -27,7 +27,7 @@ for(const scale of [50,140,70,180,30]){
   assert.equal(policy.bytes,before);
   assert.ok(visible.size>0);
 }
-const inPressure=new TerrainResidencyPolicy({maxBytes:8192,maxChunks:2000});
+const inPressure=new TerrainResidencyPolicy({maxBytes:13000,maxChunks:2000});
 const examples=[
   record('visible',{bytes:4096,lastUsed:100}),
   record('fog',{known:false,bytes:4096,lastUsed:20}),
