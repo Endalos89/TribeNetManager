@@ -230,9 +230,16 @@
           state.cameraX=clamp(point.x,3,1+(TOTAL_COLS-2)*1.5);
           state.cameraY=clamp(point.y,3,Math.sqrt(3)*(TOTAL_ROWS-2));
           state.scale=point.scale;
+          // Match real user input: continuously reset the interaction
+          // timer during a pan/zoom, then let the 150ms settle handler fire
+          // naturally after this stage ends. Previously the diagnostic
+          // measured only direct draw calls and missed post-stop unloading.
+          IsoMapper.interact();
           if(typeof root.requestVisibleData==='function')root.requestVisibleData();
           root.draw();
         },
+        settleFrames:90,
+        settleRender:()=>root.draw(),
         onProgress:value=>{
           feedback.textContent='Running diagnostic: '+value.phase+
             ' — '+value.frame+'/'+value.total+' frames ('+
