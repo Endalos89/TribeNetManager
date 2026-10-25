@@ -61,7 +61,8 @@
         ' @ DPR '+report.meta.dpr+
         ' | Start zoom '+rounded(report.meta.scale,1)+
         ' | Zoom out '+rounded(report.meta.zoomOut,1)+
-        ' | Zoom in '+rounded(report.meta.zoomIn,1),
+        ' | Zoom in '+rounded(report.meta.zoomIn,1)+
+        ' | Fixed GPU visibility zoom '+(report.meta.visibilityZoom??'not set'),
       'Terrain: '+report.meta.known+' known / '+report.meta.total+
         ' records | Geometry targets: '+report.meta.targets+
         ' | World prepared: '+(report.meta.prepared?'yes':'no')+
