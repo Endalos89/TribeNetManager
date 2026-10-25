@@ -153,14 +153,14 @@ const {chromium}=require('playwright');
     const id=Math.floor(311/gpu.getStats().chunkSize)+':'+Math.floor(327/gpu.getStats().chunkSize);
     const prior=gpu.bestResident(id,8);
     if(!prior||!prior.group.visible)throw Error('Known centre mesh is not visible');
-    const before={group:prior.group,geometry:prior.ground.geometry,
+    const before={group:prior.group.uuid,geometry:prior.ground.geometry.uuid,
       residents:gpu.chunkCache.size,bytes:gpu.residency.bytes};
     state.hexCache.set(ref,{...oldHex,terrain:oldHex.terrain==='D'?'CH':'D'});
     draw();
     const intermediate=gpu.bestResident(id,8);
     return {id,before,oldStillVisible:intermediate?.group.visible,
-      sameGroup:intermediate?.group===before.group,
-      sameGeometry:intermediate?.ground.geometry===before.geometry,
+      sameGroup:intermediate?.group.uuid===before.group,
+      sameGeometry:intermediate?.ground.geometry.uuid===before.geometry,
       dirtyCore:intermediate?.dirtyCore,
       residents:gpu.chunkCache.size,bytes:gpu.residency.bytes};
   });
@@ -174,7 +174,7 @@ const {chromium}=require('playwright');
   },staged.id,{timeout:90000});
   const swapped=await page.evaluate(id=>{
     const gpu=window.TribeNetGPU,r=gpu.bestResident(id,8);
-    return {group:r.group,visible:r.group.visible,
+    return {group:r.group.uuid,visible:r.group.visible,
       present:gpu.chunkGroup.children.includes(r.group),
       resident:gpu.chunkCache.size,bytes:gpu.residency.bytes,
       limit:gpu.residency.maxBytes,dirty:r.dirtyCore};
