@@ -141,7 +141,8 @@
         ' · saved '+info.diskWrites+' · misses '+info.diskMisses+
         ' · resident '+info.cachedChunks+' · queued '+info.queuedChunks+
         ' · centre area '+info.focusTarget+' ('+(2*info.focusRadiusChunks+1)+'×'+(2*info.focusRadiusChunks+1)+')' +
-        ' · offscreen queued '+info.prefetchTarget+
+        ' · discovered meshes '+(info.knownChunkTargets||0)+
+        ' · background preparation '+info.prefetchTarget+
         ' · memory evicted '+info.evictions+
         ' · cores rebuilt '+info.terrainInvalidations+
         ' · shared edges updated '+info.sharedUpdates+
