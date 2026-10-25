@@ -70,7 +70,11 @@ const IsoMapper = (() => {
     terrainTileCache.clear(); // terrain and neighbour records only change on knowledge revision
     // Known-world geometry is prepared from stable terrain knowledge. It
     // cannot depend on camera bounds, pan speed or current zoom.
-    window.TribeNetGPU?.setWorldKnowledge?.(terrainSnapshot,parseCoordinate);
+    // Notes, rivers and unit decorations are not terrain geometry.
+    // Never restart the background mesh worker or invalidate its completed
+    // world when only non-terrain metadata changes.
+    if(changed.size>0)
+      window.TribeNetGPU?.setWorldKnowledge?.(terrainSnapshot,parseCoordinate);
     if(decorationsChanged)landscape=null;
     if(changed.size===0)return;
     // Analytic height at the centre of an already-known core does not
