@@ -324,7 +324,7 @@
     // transition starts and ends with zero derivative, so both immutable
     // inner cores retain their original heights and the coastal/mountain
     // terrain systems remain untouched.
-    const hillPlainConnector=mountain<1e-8&&weights.hill>0&&weights.hill<1
+    const hillPlainConnector=coastWater<1e-8&&mountain<1e-8&&weights.hill>0&&weights.hill<1
       ?smooth(weights.hill/.12)*(1-smooth((weights.hill-.82)/.18)):0;
     const terraces=(mountain+(1-mountain)*smooth(inland))*(1-hillPlainConnector);
     const z=coastalRaw*(1-terraces)+layeredHeight(coastalRaw,layer)*terraces;
