@@ -86,6 +86,10 @@ function groundFaces(t,sharedOnly=false){
   const emit=part=>{
     const [a,b,c]=part,ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z,
       vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
+    // Clipping a subdivided triangle to the shared square/corner can leave
+    // float32-sized slivers. Their unstable face normals produce dark needle
+    // lines; the triangles cover no meaningful screen area at any zoom.
+    if(Math.abs(ux*vy-uy*vx)<1e-8)return;
     const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
     const len=Math.hypot(nx,ny,nz)||1;
     const light=clamp(.94+(-nx*.35-ny*.28)/len,.78,1.13);
@@ -111,7 +115,24 @@ function groundFaces(t,sharedOnly=false){
     if(sharedOnly&&region==='core')continue;
     const visible=G.regionOwners(t.col,t.row,face.kind,face.index)
       .every(owner=>known(cell(owner.col,owner.row)));
-    const points=face.points.map(p=>sample(t.c.x+p.x,t.c.y+p.y));
+    const polygonCentre={
+      x:t.c.x+face.points.reduce((sum,p)=>sum+p.x,0)/face.points.length,
+      y:t.c.y+face.points.reduce((sum,p)=>sum+p.y,0)/face.points.length
+    };
+    const points=face.points.map(p=>{
+      const x=t.c.x+p.x,y=t.c.y+p.y,original=sample(x,y);
+      if(!visible||!original.fog)return original;
+      // Precision at the exact edge/corner of a known polygon can make
+      // regionAt select the neighbouring fog owner. Sample infinitesimally
+      // INSIDE the face while keeping the exact shared vertex coordinates.
+      // Only known-owner faces use this correction; real fog remains hidden.
+      for(const epsilon of [1e-5,1e-4,.001]){
+        const inner=sample(x+(polygonCentre.x-x)*epsilon,
+          y+(polygonCentre.y-y)*epsilon);
+        if(!inner.fog)return {...inner,x,y};
+      }
+      return original;
+    });
     if(!visible){faces.push({points,color:FOG,region:'shared'});continue;}
     if(!microDepth||face.kind==='core'){
       for(const part of shoreFaces(points))emit(part);
