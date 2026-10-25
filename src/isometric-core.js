@@ -417,6 +417,6 @@
   function sceneryVisible(x,y,neighbours) {
     return neighbours.every((known,i)=>known || x*Math.cos((i+.5)*Math.PI/3)+y*Math.sin((i+.5)*Math.PI/3)<Math.sqrt(3)/2*coreRadius-.04);
   }
-  const api={WORLD_SEED,coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,subdivisions,sharedSquare,sharedTriangle,pairFraction,cornerInfluences,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
+  const api={WORLD_SEED,coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,subdivisions,sharedSquare,sharedTriangle,pairFraction,cornerInfluences,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,coastalLanding,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
   if(typeof module!=='undefined' && module.exports) module.exports=api; else root.IsoGeometry=api;
 })(typeof window!=='undefined'?window:globalThis);
