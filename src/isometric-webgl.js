@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { TerrainResidencyPolicy, DEFAULT_MAX_CHUNKS } from './terrain-residency.js';
 import { knownGeometryChunks } from './terrain-world-workset.js';
+import { planWorldGeometry } from './terrain-preparation-plan.js';
 import geometryWorkerSource from 'virtual:tribenet-geometry-worker';
 
 // Smaller chunks cap synchronous CPU work when zoomed in; GPU instancing
@@ -806,39 +807,17 @@ class GPUMap {
     return this.worldGeometryComplete;
   }
   queueBuilds(visible,lod){
-    // Never prepare the 169 focus chunks simply because the camera points
-    // towards them. Unknown fog is already represented by the scene background
-    // and '?' Canvas overlay; generating hundreds of four-hex fog meshes
-    // wastes CPU time and creates provisional geometry that is never saved.
-    const known=this.knownChunkIds;
-    const centre=this.updateFocusArea();
-    const distance=id=>{
-      const [cx,cy]=id.split(':').map(Number);
-      return (cx-this.focusChunk.cx)**2+(cy-this.focusChunk.cy)**2;
-    };
-    const priority=[...visible].filter(id=>known.has(id))
-      .sort((a,b)=>distance(a)-distance(b));
     const hydrated=window.TribeNetKnowledge?.complete?.()!==false;
-    // During a stalled database read, provisional fallback may show existing
-    // known terrain but must not precompute and then invalidate a fog world.
-    const background=hydrated?[...known].filter(id=>!visible.has(id))
-      .sort((a,b)=>distance(a)-distance(b)):[];
-    const ordered=[...priority,...background].slice(0,MAX_CHUNKS);
-    this.activeChunkIds=new Set(ordered);
-    this.stats.prefetchTarget=background.length;
-    const rank=new Map(ordered.map((id,index)=>[id,index]));
-    const pendingById=new Map(this.pendingChunks.map(job=>[job.id,job]));
-    for(const id of ordered){
-      const resident=this.chunkCache.get(this.chunkKey(id,lod));
-      if((!resident||resident.dirtyShared)&&!pendingById.has(id))
-        pendingById.set(id,{id,lod,sharedOnly:Boolean(resident?.dirtyShared)});
-    }
-    this.pendingChunks=[...pendingById.values()]
-      .filter(job=>rank.has(job.id)&&(!this.chunkCache.has(this.chunkKey(job.id,job.lod))||
-        this.chunkCache.get(this.chunkKey(job.id,job.lod))?.dirtyShared))
-      .sort((a,b)=>rank.get(a.id)-rank.get(b.id));
-    // All revealed geometry is prepared. From this point camera frames need
-    // only projection and visibility; no sort, disk key, query, or job work.
+    const plan=planWorldGeometry({
+      knownIds:this.knownChunkIds,visibleIds:visible,lod,
+      maxChunks:MAX_CHUNKS,
+      anchor:this.focusChunk||{cx:0,cy:0},
+      prepareBackground:hydrated,
+      resident:(id,steps)=>this.chunkCache.get(this.chunkKey(id,steps))
+    });
+    this.activeChunkIds=plan.active;
+    this.stats.prefetchTarget=plan.background;
+    this.pendingChunks=plan.jobs;
     this.refreshWorldGeometryComplete();
     this.scheduleIdleChunk();
   }
