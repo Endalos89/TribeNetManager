@@ -605,10 +605,9 @@ class GPUMap {
     // cursor-anchored zoom changes cameraX/Y. That is NOT a reason to destroy
     // previously uploaded GPU geometry. Keep all resident meshes while under
     // MAX_CHUNKS; evictUnused() handles actual memory pressure using LRU.
-    // Data-window changes do not change the GPU retention area. Meshes and
-    // queued tasks are world-coordinate based, not submap or zoom based.
-    // updateFocusArea() handles genuine world-space camera movement.
-    this.queueSignature=null;
+    // Data-window and camera changes do not change what terrain exists.
+    // The geometry work queue is keyed to terrain knowledge and hydration,
+    // not to the current submap or zoom.
   }
   invalidateHexes(changedHexes,affectedHexes=changedHexes){
     if(!changedHexes?.length)return;
@@ -991,13 +990,14 @@ class GPUMap {
       // or streaming signature. Once known geometry is complete, frame time
       // belongs to camera projection and already-resident mesh visibility.
       const interacting=typeof IsoMapper!=='undefined'&&IsoMapper.interacting;
-      if(interacting){
-        this.queueSignature=null;
-      }else{
-        this.updateFocusArea();
-        const signature=this.focusChunk.cx+':'+this.focusChunk.cy+'|'+lod+'|'+
-          (window.TribeNetKnowledge?.complete?.()?'hydrated':'provisional')+'|'+[...visible].sort().join('|');
+      if(!interacting){
+        // The work queue is constructed once per knowledge/hydration revision.
+        // Moving the camera does not reorder or recreate background jobs;
+        // it changes only which already-prepared objects are visible.
+        const signature=this.worldKnowledgeRevision+':'+lod+':'+
+          (window.TribeNetKnowledge?.complete?.()?'hydrated':'provisional');
         if(signature!==this.queueSignature){
+          this.updateFocusArea();
           this.queueSignature=signature;
           this.queueBuilds(visible,lod);
         }else if(this.pendingChunks.length){
