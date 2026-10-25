@@ -114,7 +114,8 @@ const {chromium}=require('playwright');
   for(const snippet of [
     'TribeNet Terrain Dev — Camera Performance Diagnostic',
     'Version: 0.1.diag','Turn: 906-06','Knowledge: 906-05',
-    'Result: completed','Pan around while zoomed out (90 frames)',
+    'Result: completed','Fixed GPU visibility zoom 42',
+    'Pan around while zoomed out (90 frames)',
     'Zoom in and out three times (144 frames)',
     'Pan around while zoomed in (90 frames)',
     'Draw CPU:', 'Frame interval:', 'Counters Δ:', 'Final: generated='
