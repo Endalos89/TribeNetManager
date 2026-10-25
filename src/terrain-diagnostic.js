@@ -88,6 +88,12 @@
         ' | queued '+phase.before.queuedChunks+' -> '+phase.after.queuedChunks);
       lines.push('  Prepared '+String(Boolean(phase.before.worldGeometryComplete))+
         ' -> '+String(Boolean(phase.after.worldGeometryComplete))+
+        ' | known meshes ready '+(phase.before.readyKnownChunks??'n/a')+
+        ' -> '+(phase.after.readyKnownChunks??'n/a')+
+        ' | missing known '+(phase.before.missingKnownChunks??'n/a')+
+        ' -> '+(phase.after.missingKnownChunks??'n/a')+
+        ' | missing locked-visible '+(phase.before.missingVisibleChunks??'n/a')+
+        ' -> '+(phase.after.missingVisibleChunks??'n/a')+
         ' | memory '+rounded(phase.before.residentBytes/1048576)+
         ' -> '+rounded(phase.after.residentBytes/1048576)+' MiB');
       lines.push('  Counters Δ: '+Object.entries(phase.changes)
