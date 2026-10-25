@@ -51,6 +51,7 @@ class GPUMap {
     this.meshWorker=null;this.meshWorkerReady=false;this.meshWorkerBusy=false;
     this.meshWorkerJob=null;this.meshWorkerFailed=false;
     this.renderSerial=0;this.groundRevision=0;this.lastUnitSignature=null;this.frameStartedAt=0;
+    this.completeFrameTimes=[];
     this.units=[];this.visible=false;this.failed=false;this.initialized=false;this.failureReason='';
     this.generation=0;this.pendingChunks=[];this.idleBuildPending=false;this.activeChunkIds=new Set();this.visibleChunkIds=new Set();
     this.knowledgeSubmapWindow=new Set();this.lastCentreSubmap=null;
@@ -1113,7 +1114,17 @@ class GPUMap {
     this.stats.frameMs=performance.now()-this.frameStartedAt;
     this.stats.maxFrameMs=Math.max(this.stats.maxFrameMs,this.stats.frameMs);
   }
-  getStats(){return {...this.stats,...this.diskStats,terrainSubdivisions:FIXED_TERRAIN_STEPS,
+  noteCompleteFrame(elapsed){
+    this.stats.fullFrameMs=elapsed;
+    this.stats.fullFramePeak=Math.max(this.stats.fullFramePeak||0,elapsed);
+    this.completeFrameTimes.push(elapsed);
+    if(this.completeFrameTimes.length>240)this.completeFrameTimes.shift();
+  }
+  getStats(){
+    const sorted=[...this.completeFrameTimes].sort((a,b)=>a-b);
+    const percentile=p=>sorted.length?sorted[Math.ceil(sorted.length*p)-1]:0;
+    return {...this.stats,...this.diskStats,fullFrameP95:percentile(.95),
+      fullFrameP99:percentile(.99),terrainSubdivisions:FIXED_TERRAIN_STEPS,
     unitModelScale:UNIT_MODEL_SCALE,cachedChunks:this.chunkCache.size,
     residentBytes:this.residency.bytes,limitBytes:this.residency.maxBytes,
     knownChunkTargets:this.knownChunkIds.size,queuedChunks:this.pendingChunks.length};}
