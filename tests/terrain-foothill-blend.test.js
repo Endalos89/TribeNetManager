@@ -19,6 +19,18 @@ function steppedHeight(height,layer){
   const bevel=p*p*(3-2*p);
   return layer*(whole+bevel*.86+fraction*.14);
 }
+// Seeded border ownership is continuous in height AND tangent at t=0.5,
+ // with flat tangents at the two immutable core joins.
+for(const beta of [.25,.31,.5,.69,.75]){
+  const f=t=>G.pairSplit(t,beta),e=1e-5;
+  assert.equal(f(0),0);assert.equal(f(.5),beta);assert.equal(f(1),1);
+  for(let i=1;i<=100;i++)
+    assert.ok(f(i/100)>=f((i-1)/100)-1e-12,'hill blend must be monotonic');
+  const left=(f(.5)-f(.5-e))/e,right=(f(.5+e)-f(.5))/e;
+  assert.ok(Math.abs(left-right)<.001,'no seam at ownership midpoint');
+  assert.ok(f(e)/e<.001,'flat slope against first core');
+  assert.ok((1-f(1-e))/e<.001,'flat slope against second core');
+}
 try{
   settings.set({hillAmplitude:0,mountainHeight:0,ruggedness:0,
     plainsRelief:0,waterHeight:.5});
