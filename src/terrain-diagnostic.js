@@ -26,6 +26,7 @@
       'terrainInvalidations','sharedUpdates','fullResets','workerBuilds',
       'workerFailures','workerStaleResponses','unitBufferRebuilds',
       'groundCalculations','cameraOnlyFrames','worldModelCalculations',
+      'hiddenChunkEvents','shownChunkEvents',
       'worldModelReuse','terrainMs','workerTimeMs','workerUploadMs'];
     const output={};
     for(const key of names)if(Number.isFinite(before?.[key])&&Number.isFinite(after?.[key]))
@@ -98,6 +99,25 @@
         ' -> '+rounded(phase.after.residentBytes/1048576)+' MiB');
       lines.push('  Counters Δ: '+Object.entries(phase.changes)
         .map(([name,value])=>name+'='+rounded(value,Number.isInteger(value)?0:1)).join(', '));
+      if(phase.settle){
+        const s=phase.settle;
+        lines.push('  AFTER PANNING STOPS ('+s.frames+' monitored frames):');
+        lines.push('    Draw CPU: p95 '+rounded(s.draw.p95)+'ms | p99 '+rounded(s.draw.p99)+
+          'ms | max '+rounded(s.draw.max)+'ms');
+        lines.push('    Frame interval: p95 '+rounded(s.interval.p95)+
+          'ms | p99 '+rounded(s.interval.p99)+'ms | max '+rounded(s.interval.max)+'ms');
+        lines.push('    Resident '+phase.after.cachedChunks+' -> '+phase.settled.cachedChunks+
+          ', visible '+phase.after.chunks+' -> '+phase.settled.chunks+
+          ', missing locked-visible '+(phase.after.missingVisibleChunks??'n/a')+
+          ' -> '+(phase.settled.missingVisibleChunks??'n/a'));
+        lines.push('    Post-stop counter changes: '+Object.entries(phase.postStopChanges||{})
+          .map(([name,value])=>name+'='+rounded(value,Number.isInteger(value)?0:1)).join(', '));
+        lines.push('    Post-stop samples: '+s.samples.map(v=>
+          '#'+v.frame+' resident='+v.resident+' visible='+v.visible+
+          ' missing='+v.missing+' hidden='+v.hidden+
+          ' evicted='+v.disposed+' invalidated='+v.terrainInvalidations+
+          ' builds='+v.builds+' queued='+v.queued).join(' | '));
+      }
       lines.push('  Slowest frames: '+phase.slowest.map(f=>
         '#'+f.frame+' at zoom '+rounded(f.zoom)+
         ': draw '+rounded(f.draw)+'ms, interval '+rounded(f.interval)+'ms'
@@ -115,7 +135,8 @@
     return lines.join('\n');
   }
   async function run({start,zoomOut=42,zoomIn=170,extent=1,
-    nextFrame,render,snapshot,onProgress=()=>{},cancelled=()=>false,
+    nextFrame,render,snapshot,settleFrames=90,settleRender=()=>{},
+    onProgress=()=>{},cancelled=()=>false,
     now=()=>performance.now(),meta={}}){
     if(typeof nextFrame!=='function'||typeof render!=='function'||
        typeof snapshot!=='function')throw Error('Missing diagnostic callbacks');
@@ -146,9 +167,43 @@
               completed:report.phases.length,stages:PLAN.length});
         }
         const after=snapshot();
+        // A real drag has a 150ms settle redraw and idle worker/disk work
+        // AFTER the mouse stops. Observe this interval before the next
+        // scenario; otherwise the relevant hide/reload is invisible.
+        const settleIntervals=[],settleDraw=[],settleSamples=[];
+        let previousSettle=priorFrameTime;
+        for(let j=0;j<settleFrames&&!cancelled();j++){
+          const timestamp=await nextFrame();
+          const beforeDraw=now();
+          settleRender();
+          settleDraw.push(now()-beforeDraw);
+          if(Number.isFinite(previousSettle)&&timestamp>=previousSettle)
+            settleIntervals.push(timestamp-previousSettle);
+          previousSettle=timestamp;
+          if(j%3===0||j===settleFrames-1){
+            const sample=snapshot();
+            settleSamples.push({frame:j+1,time:now()-started,
+              resident:sample.cachedChunks,visible:sample.chunks,
+              missing:sample.missingVisibleChunks,
+              prepared:sample.readyKnownChunks,
+              hidden:sample.hiddenChunkEvents,
+              disposed:sample.evictions,
+              terrainInvalidations:sample.terrainInvalidations,
+              builds:sample.builds,queued:sample.queuedChunks});
+          }
+          if(j%12===0||j===settleFrames-1)
+            onProgress({phase:'Settling after '+phase.label,frame:j+1,
+              total:settleFrames,completed:report.phases.length,stages:PLAN.length});
+        }
+        priorFrameTime=previousSettle;
+        const settled=snapshot();
         report.phases.push({key:phase.key,label:phase.label,
-          frames:drawTimes.length,before,after,changes:delta(before,after),
+          frames:drawTimes.length,before,after,settled,
+          changes:delta(before,after),postStopChanges:delta(after,settled),
           draw:stats(drawTimes),interval:stats(intervals),
+          settle:{frames:settleIntervals.length,
+            draw:stats(settleDraw),interval:stats(settleIntervals),
+            samples:settleSamples},
           slowest:frames.sort((a,b)=>Math.max(b.draw,b.interval||0)-
             Math.max(a.draw,a.interval||0)).slice(0,5)});
         if(report.status==='cancelled')break;
