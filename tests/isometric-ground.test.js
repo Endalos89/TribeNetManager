@@ -25,7 +25,16 @@ function fixture(reverse=false){
 const first=fixture(),second=fixture(true);
 first.renderer.draw();second.renderer.draw();
 assert.equal(G.groundSubdivisions,8,'terrain mesh stays at eight subdivisions for all zoom levels');
-assert.equal(first.fills.length,9*G.regionMesh(8).length,'ground geometry always uses fixed eight-step reveal sections');
+let expectedFaces=0;
+for(let c=0;c<3;c++)for(let r=0;r<3;r++)for(const f of G.regionMesh(8)){
+  const visible=G.regionOwners(c,r,f.kind,f.index).every(o=>o.col>=0&&o.col<3&&o.row>=0&&o.row<3);
+  if(!visible){expectedFaces++;continue;}
+  for(let k=1;k<f.points.length-1;k++){
+    const [a,b,c]=[f.points[0],f.points[k],f.points[k+1]];
+    if(Math.abs((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))>=1e-14)expectedFaces++;
+  }
+}
+assert.equal(first.fills.length,expectedFaces,'fixed eight-step polygons are triangulated before shading');
 assert.deepEqual(first.fills,second.fills,'installation/discovery order cannot change rendered geometry');
 assert.ok(first.fills.every(f=>f.points.every(p=>p.every(Number.isFinite))));
 const p=first.renderer.project(first.center(1,1));

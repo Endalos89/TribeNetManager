@@ -141,7 +141,7 @@
   // Only the already-revealed shared edge/corner can contain these details;
   // the inner cores and game movement rules are never changed.
   function coastalLanding(region,owners,x,y){
-    if(region.kind==='core')return null;
+    if(region.kind!=='edge')return null;
     const wet=owners.filter(o=>water(o.data?.terrain));
     const steep=owners.filter(o=>isHill(o.data?.terrain)||
       isLowMountain(o.data?.terrain)||isHighMountain(o.data?.terrain));
@@ -160,13 +160,13 @@
     const dx=B.x-A.x,dy=B.y-A.y,distance=Math.hypot(dx,dy);
     const mx=(A.x+B.x)/2,my=(A.y+B.y)/2;
     // Subtle offsets, but the same location and heading from either owner.
-    const shift=(fraction('landing-lane:'+pair.key)-.5)*.22;
+    const shift=(fraction('landing-lane:'+pair.key)-.5)*.10;
     const lateral=((x-mx)*(-dy)+(y-my)*dx)/distance-shift;
-    const width=.28+.08*fraction('landing-width:'+pair.key);
-    const beach=smooth((width-Math.abs(lateral))/.16);
+    const width=.17+.035*fraction('landing-width:'+pair.key);
+    const beach=smooth((width-Math.abs(lateral))/.09);
     const pathChance=fraction('landing-path:'+pair.key)<.38;
     const routeWidth=.055+.018*fraction('landing-route-width:'+pair.key);
-    const path=pathChance?smooth((routeWidth+.065-Math.abs(lateral))/.065):0;
+    const path=pathChance?smooth((routeWidth+.045-Math.abs(lateral))/.045):0;
     return {beach,path,rocky:fraction('landing-material:'+pair.key)<.48,key:pair.key};
   }
   function cornerInfluences(position,owners,junction) {
@@ -186,7 +186,20 @@
     const sum=salts.reduce((a,b)=>a+b,0),centreWeights=salts.map(v=>.25+.25*v/sum);
     for(let k=0;k<boundary.length;k++){
       const n=(k+1)%boundary.length,b=barycentric(position,centre,boundary[k],boundary[n]);
-      if(b && b.every(v=>v>=-1e-7))return sorted.map((o,i)=>({...o,weight:Math.max(0,b[0]*centreWeights[i]+b[1]*basis[k][i]+b[2]*basis[n][i])}));
+      if(b && b.every(v=>v>=-1e-7)){
+        // Evaluate the SAME curved pair boundary as the adjoining square.
+        // Interpolating only its endpoints/midpoint made the old corner fan
+        // disagree with Hermite edges everywhere between those three points.
+        const radial=Math.max(0,b[1]+b[2]);
+        const pairIndex=Math.floor(k/2),i=pairIndex,j=(i+1)%3;
+        const u=radial>1e-12?Math.max(0,Math.min(1,b[2]/radial)):0;
+        const t=(k%2+u)/2,pair=[sorted[i],sorted[j]];
+        const canonicalFirst=canon(pair)[0]===sorted[i];
+        const split=canonicalFirst?pairSplit(t,pairFraction(pair)):
+          1-pairSplit(1-t,pairFraction(pair));
+        return sorted.map((o,n)=>({...o,weight:Math.max(0,
+          (1-radial)*centreWeights[n]+radial*(n===i?1-split:n===j?split:0))}));
+      }
     }
     // Precision fallback is still deterministic at extreme shared vertices.
     const b=barycentric(position,...vertices)||[1,0,0];
@@ -277,6 +290,54 @@
     }
     meshCache.set(steps,faces);return faces;
   }
+  // Refined coastal vertices on an immutable core boundary must lie on
+  // the EXISTING coarse mesh edge, not resample its curved height function.
+  // Otherwise a T-junction opens a vertical crack despite identical XY.
+  let coreSegments;
+  function conformMeshBoundary(x,y,sample){
+    const guess=Math.round((x-1)/1.5);let c,best=Infinity;
+    for(let col=guess-1;col<=guess+1;col++){
+      const row=Math.round(y/Math.sqrt(3)-.5-(col%2?.5:0)),candidate=center(col,row);
+      const distance=(x-candidate.x)**2+(y-candidate.y)**2;
+      if(distance<best){best=distance;c=candidate;}
+    }
+    const p={x:x-c.x,y:y-c.y};
+    const near=normals.some(n=>[coreRadius,1].some(radius=>Math.abs(p.x*n.x+p.y*n.y-apothem*radius)<2e-6));
+    if(!near)return sample(x,y);
+    if(!coreSegments){
+      coreSegments=[];
+      for(const face of regionMesh(groundSubdivisions)){
+        for(let i=0;i<face.points.length;i++){
+          const a=face.points[i],b=face.points[(i+1)%face.points.length];
+          if(normals.some(n=>[coreRadius,1].some(radius=>Math.abs(a.x*n.x+a.y*n.y-apothem*radius)<1e-8&&
+            Math.abs(b.x*n.x+b.y*n.y-apothem*radius)<1e-8)))coreSegments.push([a,b]);
+        }
+      }
+    }
+    for(const [a,b] of coreSegments){
+      const dx=b.x-a.x,dy=b.y-a.y,d2=dx*dx+dy*dy;
+      if(d2<1e-16)continue;
+      const t=((p.x-a.x)*dx+(p.y-a.y)*dy)/d2;
+      if(t< -1e-5||t>1+1e-5||Math.abs(dx*(p.y-a.y)-dy*(p.x-a.x))>2e-6*Math.sqrt(d2))continue;
+      const A=sample(c.x+a.x,c.y+a.y),B=sample(c.x+b.x,c.y+b.y),u=Math.max(0,Math.min(1,t));
+      if(A.fog||B.fog)return sample(x,y);
+      const actual=sample(x,y);
+      if(Boolean(A.water)!==Boolean(B.water)){
+        let lo=0,hi=1;
+        for(let i=0;i<20;i++){
+          const m=(lo+hi)/2,q=sample(c.x+a.x+dx*m,c.y+a.y+dy*m);
+          if(Boolean(q.water)===Boolean(A.water))lo=m;else hi=m;
+        }
+        const coast=(lo+hi)/2,level=A.water?A.z:B.z;
+        if(actual.water)return actual;
+        const z=A.water?level+(B.z-level)*Math.max(0,(u-coast)/(1-coast)):
+          A.z+(level-A.z)*Math.min(1,u/coast);
+        return {...actual,z};
+      }
+      return {...actual,z:A.z*(1-u)+B.z*u};
+    }
+    return sample(x,y);
+  }
   // A continuous world-space surface. Shared vertices are independent of tile ownership.
   function surface(x,y,lookup,palette) {
     const region=regionAt(x,y),rgb=[0,0,0];
@@ -301,25 +362,19 @@
     // threshold must be calibrated to this pair, not to a fixed 0.6 field.
     const waterOwners=owners.filter(o=>water(o.data.terrain));
     const waterShare=setting('coastWaterShare',.6);
-    let midpointWaterWeight=.5,edgeThreshold=null;
-    if(region.kind==='edge' && waterOwners.length===1 && owners.length===2) {
-      const canonical=canon(owners),beta=pairFraction(canonical);
-      const waterFirst=ownerKey(waterOwners[0])===ownerKey(canonical[0]);
-      midpointWaterWeight=waterFirst?1-beta:beta;
-      // Preserve the approved *geometric* coastal water share after making
-      // pairSplit C1-smooth. A linear midpoint-weight threshold would move
-      // the coast despite unchanged Terrain Dev settings.
-      const shorelineT=waterFirst
-        ? .5+.5*waterShare : .5-.5*waterShare;
-      edgeThreshold=waterFirst
-        ? pairSplit(shorelineT,beta) : 1-pairSplit(shorelineT,beta);
-    } else if(region.kind==='corner' && waterOwners.length) {
-      midpointWaterWeight=waterOwners.length/owners.length;
+    // A coastal threshold is a pair property. Extend those exact boundary
+    // values into a corner with positive pair weights; never switch to a
+    // different constant just because regionAt crossed square -> triangle.
+    let thresholdSum=0,thresholdWeight=0;
+    for(const wet of waterOwners)for(const dry of owners.filter(o=>!water(o.data.terrain))){
+      const pair=canon([wet,dry]),beta=pairFraction(pair);
+      const waterFirst=ownerKey(wet)===ownerKey(pair[0]);
+      const t=waterFirst?.5+.5*waterShare:.5-.5*waterShare;
+      const value=waterFirst?pairSplit(t,beta):1-pairSplit(t,beta);
+      const w=wet.weight*dry.weight;
+      thresholdSum+=w*value;thresholdWeight+=w;
     }
-    const threshold=coastWater>0
-      ?(edgeThreshold===null
-        ?1-(1-waterShare)*midpointWaterWeight:edgeThreshold)+shoreline
-      :waterShare;
+    const threshold=(thresholdWeight>1e-14?thresholdSum/thresholdWeight:waterShare)+shoreline;
     const coastField=landFraction-threshold;
     // Ocean and lake surfaces share one adjustable physical level. Colour varies
     // gently with world-space noise and is lighter in the coastal shallows;
@@ -364,38 +419,31 @@
     const slope=smooth(inland);
     const cliff=1-Math.pow(1-inland,3);
     const landing=coastWater>0?coastalLanding(region,owners,x,y):null;
-    // An occasional slender approach gently reduces the cliff grade across
-    // the shared coastal connector. This never alters an inner hex core.
-    const approach=landing?.path
-      ?landing.path*smooth(inland/.16)*(1-smooth((inland-.80)/.20)):0;
-    const coastalSlope=slope*(1-mountain)+
-      (cliff*(1-.62*approach)+slope*.62*approach)*mountain;
-    // Land meets the actual water plane. PR now sits only ~.04 units above
-    // default water rather than behaving like a large cliff over z=0.
+    // A cove is a geometric shelf, not paint on the unchanged cliff.
+    // The lower 30% of its dry connector rises only to 3% of the relief;
+    // the upper slope rejoins the original core with zero blend derivative.
+    const shelf=inland<.30?.03*smooth(inland/.30):
+      .03+.97*smooth((inland-.30)/.70);
+    const route=inland*inland*(2-inland);
+    const ordinary=slope*(1-mountain)+cliff*mountain;
+    const coveSlope=shelf*(1-(landing?.path||0))+route*(landing?.path||0);
+    const coastalSlope=ordinary*(1-(landing?.beach||0))+coveSlope*(landing?.beach||0);
     const coastalRaw=waterLevel+(raw-waterLevel)*coastalSlope;
-    const layer=(.10+weights.hill*.025+weights.low*.035+weights.high*.065)*(1/3);
-    // Avoid a contour-shaped shelf where a flat PR/lowland core meets GH/CH
-    // hills. Strata quantisation depends on the hill-weighted layer height:
-    // even when the *raw* elevation is flat, that changing layer thickness
-    // creates artificial high/low rings in the shared edge and corner.
-    //
-    // Fade strata out only inside mixed plains-to-hill connectors. The
-    // transition starts and ends with zero derivative, so both immutable
-    // inner cores retain their original heights and the coastal/mountain
-    // terrain systems remain untouched.
-    const hillPlainConnector=coastWater<1e-8&&mountain<1e-8&&weights.hill>0&&weights.hill<1
-      ?smooth(weights.hill/.12)*(1-smooth((weights.hill-.82)/.18)):0;
-    const terraces=(mountain+(1-mountain)*smooth(inland))*(1-hillPlainConnector);
-    let z=coastalRaw*(1-terraces)+layeredHeight(coastalRaw,layer)*terraces;
-    // Blend the two fully resolved surfaces, rather than quantising a layer
-    // thickness that changes along the shared PR-to-GH/CH connector. The
-    // latter causes a raised contour even with perfectly flat input hills.
-    if(coastWater<1e-8 && mountain<1e-8 && weights.hill>0 && weights.hill<1){
-      const f=foothill(weights.hill);
-      const plainZ=layeredHeight(base+plainVariation,.10/3);
-      const hillZ=layeredHeight(base+(2/3)*hillHeight,.125/3);
-      z=plainZ*(1-f)+hillZ*f;
+    const layer=(.10+weights.hill*.025+weights.low*.035+weights.high*.065)/3;
+    // Keep the original immutable core surface. Shared terrain interpolates
+    // unquantised relief: quantising a varying height/layer creates rings.
+    // Only the small residual needed to meet each core survives near it.
+    const pureHeights=[base+plainVariation,base+(2/3)*hillHeight,
+      base+(2/3)*lowHeight,base+(2/3)*highHeight];
+    const pureLayers=[.10/3,.125/3,.135/3,.165/3];
+    let residual=0;
+    for(const o of owners){
+      if(water(o.data.terrain))continue;
+      const i=isHighMountain(o.data.terrain)?3:isLowMountain(o.data.terrain)?2:isHill(o.data.terrain)?1:0;
+      residual+=Math.pow(o.weight,8)*(layeredHeight(pureHeights[i],pureLayers[i])-pureHeights[i]);
     }
+    const z=region.kind==='core'?layeredHeight(raw,layer):
+      coastalRaw+residual*Math.pow(coastalSlope,8);
     let land=total?rgb.map(n=>n/total):[37,54,64];
     // Add world-coherent grassy patches without sculpting artificial hills.
     const colourNoise=(noise(x*1.38+83,y*1.38-27,177)-.5)*.7+
@@ -405,7 +453,7 @@
     // Strata exposure belongs to the ground, never separate boulder props.
     // Broken patches expose some hill stone; mountain shoulders expose more.
     const band=coastalRaw/layer-Math.floor(coastalRaw/layer);
-    const riser=smooth((band-.22)/.14)*(1-smooth((band-.64)/.14));
+    const riser=region.kind==='core'?smooth((band-.22)/.14)*(1-smooth((band-.64)/.14)):.45;
     const patch=smooth((detail-.38)/.28);
     const rock=Math.min(.92,weights.hill*patch*riser*setting('rockExposure',.72)+
       weights.low*(.12+.68*patch)*(.4+.6*riser)+
@@ -430,13 +478,13 @@
       }
     }
     const color='#'+land.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
-    return {x,y,z,color,water:false,rock};
+    return {x,y,z,color,water:false,rock,landing:landing?landing.beach*(1-smooth((inland-.25)/.35)):0};
   }
   // Keep scenery bases inside the revealed polygon. Raised crowns may extend
   // naturally across a fog bank, but no hidden-side trees are generated.
   function sceneryVisible(x,y,neighbours) {
     return neighbours.every((known,i)=>known || x*Math.cos((i+.5)*Math.PI/3)+y*Math.sin((i+.5)*Math.PI/3)<Math.sqrt(3)/2*coreRadius-.04);
   }
-  const api={WORLD_SEED,coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,subdivisions,sharedSquare,sharedTriangle,pairFraction,pairSplit,cornerInfluences,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,coastalLanding,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
+  const api={conformMeshBoundary,WORLD_SEED,coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,subdivisions,sharedSquare,sharedTriangle,pairFraction,pairSplit,cornerInfluences,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,coastalLanding,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
   if(typeof module!=='undefined' && module.exports) module.exports=api; else root.IsoGeometry=api;
 })(typeof window!=='undefined'?window:globalThis);

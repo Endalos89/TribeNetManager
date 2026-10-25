@@ -41,6 +41,8 @@ jobs:
           node tests/terrain-foothill-blend.test.js
           node tests/terrain-coastal-landings.test.js
           node tests/terrain-worker-seams.test.js
+          node tests/terrain-surface-continuity.test.js
+          node tests/terrain-mesh-continuity.test.js
           node tests/terrain-diagnostic.test.js
           node tests/terrain-manual-recorder.test.js
           node tests/terrain-visibility.test.js
@@ -60,6 +62,7 @@ jobs:
         run: |
           set -e
           npm install --no-save playwright
+          node tests/terrain-regression.browser.test.js
           node tests/mapper-visible-terrain.browser.test.js
           node tests/mapper-hydration-startup.browser.test.js
           node tests/mapper-historical-hydration.browser.test.js
@@ -69,6 +72,14 @@ jobs:
           node tests/terrain-diagnostic.browser.test.js
           node tests/mapper-large-world-performance.browser.test.js
           node tests/mapper-persistent-restart.browser.test.js
+
+      - name: Preserve representative terrain renders
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terrain-validation
+          path: terrain-validation/*.png
+          if-no-files-found: ignore
 
       - name: Assign release version
         shell: pwsh
