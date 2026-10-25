@@ -76,13 +76,17 @@ const {chromium}=require('playwright');
       unitRecalculations:IsoUnits.worldModelStats.recalculations
     });
     const before=snapshot();
+    let queueRebuilds=0;
+    const originalQueueBuilds=gpu.queueBuilds;
+    gpu.queueBuilds=function(...args){queueRebuilds++;return originalQueueBuilds.apply(this,args);};
     for(const col of [315,345,315,285,315]){
       centerOnHex(col,327);
       for(const zoom of [35,130,180,52]){
         state.scale=zoom;draw();requestVisibleData();
       }
     }
-    return {before,after:snapshot()};
+    gpu.queueBuilds=originalQueueBuilds;
+    return {before,after:snapshot(),queueRebuilds};
   });
   const stationary=await page.evaluate(()=>{
     const p=parseCoordinate(coordinateFor(315,327));
@@ -145,6 +149,38 @@ const {chromium}=require('playwright');
     assert.equal(fidelity[part].sameLength,true,part+' must preserve existing mesh vertex layout');
     assert.ok(fidelity[part].maxDelta<.0001,part+' must visually match the established generator');
   }
+  assert.equal(report.queueRebuilds,0,
+    'camera pan/zoom must not reconstruct the world geometry work queue');
+  const immutableNotes=await page.evaluate(()=>{
+    const gpu=window.TribeNetGPU,ref=coordinateFor(315,327);
+    const data=state.hexCache.get(ref);
+    if(!data)throw Error('Expected revealed terrain');
+    const before={revision:gpu.worldKnowledgeRevision,ready:gpu.worldGeometryComplete,
+      builds:gpu.stats.workerBuilds,failures:gpu.stats.workerFailures,
+      resident:gpu.chunkCache.size,signature:gpu.queueSignature};
+    state.hexCache.set(ref,{...data,notes:'newly discovered river annotation'});
+    draw();
+    const afterNotes={revision:gpu.worldKnowledgeRevision,ready:gpu.worldGeometryComplete,
+      builds:gpu.stats.workerBuilds,failures:gpu.stats.workerFailures,
+      resident:gpu.chunkCache.size,signature:gpu.queueSignature};
+    // A late worker response for a cancelled job must never occupy the
+    // current worker slot, disable its worker, or replace cached buffers.
+    const current=gpu.meshWorkerJob,busy=gpu.meshWorkerBusy;
+    const staleBefore=gpu.stats.workerStaleResponses;
+    gpu.handleWorkerMessage({type:'error',requestId:-1,
+      revision:gpu.worldKnowledgeRevision-1,error:'obsolete result'});
+    const afterStale={failures:gpu.stats.workerFailures,
+      stale:gpu.stats.workerStaleResponses,
+      sameJob:gpu.meshWorkerJob===current,busy:gpu.meshWorkerBusy===busy};
+    return {before,afterNotes,afterStale,staleBefore};
+  });
+  assert.deepEqual(immutableNotes.afterNotes,immutableNotes.before,
+    'notes-only revisions may update Canvas overlays but never restart world geometry');
+  assert.equal(immutableNotes.afterStale.failures,immutableNotes.before.failures,
+    'obsolete worker error must not disable valid background preparation');
+  assert.equal(immutableNotes.afterStale.stale,immutableNotes.staleBefore+1);
+  assert.equal(immutableNotes.afterStale.sameJob,true);
+  assert.equal(immutableNotes.afterStale.busy,true);
   assert.equal(report.before.worldReady,true,
     'when discovered terrain is fully prepared, disable the terrain job scheduler');
   assert.equal(report.after.worldReady,true,
