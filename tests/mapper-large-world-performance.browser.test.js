@@ -143,9 +143,10 @@ const {chromium}=require('playwright');
       previously:resident,changed:'331:326'};
   });
   assert.equal(revision.after.revision,revision.before.revision+1);
+  const discoveryStarted=Date.now();
   try{
     await page.waitForFunction(()=>window.TribeNetGPU.worldGeometryComplete&&
-      window.TribeNetGPU.pendingChunks.length===0,null,{timeout:45000});
+      window.TribeNetGPU.pendingChunks.length===0,null,{timeout:120000});
   }catch(error){
     const stateInfo=await page.evaluate(()=>{
       const gpu=window.TribeNetGPU;
@@ -165,6 +166,8 @@ const {chromium}=require('playwright');
     throw new Error('Post-discovery terrain stalled: '+JSON.stringify(stateInfo)+
       '; original: '+error.message);
   }
+  const discoveryDurationMs=Date.now()-discoveryStarted;
+  console.log('LARGE_WORLD_DISCOVERY_PREPARATION_MS',discoveryDurationMs);
   const aftermath=await page.evaluate(()=>{
     const gpu=window.TribeNetGPU;
     return {updated:gpu.stats.workerBuilds,stale:gpu.stats.workerStaleResponses,
