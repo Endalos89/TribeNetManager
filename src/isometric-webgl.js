@@ -261,14 +261,14 @@ class GPUMap {
     geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
     geometry.computeBoundingSphere();
     const ground=new THREE.Mesh(geometry,this.meshMaterial);
-    ground.frustumCulled=false;
+    ground.frustumCulled=true;
     group.add(ground);
     const borderGeometry=new THREE.BufferGeometry();
     borderGeometry.setAttribute('position',new THREE.Float32BufferAttribute(sharedCoords,3));
     borderGeometry.setAttribute('color',new THREE.Float32BufferAttribute(sharedColors,3));
     borderGeometry.computeBoundingSphere();
     const shared=new THREE.Mesh(borderGeometry,this.meshMaterial);
-    shared.frustumCulled=false;
+    shared.frustumCulled=true;
     group.add(shared);
     let count=0;
     const sites=[];
@@ -321,7 +321,7 @@ class GPUMap {
       const geometry=new THREE.BufferGeometry();
       geometry.setAttribute('position',new THREE.Float32BufferAttribute(wavePoints,3));
       waves=new THREE.LineSegments(geometry,this.waveMaterial);
-      waveGeometry.computeBoundingSphere();
+      geometry.computeBoundingSphere();
       waves.frustumCulled=true;waves.renderOrder=2;group.add(waves);
     }
     const addTreeInstances=(type,geometry,material,filtered,height,radius)=>{
@@ -338,6 +338,7 @@ class GPUMap {
         inst.setMatrixAt(i,this.object.matrix);
       }
       inst.instanceMatrix.needsUpdate=true;
+      inst.computeBoundingSphere();inst.frustumCulled=true;
       group.add(inst);
     };
     addTreeInstances('trunk',baseTreeTrunk,this.treeMaterials.trunk,sites,.10,1);
@@ -440,7 +441,8 @@ class GPUMap {
       const waveGeometry=new THREE.BufferGeometry();
       waveGeometry.setAttribute('position',new THREE.Float32BufferAttribute(data.waves,3));
       waves=new THREE.LineSegments(waveGeometry,this.waveMaterial);
-      waves.frustumCulled=false;waves.renderOrder=2;group.add(waves);
+      waveGeometry.computeBoundingSphere();
+      waves.frustumCulled=true;waves.renderOrder=2;group.add(waves);
     }
     if(data.treeSites?.length){
       const sites=data.treeSites;
@@ -734,7 +736,7 @@ class GPUMap {
     g.setAttribute('color',new THREE.Float32BufferAttribute(mesh.sharedColors,3));
     g.computeBoundingSphere();
     record.shared=new THREE.Mesh(g,this.meshMaterial);
-    record.shared.frustumCulled=false;
+    record.shared.frustumCulled=true;
     record.group.add(record.shared);
     if(record.waves){
       record.group.remove(record.waves);
@@ -745,7 +747,8 @@ class GPUMap {
       const wavesGeometry=new THREE.BufferGeometry();
       wavesGeometry.setAttribute('position',new THREE.Float32BufferAttribute(mesh.waves,3));
       record.waves=new THREE.LineSegments(wavesGeometry,this.waveMaterial);
-      record.waves.frustumCulled=false;record.waves.renderOrder=2;
+      wavesGeometry.computeBoundingSphere();
+      record.waves.frustumCulled=true;record.waves.renderOrder=2;
       record.group.add(record.waves);
     }
     record.sharedFaces=mesh.sharedFaces;
