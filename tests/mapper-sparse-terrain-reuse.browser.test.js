@@ -16,12 +16,13 @@ const {chromium}=require('playwright');
     window.mockRows=[];
     window.historyReads=0;
     window.cachedMeshes=new Map();
+    const previous={turnKey:'906-05',turnSort:906005,sourceFile:'0485_906_05_Results.docx',metadata:{}};
     const selected={turnKey:'906-06',turnSort:906006,sourceFile:'0485_906_06_Results.docx',metadata:{}};
     const api={
       getVersion:async()=>'sparse-revealed-terrain',getUserDataPath:async()=>'local',onUpdateStatus:()=>{},
       getHexesInArea:async()=>[],getHex:async()=>null,getSubmapSummaries:async()=>[],
-      getPlannerImports:async()=>[],listResultTurns:async()=>[selected],
-      getResultTurn:async()=>({...selected,units:[],events:[]}),
+      getPlannerImports:async()=>[],listResultTurns:async()=>[previous,selected],
+      getResultTurn:async key=>({...(key==='906-05'?previous:selected),units:[],events:[]}),
       getResultSubmapSummaries:async()=>[],
       getResultHexesInArea:async bounds=>{
         window.historyReads++;
