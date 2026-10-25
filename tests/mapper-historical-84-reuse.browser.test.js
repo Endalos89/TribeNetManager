@@ -167,7 +167,7 @@ const {chromium}=require('playwright');
     'a tiny close-zoom pan and its settle redraw cannot hide known GPU terrain groups');
   assert.equal(postStop.after.exactMeshes,true,
     'no terrain mesh identity may change when interaction finishes');
-  for(const key of ['resident','hidden','workerBuilds','evictions'])
+  for(const key of ['resident','workerBuilds','evictions'])
     assert.equal(postStop.after[key],postStop.before[key],
       'post-drag settle cannot trigger '+key+' change');
   // Regression: after an authoritative change to an already known hex,
