@@ -14,6 +14,22 @@ const {TerrainMeshDiskCache,validateChunk}=require('../src/terrain-mesh-disk-cac
       sharedColors:[.25,.5,.75,.25,.5,.75,.25,.5,.75],
       waves:null,instances:[{type:'trunk',matrices:Array.from({length:32},(_,i)=>i%5===0?1:0)}]};
     assert.equal(validateChunk(mesh),true);
+    const transferable={...mesh,
+      positions:Float32Array.from(mesh.positions),
+      colors:Float32Array.from(mesh.colors),
+      sharedPositions:Float32Array.from(mesh.sharedPositions),
+      sharedColors:Float32Array.from(mesh.sharedColors),
+      instances:[{type:'trunk',matrices:Float32Array.from(mesh.instances[0].matrices)}]
+    };
+    assert.equal(validateChunk(transferable),true,
+      'typed IPC buffers must be supported without frontend serialization');
+    const typedKey='typed-mesh-geometry-cache-key';
+    await first.write(typedKey,transferable);
+    const typedCopy=await new TerrainMeshDiskCache(directory).read(typedKey);
+    assert.equal(typedCopy.positions.length,mesh.positions.length);
+    for(let i=0;i<mesh.positions.length;i++)
+      assert.ok(Math.abs(typedCopy.positions[i]-mesh.positions[i])<1e-6);
+    assert.equal(typedCopy.instances[0].matrices.length,32);
     assert.equal(validateChunk({...mesh,positions:[NaN,1,2]}),false);
     assert.equal(validateChunk({...mesh,instances:[{type:'person',matrices:[]}]}),false);
 
