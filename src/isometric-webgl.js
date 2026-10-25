@@ -10,20 +10,20 @@ import geometryWorkerSource from 'virtual:tribenet-geometry-worker';
 
 // Smaller chunks cap synchronous CPU work when zoomed in; GPU instancing
 // still batches trees and units across each chunk.
-const CHUNK_SIZE=2;
+const CHUNK_SIZE=4;
 // Keep enough GPU chunks for the current submap and nearby regions; geometry
 // is still bounded by LRU. Nine whole submaps of GPU meshes would be excessive.
 const MAX_CHUNKS=DEFAULT_MAX_CHUNKS; // capacity backstop; measured bytes are the primary limit
 // One constant world-space (13x13) geometry neighbourhood is warmed around
 // the camera centre, regardless of zoom scale or viewport dimensions.
 // Chunks remain resident until memory pressure requires LRU eviction.
-const FOCUS_RADIUS_CHUNKS=6;
-const FOCUS_HYSTERESIS_CHUNKS=3;
+const FOCUS_RADIUS_CHUNKS=3;
+const FOCUS_HYSTERESIS_CHUNKS=1;
 const FIXED_TERRAIN_STEPS=8;
 const UNIT_MODEL_SCALE=.5;
 // Only change this identifier when geometry generation rules change, not
 // when the app release number increments. Known terrain/settings have separate keys.
-const MESH_GENERATOR_REVISION='terrain-fixed8-shore-components-20261024-r2';
+const MESH_GENERATOR_REVISION='terrain-fixed8-shore-components-chunk4-20261025-r3';
 const baseTreeTrunk=new THREE.CylinderGeometry(.012,.017,.20,5);
 const baseTreeCrown=new THREE.ConeGeometry(.095,.24,6);
 const unitBox=new THREE.BoxGeometry(.12,.12,.085);
@@ -1186,7 +1186,7 @@ class GPUMap {
       fullFrameP99:percentile(.99),terrainSubdivisions:FIXED_TERRAIN_STEPS,
     unitModelScale:UNIT_MODEL_SCALE,cachedChunks:this.chunkCache.size,
     residentBytes:this.residency.bytes,limitBytes:this.residency.maxBytes,
-    knownChunkTargets:this.knownChunkIds.size,worldGeometryComplete:this.worldGeometryComplete,
+    knownChunkTargets:this.knownChunkIds.size,chunkSize:CHUNK_SIZE,worldGeometryComplete:this.worldGeometryComplete,
     queuedChunks:this.pendingChunks.length};}
 }
 window.TribeNetGPU=new GPUMap();
