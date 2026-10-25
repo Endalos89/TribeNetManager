@@ -601,6 +601,7 @@ class GPUMap {
     const result=this.newChunk(cells,this.groundFaces,this.sampleTerrain,lod);
     const record={...result,key:this.chunkKey(id,lod),id,lod,known:cells.some(cell=>cell.known)};
     record.group.visible=false;
+    this.applyTerrainDiagnosticCulling(record);
     this.residency.register(record);
     this.chunkCache.set(record.key,record);this.chunkGroup.add(record.group);
     record.serial=++this.meshRevision;
