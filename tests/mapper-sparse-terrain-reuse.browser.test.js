@@ -83,6 +83,14 @@ const {chromium}=require('playwright');
     return {before,after:snapshot()};
   });
   assert.equal(report.before.reads,1,'only one historical-world query for selected turn');
+  const offThread=await page.evaluate(()=>({
+    workerBuilds:window.TribeNetGPU.stats.workerBuilds,
+    failures:window.TribeNetGPU.stats.workerFailures,
+    workerActive:window.TribeNetGPU.meshWorkerReady
+  }));
+  assert.equal(offThread.failures,0,'terrain worker must not fall back to synchronous generation');
+  assert.equal(offThread.workerActive,true,'terrain worker must remain active');
+  assert.ok(offThread.workerBuilds>0,'discovered terrain generated off the UI thread');
   assert.equal(report.before.fogInActive,0,'never generate hidden, fog-only chunks');
   assert.equal(report.after.fogInActive,0);
   assert.ok(report.before.cached<=report.before.knownTargets,
