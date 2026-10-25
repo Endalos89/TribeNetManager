@@ -310,6 +310,10 @@
         ' · centre area '+info.focusTarget+' ('+(2*info.focusRadiusChunks+1)+'×'+(2*info.focusRadiusChunks+1)+')' +
         ' · world prepared '+(info.worldGeometryComplete?'yes':'no')+
         ' · visibility zoom '+(info.visibilityZoom??'unknown')+
+        ' · prepared known '+(info.readyKnownChunks||0)+'/'+(info.knownChunkTargets||0)+
+        ' · missing known '+(info.missingKnownChunks||0)+
+        ' · locked-visible known '+(info.lockedVisibleChunks||0)+
+        ' · missing locked-visible '+(info.missingVisibleChunks||0)+
         ' · discovered meshes '+(info.knownChunkTargets||0)+
         ' · background preparation '+info.prefetchTarget+
         ' · memory evicted '+info.evictions+
