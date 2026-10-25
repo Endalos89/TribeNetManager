@@ -138,7 +138,8 @@
   }
   const midpoint=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
   // Rare, deterministic landing coves on coastal HILL or MOUNTAIN edges.
-  // Only the already-revealed shared edge/corner can contain these details;
+  // Compact lanes stop before the square sides, so no pair-selection switch
+  // or decoration can leak across a corner or into an immutable core.
   // the inner cores and game movement rules are never changed.
   function coastalLanding(region,owners,x,y){
     if(region.kind!=='edge')return null;
@@ -290,7 +291,7 @@
     }
     meshCache.set(steps,faces);return faces;
   }
-  // Refined coastal vertices on an immutable core boundary must lie on
+  // Refined coastal vertices on core and tile boundaries must lie on
   // the EXISTING coarse mesh edge, not resample its curved height function.
   // Otherwise a T-junction opens a vertical crack despite identical XY.
   let coreSegments;

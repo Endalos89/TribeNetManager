@@ -47,7 +47,7 @@ const {chromium}=require('playwright');
     await page.click('#openMapperButton');
     await page.evaluate(({col,row})=>{showDetail();centerOnHex(col,row);state.scale=140;draw();},fixture);
     await page.waitForFunction(()=>IsoMapper.renderer==='WebGL'&&IsoMapper.gpuStats?.chunks>=1,null,{timeout:30000});
-    await page.waitForFunction(()=>!IsoMapper.gpuStats?.queued,null,{timeout:60000});
+    await page.waitForFunction(()=>!IsoMapper.gpuStats?.queuedChunks,null,{timeout:60000});
     await page.waitForTimeout(1000);
     assert.deepEqual(errors,[],'real renderer must have no runtime errors');
     require('node:fs').mkdirSync('terrain-validation',{recursive:true});

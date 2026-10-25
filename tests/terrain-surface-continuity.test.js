@@ -6,6 +6,10 @@ const palette=()=> '#86aa65';
 const state=T.get();T.reset();
 let maxJump=0;
 try{
+  for(const point of require('./fixtures/terrain-core-v733.json')){
+    const actual=G.surface(point.x,point.y,()=>({terrain:point.terrain}),palette);
+    assert.ok(Math.abs(actual.z-point.z)<1e-12,'immutable '+point.terrain+' core changed');
+  }
   // Sample either side of every square/corner interface, not just the
   // midpoint where the previous (incompatible) interpolants happened to agree.
   for(const terrains of [['PR','GH','CH'],['GH','LAM','PR'],['LAM','O','GH'],['O','L','HSM']]){
