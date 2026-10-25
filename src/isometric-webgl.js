@@ -47,6 +47,9 @@ class GPUMap {
     this.chunkGroup=null;this.modelGroup=null;this.chunkCache=new Map();
     this.residency=new TerrainResidencyPolicy();this.shownRecords=new Set();
     this.knownChunkIds=new Set();
+    this.terrainCodeSnapshot=new Map();
+    this.snapshotInitialized=false;
+    this.meshFingerprints=new Map();
     this.worldRows=[];this.worldPalette={};this.worldKnowledgeRevision=0;
     this.meshWorker=null;this.meshWorkerReady=false;this.meshWorkerBusy=false;
     this.meshWorkerJob=null;this.meshWorkerFailed=false;
@@ -162,7 +165,7 @@ class GPUMap {
     if(this.meshWorker && this.worldRows.length)this.sendWorkerKnowledge();
     // The persistent cache is content-addressed; changing a preset changes
     // keys rather than deleting historical meshes from disk.
-    this.diskMissKeys.clear();
+    this.diskMissKeys.clear();this.meshFingerprints.clear();
     this.groundHeightCache.clear();
   }
   disposeChunk(record,reason='lru'){
@@ -361,18 +364,25 @@ class GPUMap {
   // The two-hex halo covers the owners of edge squares and corner triangles.
   persistentKey(id,lod){
     if(!this.tileAt)return null;
+    const cacheKey=id+':'+lod;
+    const cached=this.meshFingerprints.get(cacheKey);
+    if(cached)return cached;
     const [cx,cy]=id.split(':').map(Number),terrain=[];
     for(let col=cx*CHUNK_SIZE-2;col<(cx+1)*CHUNK_SIZE+2;col++){
       for(let row=cy*CHUNK_SIZE-2;row<(cy+1)*CHUNK_SIZE+2;row++){
         if(col<0||row<0||col>=TOTAL_COLS||row>=TOTAL_ROWS)continue;
-        const cell=this.tileAt(col,row);
-        terrain.push([col,row,cell.known ? cell.data?.terrain||'?' : '?']);
+        const code=this.snapshotInitialized
+          ?this.terrainCodeSnapshot.get(col+':'+row)
+          :(this.tileAt(col,row)?.data?.terrain||'?');
+        terrain.push([col,row,code&&code!=='UNKNOWN'?code:'?']);
       }
     }
     const settings=window.TerrainSettings?.get?.()||{};
     const stableSettings=Object.keys(settings).sort().map(k=>[k,settings[k]]);
-    return JSON.stringify([MESH_GENERATOR_REVISION,
+    const fingerprint=JSON.stringify([MESH_GENERATOR_REVISION,
       window.TerrainSettings?.WORLD_SEED||1790425012,id,lod,stableSettings,terrain]);
+    if(this.snapshotInitialized)this.meshFingerprints.set(cacheKey,fingerprint);
+    return fingerprint;
   }
   serializeChunk(record){
     const geometry=record.ground.geometry;
@@ -643,6 +653,15 @@ class GPUMap {
     return ids;
   }
   setWorldKnowledge(terrain,parseCoordinate){
+    this.terrainCodeSnapshot.clear();
+    this.meshFingerprints.clear();
+    for(const [coordinate,type] of terrain){
+      if(!type||type==='UNKNOWN')continue;
+      const p=parseCoordinate(coordinate);
+      if(Number.isFinite(p?.globalCol)&&Number.isFinite(p?.globalRow))
+        this.terrainCodeSnapshot.set(p.globalCol+':'+p.globalRow,type);
+    }
+    this.snapshotInitialized=true;
     this.worldRows=[...terrain].filter(([,type])=>type&&type!=='UNKNOWN')
       .map(([coordinate,type])=>{
         const p=parseCoordinate(coordinate);
