@@ -256,6 +256,19 @@ class GPUMap {
     // materials are shared and intentionally retained.
     for(const child of record.group.children)if(child.isInstancedMesh)child.dispose();
   }
+  // Build/attach first; only then remove the old GPU mesh.
+  replaceChunk(id,lod,mesh){
+    const key=this.chunkKey(id,lod),previous=this.chunkCache.get(key);
+    const replacement=this.restoreChunk(id,lod,mesh);
+    if(previous){
+      replacement.group.visible=previous.group.visible;
+      replacement.lastUsed=previous.lastUsed;
+      this.disposeChunk(previous,'terrain');
+      if(replacement.group.visible)this.shownRecords.add(key);
+      this.recordTerrainEvent('chunk-replaced',{id,lod});
+    }
+    return replacement;
+  }
   dispose(){
     this.invalidate();
     for(const mesh of this.unitMeshes.values()){
@@ -570,7 +583,7 @@ class GPUMap {
     const job=()=>{
       let payload;
       try{
-        if(!this.chunkCache.has(record.key)||record.dirtyShared||
+        if(!this.chunkCache.has(record.key)||record.dirtyShared||record.dirtyCore||
            window.TribeNetKnowledge?.complete?.()===false){
           this.cachedWrites.delete(key);return;
         }
@@ -591,7 +604,7 @@ class GPUMap {
   persistHydratedMeshes(){
     if(window.TribeNetKnowledge?.complete?.()===false)return;
     for(const record of this.chunkCache.values())
-      if(record.known&&!record.dirtyShared)this.saveToDisk(record);
+      if(record.known&&!record.dirtyShared&&!record.dirtyCore)this.saveToDisk(record);
   }
   terrainChunk(id,lod){
     const [cx,cy]=id.split(':').map(Number),cells=[];
@@ -600,10 +613,17 @@ class GPUMap {
         if(col>=0&&row>=0&&col<TOTAL_COLS&&row<TOTAL_ROWS)cells.push(this.tileAt(col,row));
     const result=this.newChunk(cells,this.groundFaces,this.sampleTerrain,lod);
     const record={...result,key:this.chunkKey(id,lod),id,lod,known:cells.some(cell=>cell.known)};
-    record.group.visible=false;
+    const previous=this.chunkCache.get(record.key);
+    record.group.visible=previous?.group.visible||false;
+    record.lastUsed=previous?.lastUsed;
     this.applyTerrainDiagnosticCulling(record);
     this.residency.register(record);
     this.chunkCache.set(record.key,record);this.chunkGroup.add(record.group);
+    if(previous){
+      this.disposeChunk(previous,'terrain');
+      if(record.group.visible)this.shownRecords.add(record.key);
+      this.recordTerrainEvent('chunk-replaced',{id,lod,source:'synchronous'});
+    }
     record.serial=++this.meshRevision;
     this.recordTerrainEvent('chunk-generated',{id,lod});
     this.stats.builds++;
@@ -708,7 +728,13 @@ class GPUMap {
     const touched=new Set((affectedHexes||[]).map(chunkId));
     for(const [key,record] of this.chunkCache){
       if(direct.has(record.id)){
-        this.disposeChunk(record,'terrain');this.chunkCache.delete(key);
+        if(!this.knownChunkIds.has(record.id)){
+          this.disposeChunk(record,'terrain');this.chunkCache.delete(key);
+        }else{
+          record.dirtyCore=true;
+          record.dirtyShared=true;
+          this.recordTerrainEvent('chunk-rebuild-queued',{id:record.id});
+        }
       }else if(touched.has(record.id)){
         // Neighbour discovery only affects the shared border/corner surface.
         // Never dispose the immutable inner-core GPU buffer.
@@ -903,10 +929,13 @@ class GPUMap {
          entry.message.revision===this.worldKnowledgeRevision){
         const {job,message}=entry,started=performance.now();
         if(job.sharedOnly)this.applySharedWorkerResult(job,message.mesh);
-        else if(!this.chunkCache.has(this.chunkKey(job.id,job.lod))){
-          this.restoreChunk(job.id,job.lod,message.mesh);
-          this.stats.builds++;
-          this.saveToDisk(this.chunkCache.get(this.chunkKey(job.id,job.lod)));
+        else{
+          const existing=this.chunkCache.get(this.chunkKey(job.id,job.lod));
+          if(!existing||existing.dirtyCore){
+            const record=this.replaceChunk(job.id,job.lod,message.mesh);
+            this.stats.builds++;
+            this.saveToDisk(record);
+          }
         }
         this.stats.workerBuilds++;
         this.stats.workerTimeMs+=Number(message.elapsed||0);
@@ -928,7 +957,7 @@ class GPUMap {
       !this.meshWorkerBusy&&!this.diskReadBusy&&this.completedUploads.length===0 &&
       [...this.knownChunkIds].every(id=>{
         const resident=this.chunkCache.get(this.chunkKey(id,lod));
-        return Boolean(resident&&!resident.dirtyShared);
+        return Boolean(resident&&!resident.dirtyShared&&!resident.dirtyCore);
       });
     return this.worldGeometryComplete;
   }
@@ -996,8 +1025,11 @@ class GPUMap {
         }
         this.scheduleIdleChunk();return;
       }
-      if(!next.sharedOnly&&this.chunkCache.has(this.chunkKey(next.id,next.lod))){
-        this.scheduleIdleChunk();return;
+      if(!next.sharedOnly){
+        const existing=this.chunkCache.get(this.chunkKey(next.id,next.lod));
+        if(existing&&!existing.dirtyCore){
+          this.scheduleIdleChunk();return;
+        }
       }
       // Try durable geometry before recalculating triangles or scenery.
       // A disk miss is remembered so the NEXT idle slice generates it instead
@@ -1007,7 +1039,9 @@ class GPUMap {
       // A shared-only transition owns the existing immutable core buffer.
       // Restoring a full disk mesh here would overwrite the core, or worse,
       // discard the pending border update when a valid cache entry exists.
-      if(!next.sharedOnly && key && typeof reader==='function' && !this.diskMissKeys.has(key)){
+      if(!next.sharedOnly &&
+         !this.chunkCache.get(this.chunkKey(next.id,next.lod))?.dirtyCore &&
+         key && typeof reader==='function' && !this.diskMissKeys.has(key)){
         this.diskReadBusy=true;
         const restoredAt=performance.now();
         Promise.resolve().then(()=>reader(key)).then(data=>{
@@ -1327,7 +1361,7 @@ class GPUMap {
     const percentile=p=>sorted.length?sorted[Math.ceil(sorted.length*p)-1]:0;
     const readyKnown=[...this.knownChunkIds].filter(id=>{
       const resident=this.chunkCache.get(this.chunkKey(id,this.lastLod));
-      return Boolean(resident&&!resident.dirtyShared);
+      return Boolean(resident&&!resident.dirtyShared&&!resident.dirtyCore);
     }).length;
     const neededVisible=[...this.visibleChunkIds].filter(id=>this.knownChunkIds.has(id));
     const missingVisible=neededVisible.filter(id=>
