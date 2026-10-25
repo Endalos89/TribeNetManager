@@ -123,7 +123,8 @@ const {chromium}=require('playwright');
     const record=[...gpu.chunkCache.values()].find(x=>x.known&&x.faces>1000);
     if(!record)return {missing:true};
     const [cx,cy]=record.id.split(':').map(Number),cells=[];
-    for(let c=cx*2;c<cx*2+2;c++)for(let r=cy*2;r<cy*2+2;r++)
+    const size=gpu.getStats().chunkSize;
+    for(let c=cx*size;c<(cx+1)*size;c++)for(let r=cy*size;r<(cy+1)*size;r++)
       cells.push(gpu.tileAt(c,r));
     const original=gpu.newChunk(cells,gpu.groundFaces,gpu.sampleTerrain,8);
     const check=(a,b)=>{
