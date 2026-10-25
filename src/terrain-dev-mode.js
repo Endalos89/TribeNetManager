@@ -98,14 +98,139 @@
       feedback.textContent='Diagnostics copied.';
     }catch(error){feedback.textContent='Clipboard unavailable; please select and copy the diagnostics text.';}
   });
-  actions.append(exportButton,importButton,resetButton,retryButton,copyButton);
+  const diagnosticButton=document.createElement('button');
+  diagnosticButton.type='button';diagnosticButton.id='terrainRunDiagnostic';
+  diagnosticButton.className='button accent';diagnosticButton.textContent='Run Diagnostic';
+  diagnosticButton.title='Run automated zoomed-out pan, 3 zoom cycles and zoomed-in pan, then create a local report.';
+  const stopButton=document.createElement('button');
+  stopButton.type='button';stopButton.id='terrainStopDiagnostic';
+  stopButton.className='button';stopButton.textContent='Stop Diagnostic';
+  stopButton.hidden=true;
+  const copyReportButton=document.createElement('button');
+  copyReportButton.type='button';copyReportButton.id='terrainCopyDiagnostic';
+  copyReportButton.className='button';copyReportButton.textContent='Copy Report';
+  copyReportButton.hidden=true;
+  const reportOutput=document.createElement('textarea');
+  reportOutput.id='terrainDiagnosticReport';reportOutput.className='terrain-dev-report';
+  reportOutput.setAttribute('aria-label','Camera performance diagnostic report');
+  reportOutput.readOnly=true;reportOutput.hidden=true;
+  const reportHelp=document.createElement('small');
+  reportHelp.id='terrainDiagnosticHelp';reportHelp.className='terrain-dev-report-help';
+  reportHelp.textContent='The diagnostic moves the camera locally, records performance and restores your view. No information is sent automatically.';
+  actions.append(exportButton,importButton,resetButton,retryButton,copyButton,
+    diagnosticButton,stopButton,copyReportButton);
   const performance=document.createElement('div');
   performance.className='terrain-dev-feedback';
   performance.setAttribute('aria-live','off');
   performance.textContent='WebGL statistics are available when the 3D Mapper is visible.';
-  panel.append(actions,file,feedback,performance);wrap.appendChild(panel);
+  panel.append(actions,file,feedback,reportHelp,reportOutput,performance);
+  wrap.appendChild(panel);
   // No background timers while Terrain Dev is closed.
-  let statsTimer=null;
+  let statsTimer=null,diagnosticRunning=false,cancelDiagnostic=false;
+  let diagnosticReport='';
+  const setDiagnosticControls=running=>{
+    diagnosticRunning=running;
+    diagnosticButton.disabled=running;
+    stopButton.hidden=!running;
+    copyReportButton.hidden=running||!diagnosticReport;
+  };
+  async function copyReport(){
+    if(!diagnosticReport)return;
+    try{
+      await navigator.clipboard.writeText(diagnosticReport);
+      feedback.textContent='Performance report copied. Paste it into ChatGPT.';
+    }catch(error){
+      reportOutput.focus();reportOutput.select();
+      feedback.textContent='Clipboard unavailable. The report is selected; press Ctrl+C to copy it.';
+    }
+  }
+  copyReportButton.addEventListener('click',copyReport);
+  stopButton.addEventListener('click',()=>{
+    cancelDiagnostic=true;
+    feedback.textContent='Stopping after the current frame and restoring your original view…';
+  });
+  diagnosticButton.addEventListener('click',async()=>{
+    if(diagnosticRunning)return;
+    const gpu=root.TribeNetGPU;
+    if(!root.TerrainDiagnostic || typeof state==='undefined' ||
+      state.mode!=='detail'||typeof IsoMapper==='undefined'||
+      !IsoMapper.enabled || !gpu?.initialized || !gpu.visible || gpu.failed){
+      feedback.textContent='Open the active 3D detail map before running the diagnostic.';
+      return;
+    }
+    const start={x:state.cameraX,y:state.cameraY,scale:state.scale};
+    const rect=$('mapCanvas')?.getBoundingClientRect()||{width:0,height:0};
+    cancelDiagnostic=false;diagnosticReport='';
+    reportOutput.value='';reportOutput.hidden=true;
+    setDiagnosticControls(true);
+    if(statsTimer!==null){clearInterval(statsTimer);statsTimer=null;}
+    feedback.textContent='Starting automated camera diagnostic. Do not move the map until it finishes.';
+    try{
+      const info=gpu.getStats();
+      const history=typeof resultsTimeline!=='undefined'?resultsTimeline:null;
+      const rows=[...state.hexCache.values()];
+      let version='unknown';
+      try{version=await root.tribenet?.getVersion?.()||'unknown';}catch(_){}
+      const snapshot=()=>{
+        const values=gpu.getStats();
+        const models=typeof IsoUnits!=='undefined'?IsoUnits.worldModelStats:null;
+        return {...values,worldModelCalculations:models?.recalculations||0,
+          worldModelReuse:models?.reused||0};
+      };
+      const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+      const extent=1.5;
+      const report=await root.TerrainDiagnostic.run({
+        start,zoomOut:42,zoomIn:170,extent,
+        now:()=>root.performance.now(),
+        nextFrame:()=>new Promise(resolve=>root.requestAnimationFrame(resolve)),
+        cancelled:()=>cancelDiagnostic,
+        snapshot,
+        render:point=>{
+          state.cameraX=clamp(point.x,3,1+(TOTAL_COLS-2)*1.5);
+          state.cameraY=clamp(point.y,3,Math.sqrt(3)*(TOTAL_ROWS-2));
+          state.scale=point.scale;
+          if(typeof root.requestVisibleData==='function')root.requestVisibleData();
+          root.draw();
+        },
+        onProgress:value=>{
+          feedback.textContent='Running diagnostic: '+value.phase+
+            ' — '+value.frame+'/'+value.total+' frames ('+
+            (value.completed+1)+'/3 stages)';
+        },
+        meta:{
+          version,turn:history?.turn?.turnKey||'none',
+          knowledge:history?.turn?.knowledgeTurnKey||'initial',
+          date:new Date().toISOString(),
+          width:Math.round(rect.width),height:Math.round(rect.height),
+          dpr:root.devicePixelRatio||1,scale:start.scale,
+          known:rows.filter(row=>row?.terrain&&row.terrain!=='UNKNOWN').length,
+          total:rows.length,targets:info.knownChunkTargets,
+          prepared:info.worldGeometryComplete,
+          hydrated:root.TribeNetKnowledge?.complete?.()??false,
+          fallback:root.TribeNetKnowledge?.fallback?.()??false
+        }
+      });
+      diagnosticReport=root.TerrainDiagnostic.format(report);
+      reportOutput.value=diagnosticReport;
+      reportOutput.hidden=false;
+      feedback.textContent=report.status==='completed'
+        ?'Diagnostic complete. Click Copy Report and paste it into ChatGPT.'
+        :report.status==='cancelled'
+          ?'Diagnostic stopped. The partial report is available to copy.'
+          :'Diagnostic encountered an error. Copy the report for investigation.';
+    }catch(error){
+      feedback.textContent='Diagnostic could not run: '+(error?.message||String(error));
+    }finally{
+      // This is a read-only camera test: always restore the user's original
+      // position and zoom, including when cancelled or an exception occurs.
+      state.cameraX=start.x;state.cameraY=start.y;state.scale=start.scale;
+      try{root.draw();}catch(error){console.warn('Could not restore camera frame:',error);}
+      setDiagnosticControls(false);
+      updateStats();
+      if(!panel.classList.contains('hidden')&&statsTimer===null)
+        statsTimer=setInterval(updateStats,750);
+    }
+  });
   function updateStats(){
     const gpu=root.TribeNetGPU;
     const info=gpu?.getStats();
