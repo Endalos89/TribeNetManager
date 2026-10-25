@@ -227,19 +227,19 @@ self.onmessage=event=>{
       self.postMessage({type:'ready',revision});
     }else if(m.type==='build'){
       if(m.revision!==revision){
-        self.postMessage({type:'stale',id:m.id,revision:m.revision});
+        self.postMessage({type:'stale',id:m.id,revision:m.revision,requestId:m.requestId});
         return;
       }
       const start=performance.now();
       const result=build(m.id,Boolean(m.sharedOnly));
       const elapsed=performance.now()-start;
-      self.postMessage({type:'built',id:m.id,revision,sharedOnly:m.sharedOnly,
+      self.postMessage({type:'built',id:m.id,revision,requestId:m.requestId,sharedOnly:m.sharedOnly,
         elapsed,mesh:result},
         [result.positions.buffer,result.colors.buffer,
           result.sharedPositions.buffer,result.sharedColors.buffer,result.waves.buffer]);
     }
   }catch(e){
-    self.postMessage({type:'error',id:m.id,revision:m.revision,
+    self.postMessage({type:'error',id:m.id,revision:m.revision,requestId:m.requestId,
       error:e?.stack||e?.message||String(e)});
   }
 };
