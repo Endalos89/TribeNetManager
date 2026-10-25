@@ -318,7 +318,11 @@ requestVisibleData = function requestVisibleDataWithResults() {
   if (!resultsTimeline.turn) return originalRequestVisibleData();
   if (state.mode !== 'detail' || resultsTimeline.loadingArea || historicalAreaRetryTimer !== null) return;
   const b = historicalAreaBounds();
-  if (areaContainsArea(state.loadedArea, b)) return;
+  // A successful historical load is immutable for its selected turn.
+  // state.loadedArea is also used by live-data requests, so an old live
+  // response must never make us re-query an already loaded historical world.
+  if (resultsTimeline.lastTerrainLoad?.status==='loaded' &&
+      resultsTimeline.lastTerrainLoad.turnKey===resultsTimeline.turn.turnKey) return;
   const generation = historicalAreaGeneration;
   const turnKey = resultsTimeline.turn.turnKey;
   const knowledgeKey = resultKnowledgeTurnKey();
@@ -334,7 +338,8 @@ requestVisibleData = function requestVisibleDataWithResults() {
           row.globalRow >= b.minRow && row.globalRow <= b.maxRow);
     if (generation !== historicalAreaGeneration || turnKey !== resultsTimeline.turn?.turnKey) return;
     if (!Array.isArray(rows)) throw Error('Invalid historical terrain response');
-    resultsTimeline.lastTerrainLoad={status:'loaded',count:rows.length,turnKey,knowledgeKey,finishedAt:Date.now()};
+    resultsTimeline.lastTerrainLoad={status:'loaded',count:rows.length,turnKey,knowledgeKey,
+      bounds:b,finishedAt:Date.now()};
     // This read is the authoritative terrain snapshot for the selected turn.
     // Panning and zooming after it settles cannot request or invalidate terrain.
     for (const row of rows) if (row?.coordinate) state.hexCache.set(row.coordinate, row);
