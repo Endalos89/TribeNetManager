@@ -54,6 +54,7 @@ class GPUMap {
     this.worldRows=[];this.worldPalette={};this.worldKnowledgeRevision=0;
     this.meshWorker=null;this.meshWorkerReady=false;this.meshWorkerBusy=false;
     this.meshWorkerJob=null;this.meshWorkerFailed=false;
+    this.completedUploads=[];this.uploadScheduled=false;
     this.workerRequestSerial=0;
     this.renderSerial=0;this.groundRevision=0;this.lastUnitSignature=null;this.frameStartedAt=0;
     this.completeFrameTimes=[];
@@ -165,6 +166,7 @@ class GPUMap {
     // Existing worker output is ignored after any terrain preset reset.
     this.worldKnowledgeRevision++;
     this.meshWorkerBusy=false;this.meshWorkerJob=null;
+    this.completedUploads=[];this.uploadScheduled=false;
     if(this.meshWorker && this.worldRows.length)this.sendWorkerKnowledge();
     // The persistent cache is content-addressed; changing a preset changes
     // keys rather than deleting historical meshes from disk.
@@ -778,28 +780,59 @@ class GPUMap {
       console.warn('World geometry worker failed; falling back:',message.error);
       this.scheduleIdleChunk();return;
     }
-    if(message.type==='built' && job && !this.chunkCache.has(this.chunkKey(job.id,job.lod)) ||
-      message.type==='built'&&job?.sharedOnly){
-      const started=performance.now();
-      if(job.sharedOnly)this.applySharedWorkerResult(job,message.mesh);
-      else {
-        this.restoreChunk(job.id,job.lod,message.mesh);
-        this.stats.builds++;
-        this.saveToDisk(this.chunkCache.get(this.chunkKey(job.id,job.lod)));
-      }
-      this.stats.workerBuilds++;
-      this.stats.workerTimeMs+=Number(message.elapsed||0);
-      this.stats.workerUploadMs+=performance.now()-started;
-      this.evictUnused();
-      this.refreshWorldGeometryComplete();
-      this.requestLater();
+    if(message.type==='built'&&job){
+      // Worker messages arrive asynchronously, including during wheel/drag.
+      // Do not upload large BufferGeometry objects inside this message event.
+      this.completedUploads.push({job,message,generation:this.generation});
+      this.scheduleCompletedUpload();
+      return;
     }
     this.scheduleIdleChunk();
+  }
+  scheduleCompletedUpload(){
+    if(this.uploadScheduled||!this.completedUploads.length)return;
+    this.uploadScheduled=true;
+    const generation=this.generation;
+    const task=deadline=>{
+      this.uploadScheduled=false;
+      if(generation!==this.generation)return;
+      if(typeof IsoMapper!=='undefined'&&IsoMapper.interacting){
+        setTimeout(()=>this.scheduleCompletedUpload(),75);
+        return;
+      }
+      if(deadline&&!deadline.didTimeout&&deadline.timeRemaining()<4){
+        this.scheduleCompletedUpload();
+        return;
+      }
+      const entry=this.completedUploads.shift();
+      if(!entry)return;
+      if(entry.generation===this.generation&&
+         entry.message.revision===this.worldKnowledgeRevision){
+        const {job,message}=entry,started=performance.now();
+        if(job.sharedOnly)this.applySharedWorkerResult(job,message.mesh);
+        else if(!this.chunkCache.has(this.chunkKey(job.id,job.lod))){
+          this.restoreChunk(job.id,job.lod,message.mesh);
+          this.stats.builds++;
+          this.saveToDisk(this.chunkCache.get(this.chunkKey(job.id,job.lod)));
+        }
+        this.stats.workerBuilds++;
+        this.stats.workerTimeMs+=Number(message.elapsed||0);
+        this.stats.workerUploadMs+=performance.now()-started;
+        this.evictUnused();
+        this.requestLater();
+      }else this.stats.workerStaleResponses++;
+      this.refreshWorldGeometryComplete();
+      this.scheduleCompletedUpload();
+      this.scheduleIdleChunk();
+    };
+    if(typeof requestIdleCallback==='function')
+      requestIdleCallback(task,{timeout:180});
+    else setTimeout(()=>task({timeRemaining:()=>12,didTimeout:true}),25);
   }
   refreshWorldGeometryComplete(){
     const lod=this.lastLod||FIXED_TERRAIN_STEPS;
     this.worldGeometryComplete=this.pendingChunks.length===0 &&
-      !this.meshWorkerBusy&&!this.diskReadBusy &&
+      !this.meshWorkerBusy&&!this.diskReadBusy&&this.completedUploads.length===0 &&
       [...this.knownChunkIds].every(id=>{
         const resident=this.chunkCache.get(this.chunkKey(id,lod));
         return Boolean(resident&&!resident.dirtyShared);
@@ -835,7 +868,7 @@ class GPUMap {
       return;
     }
     this.stats.knowledgePending=0;
-    if(this.idleBuildPending || this.diskReadBusy || this.meshWorkerBusy || !this.pendingChunks.length || !this.visible)return;
+    if(this.idleBuildPending || this.diskReadBusy || this.meshWorkerBusy || this.completedUploads.length || !this.pendingChunks.length || !this.visible)return;
     const revision=this.generation;
     this.idleBuildPending=true;
     const task=(deadline)=>{
