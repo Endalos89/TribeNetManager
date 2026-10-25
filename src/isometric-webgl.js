@@ -992,7 +992,19 @@ class GPUMap {
     if(knowledgeComplete&&!this.hydrationPreviouslyComplete)
       this.persistHydratedMeshes();
     this.hydrationPreviouslyComplete=knowledgeComplete;
-    const visible=new Set(tiles.map(chunkId));
+    const visible=window.TerrainVisibility?.visibleChunks({
+      knownIds:this.knownChunkIds,
+      actualVisible:new Set(tiles.map(chunkId)),
+      actualZoom:state.scale,
+      width:this.viewportW,
+      height:this.viewportH,
+      cameraX:state.cameraX,cameraY:state.cameraY,
+      chunkSize:CHUNK_SIZE,totalCols:TOTAL_COLS,totalRows:TOTAL_ROWS,
+      unproject:window.IsoGeometry.unproject
+    })||new Set(tiles.map(chunkId));
+    // Geometry stays resident independently of either zoom. The STATIC
+    // visibility envelope also keeps its scene group visible during zoom-in;
+    // zooming farther out can only expand this envelope, never leave gaps.
     this.visibleChunkIds=visible;
     // During interaction, never create offscreen jobs simply because zoom
     // changed the visible set. A settled frame will prioritise missing meshes
@@ -1192,7 +1204,9 @@ class GPUMap {
       fullFrameP99:percentile(.99),terrainSubdivisions:FIXED_TERRAIN_STEPS,
     unitModelScale:UNIT_MODEL_SCALE,cachedChunks:this.chunkCache.size,
     residentBytes:this.residency.bytes,limitBytes:this.residency.maxBytes,
-    knownChunkTargets:this.knownChunkIds.size,chunkSize:CHUNK_SIZE,worldGeometryComplete:this.worldGeometryComplete,
+    knownChunkTargets:this.knownChunkIds.size,chunkSize:CHUNK_SIZE,
+    visibilityZoom:window.TerrainVisibility?.get?.()??0,
+    worldGeometryComplete:this.worldGeometryComplete,
     queuedChunks:this.pendingChunks.length};}
 }
 window.TribeNetGPU=new GPUMap();
