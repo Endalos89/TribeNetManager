@@ -50,7 +50,9 @@ jobs:
           node tests/skill-overhaul-category-c5-final.test.js
 
       - name: Check real 3D Mapper terrain rendering
+        shell: bash
         run: |
+          set -e
           npm install --no-save playwright
           node tests/mapper-visible-terrain.browser.test.js
           node tests/mapper-hydration-startup.browser.test.js
