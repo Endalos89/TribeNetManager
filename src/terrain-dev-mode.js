@@ -150,7 +150,12 @@
         ' · data errors '+(root.TribeNetKnowledge?.errors?.()||0)+
         ' · geometry '+Math.round(info.terrainMs)+'ms'+
         ' · disk '+Math.round(info.restorationMs)+'ms'+
-        ' · cache resets '+info.fullResets+details;
+        ' · cache resets '+info.fullResets+
+        ' · resident memory '+(info.residentBytes/1048576).toFixed(1)+'/'+(info.limitBytes/1048576).toFixed(0)+' MiB'+
+        ' · full CPU frame '+info.frameMs.toFixed(1)+'ms (peak '+info.maxFrameMs.toFixed(1)+'ms)'+
+        ' · unit buffers rebuilt '+info.unitBufferRebuilds+
+        ' · unit ground calculations '+info.groundCalculations+
+        ' · camera-only frames '+info.cameraOnlyFrames+details;
     }else{
       const reason=!detail?'World Overview or launcher':
         !selected&&!mode?'Classic 2D view selected':
