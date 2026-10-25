@@ -67,6 +67,9 @@ const IsoMapper = (() => {
     terrainSnapshot.clear();notesSnapshot.clear();
     for(const [ref,terrain] of next)terrainSnapshot.set(ref,terrain);
     for(const [ref,notes] of nextNotes)notesSnapshot.set(ref,notes);
+    // Known-world geometry is prepared from stable terrain knowledge. It
+    // cannot depend on camera bounds, pan speed or current zoom.
+    window.TribeNetGPU?.setWorldKnowledge?.(terrainSnapshot,parseCoordinate);
     if(decorationsChanged)landscape=null;
     if(changed.size===0)return;
     // Analytic height at the centre of an already-known core does not
