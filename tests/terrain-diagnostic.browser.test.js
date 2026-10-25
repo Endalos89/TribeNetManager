@@ -58,6 +58,25 @@ const {chromium}=require('playwright');
     known:state.hexCache.size
   }));
   await page.click('#terrainDevToggle');
+  const firstScreen=await page.evaluate(()=>{
+    const panel=document.getElementById('terrainDevPanel');
+    const lock=document.querySelector('.terrain-dev-visibility-box');
+    const firstSlider=document.querySelector('.terrain-dev-sliders');
+    const rect=lock.getBoundingClientRect(),panelRect=panel.getBoundingClientRect();
+    return {exists:Boolean(lock&&document.getElementById('terrainVisibilityZoom')),
+      label:lock?.querySelector('strong')?.textContent||'',
+      panelScrollTop:panel.scrollTop,lockTop:rect.top,
+      lockBottom:rect.bottom,panelTop:panelRect.top,
+      panelBottom:panelRect.bottom,firstSliderTop:firstSlider.getBoundingClientRect().top};
+  });
+  assert.ok(firstScreen.exists,'Terrain Visibility Zoom Lock must be present in the published UI');
+  assert.equal(firstScreen.panelScrollTop,0,'visibility lock should show without scrolling');
+  assert.equal(firstScreen.label,'Terrain Visibility Zoom Lock');
+  assert.ok(firstScreen.lockTop>=firstScreen.panelTop);
+  assert.ok(firstScreen.lockBottom<firstScreen.panelBottom,
+    'the entire Terrain Visibility Zoom Lock must fit in the initial panel viewport');
+  assert.ok(firstScreen.lockBottom<firstScreen.firstSliderTop,
+    'visibility lock must appear before the long list of terrain sliders');
   await page.fill('#terrainVisibilityZoomNumber','42');
   await page.locator('#terrainVisibilityZoomNumber').dispatchEvent('change');
   const visibility=await page.evaluate(()=>{
