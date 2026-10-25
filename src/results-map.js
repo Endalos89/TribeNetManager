@@ -300,17 +300,14 @@ function setHistoricalEditingState(enabled) {
 let historicalAreaRetryTimer = null;
 let historicalAreaGeneration = 0;
 function historicalAreaBounds() {
-  // Standalone Results tests do not load the interactive mapper module
-  // or its world-size constants; their viewport bounds are sufficient.
-  const visible = visibleBounds();
-  if (typeof activeSubmaps !== 'function') return visible;
-  const submaps = activeSubmaps();
-  return {
-    minCol: Math.max(0, Math.min(visible.minCol, ...submaps.map(s => s.col * HEX_COLS))),
-    maxCol: Math.min(TOTAL_COLS-1, Math.max(visible.maxCol, ...submaps.map(s => (s.col+1)*HEX_COLS-1))),
-    minRow: Math.max(0, Math.min(visible.minRow, ...submaps.map(s => s.row * HEX_ROWS))),
-    maxRow: Math.min(TOTAL_ROWS-1, Math.max(visible.maxRow, ...submaps.map(s => (s.row+1)*HEX_ROWS-1)))
-  };
+  // Historical terrain is static for the selected knowledge turn. The SQLite
+  // query already materialises every known coordinate before filtering the
+  // requested rectangle (results-database.js). Read the whole known world
+  // once when a turn is selected, not 3x3 submap windows while panning.
+  // Standalone Results tests don't initialise renderer world constants.
+  if(typeof TOTAL_COLS==='number' && typeof TOTAL_ROWS==='number')
+    return {minCol:0,maxCol:TOTAL_COLS-1,minRow:0,maxRow:TOTAL_ROWS-1};
+  return visibleBounds();
 }
 function areaContainsArea(outer, inner) {
   return Boolean(outer && inner && outer.minCol<=inner.minCol &&
@@ -338,8 +335,8 @@ requestVisibleData = function requestVisibleDataWithResults() {
     if (generation !== historicalAreaGeneration || turnKey !== resultsTimeline.turn?.turnKey) return;
     if (!Array.isArray(rows)) throw Error('Invalid historical terrain response');
     resultsTimeline.lastTerrainLoad={status:'loaded',count:rows.length,turnKey,knowledgeKey,finishedAt:Date.now()};
-    // Keep previous submap records within this historical turn while panning.
-    // Never erase the entire cache just because the centre moved slightly.
+    // This read is the authoritative terrain snapshot for the selected turn.
+    // Panning and zooming after it settles cannot request or invalidate terrain.
     for (const row of rows) if (row?.coordinate) state.hexCache.set(row.coordinate, row);
     if (window.resultsPlayback?.active && typeof window.resultsPlaybackEnsureBaseline === 'function') {
       await window.resultsPlaybackEnsureBaseline(b);
