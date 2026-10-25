@@ -950,6 +950,6 @@ class GPUMap {
   getStats(){return {...this.stats,...this.diskStats,terrainSubdivisions:FIXED_TERRAIN_STEPS,
     unitModelScale:UNIT_MODEL_SCALE,cachedChunks:this.chunkCache.size,
     residentBytes:this.residency.bytes,limitBytes:this.residency.maxBytes,
-    queuedChunks:this.pendingChunks.length};}
+    knownChunkTargets:this.knownChunkIds.size,queuedChunks:this.pendingChunks.length};}
 }
 window.TribeNetGPU=new GPUMap();
