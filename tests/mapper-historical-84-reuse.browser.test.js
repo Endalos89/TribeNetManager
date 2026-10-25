@@ -19,7 +19,7 @@ const {chromium}=require('playwright');
     for(let c=305;c<319;c++)for(let r=324;r<330;r++){
       const column=String.fromCharCode(65+Math.floor(c/30));
       const row=String.fromCharCode(65+Math.floor(r/21));
-      const coordinate=column+row+String(c%30+1).padStart(2,'0')+
+      const coordinate=row+column+String(c%30+1).padStart(2,'0')+
         String(r%21+1).padStart(2,'0');
       rows.push({coordinate,globalCol:c,globalRow:r,
         terrain:c<307?'O':c<310?'PR':r<327?'CH':'D',notes:''});
