@@ -782,9 +782,21 @@ class GPUMap {
       this.stats.workerBuilds++;
       this.stats.workerTimeMs+=Number(message.elapsed||0);
       this.stats.workerUploadMs+=performance.now()-started;
-      this.evictUnused();this.requestLater();
+      this.evictUnused();
+      this.refreshWorldGeometryComplete();
+      this.requestLater();
     }
     this.scheduleIdleChunk();
+  }
+  refreshWorldGeometryComplete(){
+    const lod=this.lastLod||FIXED_TERRAIN_STEPS;
+    this.worldGeometryComplete=this.pendingChunks.length===0 &&
+      !this.meshWorkerBusy&&!this.diskReadBusy &&
+      [...this.knownChunkIds].every(id=>{
+        const resident=this.chunkCache.get(this.chunkKey(id,lod));
+        return Boolean(resident&&!resident.dirtyShared);
+      });
+    return this.worldGeometryComplete;
   }
   queueBuilds(visible,lod){
     // Never prepare the 169 focus chunks simply because the camera points
@@ -820,12 +832,7 @@ class GPUMap {
       .sort((a,b)=>rank.get(a.id)-rank.get(b.id));
     // All revealed geometry is prepared. From this point camera frames need
     // only projection and visibility; no sort, disk key, query, or job work.
-    this.worldGeometryComplete=this.pendingChunks.length===0 &&
-      !this.meshWorkerBusy&&!this.diskReadBusy&&
-      [...known].every(id=>{
-        const record=this.chunkCache.get(this.chunkKey(id,lod));
-        return Boolean(record&&!record.dirtyShared);
-      });
+    this.refreshWorldGeometryComplete();
     this.scheduleIdleChunk();
   }
   scheduleIdleChunk(){
@@ -898,7 +905,9 @@ class GPUMap {
           this.pendingChunks.unshift(next);
           console.warn('Terrain cache restore failed; rebuilding:',error);
         }).finally(()=>{
-          this.diskReadBusy=false;this.scheduleIdleChunk();
+          this.diskReadBusy=false;
+          this.refreshWorldGeometryComplete();
+          this.scheduleIdleChunk();
         });
         return;
       }
