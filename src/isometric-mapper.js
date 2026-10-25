@@ -6,7 +6,7 @@ const IsoMapper = (() => {
   let preloadJob=0, preloadCount=0;
   const terrainRasterCache=new Map();
   let terrainRasterBytes=0;
-  const detailCache=new Map(), cellCache=new Map(), surfaceCache=new Map(), groundCache=new Map(), coreFaceCache=new Map(), resourceIconCache=new Map();
+  const detailCache=new Map(), cellCache=new Map(), surfaceCache=new Map(), groundCache=new Map(), coreFaceCache=new Map(), resourceIconCache=new Map(), terrainTileCache=new Map();
   let interactive=false, settleTimer=null, hitScale=1, sceneBuilds=0, groundBuilds=0;
   let unitSignature='', decorationSignature='', groundLayer=null, frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
   // Track individual terrain changes rather than hashing every known cell and
@@ -67,6 +67,7 @@ const IsoMapper = (() => {
     terrainSnapshot.clear();notesSnapshot.clear();
     for(const [ref,terrain] of next)terrainSnapshot.set(ref,terrain);
     for(const [ref,notes] of nextNotes)notesSnapshot.set(ref,notes);
+    terrainTileCache.clear(); // terrain and neighbour records only change on knowledge revision
     // Known-world geometry is prepared from stable terrain knowledge. It
     // cannot depend on camera bounds, pan speed or current zoom.
     window.TribeNetGPU?.setWorldKnowledge?.(terrainSnapshot,parseCoordinate);
@@ -158,8 +159,14 @@ const IsoMapper = (() => {
   }
   function adjacent(col,row) {return G.directions.map(d=>{const n=stepHex({globalCol:col,globalRow:row},d);return n?mapData(n.coordinate):null;});}
   function tile(col,row) {
-    const ref=coordinateFor(col,row),data=mapData(ref),c=baseCenter(col,row),n=adjacent(col,row);
-    return {ref,data,c,n,col,row,known:known(data),water:isWater(data?.terrain),p:project(c)};
+    const key=col*TOTAL_ROWS+row;
+    let staticTile=terrainTileCache.get(key);
+    if(!staticTile){
+      const ref=coordinateFor(col,row),data=mapData(ref),c=baseCenter(col,row),n=adjacent(col,row);
+      staticTile={ref,data,c,n,col,row,known:known(data),water:isWater(data?.terrain)};
+      terrainTileCache.set(key,staticTile);
+    }
+    return {...staticTile,p:project(staticTile.c)};
   }
   // Cut mixed faces at the actual shoreline so narrow beaches do not turn
   // an entire coarse mesh triangle into land (or leave water sloping uphill).
@@ -359,7 +366,7 @@ const IsoMapper = (() => {
   }
   function invalidateTerrain(){
     preloadJob++;
-    cellCache.clear();surfaceCache.clear();groundCache.clear();coreFaceCache.clear();
+    cellCache.clear();surfaceCache.clear();groundCache.clear();coreFaceCache.clear();terrainTileCache.clear();
     lastTerrainRevision=-1;lastDecorationRevision=-1;lastPlaybackRevision=-1;
     terrainRasterCache.clear();terrainRasterBytes=0;
     groundLayer=null;landscape=null;
@@ -451,6 +458,13 @@ const IsoMapper = (() => {
     frameRect=rect;renderCtx=ctx;
     const b=bounds(),tiles=[],pad=Math.max(80,state.scale*1.4);
     for(let col=b.minCol;col<=b.maxCol;col++)for(let row=b.minRow;row<=b.maxRow;row++){
+      // Cheap flat-centre culling first. Most zoomed-out candidate cells are
+      // outside the viewport; do not resolve terrain, neighbours and surface
+      // elevation for cells that cannot contribute to this frame.
+      const c=baseCenter(col,row),approx=project(c,0);
+      const reliefPad=state.scale*3;
+      if(approx.x < -pad-reliefPad||approx.x>rect.width+pad+reliefPad||
+         approx.y < -pad-reliefPad||approx.y>rect.height+pad+reliefPad)continue;
       const t=tile(col,row);
       if(t.p.x< -pad||t.p.x>rect.width+pad||t.p.y< -pad||t.p.y>rect.height+pad)continue;
       tiles.push(t);
