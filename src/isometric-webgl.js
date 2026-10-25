@@ -46,7 +46,7 @@ class GPUMap {
     this.renderer=null;this.canvas=null;this.scene=null;this.camera=null;
     this.chunkGroup=null;this.modelGroup=null;this.chunkCache=new Map();
     this.residency=new TerrainResidencyPolicy();this.shownRecords=new Set();
-    this.knownChunkIds=new Set();
+    this.knownChunkIds=new Set();this.worldGeometryComplete=false;
     this.terrainCodeSnapshot=new Map();
     this.snapshotInitialized=false;
     this.meshFingerprints=new Map();
@@ -156,6 +156,7 @@ class GPUMap {
   invalidate(){
     for(const record of this.chunkCache.values())this.disposeChunk(record,'reset');
     this.chunkCache.clear();this.shownRecords.clear();this.lastUnitSignature=null;
+    this.worldGeometryComplete=false;
     this.groundRevision++;this.groundHeightCache.clear();
     this.stats.chunks=0;this.stats.faces=0;this.stats.trees=0;
     this.generation++;this.pendingChunks=[];this.queueSignature=null;
@@ -169,6 +170,7 @@ class GPUMap {
     this.groundHeightCache.clear();
   }
   disposeChunk(record,reason='lru'){
+    this.worldGeometryComplete=false;
     this.shownRecords.delete(record.key);
     this.residency.release(record);
     this.chunkGroup?.remove(record.group);
@@ -609,6 +611,7 @@ class GPUMap {
   }
   invalidateHexes(changedHexes,affectedHexes=changedHexes){
     if(!changedHexes?.length)return;
+    this.worldGeometryComplete=false;
     this.groundRevision++;
     this.groundHeightCache.clear();
     this.lastUnitSignature=null;
@@ -653,6 +656,7 @@ class GPUMap {
     return ids;
   }
   setWorldKnowledge(terrain,parseCoordinate){
+    this.worldGeometryComplete=false;
     this.terrainCodeSnapshot.clear();
     this.meshFingerprints.clear();
     for(const [coordinate,type] of terrain){
@@ -814,6 +818,14 @@ class GPUMap {
       .filter(job=>rank.has(job.id)&&(!this.chunkCache.has(this.chunkKey(job.id,job.lod))||
         this.chunkCache.get(this.chunkKey(job.id,job.lod))?.dirtyShared))
       .sort((a,b)=>rank.get(a.id)-rank.get(b.id));
+    // All revealed geometry is prepared. From this point camera frames need
+    // only projection and visibility; no sort, disk key, query, or job work.
+    this.worldGeometryComplete=this.pendingChunks.length===0 &&
+      !this.meshWorkerBusy&&!this.diskReadBusy&&
+      [...known].every(id=>{
+        const record=this.chunkCache.get(this.chunkKey(id,lod));
+        return Boolean(record&&!record.dirtyShared);
+      });
     this.scheduleIdleChunk();
   }
   scheduleIdleChunk(){
@@ -956,7 +968,9 @@ class GPUMap {
     const focus=this.updateFocusArea();
     const signature=this.focusChunk.cx+':'+this.focusChunk.cy+'|'+lod+'|'+
       (window.TribeNetKnowledge?.complete?.()?'hydrated':'provisional')+'|'+[...visible].sort().join('|');
-    if(interacting){
+    if(this.worldGeometryComplete){
+      // Static world: pan/zoom is exclusively a camera and visibility update.
+    }else if(interacting){
       this.queueSignature=null;
     }else if(signature!==this.queueSignature){
       this.queueSignature=signature;
@@ -1146,6 +1160,7 @@ class GPUMap {
       fullFrameP99:percentile(.99),terrainSubdivisions:FIXED_TERRAIN_STEPS,
     unitModelScale:UNIT_MODEL_SCALE,cachedChunks:this.chunkCache.size,
     residentBytes:this.residency.bytes,limitBytes:this.residency.maxBytes,
-    knownChunkTargets:this.knownChunkIds.size,queuedChunks:this.pendingChunks.length};}
+    knownChunkTargets:this.knownChunkIds.size,worldGeometryComplete:this.worldGeometryComplete,
+    queuedChunks:this.pendingChunks.length};}
 }
 window.TribeNetGPU=new GPUMap();
