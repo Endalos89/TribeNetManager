@@ -137,7 +137,8 @@ const {chromium}=require('playwright');
     'Pan around while zoomed out (90 frames)',
     'Zoom in and out three times (144 frames)',
     'Pan around while zoomed in (90 frames)',
-    'Draw CPU:', 'Frame interval:', 'Counters Δ:', 'Final: generated='
+    'Draw CPU:', 'Frame interval:', 'AFTER PANNING STOPS',
+    'Post-stop samples:', 'Counters Δ:', 'Final: generated='
   ])assert.ok(result.text.includes(snippet),'report missing '+snippet);
   assert.deepEqual(errors,[]);
   console.log('TERRAIN_DEV_RUN_DIAGNOSTIC_BROWSER_PASS',JSON.stringify({
