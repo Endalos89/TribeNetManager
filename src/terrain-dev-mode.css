@@ -24,3 +24,7 @@
   background:#101d24;color:#e6f1ea;font:11px/1.5 Consolas,monospace;
   white-space:pre;tab-size:2;}
 .terrain-dev-report[hidden],.terrain-dev-actions button[hidden]{display:none;}
+
+/* Render-only visibility envelope tuning; independent of terrain generation. */
+.terrain-dev-visibility{margin-top:14px;}
+.terrain-dev-visibility-help{display:block;line-height:1.4;margin:2px 0 11px;color:#a9c6bc;}
