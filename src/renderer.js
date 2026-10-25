@@ -228,6 +228,19 @@ function historicalKnowledgeBounds(){
   const b=state.loadedArea;
   return b&&!window.resultsTimeline.loadingArea ? b : null;
 }
+function historicalKnowledgeComplete(){
+  // The Results loader reads the entire historical world for the selected
+  // knowledge turn. Requiring the current camera's 3x3 LIVE submaps to be
+  // marked loaded incorrectly leaves a complete historical map in provisional
+  // fallback when zooming or crossing a submap boundary.
+  const timeline=window.resultsTimeline;
+  if(!timeline?.turn||timeline.loadingArea)return false;
+  const load=timeline.lastTerrainLoad;
+  if(load?.status!=='loaded'||load.turnKey!==timeline.turn.turnKey)return false;
+  const b=state.loadedArea;
+  return Boolean(b&&b.minCol<=0&&b.minRow<=0&&
+    b.maxCol>=TOTAL_COLS-1&&b.maxRow>=TOTAL_ROWS-1);
+}
 function historicalSubmapLoaded(t,b){
   return Boolean(b && t.col*HEX_COLS>=b.minCol &&
     Math.min(TOTAL_COLS-1,(t.col+1)*HEX_COLS-1)<=b.maxCol &&
@@ -235,13 +248,18 @@ function historicalSubmapLoaded(t,b){
     Math.min(TOTAL_ROWS-1,(t.row+1)*HEX_ROWS-1)<=b.maxRow);
 }
 function pendingTerrainSubmaps(){
-  const historical=Boolean(window.resultsTimeline?.turn),bounds=historicalKnowledgeBounds();
-  return activeSubmaps().filter(t=>historical
-    ? !historicalSubmapLoaded(t,bounds)
-    : !loadedSubmaps.has(t.key));
+  if(window.resultsTimeline?.turn){
+    // A historical turn has one authoritative world-wide query. Before it
+    // settles, report a pending load even if the current nine submaps are
+    // coincidentally covered by stale bounds from another turn.
+    return historicalKnowledgeComplete()?[]:[{key:'historical-world'}];
+  }
+  return activeSubmaps().filter(t=>!loadedSubmaps.has(t.key));
 }
 function isTerrainKnowledgeComplete(){
-  return state.mode==='detail' && pendingTerrainSubmaps().length===0;
+  if(state.mode!=='detail')return false;
+  return window.resultsTimeline?.turn
+    ?historicalKnowledgeComplete():pendingTerrainSubmaps().length===0;
 }
 function isTerrainKnowledgeReady(){
   if(state.mode!=='detail')return false;
