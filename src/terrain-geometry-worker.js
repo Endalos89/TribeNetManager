@@ -6,7 +6,7 @@
 importScripts('./terrain-settings.js','./isometric-core.js');
 const G=self.IsoGeometry;
 const FOG='#253640';
-const SIZE=2;
+const SIZE=4;
 const STEPS=8;
 const water=t=>t==='O'||t==='L';
 const known=data=>Boolean(data?.terrain&&data.terrain!=='UNKNOWN');
