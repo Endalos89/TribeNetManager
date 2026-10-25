@@ -56,6 +56,7 @@ class GPUMap {
     this.focusChunk=null;this.focusChunkIds=new Set();
     this.groundFaces=null;this.sampleTerrain=null;this.tileAt=null;this.lastLod=FIXED_TERRAIN_STEPS;
     this.diskMissKeys=new Set();this.diskReadBusy=false;this.cachedWrites=new Set();
+    this.persistedMeshKeys=new Set();this.hydrationPreviouslyComplete=false;
     this.diskStats={diskHits:0,diskMisses:0,diskWrites:0,diskErrors:0};
     this.groundHeightCache=new Map();this.meshRevision=0;
     this.downRay=new THREE.Raycaster();this.downDirection=new THREE.Vector3(0,-1,0);
@@ -472,15 +473,21 @@ class GPUMap {
     const api=window.tribenet?.saveTerrainMesh;
     if(typeof api!=='function')return;
     const key=this.persistentKey(record.id,record.lod);
-    if(!key||this.cachedWrites.has(key))return;
+    if(!key||this.cachedWrites.has(key)||this.persistedMeshKeys.has(key))return;
     this.cachedWrites.add(key);
     // File compression and writing happen in Electron's main process.
     const job=()=>{
       let payload;
-      try{payload=this.serializeChunk(record);}
+      try{
+        if(!this.chunkCache.has(record.key)||record.dirtyShared||
+           window.TribeNetKnowledge?.complete?.()===false){
+          this.cachedWrites.delete(key);return;
+        }
+        payload=this.serializeChunk(record);
+      }
       catch(error){this.diskStats.diskErrors++;this.cachedWrites.delete(key);return;}
       Promise.resolve().then(()=>api(key,payload)).then(()=>{
-        this.diskStats.diskWrites++;
+        this.diskStats.diskWrites++;this.persistedMeshKeys.add(key);
       }).catch(error=>{
         this.diskStats.diskErrors++;
         console.warn('Terrain cache write unavailable:',error);
@@ -489,6 +496,11 @@ class GPUMap {
     if(typeof requestIdleCallback==='function')
       requestIdleCallback(job,{timeout:500});
     else setTimeout(job,40);
+  }
+  persistHydratedMeshes(){
+    if(window.TribeNetKnowledge?.complete?.()===false)return;
+    for(const record of this.chunkCache.values())
+      if(record.known&&!record.dirtyShared)this.saveToDisk(record);
   }
   terrainChunk(id,lod){
     const [cx,cy]=id.split(':').map(Number),cells=[];
@@ -904,6 +916,10 @@ class GPUMap {
     this.cameraCenterX=state.cameraX;this.cameraCenterY=state.cameraY;
     this.retentionWindow();
     this.groundFaces=groundFaces;this.sampleTerrain=sample;this.tileAt=tileAt;
+    const knowledgeComplete=window.TribeNetKnowledge?.complete?.()!==false;
+    if(knowledgeComplete&&!this.hydrationPreviouslyComplete)
+      this.persistHydratedMeshes();
+    this.hydrationPreviouslyComplete=knowledgeComplete;
     const visible=new Set(tiles.map(chunkId));
     this.visibleChunkIds=visible;
     // During interaction, never create offscreen jobs simply because zoom
