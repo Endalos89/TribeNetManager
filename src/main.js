@@ -518,7 +518,24 @@ ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
     }
     const destination = resolveOrdersExportPath(app, turnKey);
     const data = buildOrdersExportData(turnKey);
-    const exported = await patchOrdersWorkbook({ templatePath, outputPath: destination.outputPath, ...data });
+    let exported;
+    let usedAlternativePath = false;
+    try {
+      exported = await patchOrdersWorkbook({ templatePath, outputPath: destination.outputPath, ...data });
+    } catch (error) {
+      // Excel on Windows may lock a previously exported Orders file. Preserve
+      // it and create a distinct new workbook instead of failing silently.
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(error?.code)) throw error;
+      const extension = path.extname(destination.outputPath);
+      const stem = path.basename(destination.outputPath, extension);
+      for (let index = 2; index <= 20 && !exported; index++) {
+        const alternate = path.join(path.dirname(destination.outputPath), `${stem} (export ${index})${extension}`);
+        if (fs.existsSync(alternate)) continue;
+        exported = await patchOrdersWorkbook({ templatePath, outputPath: alternate, ...data });
+        usedAlternativePath = true;
+      }
+      if (!exported) throw new Error('Completed Orders workbook is locked and no alternative filename was available. Close Excel and try again.');
+    }
     let openError = '';
     try {
       openError = await shell.openPath(exported.outputPath);
@@ -530,7 +547,8 @@ ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
       outputFile: path.basename(exported.outputPath),
       outputPath: exported.outputPath,
       outputFolder: path.dirname(exported.outputPath),
-      updatedExisting: destination.updatedExisting,
+      updatedExisting: destination.updatedExisting && !usedAlternativePath,
+      usedAlternativePath,
       opened: !openError,
       openError: openError || null,
       baselineSource
