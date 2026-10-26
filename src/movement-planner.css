@@ -838,3 +838,38 @@
   }
 
 }
+
+
+/* Non-modal scouting picker lives under document.body so it can float above
+   3D unit labels while keeping the map interactive. */
+#scoutRoutesDialog[open] {
+  position: fixed;
+  z-index: 1200;
+  margin: 0;
+  inset: auto;
+  pointer-events: auto;
+}
+#scoutOverviewDialog[open],
+#unitCreationOverviewDialog[open] {
+  position: fixed;
+  margin: 0;
+}
+#scoutOverviewDialog [data-drag-handle="scout-overview"],
+#unitCreationOverviewDialog [data-drag-handle="unit-creation-overview"],
+#scoutRoutesDialog [data-drag-handle="scout-routes"] {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.scout-overview-row-actions {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #14251a;
+  white-space: nowrap;
+}
+.scout-overview-row-actions .button {
+  min-width: 25px;
+  min-height: 25px;
+  margin-right: 4px;
+}
