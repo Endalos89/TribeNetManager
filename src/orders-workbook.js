@@ -477,7 +477,7 @@ function validatePatchedWorkbook(sourceXml, outputPath, expected) {
     if (String(actual.TRIBE) !== row.unit || String(actual.ACTIVITY) !== row.activity || Number(actual.PEOPLE) !== row.people)
       throw new Error('Workbook validation failed: Activity row ' + (index + 1) + ' differs from the planned allocation.');
   }
-  if (expected.comments.length) {
+  if (expected.comments.length && commentsSheetInfo(output)) {
     const info = commentsSheetInfo(output, true);
     const headers = sheetHeaders(output, info.name);
     const unitHeader = headers[info.columns.unit - 1];
@@ -513,7 +513,6 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
     .map(row => ({ unitCode: String(row.unitCode).trim(), unitName: String(row.unitName || '').trim() }))
     .filter((row, index, rows) => rows.findIndex(item => item.unitCode.toLowerCase() === row.unitCode.toLowerCase()) === index);
   const normalizedActions = (gmActions || []).filter(action => action?.text).map(action => ({ unit: String(action.unit || '').trim(), text: String(action.text).trim() }));
-  if (normalizedActions.length > template.gmRows) throw new Error(`The blank workbook has room for ${template.gmRows} GM Action rows, but ${normalizedActions.length} are planned.`);
   const normalizedSkillAttempts = normalizeSkillAttemptRows(skillAttempts, template.skillAttemptRows);
   const normalizedActivities = normalizeActivityRows(activities, template.activityRows);
   const activityMap = activityColumns(template.workbook);
@@ -521,7 +520,18 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
     throw new Error('Tribes_Activities has no usable Unit, Activity or People columns.');
   const normalizedComments = (comments || []).filter(row => row?.unit && row?.text)
     .map(row => ({ unit:String(row.unit).trim(), text:String(row.text).trim() }));
-  const commentSheet = commentsSheetInfo(template.workbook, Boolean(normalizedComments.length));
+  // TribeNet's canonical Orders workbook has a "GM Actions" sheet but may
+  // have no dedicated Comments sheet. The Mandate permits notes for the GM
+  // there. Preserve the template: do not require or create an extra worksheet.
+  const commentSheet = commentsSheetInfo(template.workbook);
+  if (!commentSheet) {
+    normalizedActions.push(...normalizedComments.map(row => ({
+      unit: row.unit,
+      text: row.text
+    })));
+  }
+  if (normalizedActions.length > template.gmRows)
+    throw new Error(`The blank Orders workbook has ${template.gmRows} GM Actions rows, but ${normalizedActions.length} are needed, including scouting Comments.`);
   if (commentSheet && normalizedComments.length > commentSheet.capacity)
     throw new Error('Too many scouting Comments for the blank workbook (' + commentSheet.capacity + ' rows).');
   const transferSheetExists = Boolean(template.workbook.Sheets.Transfers);
