@@ -229,10 +229,42 @@ function turnActionsOpenScoutOverview() {
       <td>${turnActionsEscape(route.unitCode)}</td><td>S${turnActionsEscape(route.scoutNumber || '?')}</td>
       <td>${Number(route.noOfScouts || 0)}</td><td>${Number(route.noOfHorses || 0)}</td><td>${turnActionsEscape(route.mission || 'PATROL')}</td>
       ${Array.from({length:9}, (_, index) => `<td>${turnActionsEscape(movementCell(moves[index]))}</td>`).join('')}
+      <td class="scout-overview-row-actions">${route.source === 'planned'
+        ? `<button type="button" class="button square" data-scout-overview-edit="${turnActionsEscape(key)}" aria-label="Edit scout S${turnActionsEscape(route.scoutNumber)}" title="Edit this scouting route">${TURN_ACTION_ICONS.edit}</button><button type="button" class="button square danger" data-scout-overview-cancel="${turnActionsEscape(key)}" aria-label="Cancel scout S${turnActionsEscape(route.scoutNumber)}" title="Cancel this scouting route">${TURN_ACTION_ICONS.remove}</button>`
+        : '<span title="Imported workbook record; editing is available for planned routes">Imported</span>'}</td>
     </tr>`;
-  }).join('') : '<tr><td class="transfer-overview-empty" colspan="14">No scouting orders planned for this turn.</td></tr>';
-  host.querySelectorAll('[data-scout-overview-route]').forEach(row => row.addEventListener('click', () => {
-    if (row.dataset.scoutOverviewSource === 'planned') savedMovementSelectSavedRoute(row.dataset.scoutOverviewRoute);
+  }).join('') : '<tr><td class="transfer-overview-empty" colspan="15">No scouting orders planned for this turn.</td></tr>';
+  host.querySelectorAll('[data-scout-overview-route]').forEach(row => row.addEventListener('click', async event => {
+    const key = row.dataset.scoutOverviewRoute;
+    const route = savedMovementPlansState.routes.find(item => item.routeType === 'scout' && savedMovementRouteKey(item) === key);
+    const edit = event.target.closest('[data-scout-overview-edit]');
+    const cancel = event.target.closest('[data-scout-overview-cancel]');
+    if (edit || cancel) {
+      event.stopPropagation();
+      if (!route) return;
+      state.selectedUnit = route.unitCode;
+      savedMovementPlansState.selectedUnitCode = route.unitCode;
+      state.selectedRouteId = savedMovementRouteKey(route);
+      if (edit) {
+        dialog.close();
+        await turnActionsStart('scout', { route });
+      } else {
+        if (!window.confirm(`Cancel scout S${route.scoutNumber} for ${route.unitCode}?`)) return;
+        try {
+          await window.tribenet.removePlannedRoute(route.id);
+          await savedMovementRefresh();
+          state.selectedRouteId = null;
+          turnActionsOpenScoutOverview();
+          turnActionsRender();
+          draw();
+        } catch (error) {
+          const status = document.getElementById('scoutOverviewTurn');
+          if (status) status.textContent = `Could not cancel S${route.scoutNumber}: ${error.message || String(error)}`;
+        }
+      }
+      return;
+    }
+    if (row.dataset.scoutOverviewSource === 'planned') savedMovementSelectSavedRoute(key);
     else {
       state.selectedUnit = row.dataset.scoutOverviewUnit;
       state.selectedRouteId = null;
