@@ -25,7 +25,7 @@ function sample(x,y){
   const key=x+':'+y;
   if(!surfaces.has(key)){
     if(surfaces.size>120000)surfaces.clear();
-    surfaces.set(key,G.surface(x,y,cell,colour));
+    surfaces.set(key,G.conformMeshBoundary(x,y,(a,b)=>G.surface(a,b,cell,colour)));
   }
   return surfaces.get(key);
 }
@@ -83,13 +83,13 @@ function groundFaces(t,sharedOnly=false){
     return faces;
   }
   let region='shared';
-  const emit=part=>{
+  const emitTriangle=part=>{
     const [a,b,c]=part,ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z,
       vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
     // Clipping a subdivided triangle to the shared square/corner can leave
     // float32-sized slivers. Their unstable face normals produce dark needle
     // lines; the triangles cover no meaningful screen area at any zoom.
-    if(Math.abs(ux*vy-uy*vx)<1e-8)return;
+    if(Math.abs(ux*vy-uy*vx)<1e-14)return;
     const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
     const len=Math.hypot(nx,ny,nz)||1;
     const light=clamp(.94+(-nx*.35-ny*.28)/len,.78,1.13);
@@ -97,7 +97,8 @@ function groundFaces(t,sharedOnly=false){
     const steepness=Math.hypot(nx,ny)/(Math.abs(nz)+1e-8);
     const cliff=wet?0:clamp((steepness-.48)/.68,0,1);
     const rockWeight=wet?0:part.reduce((n,p)=>n+(p.rock||0),0)/part.length;
-    const exposure=self.TerrainSettings.value('cliffExposure')??.85;
+    const landing=part.reduce((sum,p)=>sum+(p.landing||0),0)/part.length;
+    const exposure=(self.TerrainSettings.value('cliffExposure')??.85)*(1-landing);
     const stone=[120,120,108];
     const shade=wet?mixed:'#'+[1,3,5].map((i,k)=>{
       const base=parseInt(mixed.slice(i,i+2),16)*light;
@@ -105,6 +106,9 @@ function groundFaces(t,sharedOnly=false){
       return clamp(Math.round(base*(1-amount)+stone[k]*amount),0,255).toString(16).padStart(2,'0');
     }).join('');
     faces.push({points:part,color:shade,region});
+  };
+  const emit=part=>{
+    for(let k=1;k<part.length-1;k++)emitTriangle([part[0],part[k],part[k+1]]);
   };
   const coreKey=t.ref+':'+String(t.data?.terrain||'?');
   const savedCore=coreCache.get(coreKey);
@@ -190,7 +194,7 @@ function build(id,sharedOnly=false){
         const ax=Math.fround(a.x*1.5),ay=Math.fround(a.y*1.5);
         const bx=Math.fround(b.x*1.5),by=Math.fround(b.y*1.5);
         const cx=Math.fround(c.x*1.5),cy=Math.fround(c.y*1.5);
-        if(Math.abs((bx-ax)*(cy-ay)-(by-ay)*(cx-ax))<1e-8)
+        if((bx-ax)*(cy-ay)-(by-ay)*(cx-ax)===0)
           continue;
         vert(a);vert(b);vert(c);
         if(immutable)coreFaces++;else sharedFaces++;

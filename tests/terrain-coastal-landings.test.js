@@ -50,6 +50,28 @@ try{
     landings+=matched;paths+=trackMatched;
   }
   assert.ok(covesWithSand>0,'sandy coves should occur alongside rocky coves');
+  // Measure the actual landing shelf, not merely the random feature flag.
+  // Disable shoreline noise to compare the same inland coordinate across
+  // the lane and its unmodified rugged flank.
+  T.set({coastRoughness:0});
+  let shelves=0;const seaLevel=T.value('waterHeight');
+  for(let c=10;c<100;c++){
+    const r=100,n=G.regionOwners(c,r,'edge',0)[1];
+    const square=G.sharedSquare({col:c,row:r},n);
+    const lookup=(col,row)=>({terrain:col===c&&row===r?'O':'LAM'});
+    const normal=square.normal,tangent=square.tangent;
+    for(let k=1;k<160;k++){
+      const along=square.halfSize*k/160;
+      const x=square.center.x+normal.x*along,y=square.center.y+normal.y*along;
+      const region=G.regionAt(x,y),owners=region.owners.map(o=>({...o,data:lookup(o.col,o.row)}));
+      const feature=G.coastalLanding(region,owners,x,y);
+      if(!feature||feature.beach<.99||feature.path>.01)continue;
+      const p=G.surface(x,y,lookup,colour);
+      const flank=G.surface(x+tangent.x*.28,y+tangent.y*.28,lookup,colour);
+      if(!p.water&&!flank.water&&p.z>seaLevel+.00001&&p.z<seaLevel+.03&&flank.z>seaLevel+.10){shelves++;break;}
+    }
+  }
+  assert.ok(shelves>=3,'selected coves must have an above-water low shelf beside rugged slopes: '+shelves);
   console.log('SEEDED_HILL_MOUNTAIN_COASTAL_LANDINGS_PASS',
     JSON.stringify({landings,paths,sandy:covesWithSand}));
 }finally{T.set(base);}

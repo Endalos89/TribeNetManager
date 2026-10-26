@@ -53,14 +53,10 @@ try{
       const middle=at(midpoint);
       assert.ok(!middle.fog&&!middle.water);
       const corePlain=at(source),coreHill=at(dest);
-      // The transition must interpolate pure PR/GH elevations without a
-      // step or overshoot from changing strata layer thickness.
-      const smooth=n=>{n=Math.max(0,Math.min(1,n));return n*n*(3-2*n);};
-      const foothillFlatness=settings.value('foothillFlatness');
-      const mixture=smooth((weight-foothillFlatness*.35)/(1-foothillFlatness*.35));
-      const expected=corePlain.z*(1-mixture)+coreHill.z*mixture;
-      assert.ok(Math.abs(middle.z-expected)<1e-6,
-        `foothill centre must blend resolved elevations, direction ${dir}, actual ${middle.z} expected ${expected}`);
+      // With all sculpted relief disabled the shared interior must approach
+      // the unquantised flat base, rather than importing either core's strata.
+      assert.ok(Math.abs(middle.z-base)<.002,
+        `flat connector acquired a terrace in direction ${dir}: ${middle.z}`);
       assert.ok(Math.abs(corePlain.z-steppedHeight(base,.10/3))<1e-6,
         'original PR inner core elevation must not change');
       assert.ok(Math.abs(coreHill.z-steppedHeight(base,(.10+.025)/3))<1e-6,

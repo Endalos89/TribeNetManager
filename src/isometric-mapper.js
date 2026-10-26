@@ -29,7 +29,7 @@ const IsoMapper = (() => {
     const key=`${x}:${y}`;
     if(!surfaceCache.has(key)){
       if(surfaceCache.size>140000)surfaceCache.clear();
-      surfaceCache.set(key,G.surface(x,y,surfaceData,color));
+      surfaceCache.set(key,G.conformMeshBoundary(x,y,(a,b)=>G.surface(a,b,surfaceData,color)));
     }
     return surfaceCache.get(key);
   }
@@ -231,16 +231,17 @@ const IsoMapper = (() => {
       groundCache.set(key,faces);return faces;
     }
     let activeRegion='shared';
-    const emitPart=part=>{
+    const emitTriangle=part=>{
       const [a,b,c]=part,ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z,vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
-      if(Math.abs(ux*vy-uy*vx)<1e-8)return;
+      if(Math.abs(ux*vy-uy*vx)<1e-14)return;
       const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,len=Math.hypot(nx,ny,nz)||1;
       const light=Math.max(.78,Math.min(1.13,.94+(-nx*.35-ny*.28)/len));
       const mixed=G.mix(part.map(p=>p.color)),wet=part.every(p=>p.water);
       const steepness=Math.hypot(nx,ny)/(Math.abs(nz)+1e-8);
       const cliff=wet?0:Math.max(0,Math.min(1,(steepness-.48)/.68));
       const rockWeight=wet?0:part.reduce((n,p)=>n+(p.rock||0),0)/part.length;
-      const exposure=window.TerrainSettings?.value('cliffExposure')??.85,stone=[120,120,108];
+      const landing=part.reduce((sum,p)=>sum+(p.landing||0),0)/part.length;
+      const exposure=(window.TerrainSettings?.value('cliffExposure')??.85)*(1-landing),stone=[120,120,108];
       const shade=wet?mixed:'#'+[1,3,5].map((i,k)=>{
         const base=parseInt(mixed.slice(i,i+2),16)*light;
         const amount=Math.min(.96,cliff*exposure*(.72+.28*rockWeight));
@@ -248,6 +249,7 @@ const IsoMapper = (() => {
       }).join('');
       faces.push({points:part,color:shade,region:activeRegion});
     };
+    const emitPart=part=>{for(let k=1;k<part.length-1;k++)emitTriangle([part[0],part[k],part[k+1]]);};
     const coreKey=t.ref+':'+String(t.data?.terrain||'?');
     const savedCore=coreFaceCache.get(coreKey);
     const stableCore=[];

@@ -25,7 +25,7 @@ const FIXED_TERRAIN_STEPS=8;
 const UNIT_MODEL_SCALE=.5;
 // Only change this identifier when geometry generation rules change, not
 // when the app release number increments. Known terrain/settings have separate keys.
-const MESH_GENERATOR_REVISION='terrain-fixed8-seam-coves-hermite-20261025-r6';
+const MESH_GENERATOR_REVISION='terrain-fixed8-continuous-connectors-20261025-r7';
 const baseTreeTrunk=new THREE.CylinderGeometry(.012,.017,.20,5);
 const baseTreeCrown=new THREE.ConeGeometry(.095,.24,6);
 const unitBox=new THREE.BoxGeometry(.12,.12,.085);
@@ -334,7 +334,7 @@ class GPUMap {
           const ax=Math.fround(a.x*1.5),ay=Math.fround(a.y*1.5);
           const bx=Math.fround(b.x*1.5),by=Math.fround(b.y*1.5);
           const dx=Math.fround(d.x*1.5),dy=Math.fround(d.y*1.5);
-          if(Math.abs((bx-ax)*(dy-ay)-(by-ay)*(dx-ax))<1e-8)continue;
+          if((bx-ax)*(dy-ay)-(by-ay)*(dx-ax)===0)continue;
           vertex(a);vertex(b);vertex(d);
           facesCount++;
           if(immutable)coreFaces++;else sharedFaces++;
