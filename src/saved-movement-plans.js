@@ -231,10 +231,18 @@ async function savedMovementCheckScoutWorkers(unit, people, horses, editingId = 
   if (warriors != null && Number.isFinite(Number(warriors)) && scoutPeople > Number(warriors)) {
     throw new Error(sourceCode + ' only has ' + warriors + ' warriors; ' + scoutPeople + ' would be scouting.');
   }
-  const profile = source && MovementPlannerCore.unitMovementProfile(source);
-  const sourceHorses = source?.horseCount ?? source?.horses ?? profile?.horses;
-  if (sourceHorses != null && Number.isFinite(Number(sourceHorses)) && scoutHorses > Number(sourceHorses)) {
-    throw new Error(sourceCode + ' only has ' + sourceHorses + ' horses; ' + scoutHorses + ' would be scouting.');
+  // An inferred movement profile returns 0 horses when an imported unit has
+  // no inventory fields. That means "unknown", not a confirmed shortage.
+  // Use only explicit counts for blocking validation; prefer the highest
+  // explicitly reported source when the plan and results differ.
+  const horseEvidence = [
+    source?.horseCount, source?.horses,
+    source?.resources?.Animals?.Horse, source?.resources?.Animals?.Horses,
+    source?.inventory?.find?.(row => /^HORSES?$/i.test(String(row.item || '')))?.quantity
+  ].filter(value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)));
+  const sourceHorses = horseEvidence.length ? Math.max(...horseEvidence.map(Number)) : null;
+  if (sourceHorses != null && scoutHorses > sourceHorses) {
+    throw new Error(sourceCode + ' only has ' + sourceHorses + ' recorded horses; ' + scoutHorses + ' would be scouting. Reduce the horses field or update the unit inventory.');
   }
   const turnKey = savedMovementCurrentTurnKey();
   const managed = turnKey && await window.tribenet.getManagedTurn(turnKey);

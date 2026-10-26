@@ -325,6 +325,13 @@
     return {signature,index,code:codes[index]??null};
   }
   function clickHex(point) {
+    // During movement/scouting, even an occupied hex is a route destination.
+    // Do not cycle unit selection or clear the source unit on a Shift-click.
+    if(typeof movementPlannerState!=='undefined' && movementPlannerState.active){
+      cycle=null;
+      selectHex(point.globalCol,point.globalRow);
+      return true;
+    }
     const ref=coordinateFor(point.globalCol,point.globalRow),units=unitsAt(ref);
     const key=JSON.stringify([resultsTimeline.turn?.turnKey,state.planImport?.id,state.planImport?.turnKey,ref]);
     cycle=nextSelection(cycle,key,units.map(u=>u.code));

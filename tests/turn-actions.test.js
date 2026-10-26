@@ -85,7 +85,9 @@ assert.match(actions, /function turnActionsScoutOverviewRoutes\(\)[\s\S]*state\.
 assert.match(actions, /source: 'workbook'/, 'Workbook scout rows must remain distinguishable from saved scout drafts.');
 assert.match(renderer, /turnActionsRenderScoutOverviewButton\(\)/, 'The Scout count must refresh when an orders workbook is imported.');
 assert.match(actions, /Movement1|length:9/, 'The scout overview must expose the workbook scouting command columns.');
-assert.match(actions, /if \(turnActionState\.active && !event\?\.detail\?\.unitCode\)/, 'Clicking an empty destination hex must not cancel the active route overlay.');
+assert.ok(actions.includes("if (turnActionState.active && turnActionState.unitCode)"), 'Any destination selection while planning must retain the initiating unit.');
+assert.ok(actions.includes('Save Scout</button>'), 'Save Scout must remain in the main action bar as well as the floating tools.');
+assert.ok(actions.includes("turnActionState.active === 'scout' ? turnActionsScoutAllowance()"), 'Scout route summaries must use the scouting MP allowance.');
 assert.match(actions, /function turnActionsOpenUnitCreationOverview\(\)/, 'The map overview must list units created during the current turn.');
 assert.match(actions, /data-created-unit-location/, 'Created-unit overview rows must expose the current phase-specific map location.');
 assert.match(fs.readFileSync('src/planned-unit-splits-map.js', 'utf8'), /turnActionsRenderUnitCreationOverviewButton/, 'The created-unit count must refresh when planned creations load.');

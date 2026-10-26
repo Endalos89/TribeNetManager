@@ -1,6 +1,8 @@
 /* Selected-unit turn actions. Each action owns its setup, route and commit. */
 const turnActionState = {
   active: null,
+  // A map destination click must not change the unit that owns the draft.
+  unitCode: null,
   shiftChainStarted: false,
   pendingOcean: null,
   tracePoint: null,
@@ -34,7 +36,13 @@ function turnActionsEscape(value) {
 }
 
 function turnActionsUnit() {
-  if (state.selectedUnit && String(savedMovementPlansState.selectedUnitCode) !== String(state.selectedUnit)) {
+  // Route tracing also passes through the map's hex/unit selection handlers.
+  // Preserve the initiating unit while an action is being drawn; otherwise
+  // selectedUnit can briefly become null and the entire action bar disappears.
+  if (turnActionState.active && turnActionState.unitCode) {
+    state.selectedUnit = turnActionState.unitCode;
+    savedMovementPlansState.selectedUnitCode = turnActionState.unitCode;
+  } else if (state.selectedUnit && String(savedMovementPlansState.selectedUnitCode) !== String(state.selectedUnit)) {
     savedMovementPlansState.selectedUnitCode = String(state.selectedUnit);
   }
   return savedMovementSelectedUnit();
@@ -42,7 +50,7 @@ function turnActionsUnit() {
 
 function turnActionsPlanningAvailable() {
   return state.mode === 'detail'
-    && Boolean(state.selectedUnit)
+    && Boolean(turnActionState.active ? turnActionState.unitCode : state.selectedUnit)
     && Boolean(savedMovementCurrentTurnKey())
     && resultsTimeline?.turn?.isPlanningTurn !== false;
 }
@@ -57,7 +65,7 @@ function turnActionsRouteSummary() {
   const known = Number(route.knownMp ?? route.totalMp ?? 0);
   const weather = Number(route.badWeatherMp ?? known);
   const unknown = Number(route.unknownEntryCount || 0);
-  const allowance = turnActionsUnitMovement(turnActionsUnit()).allowance;
+  const allowance = turnActionState.active === 'scout' ? turnActionsScoutAllowance() : turnActionsUnitMovement(turnActionsUnit()).allowance;
   const commands = (route.directions || []).join(' → ');
   const cost = unknown ? `${known} + ?×${unknown}/${allowance} MP · bad weather ${weather}+?` : `${known}/${allowance} MP · bad weather ${weather} MP`;
   return `${cost}${commands ? ` · ${commands}` : ''}`;
@@ -121,6 +129,7 @@ function turnActionsRender() {
       <button class="turn-action-button${turnActionState.active === 'split' ? ' active' : ''}" data-turn-action="split"${active ? ' disabled' : ''} aria-label="Split Off Unit" title="Split Off Unit · X">${TURN_ACTION_ICONS.split}</button>
       <button class="turn-action-button" data-turn-action="transfer"${active ? ' disabled' : ''} aria-label="Transfer" title="Transfer goods or people">⇄</button>
       <button class="turn-action-button${turnActionState.active === 'scout' ? ' active' : ''}" data-turn-action="scout"${active || !savedMovementCanScoutUnit(unit) ? ' disabled' : ''} aria-label="Send Out Scout" title="Send Out Scout · C">${TURN_ACTION_ICONS.scout}</button>
+      ${turnActionState.active === 'scout' ? `<button class="turn-action-utility" data-turn-action="scout-confirm" aria-label="Confirm scouting route" title="Save this scouting route"${movementPlannerState.route?.status === 'ok' && movementPlannerState.route?.directions?.length ? '' : ' disabled'}>Save Scout</button><button class="turn-action-utility danger" data-turn-action="scout-cancel" aria-label="Cancel scouting route" title="Discard this scouting route">Cancel</button>` : ''}
       ${turnActionState.active === 'scout' ? `<button class="turn-action-button route-action${turnActionState.followOceanMode ? ' active' : ''}" data-turn-action="follow-ocean" aria-label="Follow Ocean" title="Follow Ocean · F">${TURN_ACTION_ICONS.followOcean}</button>` : ''}
       ${unitScoutRoutes.length ? `<button class="turn-action-button route-action" data-turn-action="open-scouts" aria-label="View scouting routes" title="View scouting routes · V">${TURN_ACTION_ICONS.routes}</button>` : ''}
       ${unit.plannedSplit ? `<button class="turn-action-utility danger" data-turn-action="cancel-unit-creation" aria-label="Cancel unit creation" title="Cancel creation of ${turnActionsEscape(unit.unitCode)} and remove its linked transfers">Cancel unit creation</button>` : ''}
@@ -424,10 +433,13 @@ function turnActionsRenderHover(route, target, clientX, clientY) {
   const commands = (route.directions || []).join(' → ') || 'No movement';
   const normal = unknown ? `${knownMp} known + ?×${unknown}` : `${knownMp} MP`;
   const weather = unknown ? `${weatherMp} known + ?×${unknown}` : `${weatherMp} MP`;
+  const scout = turnActionState.active === 'scout';
   const profile = turnActionsUnitMovement(turnActionsUnit());
-  const risk = turnActionsMovementRisk(route, profile.allowance);
-  const unitMovement = `${profile.allowance} MP · ${profile.mounted ? 'Mounted' : 'Foot'}`;
-  const composition = profile.people > 0 ? ` · ${profile.horses}/${profile.people} horses` : '';
+  const allowance = scout ? turnActionsScoutAllowance() : profile.allowance;
+  const risk = turnActionsMovementRisk(route, allowance);
+  const unitMovement = `${allowance} MP · ${scout ? (savedMovementPlansState.scoutHorses >= savedMovementPlansState.scoutCount ? 'Mounted scouts' : 'Foot scouts') : (profile.mounted ? 'Mounted' : 'Foot')}`;
+  const composition = scout ? ` · ${savedMovementPlansState.scoutHorses}/${savedMovementPlansState.scoutCount} horses`
+    : profile.people > 0 ? ` · ${profile.horses}/${profile.people} horses` : '';
   card.classList.add(risk);
   card.innerHTML = `<strong>${coordinate}</strong><span>Unit total: ${unitMovement}${composition}</span><span>Normal: ${normal} · Bad weather: ${weather}</span><span>${turnActionsEscape(commands)}</span><small>${risk === 'safe' ? 'Good in bad weather' : risk === 'warn' ? 'Normal route fits; bad weather or fog is a risk' : 'Too far for this unit'}${unknown ? ' · fog cost unresolved' : ''}</small>`;
   card.classList.remove('hidden');
@@ -528,6 +540,7 @@ async function turnActionsStart(type, options = {}) {
     }
   }
   savedMovementPlansState.selectedUnitCode = unit.unitCode;
+  turnActionState.unitCode = unit.unitCode;
   savedMovementPlansState.routeType = type;
   state.selectedRouteId = null;
   turnActionState.active = type;
@@ -568,6 +581,7 @@ async function turnActionsStart(type, options = {}) {
 function turnActionsCancel() {
   turnActionsHideHover();
   turnActionState.active = null;
+  turnActionState.unitCode = null;
   turnActionState.shiftChainStarted = false;
   turnActionState.pendingOcean = null;
   turnActionState.tracePoint = null;
@@ -1078,16 +1092,16 @@ async function turnActionsCancelUnitCreation() {
 }
 
 function turnActionsSyncSelection(event) {
-  if (turnActionState.active && !event?.detail?.unitCode) {
-    // Empty-hex clicks dispatch a null unit selection before they are handed
-    // to the route planner. Keep the initiating unit selected so the action
-    // bar and floating scout controls survive destination clicks.
-    state.selectedUnit = savedMovementPlansState.selectedUnitCode || state.selectedUnit;
+  if (turnActionState.active && turnActionState.unitCode) {
+    // Both empty-hex clicks and occupied destination hexes can emit a unit
+    // selection event during Shift-chaining. Neither may cancel the draft.
+    // Esc or the explicit Cancel control is used to switch units mid-route.
+    state.selectedUnit = turnActionState.unitCode;
+    savedMovementPlansState.selectedUnitCode = turnActionState.unitCode;
     state.selectedUnitHex = movementPlannerState.origin?.coordinate || state.selectedUnitHex;
     turnActionsRender();
     return;
   }
-  if (turnActionState.active) turnActionsCancel();
   if (state.selectedUnit) savedMovementPlansState.selectedUnitCode = String(state.selectedUnit);
   else savedMovementPlansState.selectedUnitCode = '';
   turnActionsRender();
