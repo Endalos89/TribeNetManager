@@ -412,8 +412,11 @@ function commentsSheetInfo(workbook, required = false) {
     const index = headers.findIndex(value => /COMMENT/i.test(String(value || '')));
     if (index >= 0) columns.text = index + 1;
   }
-  if (required && (!columns.unit || !columns.text))
-    throw new Error('Comments worksheet headings do not identify unit and comment columns; inspect the Orders template.');
+  if (required && (!columns.unit || !columns.text)) {
+    const visible = headers.map((value, index) => value == null ? '' : `${columnName(index + 1)}="${String(value).slice(0, 45)}"`)
+      .filter(Boolean).slice(0, 20).join(', ') || '(no headings in first row)';
+    throw new Error(`Comments worksheet has no recognised Unit and Comment columns. Row 1 contains: ${visible}. The workbook was not modified.`);
+  }
   return { name, columns, capacity: rowCapacity(workbook.Sheets[name]) - 1 };
 }
 
