@@ -72,6 +72,32 @@ try{
     }
   }
   assert.ok(shelves>=3,'selected coves must have an above-water low shelf beside rugged slopes: '+shelves);
+  let minimumShelf=Infinity;
+  for(const share of [.35,.7,.8])for(const terrain of ['GH','CH','LAM','HSM'])for(const water of ['O','L']){
+    T.set({coastWaterShare:share,coastRoughness:0});
+    for(const col of [28,18]){ // seeded sandy shelf and rocky ascent
+      const row=100,n=G.regionOwners(col,row,'edge',4)[1];
+      const square=G.sharedSquare({col,row},n);
+      const lookup=(c,r)=>({terrain:c===col&&r===row?water:terrain});
+      const point=(u,lateral=0)=>({
+        x:square.center.x+square.normal.x*(u-.5)*G.coreRadius+square.tangent.x*lateral,
+        y:square.center.y+square.normal.y*(u-.5)*G.coreRadius+square.tangent.y*lateral
+      });
+      const at=u=>{const p=point(u);return G.surface(p.x,p.y,lookup,colour);};
+      const height=at(1).z-seaLevel,step=G.coreRadius/1000;
+      let width=0;
+      for(let k=500;k<1000;k++){
+        const p=at(k/1000);
+        if(!p.water&&p.z>seaLevel+.000001&&p.z<seaLevel+height*.08&&p.landing>.95)width+=step;
+      }
+      minimumShelf=Math.min(minimumShelf,width);
+      assert.ok(width>.05,`${terrain}/${water} share=${share} col=${col}: beach too narrow (${width})`);
+      const flank=point(.5+.5*share-.01,.28);
+      assert.ok(G.surface(flank.x,flank.y,lookup,colour).water,'ordinary shoreline must retain configured water share');
+      if(share>=.7)assert.ok(!at(.5+.5*share-.03).water,'rare beach must extend locally into water');
+    }
+  }
+  console.log('PHYSICAL_BEACH_WIDTH_PASS',JSON.stringify({minimumShelf}));
   console.log('SEEDED_HILL_MOUNTAIN_COASTAL_LANDINGS_PASS',
     JSON.stringify({landings,paths,sandy:covesWithSand}));
 }finally{T.set(base);}
