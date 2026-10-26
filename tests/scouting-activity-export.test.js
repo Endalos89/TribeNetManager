@@ -1,0 +1,94 @@
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const XLSX = require('xlsx');
+const { assembleActivityAssignments } = require('../src/activity-assignments');
+const { patchOrdersWorkbook, normalizeActivityRows } = require('../src/orders-workbook');
+const { parseOrdersWorkbook } = require('../src/planner');
+
+const baseline = [
+  { unit:'0485', type:'Tribe', warrior:20, workers:30 },
+  { unit:'0485g1', type:'Garrison', warrior:8, workers:8 }
+];
+const splits = [{ unitCode:'0485e1', parentUnit:'0485', unitType:'Element', creationPhase:'after' }];
+const routes = [
+  { id:1, routeType:'scout', unitCode:'0485', scoutNumber:1, mission:'PATROL', noOfScouts:2, noOfHorses:2, equipment:'Spears' },
+  { id:2, routeType:'scout', unitCode:'0485e1', scoutNumber:2, mission:'PATROL', noOfScouts:3, noOfHorses:1, equipment:'Bows' },
+  { id:3, routeType:'scout', unitCode:'0485g1', scoutNumber:3, mission:'PATROL', noOfScouts:1, noOfHorses:0 }
+];
+const regular = [
+  { unit:'0485', activityCode:'HUNTING', people:4, target:'DEER' },
+  { unit:'0485g1', activityCode:'FORESTRY', people:2 },
+  { unit:'0485', activityCode:'FORAGING', people:3 }
+];
+const assigned = assembleActivityAssignments({ routes, unitSplits:splits, baselineUnits:baseline, activities:regular });
+assert.deepEqual(assigned.activities.map(row => [row.unit,row.activity,row.people]), [
+  ['0485','HUNTING',4],['0485','FORAGING',3],['0485','SCOUTING',5],
+  ['0485g1','FORESTRY',2],['0485g1','SCOUTING',1]
+]);
+assert.equal(assigned.comments.length,2);
+assert.match(assigned.comments[0].text,/0485e1 S2: 3 Warriors, 1 Horses/);
+assert.match(assigned.comments[0].text,/created AM from 0485/);
+assert.equal(assembleActivityAssignments({ routes:[{...routes[0],noOfScouts:6}],baselineUnits:baseline }).derived[0].people,6);
+assert.equal(assembleActivityAssignments({ routes:[],baselineUnits:baseline }).derived.length,0);
+assert.throws(() => assembleActivityAssignments({routes:[{...routes[0], unitCode:'0485c1'}]}),/Courier/);
+assert.throws(() => assembleActivityAssignments({routes:[{...routes[0], mission:'RAID'}]}),/PATROL/);
+assert.throws(() => assembleActivityAssignments({routes:Array.from({length:9},(_,i)=>({...routes[0],scoutNumber:i+1}))}),/eight scouting/);
+assert.throws(() => assembleActivityAssignments({routes:[{...routes[0],noOfScouts:21}],baselineUnits:baseline}),/only 20 warriors/);
+assert.throws(() => assembleActivityAssignments({
+  routes:[routes[0]],activities:[{unit:'0485',activityCode:'SCOUTING',people:2}]
+}),/manual SCOUTING/);
+assert.deepEqual(normalizeActivityRows([{ unit:'0485g1', activity:'SCOUTING', people:1 },
+  { unit:'0485', activity:'HUNTING', people:4 }, { unit:'0485', activity:'SCOUTING', people:5 }],10)
+  .map(row=>row.unit),['0485','0485','0485g1']);
+
+function fakeSheet(headers, capacity = 12) {
+  return XLSX.utils.aoa_to_sheet([headers,...Array.from({length:capacity},()=>headers.map(()=>' '))]);
+}
+function blankWorkbook(filename) {
+  const wb = XLSX.utils.book_new();
+  const movement = ['UnitName','TRIBE','FOLLOW_TRIBE','MovementType','Hex',
+    ...Array.from({length:40},(_,i)=>'MOVEMENT_'+(i+1)),'Processed'];
+  const scout = ['UnitName','TRIBE','No_of_Scouts','No_of_Horses','Mission',
+    ...Array.from({length:9},(_,i)=>'Movement'+(i+1)),'Processed'];
+  const sheets = [
+    ['Tribe_Movement',movement],['Scout_Movement',scout],
+    ['Tribes_Activities',['TRIBE','ACTIVITY','ITEM','DISTINCTION','PEOPLE','MINING_DIRECTION','Processed']],
+    ['Comments',['Unit','Comment']],
+    ['GM Actions',['Unit','What does the GM need to do?']],
+    ['Valid Units',['Unit','Description']],
+    ['Skill_Attempts',['TRIBE','ORDER','TOPIC']]
+  ];
+  for (const [name,headers] of sheets) XLSX.utils.book_append_sheet(wb,fakeSheet(headers),name);
+  XLSX.writeFile(wb,filename);
+}
+const temp = fs.mkdtempSync(path.join(os.tmpdir(),'tribenet-scout-export-'));
+const blank = path.join(temp,'blank.xlsx');
+const output = path.join(temp,'exported.xlsx');
+(async() => {
+  try {
+    blankWorkbook(blank);
+    await patchOrdersWorkbook({
+      templatePath:blank, outputPath:output,
+      movements:[{ unitCode:'0485',directions:['Still'] },{ unitCode:'0485e1',directions:['Still'] }],
+      scouts:routes.map(r => ({...r,directions:['N']})),
+      activities:assigned.activities, comments:assigned.comments,
+      validUnits:[{unitCode:'0485'},{unitCode:'0485e1'},{unitCode:'0485g1'}]
+    });
+    const wb = XLSX.readFile(output,{cellFormula:true});
+    const activities = XLSX.utils.sheet_to_json(wb.Sheets.Tribes_Activities);
+    assert.deepEqual(activities.filter(row=>row.ACTIVITY).map(row=>[row.TRIBE,row.ACTIVITY,row.PEOPLE]),
+      [['0485','HUNTING',4],['0485','FORAGING',3],['0485','SCOUTING',5],
+       ['0485g1','FORESTRY',2],['0485g1','SCOUTING',1]]);
+    const comments = XLSX.utils.sheet_to_json(wb.Sheets.Comments).filter(row=>row.Comment);
+    assert.equal(comments.length,2);
+    assert.match(comments[0].Comment,/Spears/);
+    assert.match(comments[0].Comment,/Bows/);
+    const imported = parseOrdersWorkbook(output);
+    assert.equal(imported.activities.filter(r=>r.activity==='SCOUTING').length,2);
+    console.log('scouting activity assignment and fresh workbook export tests passed');
+  } finally {
+    fs.rmSync(temp,{recursive:true,force:true});
+  }
+})().catch(err=>{ console.error(err); process.exitCode=1; });

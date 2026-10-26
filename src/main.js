@@ -17,11 +17,12 @@ const { parseResultDocument } = require('./result-report-parser');
 const { reprocessArchivedReports } = require('./results-reprocessor');
 const { applyWagonAnimalRules } = require('./logistics-rules');
 const { ACTIVITY_CATALOG } = require('./activity-catalog');
+const { assembleActivityAssignments } = require('./activity-assignments');
 const { normalizeView } = require('./update-view-state');
 const { routesDb, removeRoutesForUnit } = require('./planned-routes-ipc');
 const { canonicalTurnKey, inferTurnKeyFromFilename } = require('./turn-key');
 const { patchOrdersWorkbook, saveOrderTemplate, findOrderTemplate } = require('./orders-workbook');
-const { buildOrdersExportData: assembleOrdersExportData } = require('./orders-export-data');
+const { buildOrdersExportData: assembleOrdersExportData, mergeDraftRoutes, mergeDraftSplits } = require('./orders-export-data');
 const { resolveOrdersExportPath } = require('./orders-export-path');
 const {
   planningTurnKeyFromResult,
@@ -210,6 +211,20 @@ function effectiveResultTurn(turnKey) {
 
 function effectiveManagedTurn(turnKey) {
   const managed = turnManagerDatabase.getTurn(turnKey);
+  if (managed && !managed.final) {
+    const allocations = assembleActivityAssignments({
+      routes: mergeDraftRoutes(ordersExportDraftRoutes(turnKey)),
+      unitSplits: mergeDraftSplits(ordersExportDraftSplits(turnKey)),
+      baselineUnits: ordersExportBaseline(turnKey)?.units || []
+    });
+    return {
+      ...managed,
+      activities: [...(managed.activities || []), ...allocations.derived.map(row => ({
+        unit:row.unit, activityCode:'SCOUTING', people:row.people,
+        target:'', notes:'Automatically reserved from scouting routes', derived:true
+      }))]
+    };
+  }
   if (!managed?.final) return managed;
   const resultTurn = resultForPlanTurn(turnKey);
   const completed = hydratedPlanRecord(database.getTurnPlanForTurn(turnKey));
@@ -278,7 +293,8 @@ function buildOrdersExportData(turnKey) {
     routeGroups: ordersExportDraftRoutes(turnKey),
     splitGroups: ordersExportDraftSplits(turnKey),
     transferGroups: ordersExportDraftKeys(turnKey).map(key => turnManagerDatabase.listTransfers(key)),
-    skillAttempts
+    skillAttempts,
+    activities: turnManagerDatabase.listActivities(turnKey)
   });
 }
 

@@ -106,7 +106,8 @@ function turnActionsRender() {
     <div class="turn-action-scout-fields">
       <label><span>People</span><input id="turnActionScoutPeople" type="number" min="1" max="99" value="${Number(savedMovementPlansState.scoutCount || 2)}" /></label>
       <label><span>Horses</span><input id="turnActionScoutHorses" type="number" min="0" max="99" value="${Number(savedMovementPlansState.scoutHorses || 2)}" /></label>
-      <label><span>Mission</span><select id="turnActionScoutMission"><option${savedMovementPlansState.scoutMission === 'LOCATE' ? ' selected' : ''}>LOCATE</option><option${savedMovementPlansState.scoutMission === 'PATROL' ? ' selected' : ''}>PATROL</option><option${savedMovementPlansState.scoutMission === 'RAID' ? ' selected' : ''}>RAID</option><option${savedMovementPlansState.scoutMission === 'SPY' ? ' selected' : ''}>SPY</option></select></label>
+      <label><span>Mission</span><select id="turnActionScoutMission"><option selected>PATROL</option></select></label>
+      <label><span>Equipment (Comments)</span><input id="turnActionScoutEquipment" type="text" maxlength="300" placeholder="Weapons, armour and other gear" value="${turnActionsEscape(savedMovementPlansState.scoutEquipment || '')}" /></label>
     </div>` : '';
 
   bar.innerHTML = `
@@ -119,7 +120,7 @@ function turnActionsRender() {
       ${!stationary ? `<button class="turn-action-button${turnActionState.active === 'unit' ? ' active' : ''}" data-turn-action="move"${!canMove && !active ? ' disabled' : ''} aria-label="Move Unit" title="Move Unit · M">${TURN_ACTION_ICONS.move}</button>` : ''}
       <button class="turn-action-button${turnActionState.active === 'split' ? ' active' : ''}" data-turn-action="split"${active ? ' disabled' : ''} aria-label="Split Off Unit" title="Split Off Unit · X">${TURN_ACTION_ICONS.split}</button>
       <button class="turn-action-button" data-turn-action="transfer"${active ? ' disabled' : ''} aria-label="Transfer" title="Transfer goods or people">⇄</button>
-      <button class="turn-action-button${turnActionState.active === 'scout' ? ' active' : ''}" data-turn-action="scout"${active ? ' disabled' : ''} aria-label="Send Out Scout" title="Send Out Scout · C">${TURN_ACTION_ICONS.scout}</button>
+      <button class="turn-action-button${turnActionState.active === 'scout' ? ' active' : ''}" data-turn-action="scout"${active || !savedMovementCanScoutUnit(unit) ? ' disabled' : ''} aria-label="Send Out Scout" title="Send Out Scout · C">${TURN_ACTION_ICONS.scout}</button>
       ${turnActionState.active === 'scout' ? `<button class="turn-action-button route-action${turnActionState.followOceanMode ? ' active' : ''}" data-turn-action="follow-ocean" aria-label="Follow Ocean" title="Follow Ocean · F">${TURN_ACTION_ICONS.followOcean}</button>` : ''}
       ${unitScoutRoutes.length ? `<button class="turn-action-button route-action" data-turn-action="open-scouts" aria-label="View scouting routes" title="View scouting routes · V">${TURN_ACTION_ICONS.routes}</button>` : ''}
       ${unit.plannedSplit ? `<button class="turn-action-utility danger" data-turn-action="cancel-unit-creation" aria-label="Cancel unit creation" title="Cancel creation of ${turnActionsEscape(unit.unitCode)} and remove its linked transfers">Cancel unit creation</button>` : ''}
@@ -137,7 +138,7 @@ function turnActionsRender() {
 
   bar.querySelectorAll('[data-turn-action]').forEach(button => button.addEventListener('click', () => turnActionsHandle(button.dataset.turnAction)));
   turnActionsBindTooltips(bar);
-  for (const id of ['turnActionScoutPeople', 'turnActionScoutHorses', 'turnActionScoutMission']) {
+  for (const id of ['turnActionScoutPeople', 'turnActionScoutHorses', 'turnActionScoutMission', 'turnActionScoutEquipment']) {
     document.getElementById(id)?.addEventListener('change', turnActionsReadScoutFields);
   }
 }
@@ -189,7 +190,8 @@ function turnActionsScoutOverviewRoutes() {
   })).filter(route => route.unitCode);
   const planned = (savedMovementPlansState.routes || []).filter(route => route.routeType === 'scout')
     .map(route => ({ ...route, source:'planned' }));
-  return [...imported, ...planned].sort((a, b) =>
+  const overrides = new Set(planned.map(route => String(route.unitCode).toLowerCase() + ':' + String(route.scoutNumber)));
+  return [...imported.filter(route => !overrides.has(String(route.unitCode).toLowerCase() + ':' + String(route.scoutNumber))), ...planned].sort((a, b) =>
     String(a.unitCode).localeCompare(String(b.unitCode), undefined, { numeric:true })
     || Number(a.scoutNumber || 0) - Number(b.scoutNumber || 0)
     || String(a.source).localeCompare(String(b.source)));
@@ -280,7 +282,8 @@ function turnActionsOpenUnitCreationOverview() {
 function turnActionsReadScoutFields() {
   savedMovementPlansState.scoutCount = Math.max(1, Number(document.getElementById('turnActionScoutPeople')?.value || 2));
   savedMovementPlansState.scoutHorses = Math.max(0, Number(document.getElementById('turnActionScoutHorses')?.value || 2));
-  savedMovementPlansState.scoutMission = String(document.getElementById('turnActionScoutMission')?.value || 'PATROL').toUpperCase();
+  savedMovementPlansState.scoutMission = 'PATROL';
+  savedMovementPlansState.scoutEquipment = String(document.getElementById('turnActionScoutEquipment')?.value || '').trim();
   turnActionsRender();
 }
 
@@ -503,12 +506,17 @@ async function turnActionsStart(type, options = {}) {
     turnActionsSetStatus(unit.plannedSplit ? 'This unit was created after its parent moved and must remain Still this turn.' : savedMovementSetStationaryStatus());
     return;
   }
+  if (type === 'scout' && !savedMovementCanScoutUnit(unit)) {
+    turnActionsSetStatus('Couriers cannot scout. Fleets must be on coastal or riverside land to send scouts.');
+    return;
+  }
   if (type === 'scout') {
     const editingRoute = options.route?.routeType === 'scout' ? options.route : null;
     if (editingRoute) {
       savedMovementPlansState.scoutCount = Math.max(1, Number(editingRoute.noOfScouts || savedMovementPlansState.scoutCount || 2));
       savedMovementPlansState.scoutHorses = Math.max(0, Number(editingRoute.noOfHorses || savedMovementPlansState.scoutHorses || 2));
-      savedMovementPlansState.scoutMission = String(editingRoute.mission || savedMovementPlansState.scoutMission || 'PATROL').toUpperCase();
+      savedMovementPlansState.scoutMission = 'PATROL';
+      savedMovementPlansState.scoutEquipment = String(editingRoute.equipment || '');
     }
     savedMovementPlansState.scoutCount = Math.max(1, Number(savedMovementPlansState.scoutCount || 2));
     savedMovementPlansState.scoutHorses = Math.max(0, Number(savedMovementPlansState.scoutHorses || 2));

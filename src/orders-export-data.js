@@ -1,4 +1,5 @@
 const { workbookValueForSkill } = require('./skill-workbook-values');
+const { assembleActivityAssignments } = require('./activity-assignments');
 
 function exportUnitKey(value) {
   return String(value || '').trim().toLowerCase();
@@ -54,7 +55,7 @@ function mergeDraftTransfers(groups = []) {
   return merged;
 }
 
-function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGroups = [], transferGroups = [], skillAttempts = [] } = {}) {
+function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGroups = [], transferGroups = [], skillAttempts = [], activities = [] } = {}) {
   const unitsByCode = new Map();
   for (const unit of baselineUnits || []) {
     const unitCode = String(unit?.unit || unit?.unitCode || '').trim();
@@ -146,9 +147,12 @@ function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGrou
       }
     }
   }
+  const assigned = assembleActivityAssignments({ activities, routes, unitSplits:splits, baselineUnits });
   return {
     movements,
     scouts,
+    activities:assigned.activities,
+    comments:assigned.comments,
     gmActions,
     transfers: mergeDraftTransfers(transferGroups),
     skillAttempts: normalizedSkillAttempts,

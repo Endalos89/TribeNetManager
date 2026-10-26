@@ -8,6 +8,7 @@ const savedMovementPlansState = {
   scoutCount: 2,
   scoutHorses: 2,
   scoutMission: 'PATROL',
+  scoutEquipment: '',
   unitSplits: [],
   transfers: []
 };
@@ -193,6 +194,59 @@ function savedMovementOriginFor(unitCode = savedMovementPlansState.selectedUnitC
   return unit.currentHex || null;
 }
 
+
+function savedMovementCanScoutUnit(unit = savedMovementSelectedUnit()) {
+  if (!unit) return false;
+  const type = String(unit.unitType || unit.type || '').toLowerCase();
+  if (type === 'courier' || /^\d{4}c\d+$/i.test(unit.unitCode || '')) return false;
+  if (type !== 'fleet') return true;
+  // Fleets cannot send scouts from open water or inland non-river hexes.
+  const coordinate = savedMovementOriginFor(unit.unitCode, 'scout');
+  const point = parseCoordinate(coordinate);
+  if (!point) return false;
+  const terrain = state?.hexCache?.get?.(coordinate) || movementPlannerState?.knownHexes?.get?.(coordinate);
+  if (!MovementPlannerCore.isRevealedLand(terrain)) return false;
+  const river = Boolean(terrain.river || terrain.waterway || terrain.riverEdges?.length ||
+    (Array.isArray(terrain.rivers) && terrain.rivers.length));
+  const water = MovementPlannerCore.adjacentHexes(point).some(next => {
+    const neighbor = state?.hexCache?.get?.(next.coordinate) || movementPlannerState?.knownHexes?.get?.(next.coordinate);
+    return ['O', 'L', 'OCEAN', 'LAKE'].includes(String(neighbor?.terrain || neighbor?.terrainCode || '').toUpperCase());
+  });
+  return river || water || Boolean(unit.coastal || unit.riverside);
+}
+
+async function savedMovementCheckScoutWorkers(unit, people, horses, editingId = null) {
+  const sourceCode = String(unit.plannedSplit ? unit.parentUnit : unit.unitCode);
+  const source = savedMovementUnits().find(row => String(row.unitCode).toLowerCase() === sourceCode.toLowerCase());
+  const own = savedMovementPlansState.routes.filter(row => row.routeType === 'scout' &&
+    String(row.unitCode).toLowerCase() === String(unit.unitCode).toLowerCase() &&
+    (editingId == null || Number(row.id) !== Number(editingId)));
+  const sibling = savedMovementPlansState.routes.filter(row => row.routeType === 'scout' &&
+    String(row.unitCode).toLowerCase() !== String(unit.unitCode).toLowerCase() &&
+    String((savedMovementPlansState.unitSplits || []).find(split => String(split.unitCode).toLowerCase() === String(row.unitCode).toLowerCase())?.parentUnit || row.unitCode).toLowerCase() === sourceCode.toLowerCase());
+  const allocated = [...own, ...sibling];
+  const scoutPeople = people + allocated.reduce((sum, row) => sum + Number(row.noOfScouts || 0), 0);
+  const scoutHorses = horses + allocated.reduce((sum, row) => sum + Number(row.noOfHorses || 0), 0);
+  const warriors = source?.warrior ?? source?.people?.Warriors;
+  if (warriors != null && Number.isFinite(Number(warriors)) && scoutPeople > Number(warriors)) {
+    throw new Error(sourceCode + ' only has ' + warriors + ' warriors; ' + scoutPeople + ' would be scouting.');
+  }
+  const profile = source && MovementPlannerCore.unitMovementProfile(source);
+  const sourceHorses = source?.horseCount ?? source?.horses ?? profile?.horses;
+  if (sourceHorses != null && Number.isFinite(Number(sourceHorses)) && scoutHorses > Number(sourceHorses)) {
+    throw new Error(sourceCode + ' only has ' + sourceHorses + ' horses; ' + scoutHorses + ' would be scouting.');
+  }
+  const turnKey = savedMovementCurrentTurnKey();
+  const managed = turnKey && await window.tribenet.getManagedTurn(turnKey);
+  const regular = (managed?.activities || []).filter(row => !row.derived &&
+    String(row.unit).toLowerCase() === sourceCode.toLowerCase());
+  const regularPeople = regular.reduce((sum, row) => sum + Number(row.people || 0), 0);
+  const workers = source?.workers ?? source?.totalWorkers;
+  if (workers != null && Number.isFinite(Number(workers)) && regularPeople + scoutPeople > Number(workers)) {
+    throw new Error(sourceCode + ' would allocate ' + (regularPeople + scoutPeople) + ' workers of ' + workers + ' available.');
+  }
+}
+
 function savedMovementScoutUsesUnitMove() {
   return savedMovementPlansState.routeType === 'scout'
     && Boolean(savedMovementUnitMoveDestination(savedMovementPlansState.selectedUnitCode));
@@ -292,7 +346,14 @@ function savedMovementScoutGroupStatus(unit = savedMovementSelectedUnit()) {
   const tribeCode = savedMovementRootTribe(unit.unitCode);
   const scouts = savedMovementPlansState.routes.filter(route => route.routeType === 'scout'
     && String(route.tribeCode || savedMovementRootTribe(route.unitCode)) === tribeCode);
-  return { tribeCode, count: scouts.length, remaining: Math.max(0, 8 - scouts.length) };
+  const ownKeys = new Set(scouts.map(row => String(row.unitCode).toLowerCase() + ':' + String(row.scoutNumber)));
+  const imported = (state?.planImport?.plan?.scouts || []).filter(row => {
+    const source = String(row.unitCode || row.unit || row.TRIBE || '');
+    const scoutNumber = row.scoutNumber || row.id;
+    return savedMovementRootTribe(source) === tribeCode && !ownKeys.has(source.toLowerCase() + ':' + String(scoutNumber));
+  });
+  const count = scouts.length + imported.length;
+  return { tribeCode, count, remaining: Math.max(0, 8 - count) };
 }
 
 async function savedMovementSaveCurrentRoute() {
@@ -302,11 +363,14 @@ async function savedMovementSaveCurrentRoute() {
   const type = savedMovementPlansState.routeType;
   if (!unit || !turnKey || route?.status !== 'ok' || !route.directions?.length) return false;
   if (type === 'unit' && !savedMovementCanMoveUnit(unit)) return false;
+  if (type === 'scout' && !savedMovementCanScoutUnit(unit)) throw new Error('Only Tribes, Elements, Garrisons and coastal/riverside Fleets may scout.');
 
   const scoutCount = Math.max(1, Number(savedMovementPlansState.scoutCount || 2));
   const scoutHorses = Math.max(0, Number(savedMovementPlansState.scoutHorses || 2));
   const scoutStatus = savedMovementScoutGroupStatus(unit);
-  if (type === 'scout' && (!scoutStatus || scoutStatus.count >= 8 || scoutHorses > scoutCount)) return false;
+  const editingRouteId = typeof turnActionState !== 'undefined' ? turnActionState.editingRouteId : null;
+  if (type === 'scout' && (!scoutStatus || (scoutStatus.count >= 8 && editingRouteId == null) || scoutHorses > scoutCount)) return false;
+  if (type === 'scout') await savedMovementCheckScoutWorkers(unit, scoutCount, scoutHorses, editingRouteId);
 
   const previousUnitMove = type === 'unit' ? savedMovementUnitMove(unit.unitCode) : null;
   const previousDestination = previousUnitMove?.destinationHex || unit.currentHex || null;
@@ -325,10 +389,10 @@ async function savedMovementSaveCurrentRoute() {
     badWeatherMp: Number(route.badWeatherMp ?? route.knownMp ?? route.totalMp ?? 0),
     noOfScouts: type === 'scout' ? scoutCount : null,
     noOfHorses: type === 'scout' ? scoutHorses : null,
-    mission: type === 'scout' ? String(savedMovementPlansState.scoutMission || 'PATROL').toUpperCase() : null,
+    mission: type === 'scout' ? 'PATROL' : null,
+    equipment: type === 'scout' ? String(savedMovementPlansState.scoutEquipment || '').trim() : '',
     unknownEntryCount: Number(route.unknownEntryCount || 0)
   };
-  const editingRouteId = typeof turnActionState !== 'undefined' ? turnActionState.editingRouteId : null;
   if (type === 'scout' && editingRouteId != null) payload.id = Number(editingRouteId);
   await window.tribenet.savePlannedRoute(payload);
   let clearedScoutRoutes = 0;
