@@ -190,7 +190,8 @@ function turnActionsScoutOverviewRoutes() {
   })).filter(route => route.unitCode);
   const planned = (savedMovementPlansState.routes || []).filter(route => route.routeType === 'scout')
     .map(route => ({ ...route, source:'planned' }));
-  return [...imported, ...planned].sort((a, b) =>
+  const overrides = new Set(planned.map(route => String(route.unitCode).toLowerCase() + ':' + String(route.scoutNumber)));
+  return [...imported.filter(route => !overrides.has(String(route.unitCode).toLowerCase() + ':' + String(route.scoutNumber))), ...planned].sort((a, b) =>
     String(a.unitCode).localeCompare(String(b.unitCode), undefined, { numeric:true })
     || Number(a.scoutNumber || 0) - Number(b.scoutNumber || 0)
     || String(a.source).localeCompare(String(b.source)));
