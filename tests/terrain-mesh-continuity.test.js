@@ -1,6 +1,7 @@
 const fs=require('fs'),vm=require('vm'),path=require('path');
 const assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..'),G=require((root+'/src')+'/isometric-core'),T=require(root+'/src/terrain-settings');
+T.set({coastWaterShare:Number(process.env.TERRAIN_TEST_WATER_SHARE||.35)});
 const ctx={self:{IsoGeometry:G,TerrainSettings:T,postMessage(){}},performance,importScripts(){}};vm.createContext(ctx);
 vm.runInContext(fs.readFileSync((root+'/src')+'/terrain-geometry-worker.js','utf8'),ctx);
 const rows=[];for(let c=312;c<=322;c++)for(let r=323;r<=333;r++)rows.push({globalCol:c,globalRow:r,coordinate:c+':'+r,terrain:c>318?'O':c===318?'LAM':c===317?'GH':r<327?'CH':'PR'});

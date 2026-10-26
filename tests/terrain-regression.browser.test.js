@@ -7,7 +7,7 @@ const {chromium}=require('playwright');
 (async()=>{
   const browser=await chromium.launch({channel:process.env.CHROME_CHANNEL || 'msedge',headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--no-sandbox']});
   try{
-   for(const fixture of [{name:'hill-mountain-coast',col:317,row:327},{name:'landing-cove',col:28,row:100},{name:'landing-ascent',col:18,row:100}]){
+   for(const fixture of [{name:'hill-mountain-coast',col:317,row:327},{name:'landing-cove',col:28,row:100},{name:'landing-ascent',col:18,row:100},{name:'hill-beach-share-07',col:28,row:100,terrain:'GH',share:.7},{name:'mountain-beach-share-07',col:28,row:100,terrain:'LAM',share:.7}]){
     const page=await browser.newPage({viewport:{width:1400,height:900},deviceScaleFactor:1});
     const errors=[];
     page.on('pageerror',e=>errors.push('PAGE: '+e.stack));
@@ -35,10 +35,11 @@ const {chromium}=require('playwright');
     });
     await page.goto(pathToFileURL(path.join(__dirname,'../src/index.html')).href);
     await page.waitForFunction(()=>document.querySelector('#openMapperButton') && typeof IsoMapper!=='undefined' && typeof showDetail==='function',null,{timeout:15000});
-    await page.evaluate(({col,row,name})=>{
+    await page.evaluate(({col,row,name,terrain:landTerrain,share})=>{
+      if(share!==undefined)TerrainSettings.set({coastWaterShare:share});
       for(let c=col-5;c<=col+5;c++)for(let r=row-5;r<=row+5;r++){
         const coordinate=coordinateFor(c,r);
-        const terrain=name!=='hill-mountain-coast'?(c===col&&r===row?'O':'LAM'):
+        const terrain=name!=='hill-mountain-coast'?(c===col&&r===row?'O':(landTerrain||'LAM')):
           c>318?'O':c===318?'LAM':c===317?'GH':r<327?'CH':'PR';
         const data={...parseCoordinate(coordinate),coordinate,terrain,notes:''};
         window.fixtureRows.set(coordinate,data);state.hexCache.set(coordinate,data);

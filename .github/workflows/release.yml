@@ -43,6 +43,7 @@ jobs:
           node tests/terrain-worker-seams.test.js
           node tests/terrain-surface-continuity.test.js
           node tests/terrain-mesh-continuity.test.js
+          TERRAIN_TEST_WATER_SHARE=.7 node tests/terrain-mesh-continuity.test.js
           node tests/terrain-diagnostic.test.js
           node tests/terrain-manual-recorder.test.js
           node tests/terrain-visibility.test.js
