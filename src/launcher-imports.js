@@ -52,6 +52,18 @@
   }
 
   function selectedPlanningTurnKey() {
+    // Export the turn whose orders the Mapper is actually editing. An
+    // historical Results snapshot shows Turn 906-04 while saved Mapper routes
+    // belong to its planning successor 906-05. Previously the launcher could
+    // send 906-04 to the exporter and overwrite a completed workbook with
+    // default Still orders even though 906-05 had saved routes in SQLite.
+    if (typeof resultsTimeline !== 'undefined' && resultsTimeline?.turn) {
+      if (resultsTimeline.turn.isPlanningTurn) return canonicalTurnKey(resultsTimeline.turn.turnKey);
+      if (typeof lifecyclePlanningTurnKey === 'function') {
+        const planningTurn = canonicalTurnKey(lifecyclePlanningTurnKey());
+        if (planningTurn) return planningTurn;
+      }
+    }
     return canonicalTurnKey(localStorage.getItem(RESULT_TURN_STORAGE_KEY));
   }
 
@@ -304,7 +316,11 @@
       const openMessage = result.opened === false
         ? ` Could not open it automatically: ${result.openError || 'the default spreadsheet application was unavailable'}.`
         : ' Opened automatically.';
-      if (ordersStatus) ordersStatus.textContent = `${result.updatedExisting ? 'Updated' : 'Created'} Orders workbook for Turn ${turnKey}: ${result.outputFile}. Saved in the Completed Orders folder.${baselineMessage}${openMessage}`;
+      const routeCounts = result.savedRouteCounts;
+      const sourceMessage = routeCounts
+        ? ` Mapper database: ${routeCounts.movement} movement route(s), ${routeCounts.scouting} scouting route(s) applied.`
+        : '';
+      if (ordersStatus) ordersStatus.textContent = `${result.updatedExisting ? 'Updated' : 'Created'} Orders workbook for Turn ${turnKey}: ${result.outputFile}. Saved in the Completed Orders folder.${sourceMessage}${baselineMessage}${openMessage}`;
     } catch (error) {
       console.error('Export Orders failed', error);
       if (ordersStatus) ordersStatus.textContent = `Orders export failed: ${error.message || String(error)}`;
