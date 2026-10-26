@@ -74,7 +74,7 @@ function fromSqlite() {
   db.save(route('906-05','unit','0485',['N','NE']));
   db.save(route('906_05','scout','0485',['S']));
   const plan=fromSqlite();
-  assert.deepEqual(plan.savedRouteCounts.keys.slice(0,3),['906-05','906_05','906-04']);
+  assert.deepEqual(Array.from(plan.savedRouteCounts.keys).slice(0,3),['906-05','906_05','906-04']);
   assert.equal(plan.savedRouteCounts.movement,1);
   assert.equal(plan.savedRouteCounts.scouting,1);
   assert.deepEqual(Array.from(plan.movements.find(row=>row.unitCode==='0485').directions),['N','NE'],
@@ -100,7 +100,6 @@ function fromSqlite() {
   assert.equal(scouts[0].Movement1,'S');
   assert.equal(scouts[0].No_of_Scouts,2);
   assert.equal(scouts[0].No_of_Horses,1);
-  assert.equal(fs.compare?undefined:undefined,undefined);
   assert.deepEqual(fs.readFileSync(stored.storedPath),original,'Saved Ravenpost template must be unchanged');
 
   // Remove saved scout and change movement; repeated export must not resurrect
