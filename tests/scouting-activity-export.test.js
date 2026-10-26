@@ -46,7 +46,7 @@ assert.deepEqual(normalizeActivityRows([{ unit:'0485g1', activity:'SCOUTING', pe
 function fakeSheet(headers, capacity = 12) {
   return XLSX.utils.aoa_to_sheet([headers,...Array.from({length:capacity},()=>headers.map(()=>' '))]);
 }
-function blankWorkbook(filename) {
+function blankWorkbook(filename, withComments = true) {
   const wb = XLSX.utils.book_new();
   const movement = ['UnitName','TRIBE','FOLLOW_TRIBE','MovementType','Hex',
     ...Array.from({length:40},(_,i)=>'MOVEMENT_'+(i+1)),'Processed'];
@@ -55,11 +55,11 @@ function blankWorkbook(filename) {
   const sheets = [
     ['Tribe_Movement',movement],['Scout_Movement',scout],
     ['Tribes_Activities',['TRIBE','ACTIVITY','ITEM','DISTINCTION','PEOPLE','MINING_DIRECTION','Processed']],
-    ['Comments',['Unit','Comment']],
     ['GM Actions',['Unit','What does the GM need to do?']],
     ['Valid Units',['Unit','Description']],
     ['Skill_Attempts',['TRIBE','ORDER','TOPIC']]
   ];
+  if (withComments) sheets.push(['Comments',['Unit','Comment']]);
   for (const [name,headers] of sheets) XLSX.utils.book_append_sheet(wb,fakeSheet(headers),name);
   XLSX.writeFile(wb,filename);
 }
@@ -85,6 +85,21 @@ const output = path.join(temp,'exported.xlsx');
     assert.equal(comments.length,2);
     assert.match(comments[0].Comment,/Spears/);
     assert.match(comments[0].Comment,/Bows/);
+    const missingCommentsTemplate = path.join(temp, 'blank-no-comments.xlsx');
+    const fallbackOutput = path.join(temp, 'export-no-comments.xlsx');
+    blankWorkbook(missingCommentsTemplate, false);
+    await patchOrdersWorkbook({
+      templatePath: missingCommentsTemplate, outputPath: fallbackOutput,
+      activities: assigned.activities, comments: assigned.comments,
+      validUnits:[{unitCode:'0485'},{unitCode:'0485e1'},{unitCode:'0485g1'}]
+    });
+    const fallbackWb = XLSX.readFile(fallbackOutput);
+    assert.equal(Boolean(fallbackWb.Sheets.Comments), false,
+      'Do not invent a Comments worksheet in a blank template');
+    const fallbackActions = XLSX.utils.sheet_to_json(fallbackWb.Sheets['GM Actions'])
+      .filter(row=>row['What does the GM need to do?']);
+    assert.equal(fallbackActions.length,2);
+    assert.match(fallbackActions[0]['What does the GM need to do?'],/Scouting allocation/);
     const imported = parseOrdersWorkbook(output);
     assert.equal(imported.activities.filter(r=>r.activity==='SCOUTING').length,2);
     console.log('scouting activity assignment and fresh workbook export tests passed');
