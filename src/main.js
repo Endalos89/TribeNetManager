@@ -168,20 +168,6 @@ function syncAllResultBaselines() {
   return synced;
 }
 
-function clearDraftPlanning(turnKey) {
-  if (!turnKey) return;
-  for (const activity of turnManagerDatabase.listActivities(turnKey)) {
-    turnManagerDatabase.deleteActivity(activity.id);
-  }
-  for (const split of turnManagerDatabase.listUnitSplits(turnKey)) {
-    turnManagerDatabase.deleteUnitSplit(split.id);
-  }
-  turnManagerDatabase.deleteAllTransfers(turnKey);
-  for (const route of routesDb().list(turnKey)) {
-    routesDb().remove(route.id);
-  }
-}
-
 function planningBaselineResult(turnKey) {
   if (!turnKey || !resultsDatabase) return null;
   for (const summary of resultsDatabase.listTurns()) {
@@ -258,8 +244,20 @@ function ordersExportBaseline(turnKey) {
 
 function ordersExportDraftKeys(turnKey) {
   const keys = [turnKey];
+  const recordedRouteKeys = routesDb().listTurnKeys();
+  // Older builds saved routes under different textual spellings of the same
+  // turn (906_05, 906-5) or under the preceding Results turn. Discover those
+  // actual persisted keys instead of silently exporting Still for every unit.
+  const includeTurnAndAliases = key => {
+    if (!key) return;
+    if (!keys.includes(key)) keys.push(key);
+    for (const recorded of recordedRouteKeys) {
+      if (canonicalTurnKey(recorded) === canonicalTurnKey(key) && !keys.includes(recorded)) keys.push(recorded);
+    }
+  };
+  includeTurnAndAliases(turnKey);
   const baseline = resultForPlanTurn(turnKey);
-  if (baseline?.turnKey && String(baseline.turnKey) !== String(turnKey)) keys.push(baseline.turnKey);
+  if (baseline?.turnKey && String(baseline.turnKey) !== String(turnKey)) includeTurnAndAliases(baseline.turnKey);
   return keys;
 }
 
@@ -268,19 +266,24 @@ function ordersExportDraftRoutes(turnKey) {
 }
 
 function ordersExportDraftSplits(turnKey) {
-  const groups = ordersExportDraftKeys(turnKey).map(key => turnManagerDatabase.listUnitSplits(key));
-  if (groups.length < 2) return groups;
-  const legacyRouteCodes = new Set(ordersExportDraftRoutes(turnKey)[1]
-    .map(route => String(route.unitCode || '').trim().toLowerCase()).filter(Boolean));
-  // Older builds sometimes stored drafts under the Results key. Recover a
-  // legacy split only when its route is still present; this prevents a split
-  // deleted in the planner from reappearing during export.
-  groups[1] = groups[1].filter(split => legacyRouteCodes.has(String(split.unitCode || '').trim().toLowerCase()));
-  return groups;
+  const keys = ordersExportDraftKeys(turnKey);
+  return keys.map(key => {
+    const splits = turnManagerDatabase.listUnitSplits(key);
+    // An alternative spelling of the *current planning turn* is still current
+    // draft data. Only filter splits saved against the preceding Results turn:
+    // old legacy splits can otherwise resurrect when deliberately deleted.
+    if (canonicalTurnKey(key) === canonicalTurnKey(turnKey)) return splits;
+    const legacyRouteCodes = new Set(routesDb().list(key)
+      .map(route => String(route.unitCode || '').trim().toLowerCase()).filter(Boolean));
+    return splits.filter(split => legacyRouteCodes.has(String(split.unitCode || '').trim().toLowerCase()));
+  });
 }
 
 function buildOrdersExportData(turnKey) {
   const baseline = ordersExportBaseline(turnKey);
+  const draftKeys = ordersExportDraftKeys(turnKey);
+  const routeGroups = draftKeys.map(key => routesDb().list(key));
+  const savedRoutes = mergeDraftRoutes(routeGroups);
   const skillAttempts = turnManagerDatabase.getSkillAttempts(turnKey).map(row => ({
     tribe: row.tribe,
     order: Number(row.order),
@@ -288,14 +291,32 @@ function buildOrdersExportData(turnKey) {
     group: row.group,
     baselineLevel: Number(row.baselineLevel || 0)
   }));
-  return assembleOrdersExportData({
+  const data = assembleOrdersExportData({
     baselineUnits: baseline?.units || [],
-    routeGroups: ordersExportDraftRoutes(turnKey),
+    routeGroups,
     splitGroups: ordersExportDraftSplits(turnKey),
-    transferGroups: ordersExportDraftKeys(turnKey).map(key => turnManagerDatabase.listTransfers(key)),
+    transferGroups: draftKeys.map(key => turnManagerDatabase.listTransfers(key)),
     skillAttempts,
     activities: turnManagerDatabase.listActivities(turnKey)
   });
+  // Do not allow a silently incomplete export when a saved SQLite route is
+  // missing from the assembled order payload.
+  for (const route of savedRoutes) {
+    const directions = (route.directions || []).map(value => String(value).toUpperCase()).join('|');
+    const rows = route.routeType === 'scout' ? data.scouts : data.movements;
+    const matched = rows.some(row =>
+      String(row.unitCode).toLowerCase() === String(route.unitCode).toLowerCase()
+      && (row.directions || []).map(value => String(value).toUpperCase()).join('|') === directions
+      && (route.routeType !== 'scout'
+        || (Number(row.noOfScouts) === Number(route.noOfScouts) && Number(row.noOfHorses) === Number(route.noOfHorses))));
+    if (!matched) throw new Error('Saved ' + route.routeType + ' route for ' + route.unitCode
+      + ' was not included in Orders export for Turn ' + turnKey + '. No workbook has been modified.');
+  }
+  return { ...data, savedRouteCounts: {
+    movement: savedRoutes.filter(row => row.routeType === 'unit').length,
+    scouting: savedRoutes.filter(row => row.routeType === 'scout').length,
+    keys: draftKeys
+  } };
 }
 
 function saveCompletedOrders(filePath) {
@@ -303,7 +324,9 @@ function saveCompletedOrders(filePath) {
   const plan = applyWagonAnimalRules(parsed.rawPlan);
   const imported = database.saveTurnPlan(plan);
   turnManagerDatabase.saveWorkbook(parsed);
-  clearDraftPlanning(parsed.turnKey);
+  // Importing a completed workbook is a reference/verification action, not
+  // permission to delete Mapper orders. Saved movement/scouting remain in
+  // SQLite until explicitly edited or removed by the player.
   return {
     imported: withCurrentLogistics(hydratedPlanRecord(imported)),
     turn: effectiveManagedTurn(parsed.turnKey)
@@ -518,10 +541,12 @@ ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
     }
     const destination = resolveOrdersExportPath(app, turnKey);
     const data = buildOrdersExportData(turnKey);
+    const { savedRouteCounts, ...workbookData } = data;
+    console.info('Export Orders source', { turnKey, ...savedRouteCounts });
     let exported;
     let usedAlternativePath = false;
     try {
-      exported = await patchOrdersWorkbook({ templatePath, outputPath: destination.outputPath, ...data });
+      exported = await patchOrdersWorkbook({ templatePath, outputPath: destination.outputPath, ...workbookData });
     } catch (error) {
       // Excel on Windows may lock a previously exported Orders file. Preserve
       // it and create a distinct new workbook instead of failing silently.
@@ -531,7 +556,7 @@ ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
       for (let index = 2; index <= 20 && !exported; index++) {
         const alternate = path.join(path.dirname(destination.outputPath), `${stem} (export ${index})${extension}`);
         if (fs.existsSync(alternate)) continue;
-        exported = await patchOrdersWorkbook({ templatePath, outputPath: alternate, ...data });
+        exported = await patchOrdersWorkbook({ templatePath, outputPath: alternate, ...workbookData });
         usedAlternativePath = true;
       }
       if (!exported) throw new Error('Completed Orders workbook is locked and no alternative filename was available. Close Excel and try again.');
@@ -551,7 +576,8 @@ ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
       usedAlternativePath,
       opened: !openError,
       openError: openError || null,
-      baselineSource
+      baselineSource,
+      savedRouteCounts
     };
   } catch (error) {
     console.error('Orders workbook export failed', error);

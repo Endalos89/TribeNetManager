@@ -468,8 +468,20 @@ function validatePatchedWorkbook(sourceXml, outputPath, expected) {
   for (const item of [...(expected.movements || []), ...(expected.validUnits || [])]) {
     if (!validUnits.has(String(item.unitCode).trim().toLowerCase())) throw new Error(`Workbook validation failed: ${item.unitCode} is missing from Valid Units.`);
   }
-  const scouts = readRows('Scout_Movement').filter(row => expected.scouts.some(item => String(item.unitCode) === String(row.TRIBE)) && Number(row.No_of_Scouts || 0));
-  if (scouts.length !== expected.scouts.length) throw new Error('Workbook validation failed: scouting rows were not written.');
+  const scouts = readRows('Scout_Movement').filter(row => row.TRIBE && Number(row.No_of_Scouts || 0));
+  if (scouts.length !== expected.scouts.length)
+    throw new Error('Workbook validation failed: expected ' + expected.scouts.length + ' scouting routes but found ' + scouts.length + '.');
+  for (const [index, expectedScout] of expected.scouts.entries()) {
+    const actual = scouts[index];
+    const commands = SCOUT_COLUMNS.map(column => String(actual[column] || '')).filter(value => value && value !== 'EMPTY');
+    if (String(actual.TRIBE) !== expectedScout.unitCode
+      || Number(actual.No_of_Scouts) !== expectedScout.noOfScouts
+      || Number(actual.No_of_Horses) !== expectedScout.noOfHorses
+      || String(actual.Mission || '').toUpperCase() !== expectedScout.mission
+      || commands.join('|') !== expectedScout.directions.filter(value => value !== 'EMPTY').join('|'))
+      throw new Error('Workbook validation failed: scouting route ' + (index + 1)
+        + ' for ' + expectedScout.unitCode + ' differs from the saved Mapper order.');
+  }
   const actions = readRows('GM Actions').map(row => String(row['What does the GM need to do?'] || '')).filter(Boolean);
   for (const action of expected.gmActions) if (!actions.includes(action.text)) throw new Error('Workbook validation failed: a GM Action was not written.');
   const writtenActivities = readRows('Tribes_Activities').filter(row => row.TRIBE && row.ACTIVITY);

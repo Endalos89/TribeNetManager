@@ -125,9 +125,9 @@ syncPlannerOverlayToResultTurn = async function syncPlannerOverlayWithActualResu
   if (!resultTurn) return lifecycleOriginalSyncPlannerOverlay(turnKey, preferredId, options);
 
   // Synthetic next-turn planning state. Before Completed Orders exists this is a
-  // draft planning turn. Once Completed Orders is imported it becomes authoritative:
-  // local draft routes/activities are cleared by the backend and the workbook is
-  // selected by default for verification.
+  // draft planning turn. Once Completed Orders is imported it is selected by
+  // default for verification. Keep SQLite draft routes and activities intact
+  // so later Export Orders still reflects the player's Mapper edits.
   if (resultTurn.isPlanningTurn) {
     if (resultTurn.isStartState && resultTurn.eventTurnKey) {
       lifecycleSetPlanRecord(null, 'draft', false);
