@@ -346,7 +346,14 @@ function savedMovementScoutGroupStatus(unit = savedMovementSelectedUnit()) {
   const tribeCode = savedMovementRootTribe(unit.unitCode);
   const scouts = savedMovementPlansState.routes.filter(route => route.routeType === 'scout'
     && String(route.tribeCode || savedMovementRootTribe(route.unitCode)) === tribeCode);
-  return { tribeCode, count: scouts.length, remaining: Math.max(0, 8 - scouts.length) };
+  const ownKeys = new Set(scouts.map(row => String(row.unitCode).toLowerCase() + ':' + String(row.scoutNumber)));
+  const imported = (state?.planImport?.plan?.scouts || []).filter(row => {
+    const source = String(row.unitCode || row.unit || row.TRIBE || '');
+    const scoutNumber = row.scoutNumber || row.id;
+    return savedMovementRootTribe(source) === tribeCode && !ownKeys.has(source.toLowerCase() + ':' + String(scoutNumber));
+  });
+  const count = scouts.length + imported.length;
+  return { tribeCode, count, remaining: Math.max(0, 8 - count) };
 }
 
 async function savedMovementSaveCurrentRoute() {
