@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 const XLSX = require('xlsx');
 const { assembleActivityAssignments } = require('../src/activity-assignments');
-const { patchOrdersWorkbook, normalizeActivityRows } = require('../src/orders-workbook');
+const { patchOrdersWorkbook, normalizeActivityRows, saveOrderTemplate, findOrderTemplate } = require('../src/orders-workbook');
 const { parseOrdersWorkbook } = require('../src/planner');
 
 const baseline = [
@@ -59,7 +59,7 @@ function blankWorkbook(filename, withComments = true) {
     ['Valid Units',['Unit','Description']],
     ['Skill_Attempts',['TRIBE','ORDER','TOPIC']]
   ];
-  if (withComments) sheets.push(['Comments',['Unit','Comment']]);
+  if (withComments) sheets.push(['Comments',['Unit','Message/Notes']]);
   for (const [name,headers] of sheets) XLSX.utils.book_append_sheet(wb,fakeSheet(headers),name);
   XLSX.writeFile(wb,filename);
 }
@@ -69,8 +69,14 @@ const output = path.join(temp,'exported.xlsx');
 (async() => {
   try {
     blankWorkbook(blank);
+    const originalBlank = fs.readFileSync(blank);
+    const userData = path.join(temp, 'app-user-data');
+    const savedTemplate = await saveOrderTemplate(blank, userData, '906-05');
+    assert.equal(await findOrderTemplate(userData, '906-05'),savedTemplate.storedPath);
+    assert.deepEqual(fs.readFileSync(savedTemplate.storedPath),originalBlank,
+      'Get blank Orders must save an unmodified copy for the turn');
     await patchOrdersWorkbook({
-      templatePath:blank, outputPath:output,
+      templatePath:savedTemplate.storedPath, outputPath:output,
       movements:[{ unitCode:'0485',directions:['Still'] },{ unitCode:'0485e1',directions:['Still'] }],
       scouts:routes.map(r => ({...r,directions:['N']})),
       activities:assigned.activities, comments:assigned.comments,
@@ -81,10 +87,12 @@ const output = path.join(temp,'exported.xlsx');
     assert.deepEqual(activities.filter(row=>row.ACTIVITY).map(row=>[row.TRIBE,row.ACTIVITY,row.PEOPLE]),
       [['0485','HUNTING',4],['0485','FORAGING',3],['0485','SCOUTING',5],
        ['0485g1','FORESTRY',2],['0485g1','SCOUTING',1]]);
-    const comments = XLSX.utils.sheet_to_json(wb.Sheets.Comments).filter(row=>row.Comment);
+    const comments = XLSX.utils.sheet_to_json(wb.Sheets.Comments).filter(row=>row['Message/Notes']);
     assert.equal(comments.length,2);
-    assert.match(comments[0].Comment,/Spears/);
-    assert.match(comments[0].Comment,/Bows/);
+    assert.match(comments[0]['Message/Notes'],/Spears/);
+    assert.match(comments[0]['Message/Notes'],/Bows/);
+    assert.deepEqual(fs.readFileSync(blank),originalBlank,'The original blank attachment must remain byte-for-byte untouched');
+    assert.deepEqual(fs.readFileSync(savedTemplate.storedPath),originalBlank,'The app copy of the blank Orders template must remain unchanged');
     const missingCommentsTemplate = path.join(temp, 'blank-no-comments.xlsx');
     const fallbackOutput = path.join(temp, 'export-no-comments.xlsx');
     blankWorkbook(missingCommentsTemplate, false);
@@ -102,7 +110,40 @@ const output = path.join(temp,'exported.xlsx');
     assert.match(fallbackActions[0]['What does the GM need to do?'],/Scouting allocation/);
     const imported = parseOrdersWorkbook(output);
     assert.equal(imported.activities.filter(r=>r.activity==='SCOUTING').length,2);
-    console.log('scouting activity assignment and fresh workbook export tests passed');
+
+    // Export a changed turn onto the SAME completed file: all previous
+    // scouting routes, Activities and Comments must disappear. This proves
+    // the exporter rebuilds from the blank template rather than patching
+    // the last completed workbook.
+    await patchOrdersWorkbook({
+      templatePath:savedTemplate.storedPath,outputPath:output,
+      movements:[{ unitCode:'0485',directions:['S'] }],
+      scouts:[], activities:[], comments:[],
+      validUnits:[{ unitCode:'0485' }]
+    });
+    const second = XLSX.readFile(output, {cellFormula:true});
+    assert.deepEqual(XLSX.utils.sheet_to_json(second.Sheets.Scout_Movement)
+      .filter(row => row.TRIBE && Number(row.No_of_Scouts || 0)), [], 'Removed scouts must not survive re-export');
+    assert.deepEqual(XLSX.utils.sheet_to_json(second.Sheets.Tribes_Activities)
+      .filter(row => row.TRIBE && row.ACTIVITY), [], 'Old activity rows must not survive re-export');
+    assert.deepEqual(XLSX.utils.sheet_to_json(second.Sheets.Comments)
+      .filter(row => row.Unit && row['Message/Notes']), [], 'Old Comments must not survive re-export');
+    const movementRows = XLSX.utils.sheet_to_json(second.Sheets.Tribe_Movement);
+    assert.equal(movementRows.find(row => String(row.TRIBE ?? '').padStart(4, '0') === '0485')?.MOVEMENT_1, 'S',
+      'Repeated export must write the new direction for Tribe 0485. Got: ' + JSON.stringify(movementRows.slice(0, 3)));
+    assert.deepEqual(fs.readFileSync(blank), originalBlank,
+      'Multiple exports must never mutate the original Ravenpost blank template');
+    assert.deepEqual(fs.readFileSync(savedTemplate.storedPath), originalBlank,
+      'Stored empty Orders attachment remains pristine across repeated exports');
+
+    // A later failing export may not corrupt the last successful completed file.
+    const previousCompleted = fs.readFileSync(output);
+    await assert.rejects(patchOrdersWorkbook({
+      templatePath:savedTemplate.storedPath, outputPath:output, 
+      scouts:[{unitCode:'0485',noOfScouts:2,noOfHorses:2,mission:'PATROL',directions:['INVALID']}]
+    }),/invalid movement/);
+    assert.deepEqual(fs.readFileSync(output),previousCompleted,'Failed export must not damage the last completed workbook');
+    console.log('scouting activity assignment and repeat-from-blank workbook export tests passed');
   } finally {
     fs.rmSync(temp,{recursive:true,force:true});
   }
