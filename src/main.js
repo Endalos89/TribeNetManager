@@ -280,15 +280,17 @@ function ordersExportDraftRoutes(turnKey) {
 }
 
 function ordersExportDraftSplits(turnKey) {
-  const groups = ordersExportDraftKeys(turnKey).map(key => turnManagerDatabase.listUnitSplits(key));
-  if (groups.length < 2) return groups;
-  const legacyRouteCodes = new Set(ordersExportDraftRoutes(turnKey)[1]
-    .map(route => String(route.unitCode || '').trim().toLowerCase()).filter(Boolean));
-  // Older builds sometimes stored drafts under the Results key. Recover a
-  // legacy split only when its route is still present; this prevents a split
-  // deleted in the planner from reappearing during export.
-  groups[1] = groups[1].filter(split => legacyRouteCodes.has(String(split.unitCode || '').trim().toLowerCase()));
-  return groups;
+  const keys = ordersExportDraftKeys(turnKey);
+  return keys.map(key => {
+    const splits = turnManagerDatabase.listUnitSplits(key);
+    // An alternative spelling of the *current planning turn* is still current
+    // draft data. Only filter splits saved against the preceding Results turn:
+    // old legacy splits can otherwise resurrect when deliberately deleted.
+    if (canonicalTurnKey(key) === canonicalTurnKey(turnKey)) return splits;
+    const legacyRouteCodes = new Set(routesDb().list(key)
+      .map(route => String(route.unitCode || '').trim().toLowerCase()).filter(Boolean));
+    return splits.filter(split => legacyRouteCodes.has(String(split.unitCode || '').trim().toLowerCase()));
+  });
 }
 
 function buildOrdersExportData(turnKey) {
