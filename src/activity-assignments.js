@@ -61,13 +61,13 @@ function assembleActivityAssignments({ activities = [], routes = [], unitSplits 
     if (byTribe.get(tribe) > 8) throw new Error('Tribe ' + tribe + ' exceeds eight scouting parties.');
     const split = splits.get(key(owner));
     const sourceUnit = String(split?.parentUnit || owner).trim();
-    const group = groups.get(key(sourceUnit)) || { unit:sourceUnit, people:0, horses:0, descriptions:[] };
+    const group = groups.get(key(sourceUnit)) || { unit:sourceUnit, people:0, horses:0, splitScoutUnits:new Map() };
     group.people += people;
     group.horses += horses;
-    const equipment = String(scout.equipment || '').trim() || 'not specified';
-    const identity = scout.scoutNumber ? 'S' + scout.scoutNumber : 'party';
-    group.descriptions.push(owner + ' ' + identity + ': ' + people + ' Warriors, ' + horses + ' Horses; equipment: ' + equipment +
-      (split ? ' (created ' + (split.creationPhase === 'after' ? 'AM' : 'BM') + ' from ' + sourceUnit + ')' : ''));
+    // A newly created unit's scout workers are booked to the unit it was
+    // split from. Only that attribution needs a GM Comment. Record each
+    // new unit once even if it sends multiple separate scouting parties.
+    if (split) group.splitScoutUnits.set(key(owner), owner);
     groups.set(key(sourceUnit), group);
   }
   const derived = [];
@@ -84,8 +84,13 @@ function assembleActivityAssignments({ activities = [], routes = [], unitSplits 
     if (source && Number(source.workers) > 0 && manualPeople + group.people > Number(source.workers)) {
       throw new Error(group.unit + ' allocates ' + (manualPeople+group.people) + ' workers; only ' + source.workers + ' available.');
     }
-    derived.push({ unit:group.unit, activity:'SCOUTING', people:group.people, item:'', distinction:'', miningDirection:'', notes:'', source:'scouting' });
-    comments.push({ unit:group.unit, text:'Scouting allocation: ' + group.descriptions.join(' | ') });
+    derived.push({ unit:group.unit, activity:'SCOUTING', people:group.people, item:'SCOUTING', distinction:'NONE', miningDirection:'', notes:'', source:'scouting' });
+    for (const newUnit of group.splitScoutUnits.values()) {
+      comments.push({
+        unit:group.unit,
+        text:`Allocated scouting for ${group.unit} includes scouting performed by ${newUnit}.`
+      });
+    }
   }
   for (const row of manual) {
     if (row.notes) comments.push({ unit:row.unit, text:row.activity + ': ' + row.notes });
