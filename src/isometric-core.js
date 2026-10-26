@@ -382,7 +382,12 @@
       const w=wet.weight*dry.weight;
       thresholdSum+=w*value;thresholdWeight+=w;
     }
-    const threshold=(thresholdWeight>1e-14?thresholdSum/thresholdWeight:waterShare)+shoreline;
+    const baseThreshold=thresholdWeight>1e-14?thresholdSum/thresholdWeight:waterShare;
+    // At high water share, an unrestricted roughness offset can exceed 1:
+    // water then reaches the immutable dry core and opens a vertical crack.
+    // Bound noise by the available weight range, preserving a dry core join.
+    const noiseLimit=Math.max(1e-9,(shoreline>=0?1-baseThreshold:baseThreshold)*.5);
+    const threshold=baseThreshold+noiseLimit*Math.tanh(shoreline/noiseLimit);
     const coastField=landFraction-threshold;
     // Ocean and lake surfaces share one adjustable physical level. Colour varies
     // gently with world-space noise and is lighter in the coastal shallows;
@@ -425,7 +430,9 @@
     const inland=Math.max(0,Math.min(1,coastField/(1-threshold)));
     const mountain=weights.low+weights.high;
     const slope=smooth(inland);
-    const cliff=1-Math.pow(1-inland,3);
+    // A zero shoreline tangent keeps steep cliff feet stable when nearby
+    // dry and clipped water vertices round to the same Float32 XY position.
+    const cliff=(1-Math.pow(1-inland,3))*smooth(inland/.05);
     // Ownership weights have flat Hermite tangents: their normalised value
     // is NOT distance from shore. Resolve the noisy shoreline in geometric
     // coordinates so the shelf keeps a measurable width on the actual mesh.
