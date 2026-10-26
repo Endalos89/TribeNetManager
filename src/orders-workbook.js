@@ -477,8 +477,11 @@ function validatePatchedWorkbook(sourceXml, outputPath, expected) {
     throw new Error('Workbook validation failed: Activity rows are missing.');
   for (const [index, row] of expected.activities.entries()) {
     const actual = writtenActivities[index];
-    if (String(actual.TRIBE) !== row.unit || String(actual.ACTIVITY) !== row.activity || Number(actual.PEOPLE) !== row.people)
-      throw new Error('Workbook validation failed: Activity row ' + (index + 1) + ' differs from the planned allocation.');
+    if (String(actual.TRIBE) !== row.unit || String(actual.ACTIVITY) !== row.activity
+      || Number(actual.PEOPLE) !== row.people
+      || String(actual.ITEM ?? '').trim() !== row.item
+      || String(actual.DISTINCTION ?? '').trim() !== row.distinction)
+      throw new Error('Workbook validation failed: Activity row ' + (index + 1) + ' differs from the planned Unit, Activity, People, Item or Distinction.');
   }
   if (expected.comments.length && commentsSheetInfo(output)) {
     const info = commentsSheetInfo(output, true);
@@ -521,6 +524,10 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   const activityMap = activityColumns(template.workbook);
   if (normalizedActivities.length && (!activityMap.unit || !activityMap.activity || !activityMap.people))
     throw new Error('Tribes_Activities has no usable Unit, Activity or People columns.');
+  if (normalizedActivities.some(row => row.item) && !activityMap.item)
+    throw new Error('Tribes_Activities is missing the ITEM column needed for scouting.');
+  if (normalizedActivities.some(row => row.distinction) && !activityMap.distinction)
+    throw new Error('Tribes_Activities is missing the DISTINCTION column needed for scouting.');
   const normalizedComments = (comments || []).filter(row => row?.unit && row?.text)
     .map(row => ({ unit:String(row.unit).trim(), text:String(row.text).trim() }));
   // TribeNet's canonical Orders workbook has a "GM Actions" sheet but may
