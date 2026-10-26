@@ -122,13 +122,13 @@ const output = path.join(temp,'exported.xlsx');
       validUnits:[{ unitCode:'0485' }]
     });
     const second = XLSX.readFile(output, {cellFormula:true});
-    assert.deepEqual(XLSX.utils.sheet_to_json(second.Scout_Movement)
+    assert.deepEqual(XLSX.utils.sheet_to_json(second.Sheets.Scout_Movement)
       .filter(row => row.TRIBE && Number(row.No_of_Scouts || 0)), [], 'Removed scouts must not survive re-export');
-    assert.deepEqual(XLSX.utils.sheet_to_json(second.Tribes_Activities)
+    assert.deepEqual(XLSX.utils.sheet_to_json(second.Sheets.Tribes_Activities)
       .filter(row => row.TRIBE && row.ACTIVITY), [], 'Old activity rows must not survive re-export');
-    assert.deepEqual(XLSX.utils.sheet_to_json(second.Comments)
+    assert.deepEqual(XLSX.utils.sheet_to_json(second.Sheets.Comments)
       .filter(row => row.Unit && row['Message/Notes']), [], 'Old Comments must not survive re-export');
-    const movementRows = XLSX.utils.sheet_to_json(second.Tribe_Movement);
+    const movementRows = XLSX.utils.sheet_to_json(second.Sheets.Tribe_Movement);
     assert.equal(movementRows.find(row => String(row.TRIBE ?? '').padStart(4, '0') === '0485')?.MOVEMENT_1, 'S',
       'Repeated export must write the new direction for Tribe 0485. Got: ' + JSON.stringify(movementRows.slice(0, 3)));
     assert.deepEqual(fs.readFileSync(blank), originalBlank,
