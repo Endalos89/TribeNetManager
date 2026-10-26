@@ -32,6 +32,7 @@ class PlannedRoutesDatabase {
         scout_count INTEGER,
         horse_count INTEGER,
         mission TEXT,
+        equipment_text TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -42,6 +43,7 @@ class PlannedRoutesDatabase {
     if (!columns.has('scout_count')) this.db.exec('ALTER TABLE planned_routes ADD COLUMN scout_count INTEGER;');
     if (!columns.has('horse_count')) this.db.exec('ALTER TABLE planned_routes ADD COLUMN horse_count INTEGER;');
     if (!columns.has('mission')) this.db.exec('ALTER TABLE planned_routes ADD COLUMN mission TEXT;');
+    if (!columns.has('equipment_text')) this.db.exec("ALTER TABLE planned_routes ADD COLUMN equipment_text TEXT NOT NULL DEFAULT ''; ");
     if (!columns.has('conditional_prediction_json')) this.db.exec("ALTER TABLE planned_routes ADD COLUMN conditional_prediction_json TEXT NOT NULL DEFAULT '[]';");
     this.db.prepare(`UPDATE planned_routes SET tribe_code = substr(unit_code, 1, 4) WHERE tribe_code IS NULL OR tribe_code = ''`).run();
 
@@ -72,6 +74,7 @@ class PlannedRoutesDatabase {
       noOfScouts: row.scout_count == null ? null : Number(row.scout_count),
       noOfHorses: row.horse_count == null ? null : Number(row.horse_count),
       mission: row.mission || null,
+      equipment: row.equipment_text || '',
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
@@ -104,11 +107,11 @@ class PlannedRoutesDatabase {
         this.db.prepare(`
           UPDATE planned_routes SET
             tribe_code = ?, origin_hex = ?, destination_hex = ?, directions_json = ?, path_json = ?, conditional_prediction_json = ?,
-            known_mp = ?, unknown_entry_count = ?, scout_count = ?, horse_count = ?, mission = ?, updated_at = ?
+            known_mp = ?, unknown_entry_count = ?, scout_count = ?, horse_count = ?, mission = ?, equipment_text = ?, updated_at = ?
           WHERE id = ?
         `).run(
           tribeCode, route.originHex, route.destinationHex, JSON.stringify(route.directions || []), JSON.stringify(route.path || []), JSON.stringify(route.conditionalPredictionPaths || []),
-          Number(route.knownMp || 0), Number(route.unknownEntryCount || 0), route.noOfScouts == null ? null : Number(route.noOfScouts), route.noOfHorses == null ? null : Number(route.noOfHorses), route.mission || null, now, Number(existing.id)
+          Number(route.knownMp || 0), Number(route.unknownEntryCount || 0), route.noOfScouts == null ? null : Number(route.noOfScouts), route.noOfHorses == null ? null : Number(route.noOfHorses), route.mission || null, String(route.equipment || ''), now, Number(existing.id)
         );
         return this.get(Number(existing.id));
       }
@@ -125,7 +128,7 @@ class PlannedRoutesDatabase {
           UPDATE planned_routes SET
             turn_key = ?, tribe_code = ?, unit_code = ?, origin_hex = ?, destination_hex = ?,
             directions_json = ?, path_json = ?, conditional_prediction_json = ?, known_mp = ?, unknown_entry_count = ?,
-            scout_count = ?, horse_count = ?, mission = ?, updated_at = ?
+            scout_count = ?, horse_count = ?, mission = ?, equipment_text = ?, updated_at = ?
           WHERE id = ?
         `).run(
           route.turnKey, tribeCode, route.unitCode, route.originHex, route.destinationHex,
@@ -133,7 +136,7 @@ class PlannedRoutesDatabase {
           Number(route.knownMp || 0), Number(route.unknownEntryCount || 0),
           route.noOfScouts == null ? null : Number(route.noOfScouts),
           route.noOfHorses == null ? null : Number(route.noOfHorses),
-          route.mission || null, now, Number(existing.id)
+          route.mission || null, String(route.equipment || ''), now, Number(existing.id)
         );
         return this.get(Number(existing.id));
       }
@@ -157,13 +160,13 @@ class PlannedRoutesDatabase {
       INSERT INTO planned_routes(
         turn_key, tribe_code, unit_code, route_type, scout_number, origin_hex, destination_hex,
         directions_json, path_json, conditional_prediction_json, known_mp, unknown_entry_count, created_at, updated_at
-      , scout_count, horse_count, mission
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      , scout_count, horse_count, mission, equipment_text
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       route.turnKey, tribeCode, route.unitCode, type, scoutNumber, route.originHex, route.destinationHex,
       JSON.stringify(route.directions || []), JSON.stringify(route.path || []), JSON.stringify(route.conditionalPredictionPaths || []),
       Number(route.knownMp || 0), Number(route.unknownEntryCount || 0), now, now,
-      route.noOfScouts == null ? null : Number(route.noOfScouts), route.noOfHorses == null ? null : Number(route.noOfHorses), route.mission || null
+      route.noOfScouts == null ? null : Number(route.noOfScouts), route.noOfHorses == null ? null : Number(route.noOfHorses), route.mission || null, String(route.equipment || '')
     );
     return this.get(Number(result.lastInsertRowid));
   }
