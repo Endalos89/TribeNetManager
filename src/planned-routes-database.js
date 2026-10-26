@@ -80,6 +80,11 @@ class PlannedRoutesDatabase {
     };
   }
 
+  listTurnKeys() {
+    return this.db.prepare('SELECT DISTINCT turn_key AS turnKey FROM planned_routes ORDER BY turn_key').all()
+      .map(row => row.turnKey);
+  }
+
   list(turnKey) {
     if (!turnKey) return [];
     return this.db.prepare(`
