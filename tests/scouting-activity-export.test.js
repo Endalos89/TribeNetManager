@@ -128,8 +128,9 @@ const output = path.join(temp,'exported.xlsx');
       .filter(row => row.TRIBE && row.ACTIVITY), [], 'Old activity rows must not survive re-export');
     assert.deepEqual(XLSX.utils.sheet_to_json(second.Comments)
       .filter(row => row.Unit && row['Message/Notes']), [], 'Old Comments must not survive re-export');
-    assert.equal(XLSX.utils.sheet_to_json(second.Tribe_Movement)
-      .find(row => row.TRIBE === '0485')?.MOVEMENT_1, 'S');
+    const movementRows = XLSX.utils.sheet_to_json(second.Tribe_Movement);
+    assert.equal(movementRows.find(row => String(row.TRIBE ?? '').padStart(4, '0') === '0485')?.MOVEMENT_1, 'S',
+      'Repeated export must write the new direction for Tribe 0485');
     assert.deepEqual(fs.readFileSync(blank), originalBlank,
       'Multiple exports must never mutate the original Ravenpost blank template');
     assert.deepEqual(fs.readFileSync(savedTemplate.storedPath), originalBlank,
