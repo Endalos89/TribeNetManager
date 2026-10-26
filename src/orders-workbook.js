@@ -70,7 +70,8 @@ function validateOrdersTemplate(filePath) {
     Tribe_Movement: ['TRIBE', 'MOVEMENT_1', 'MOVEMENT_40', 'Processed'],
     Scout_Movement: ['TRIBE', 'No_of_Scouts', 'No_of_Horses', 'Mission', 'Movement1', 'Movement9', 'Processed'],
     'Valid Units': ['Unit', 'Description'],
-    Skill_Attempts: ['TRIBE', 'ORDER', 'TOPIC']
+    Skill_Attempts: ['TRIBE', 'ORDER', 'TOPIC'],
+    Tribes_Activities: ['TRIBE', 'ACTIVITY', 'PEOPLE']
   };
   for (const [sheetName, headers] of Object.entries(required)) {
     if (!workbook.Sheets[sheetName]) throw new Error(`The Orders workbook is missing the ${sheetName} sheet.`);
@@ -88,7 +89,8 @@ function validateOrdersTemplate(filePath) {
     movementRows: rowCapacity(workbook.Sheets.Tribe_Movement) - 1,
     scoutRows: rowCapacity(workbook.Sheets.Scout_Movement) - 1,
     gmRows: rowCapacity(workbook.Sheets['GM Actions']) - 1,
-    skillAttemptRows: rowCapacity(workbook.Sheets.Skill_Attempts) - 1
+    skillAttemptRows: rowCapacity(workbook.Sheets.Skill_Attempts) - 1,
+    activityRows: rowCapacity(workbook.Sheets.Tribes_Activities) - 1
   };
 }
 
@@ -349,6 +351,72 @@ function makeScoutCells(rowNumber, row) {
   return cells;
 }
 
+
+function mapInputColumns(workbook, sheetName, definitions) {
+  const map = {};
+  for (const [index, cell] of sheetHeaders(workbook, sheetName).entries()) {
+    const header = String(cell || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    for (const [name, values] of Object.entries(definitions)) {
+      if (values.includes(header)) map[name] = index + 1;
+    }
+  }
+  return map;
+}
+function activityColumns(workbook) {
+  return mapInputColumns(workbook, 'Tribes_Activities', {
+    unit: ['TRIBE', 'UNIT'], activity: ['ACTIVITY'], people: ['PEOPLE'],
+    item: ['ITEM'], distinction: ['DISTINCTION'],
+    miningDirection: ['MINING_DIRECTION', 'MINING DIRECTION'],
+    processed: ['PROCESSED']
+  });
+}
+function normalizeActivityRows(rows, maxRows) {
+  const normalized = (rows || []).map(row => ({
+    unit: String(row.unit || row.unitCode || '').trim(),
+    activity: String(row.activity || row.activityCode || '').trim(),
+    people: Number(row.people ?? 0),
+    item: String(row.item || '').trim(),
+    distinction: String(row.distinction || '').trim(),
+    miningDirection: String(row.miningDirection || '').trim()
+  }));
+  if (normalized.length > maxRows) throw new Error('Too many activities: the blank workbook has ' + maxRows + ' input rows.');
+  for (const row of normalized) {
+    if (!row.unit || !row.activity || !Number.isInteger(row.people) || row.people < 0)
+      throw new Error('An activity needs a unit, activity name and nonnegative whole-number workers.');
+  }
+  // The game processes an entire unit block at once; a later disconnected
+  // block for the same unit can overwrite that unit's earlier activities.
+  normalized.sort((a, b) => compareUnitCodes(a.unit, b.unit));
+  return normalized;
+}
+function rowInputCells(rowNumber, record, columns, fields, numeric = []) {
+  return fields.filter(field => columns[field]).map(field => ({
+    address: columnName(columns[field]) + rowNumber,
+    value: record[field] ?? '',
+    ...(numeric.includes(field) ? { kind:'number' } : {})
+  }));
+}
+function commentsSheetInfo(workbook, required = false) {
+  const name = workbook.SheetNames.find(sheet =>
+    /^(?:gm[ _-]*)?comments?$/i.test(String(sheet).trim()));
+  if (!name) {
+    if (required) throw new Error('The blank Orders workbook needs a Comments worksheet for scouting allocations and equipment.');
+    return null;
+  }
+  const headers = sheetHeaders(workbook, name);
+  const columns = mapInputColumns(workbook, name, {
+    unit: ['UNIT', 'TRIBE', 'UNIT NUMBER', 'UNIT NO', 'UNIT CODE'],
+    text: ['COMMENT', 'COMMENTS', 'GM COMMENT', 'GM COMMENTS', 'COMMENT TO GM', 'COMMENT FOR GM', 'DETAILS', 'DESCRIPTION', 'WHAT TO TELL THE GM']
+  });
+  if (!columns.text) {
+    const index = headers.findIndex(value => /COMMENT/i.test(String(value || '')));
+    if (index >= 0) columns.text = index + 1;
+  }
+  if (required && (!columns.unit || !columns.text))
+    throw new Error('Comments worksheet headings do not identify unit and comment columns; inspect the Orders template.');
+  return { name, columns, capacity: rowCapacity(workbook.Sheets[name]) - 1 };
+}
+
 function normalizeTransferRows(rows, maxRows) {
   const normalized = (rows || []).filter(row => row?.from && row?.to && row?.item).map(row => {
     const quantity = Number(row.quantity);
@@ -401,6 +469,25 @@ function validatePatchedWorkbook(sourceXml, outputPath, expected) {
   if (scouts.length !== expected.scouts.length) throw new Error('Workbook validation failed: scouting rows were not written.');
   const actions = readRows('GM Actions').map(row => String(row['What does the GM need to do?'] || '')).filter(Boolean);
   for (const action of expected.gmActions) if (!actions.includes(action.text)) throw new Error('Workbook validation failed: a GM Action was not written.');
+  const writtenActivities = readRows('Tribes_Activities').filter(row => row.TRIBE && row.ACTIVITY);
+  if (writtenActivities.length !== expected.activities.length)
+    throw new Error('Workbook validation failed: Activity rows are missing.');
+  for (const [index, row] of expected.activities.entries()) {
+    const actual = writtenActivities[index];
+    if (String(actual.TRIBE) !== row.unit || String(actual.ACTIVITY) !== row.activity || Number(actual.PEOPLE) !== row.people)
+      throw new Error('Workbook validation failed: Activity row ' + (index + 1) + ' differs from the planned allocation.');
+  }
+  if (expected.comments.length) {
+    const info = commentsSheetInfo(output, true);
+    const headers = sheetHeaders(output, info.name);
+    const unitHeader = headers[info.columns.unit - 1];
+    const textHeader = headers[info.columns.text - 1];
+    const writtenComments = readRows(info.name);
+    for (const row of expected.comments) {
+      if (!writtenComments.some(c => String(c[unitHeader] || '') === row.unit && String(c[textHeader] || '') === row.text))
+        throw new Error('Workbook validation failed: scouting Comment was not written for ' + row.unit + '.');
+    }
+  }
   const attempts = readRows('Skill_Attempts').filter(row => row.TRIBE && row.TOPIC).map(row => ({ tribe: String(row.TRIBE).padStart(4, '0'), order: Number(row.ORDER), topic: String(row.TOPIC) }));
   const expectedAttempts = expected.skillAttempts.map(row => ({ tribe: row.tribe, order: row.order, topic: row.topic }));
   if (JSON.stringify(attempts) !== JSON.stringify(expectedAttempts)) throw new Error('Workbook validation failed: Skill_Attempts rows do not match the selected study attempts.');
@@ -417,7 +504,7 @@ function validatePatchedWorkbook(sourceXml, outputPath, expected) {
   return output;
 }
 
-async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], scouts = [], gmActions = [], validUnits = [], skillAttempts = [], transfers = [] }) {
+async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], scouts = [], gmActions = [], validUnits = [], skillAttempts = [], transfers = [], activities = [], comments = [] }) {
   const template = validateOrdersTemplate(templatePath);
   const normalizedMovements = normalizeMovementRows(movements, template.movementRows);
   const normalizedScouts = normalizeScoutRows(scouts, template.scoutRows);
@@ -428,6 +515,15 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   const normalizedActions = (gmActions || []).filter(action => action?.text).map(action => ({ unit: String(action.unit || '').trim(), text: String(action.text).trim() }));
   if (normalizedActions.length > template.gmRows) throw new Error(`The blank workbook has room for ${template.gmRows} GM Action rows, but ${normalizedActions.length} are planned.`);
   const normalizedSkillAttempts = normalizeSkillAttemptRows(skillAttempts, template.skillAttemptRows);
+  const normalizedActivities = normalizeActivityRows(activities, template.activityRows);
+  const activityMap = activityColumns(template.workbook);
+  if (normalizedActivities.length && (!activityMap.unit || !activityMap.activity || !activityMap.people))
+    throw new Error('Tribes_Activities has no usable Unit, Activity or People columns.');
+  const normalizedComments = (comments || []).filter(row => row?.unit && row?.text)
+    .map(row => ({ unit:String(row.unit).trim(), text:String(row.text).trim() }));
+  const commentSheet = commentsSheetInfo(template.workbook, Boolean(normalizedComments.length));
+  if (commentSheet && normalizedComments.length > commentSheet.capacity)
+    throw new Error('Too many scouting Comments for the blank workbook (' + commentSheet.capacity + ' rows).');
   const transferSheetExists = Boolean(template.workbook.Sheets.Transfers);
   if (transfers.length && !transferSheetExists) throw new Error('The blank Orders workbook is missing the Transfers sheet.');
   const transferColumns = transferSheetExists ? transferColumnMap(template.workbook) : {};
@@ -444,7 +540,7 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   const workbookXml = await zip.file('xl/workbook.xml').async('string');
   const relsXml = await zip.file('xl/_rels/workbook.xml.rels').async('string');
   const paths = sheetPathsFromWorkbookXml(workbookXml, relsXml);
-  for (const sheetName of ['Tribe_Movement', 'Scout_Movement', 'GM Actions', 'Valid Units', 'Skill_Attempts']) if (!paths.has(sheetName)) throw new Error(`Could not locate ${sheetName} inside the workbook archive.`);
+  for (const sheetName of ['Tribe_Movement', 'Scout_Movement', 'GM Actions', 'Valid Units', 'Skill_Attempts', 'Tribes_Activities']) if (!paths.has(sheetName)) throw new Error(`Could not locate ${sheetName} inside the workbook archive.`);
 
   let movementXml = await zip.file(paths.get('Tribe_Movement')).async('string');
   movementXml = clearInputRows(movementXml, 2, template.movementRows + 1, ['B', ...MOVEMENT_COLUMNS.map((_, index) => columnName(6 + index)), 'AT']);
@@ -476,6 +572,29 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   skillAttemptsXml = patchCells(skillAttemptsXml, skillAttemptCells(normalizedSkillAttempts));
   zip.file(paths.get('Skill_Attempts'), skillAttemptsXml);
 
+  let activityXml = await zip.file(paths.get('Tribes_Activities')).async('string');
+  activityXml = clearInputRows(activityXml, 2, template.activityRows + 1,
+    Object.values(activityMap).map(columnName));
+  for (const [index, row] of normalizedActivities.entries()) {
+    activityXml = patchCells(activityXml, rowInputCells(index + 2,
+      { ...row, processed:'N' }, activityMap,
+      ['unit', 'activity', 'people', 'item', 'distinction', 'miningDirection', 'processed'], ['people']));
+  }
+  zip.file(paths.get('Tribes_Activities'), activityXml);
+
+  if (commentSheet) {
+    const commentPath = paths.get(commentSheet.name);
+    if (!commentPath) throw new Error('The Comments worksheet is missing from the workbook archive.');
+    let commentXml = await zip.file(commentPath).async('string');
+    commentXml = clearInputRows(commentXml, 2, commentSheet.capacity + 1,
+      Object.values(commentSheet.columns).map(columnName));
+    for (const [index, row] of normalizedComments.entries()) {
+      commentXml = patchCells(commentXml, rowInputCells(index + 2, row,
+        commentSheet.columns, ['unit', 'text']));
+    }
+    zip.file(commentPath, commentXml);
+  }
+
   if (transferSheetExists) {
     const transferPath = paths.get('Transfers');
     if (!transferPath) throw new Error('Could not locate Transfers inside the workbook archive.');
@@ -493,8 +612,8 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
 
   await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.promises.writeFile(outputPath, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
-  validatePatchedWorkbook(buffer, outputPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, transfers: normalizedTransfers });
-  return { outputPath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, transfers: normalizedTransfers };
+  validatePatchedWorkbook(buffer, outputPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, transfers: normalizedTransfers, activities: normalizedActivities, comments: normalizedComments });
+  return { outputPath, activities: normalizedActivities, comments: normalizedComments, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, transfers: normalizedTransfers };
 }
 
 function templateDirectory(userDataPath) {
@@ -529,6 +648,7 @@ module.exports = {
   compareUnitCodes,
   skillTransferText,
   normalizeTransferRows,
+  normalizeActivityRows,
   normalizeSkillAttemptRows,
   validateOrdersTemplate,
   patchOrdersWorkbook,
