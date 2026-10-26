@@ -852,7 +852,7 @@
 #scoutOverviewDialog[open],
 #unitCreationOverviewDialog[open] {
   position: fixed;
-  margin: 0;
+  /* Retain browser centring until first drag, then anchor the rectangle. */
 }
 #scoutOverviewDialog [data-drag-handle="scout-overview"],
 #unitCreationOverviewDialog [data-drag-handle="unit-creation-overview"],
