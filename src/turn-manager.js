@@ -173,7 +173,7 @@ function renderPlannedActivities(u) {
   }
   $('plannedActivityList').innerHTML = rows.length ? rows.map(row => {
     const a = activityFor(row.activityCode);
-    return `<div class="tm-activity"><div class="tm-activity-head"><strong>${esc(a?.name || row.activityCode)}</strong><span>${num(row.people)} people</span></div><div class="tm-activity-meta">${row.target ? `Target: ${esc(row.target)}<br>` : ''}${row.notes ? esc(row.notes) : ''}</div><div class="tm-activity-actions"><button class="button danger tm-mini" data-delete="${row.id}">Remove</button></div></div>`;
+    return `<div class="tm-activity"><div class="tm-activity-head"><strong>${esc(a?.name || row.activityCode)}</strong><span>${num(row.people)} people</span></div><div class="tm-activity-meta">${row.target ? `Target: ${esc(row.target)}<br>` : ''}${row.notes ? esc(row.notes) : ''}</div><div class="tm-activity-actions">${row.derived ? '<span class="tm-activity-meta">Managed by scouting routes</span>' : `<button class="button danger tm-mini" data-delete="${row.id}">Remove</button>`}</div></div>`;
   }).join('') : '<div class="history-empty">No activities planned for this unit.</div>';
   document.querySelectorAll('[data-delete]').forEach(btn => btn.addEventListener('click', async () => { await window.tribenet.deletePlannedActivity(Number(btn.dataset.delete)); await loadTurn(state.turn.turnKey); }));
 }
