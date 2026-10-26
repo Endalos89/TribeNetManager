@@ -406,7 +406,7 @@ function commentsSheetInfo(workbook, required = false) {
   const headers = sheetHeaders(workbook, name);
   const columns = mapInputColumns(workbook, name, {
     unit: ['UNIT', 'TRIBE', 'UNIT NUMBER', 'UNIT NO', 'UNIT CODE'],
-    text: ['COMMENT', 'COMMENTS', 'GM COMMENT', 'GM COMMENTS', 'COMMENT TO GM', 'COMMENT FOR GM', 'DETAILS', 'DESCRIPTION', 'WHAT TO TELL THE GM']
+    text: ['COMMENT', 'COMMENTS', 'GM COMMENT', 'GM COMMENTS', 'COMMENT TO GM', 'COMMENT FOR GM', 'DETAILS', 'DESCRIPTION', 'WHAT TO TELL THE GM', 'MESSAGE/NOTES', 'MESSAGE / NOTES', 'MESSAGE/ NOTES', 'MESSAGE /NOTES', 'MESSAGE', 'NOTES']
   });
   if (!columns.text) {
     const index = headers.findIndex(value => /COMMENT/i.test(String(value || '')));
@@ -623,9 +623,20 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   // when the completed workbook is opened (even if the template was manual).
   zip.file('xl/workbook.xml', forceWorkbookRecalculation(workbookXml));
 
+  // Each export is a *new build* from the saved, untouched blank workbook:
+  // never read or patch a previously completed workbook. Write to a temporary
+  // file, validate it, then atomically replace the completed output. Failed
+  // exports must not damage either the blank template or last good output.
   await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
-  await fs.promises.writeFile(outputPath, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
-  validatePatchedWorkbook(buffer, outputPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, transfers: normalizedTransfers, activities: normalizedActivities, comments: normalizedComments });
+  const stagingPath = path.join(path.dirname(outputPath),
+    `.${path.basename(outputPath)}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`);
+  try {
+    await fs.promises.writeFile(stagingPath, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
+    validatePatchedWorkbook(buffer, stagingPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, transfers: normalizedTransfers, activities: normalizedActivities, comments: normalizedComments });
+    await fs.promises.rename(stagingPath, outputPath);
+  } finally {
+    await fs.promises.rm(stagingPath, { force: true }).catch(() => {});
+  }
   return { outputPath, activities: normalizedActivities, comments: normalizedComments, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, transfers: normalizedTransfers };
 }
 
@@ -634,19 +645,40 @@ function templateDirectory(userDataPath) {
 }
 
 async function saveOrderTemplate(filePath, userDataPath, turnKey) {
+  // "Get blank Orders" stores the original attachment unchanged. A fresh
+  // successful fetch replaces the prior template for the same turn, including
+  // when the attachment extension changes. Completed Orders live elsewhere.
   validateOrdersTemplate(filePath);
   const directory = path.join(templateDirectory(userDataPath), String(turnKey));
   await fs.promises.mkdir(directory, { recursive: true });
-  const destination = path.join(directory, `blank-orders${path.extname(filePath).toLowerCase() || '.xlsx'}`);
-  await fs.promises.copyFile(filePath, destination);
+  const extension = path.extname(filePath).toLowerCase() || '.xlsx';
+  const destination = path.join(directory, `blank-orders${extension}`);
+  const stagingPath = path.join(directory, `blank-orders-staging-${process.pid}-${Math.random().toString(16).slice(2)}${extension}`);
+  try {
+    await fs.promises.copyFile(filePath, stagingPath);
+    validateOrdersTemplate(stagingPath);
+    await fs.promises.rename(stagingPath, destination);
+    // Remove templates of other formats so an older copy is never selected
+    // instead of the one just fetched.
+    for (const staleExtension of ['.xlsx', '.xlsm']) {
+      if (staleExtension !== extension) {
+        await fs.promises.rm(path.join(directory, `blank-orders${staleExtension}`), { force: true });
+      }
+    }
+  } finally {
+    await fs.promises.rm(stagingPath, { force: true }).catch(() => {});
+  }
   return { turnKey, sourceFile: path.basename(filePath), storedPath: destination };
 }
 
 async function findOrderTemplate(userDataPath, turnKey) {
   const directory = path.join(templateDirectory(userDataPath), String(turnKey));
   try {
-    const names = (await fs.promises.readdir(directory)).filter(name => /\.(xlsx|xlsm|xls)$/i.test(name)).sort();
-    return names.length ? path.join(directory, names[0]) : null;
+    const names = (await fs.promises.readdir(directory))
+      .filter(name => /^blank-orders\.(xlsx|xlsm)$/i.test(name));
+    const chosen = ['blank-orders.xlsx', 'blank-orders.xlsm']
+      .find(name => names.some(candidate => candidate.toLowerCase() === name));
+    return chosen ? path.join(directory, names.find(name => name.toLowerCase() === chosen)) : null;
   } catch (_) { return null; }
 }
 
