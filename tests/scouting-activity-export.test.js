@@ -27,9 +27,25 @@ assert.deepEqual(assigned.activities.map(row => [row.unit,row.activity,row.peopl
   ['0485','HUNTING',4],['0485','FORAGING',3],['0485','SCOUTING',5],
   ['0485g1','FORESTRY',2],['0485g1','SCOUTING',1]
 ]);
-assert.equal(assigned.comments.length,2);
-assert.match(assigned.comments[0].text,/0485e1 S2: 3 Warriors, 1 Horses/);
-assert.match(assigned.comments[0].text,/created AM from 0485/);
+assert.deepEqual(assigned.derived.map(row=>[row.unit,row.activity,row.item,row.distinction,row.people]), [
+  ['0485','SCOUTING','SCOUTING','NONE',5],
+  ['0485g1','SCOUTING','SCOUTING','NONE',1]
+], 'Both original and split-unit scout worker allocations use the required Item and Distinction');
+assert.deepEqual(assigned.comments, [{
+  unit:'0485',
+  text:'Allocated scouting for 0485 includes scouting performed by 0485e1.'
+}], 'Only the split-unit scout should generate a Comment against its original unit');
+assert.deepEqual(assembleActivityAssignments({ routes:[routes[0],routes[2]],baselineUnits:baseline }).comments, [],
+  'Ordinary scouting by existing units must not generate Comments');
+assert.deepEqual(assembleActivityAssignments({ routes:[routes[0]], unitSplits:splits, baselineUnits:baseline }).comments, [],
+  'A new unit with no scouting party must not generate a scouting Comment');
+const multiplePartiesFromNewUnit = assembleActivityAssignments({
+  routes:[routes[1],{...routes[1],id:4,scoutNumber:4,noOfScouts:1}],
+  unitSplits:splits, baselineUnits:baseline
+});
+assert.equal(multiplePartiesFromNewUnit.derived[0].people,4);
+assert.equal(multiplePartiesFromNewUnit.comments.length,1,
+  'Multiple scout parties from the same new unit need only one Comment');
 assert.equal(assembleActivityAssignments({ routes:[{...routes[0],noOfScouts:6}],baselineUnits:baseline }).derived[0].people,6);
 assert.equal(assembleActivityAssignments({ routes:[],baselineUnits:baseline }).derived.length,0);
 assert.throws(() => assembleActivityAssignments({routes:[{...routes[0], unitCode:'0485c1'}]}),/Courier/);
@@ -87,10 +103,16 @@ const output = path.join(temp,'exported.xlsx');
     assert.deepEqual(activities.filter(row=>row.ACTIVITY).map(row=>[row.TRIBE,row.ACTIVITY,row.PEOPLE]),
       [['0485','HUNTING',4],['0485','FORAGING',3],['0485','SCOUTING',5],
        ['0485g1','FORESTRY',2],['0485g1','SCOUTING',1]]);
+    assert.deepEqual(activities.filter(row=>row.ACTIVITY === 'SCOUTING')
+      .map(row=>[row.TRIBE,row.ITEM,row.DISTINCTION]), [
+        ['0485','SCOUTING','NONE'],
+        ['0485g1','SCOUTING','NONE']
+      ], 'Excel Tribes_Activities must write ITEM=SCOUTING and DISTINCTION=NONE');
     const comments = XLSX.utils.sheet_to_json(wb.Sheets.Comments).filter(row=>row['Message/Notes']);
-    assert.equal(comments.length,2);
-    assert.match(comments[0]['Message/Notes'],/Spears/);
-    assert.match(comments[0]['Message/Notes'],/Bows/);
+    assert.equal(comments.length,1,'Only split-unit scouting generates a scouting Comment');
+    assert.equal(comments[0].Unit,'0485');
+    assert.equal(comments[0]['Message/Notes'],
+      'Allocated scouting for 0485 includes scouting performed by 0485e1.');
     assert.deepEqual(fs.readFileSync(blank),originalBlank,'The original blank attachment must remain byte-for-byte untouched');
     assert.deepEqual(fs.readFileSync(savedTemplate.storedPath),originalBlank,'The app copy of the blank Orders template must remain unchanged');
     const missingCommentsTemplate = path.join(temp, 'blank-no-comments.xlsx');
@@ -106,8 +128,10 @@ const output = path.join(temp,'exported.xlsx');
       'Do not invent a Comments worksheet in a blank template');
     const fallbackActions = XLSX.utils.sheet_to_json(fallbackWb.Sheets['GM Actions'])
       .filter(row=>row['What does the GM need to do?']);
-    assert.equal(fallbackActions.length,2);
-    assert.match(fallbackActions[0]['What does the GM need to do?'],/Scouting allocation/);
+    assert.equal(fallbackActions.length,1);
+    assert.equal(fallbackActions[0].Unit,'0485');
+    assert.equal(fallbackActions[0]['What does the GM need to do?'],
+      'Allocated scouting for 0485 includes scouting performed by 0485e1.');
     const imported = parseOrdersWorkbook(output);
     assert.equal(imported.activities.filter(r=>r.activity==='SCOUTING').length,2);
 
