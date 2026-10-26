@@ -168,20 +168,6 @@ function syncAllResultBaselines() {
   return synced;
 }
 
-function clearDraftPlanning(turnKey) {
-  if (!turnKey) return;
-  for (const activity of turnManagerDatabase.listActivities(turnKey)) {
-    turnManagerDatabase.deleteActivity(activity.id);
-  }
-  for (const split of turnManagerDatabase.listUnitSplits(turnKey)) {
-    turnManagerDatabase.deleteUnitSplit(split.id);
-  }
-  turnManagerDatabase.deleteAllTransfers(turnKey);
-  for (const route of routesDb().list(turnKey)) {
-    routesDb().remove(route.id);
-  }
-}
-
 function planningBaselineResult(turnKey) {
   if (!turnKey || !resultsDatabase) return null;
   for (const summary of resultsDatabase.listTurns()) {
