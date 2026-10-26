@@ -973,6 +973,14 @@ function turnActionsBindDialogDrag(dialog, handleName = 'scout-routes') {
   handle.addEventListener('pointerdown', event => {
     if (event.button !== 0 || event.target.closest('button')) return;
     const rect = dialog.getBoundingClientRect();
+    // Dialogs are centred by margin:auto; preserve their current screen
+    // position before moving or the first pointer movement causes a jump.
+    dialog.style.position = 'fixed';
+    dialog.style.margin = '0';
+    dialog.style.right = 'auto';
+    dialog.style.bottom = 'auto';
+    dialog.style.left = `${rect.left}px`;
+    dialog.style.top = `${rect.top}px`;
     drag = { startX: event.clientX, startY: event.clientY, left: rect.left, top: rect.top };
     handle.setPointerCapture?.(event.pointerId);
     event.preventDefault();
@@ -1060,9 +1068,15 @@ function turnActionsOpenScoutRoutes() {
   });
   turnActionsBindTooltips(list);
   turnActionsBindDialogDrag(dialog);
+  // Keep the route picker non-modal so map highlighting still works, but
+  // move it out of the clipped/stacked canvasWrap layer.
+  if (dialog.parentElement !== document.body) document.body.appendChild(dialog);
   if (!dialog.open) dialog.show();
   if (!dialog.dataset.positioned) {
     const rect = dialog.getBoundingClientRect();
+    dialog.style.margin = '0';
+    dialog.style.right = 'auto';
+    dialog.style.bottom = 'auto';
     dialog.style.left = `${Math.max(16, (window.innerWidth - rect.width) / 2)}px`;
     dialog.style.top = `${Math.max(16, (window.innerHeight - rect.height) / 2)}px`;
     dialog.dataset.positioned = '1';
