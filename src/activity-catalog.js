@@ -52,6 +52,7 @@ const ACTIVITY_CATALOG = [
   { code: 'FARMING', name: 'Farming', skill: 'FARMING', section: '14.9', limitType: 'none', levelZeroAllowed: true, aliases: ['AGRICULTURE'] },
   { code: 'SHIPBUILDING', name: 'Shipbuilding', skill: 'SHIPBUILDING', limitSkill: 'SHIPWRIGHT', section: '20.3 / 20.4', limitType: 'sharedPerSkill10', note: 'Build requirements use Shipbuilding, Woodwork and Metalwork. Actual workers assigned are limited by Shipwright skill and Shipyard capacity.' },
   { code: 'ENGINEERING', name: 'Engineering / Construction', skill: 'ENGINEERING', section: '14.8', limitType: 'special' },
+  { code: 'SCOUTING', name: 'Scouting', skill: 'SCOUTING', section: '16.3', limitType: 'special', orderAliases: ['SCOUTING'], note: 'Derived from saved scouting parties; its warriors and horses cannot be used twice.' },
   { code: 'BOAT_MAINTENANCE', name: 'Boat Maintenance', skill: 'MAINTAIN BOATS', aliases: ['MAINTAIN BOATS', 'MAINTENANCE'], section: '8.7.6', limitType: 'special', note: 'Maintaining boats is an activity; crewing a vessel is not.' },
   { code: 'RESEARCH', name: 'Research', skill: 'RESEARCH', section: '23', limitType: 'special', tribeOnly: true, note: 'Normally one research topic per Tribe per turn, subject to research rules and buildings.' },
   { code: 'CUSTOM', name: 'Custom / Uncoded / GM Activity', skill: null, section: 'Custom', limitType: 'custom', note: 'Use for research-derived, uncoded or GM-authorised activities.' }
