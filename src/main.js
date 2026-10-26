@@ -22,7 +22,7 @@ const { normalizeView } = require('./update-view-state');
 const { routesDb, removeRoutesForUnit } = require('./planned-routes-ipc');
 const { canonicalTurnKey, inferTurnKeyFromFilename } = require('./turn-key');
 const { patchOrdersWorkbook, saveOrderTemplate, findOrderTemplate } = require('./orders-workbook');
-const { buildOrdersExportData: assembleOrdersExportData } = require('./orders-export-data');
+const { buildOrdersExportData: assembleOrdersExportData, mergeDraftRoutes, mergeDraftSplits } = require('./orders-export-data');
 const { resolveOrdersExportPath } = require('./orders-export-path');
 const {
   planningTurnKeyFromResult,
@@ -213,8 +213,8 @@ function effectiveManagedTurn(turnKey) {
   const managed = turnManagerDatabase.getTurn(turnKey);
   if (managed && !managed.final) {
     const allocations = assembleActivityAssignments({
-      routes: ordersExportDraftRoutes(turnKey).flat(),
-      unitSplits: ordersExportDraftSplits(turnKey).flat(),
+      routes: mergeDraftRoutes(ordersExportDraftRoutes(turnKey)),
+      unitSplits: mergeDraftSplits(ordersExportDraftSplits(turnKey)),
       baselineUnits: ordersExportBaseline(turnKey)?.units || []
     });
     return {
