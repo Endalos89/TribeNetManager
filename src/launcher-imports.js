@@ -55,11 +55,11 @@
     return canonicalTurnKey(localStorage.getItem(RESULT_TURN_STORAGE_KEY));
   }
 
-  async function refreshOrdersStatus() {
+  async function refreshOrdersStatus(options = {}) {
     if (!blankOrdersButton && !exportOrdersButton && !ordersStatus) return;
     const turnKey = selectedPlanningTurnKey();
     if (exportOrdersButton) exportOrdersButton.disabled = busy || !turnKey;
-    if (ordersStatus) {
+    if (ordersStatus && !options.preserveMessage) {
       ordersStatus.textContent = turnKey
         ? `Orders workbook actions target planning Turn ${turnKey}.`
         : 'Import Results first to identify the planning turn. The blank Orders sheet will be fetched from Ravenpost when needed.';
@@ -305,9 +305,14 @@
         ? ` Could not open it automatically: ${result.openError || 'the default spreadsheet application was unavailable'}.`
         : ' Opened automatically.';
       if (ordersStatus) ordersStatus.textContent = `${result.updatedExisting ? 'Updated' : 'Created'} Orders workbook for Turn ${turnKey}: ${result.outputFile}. Saved in the Completed Orders folder.${baselineMessage}${openMessage}`;
+    } catch (error) {
+      console.error('Export Orders failed', error);
+      if (ordersStatus) ordersStatus.textContent = `Orders export failed: ${error.message || String(error)}`;
     } finally {
       setBusy(false);
-      await refreshOrdersStatus();
+      // Keep the result/error on screen; the prior refresh immediately
+      // replaced it with a generic turn status and concealed every failure.
+      await refreshOrdersStatus({ preserveMessage: true });
     }
   }
 
