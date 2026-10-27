@@ -66,7 +66,7 @@ The transfer of data is one-way unless an explicit, reviewed **Import as Editabl
 
 ## 4. Canonical turn identity and database ownership
 
-**Turn key:** use canonical YYYY-or-era? No — TribeNet uses examples such as **906-05** (normalized from 906_05 and 906-5), not calendar dates. Example: Results 906-04 provides the beginning of planning turn 906-05. The UI must display both source Results turn and active planning turn.
+**Turn key:** TribeNet uses canonical keys such as **906-05** (normalized from 906_05 and 906-5); these are game turns, not calendar dates. Example: Results 906-04 provides the beginning of planning turn 906-05. The UI must display both source Results turn and active planning turn.
 
 All saves, loads, imports, exports, activities, unit splits, transfers and studies MUST resolve to a canonical **planning turn key** through a single backend service. Eliminate split client-side heuristics and implicit fallback to the preceding Results key. Legacy records saved under alternate spellings or a preceding Results turn are migrated once, with an audit trail and collision/conflict report, **not continually merged** into every export.
 
