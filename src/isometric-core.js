@@ -495,7 +495,7 @@
       weights.high*(.38+.48*patch)*(.65+.35*riser));
     // Keep grassy coastal shoulders; actual steep faces receive stone from
     // their triangle normals in both renderer paths. Core materials stay fixed.
-    if(region.kind!=='core'&&coastWater>0)rock*=.35+.65*mountain;
+    if(region.kind!=='core'&&coastWater>0)rock*=1-(1-mountain)*.65*(1-smooth(inland));
     const stone=[132,136,119];
     land=land.map((v,i)=>v*(1-rock)+stone[i]*rock);
     const snowCover=weights.snow*smooth((z-(.14+(2/3)*((weights.high>weights.low?1.64:.86)-.14)))/(.38*2/3));

@@ -241,7 +241,7 @@ const IsoMapper = (() => {
       const cliff=wet?0:Math.max(0,Math.min(1,(steepness-.48)/.68));
       const rockWeight=wet?0:part.reduce((n,p)=>n+(p.rock||0),0)/part.length;
       const landing=part.reduce((sum,p)=>sum+(p.landing||0),0)/part.length;
-    const wetness=part.reduce((sum,p)=>sum+(p.wetness||0),0)/part.length;
+      const wetness=part.reduce((sum,p)=>sum+(p.wetness||0),0)/part.length;
       const exposure=(window.TerrainSettings?.value('cliffExposure')??.85)*(1-landing),stone=[120,120,108];
       const shade=wet?mixed:'#'+[1,3,5].map((i,k)=>{
         const base=parseInt(mixed.slice(i,i+2),16)*light;
