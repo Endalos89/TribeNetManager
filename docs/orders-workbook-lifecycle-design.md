@@ -1,16 +1,23 @@
 # TribeNet Manager — Orders Workbook & Turn Planning Lifecycle
 
-**Design specification:** v1.0 (proposed; not implemented)  
+**Design specification:** v1.1 (proposed; not implemented)  
 **Date:** 27 October 2026  
 **Repository:** Endalos89/TribeNetManager  
 **Review basis:** code on main at the time of writing (release v0.1.757), earlier scouting/export requirements and observed data-loss reports.  
-**Scope:** blank Orders retrieval; all Mapper / turn-planning inputs; persisted drafts; workbook export; completed Orders import; file-library reconciliation; Results hand-off; protection and recovery.
+**Workbook evidence:** three completed Orders workbooks for 0485 turns 906-03, 906-04 and 906-05, each marked workbook version 1.13.  
+**Scope:** blank Orders acquisition by file import or email retrieval; editable Mapper overviews for workbook order sheets; persisted turn plans; reviewable workbook export; actual Results reconciliation; turn completion and recovery.
 
-> **Non-negotiable invariant:** The database holds the user's intended orders. Export is a read-only projection of a consistent database snapshot onto a **fresh copy** of a stored blank Orders workbook. Exporting, opening, viewing, indexing, importing a reference workbook or scanning a folder must never delete or replace intended orders.
+> **Non-negotiable invariant:** The database holds the user's saved Mapper plan. Export renders a consistent snapshot onto a **fresh copy** of the blank Orders workbook for that turn. Manual edits made in the exported workbook stay in that file and do not flow back into the Mapper plan. Importing a blank workbook for turn N+1 is the completion signal for turn N; no export, file scan, Results import or app restart resets or clears turn N before then.
 
-## 1. Purpose and the confirmed regression
+## 1. Purpose and the turn workflow
 
-The expected workflow is **Get blank Orders from Ravenpost → save immutable blank template for planning turn → create/edit orders in Mapper, committing each action to the database → Export Orders → copy the blank template and populate it from the database → open the generated workbook**. Repeat Export Orders at any time: every export starts from the *same blank template* and reflects the latest saved state, not changes present in a previously exported file.
+For a planning turn N, the user imports a blank Orders workbook or the Mapper retrieves it from email. The Mapper validates and stores that workbook as the immutable template for N, then presents a saved, viewable and editable plan. The user edits orders in the Mapper, exports a workbook built from the saved plan, and reviews or manually adjusts that file before sending it.
+
+Turn N remains active and editable after export. The arrival of a blank Orders workbook for turn N+1 closes N and starts the next planning turn. A Results report records what actually happened and provides evidence for reconciliation; it does not rewrite the saved plan. The Mapper keeps the previous plan and exported files available for review.
+
+Every export uses the saved template for its own turn and the latest saved Mapper revision. Re-exporting creates a new versioned file, preserving earlier exports and manual edits made to them.
+
+Three completed Orders files were supplied for turns 906-03, 906-04 and 906-05. They establish the observed sheet names and workbook layouts. They are examples for schema review, not blank templates for future exports.
 
 ### Confirmed destructive code path
 
@@ -43,26 +50,25 @@ The file library scans on application ready and at approximately eight-second in
 
 ## 3. Target architecture and data flow
 
-1. **Acquire template:** Ravenpost/download or manual chooser → validate workbook and turn identity → store exact original bytes as immutable template version with SHA-256, filename, source and timestamp; keep prior versions.
-2. **Edit orders:** Mapper UI / other planning screens → validate → one explicit save/update/delete command per user action → atomic database transaction → return saved ID, canonical turn and updated revision → reload from database.
-3. **Build export snapshot:** resolve canonical planning turn → capture consistent revision R and all order types using **one shared TurnPlanService** → validate dependencies and inventory assumptions → build ordered worksheet rows.
-4. **Preview and audit:** display per-sheet row counts, units and warnings. If a saved row cannot be mapped, **fail closed** with a named row/turn/worksheet. No silent fallback to Still for a saved movement.
-5. **Render:** read only saved template bytes; write values into recognized input cells of an isolated temporary copy; preserve workbook structure and formulas; recalculate on Excel open.
-6. **Verify:** reopen temporary workbook and compare every managed order's relevant cells with export snapshot R; compare expected/actual sheet schema, data validations, formulas, named ranges and macros as appropriate. Verify route counts **and field values**.
-7. **Publish:** atomically place generated copy in the selected output location; maintain previous good file/version if validation or replacement fails. Return filename, revision, counts and checksum to UI.
-8. **Open:** ask the OS to open published file. Opening failure is a separate warning, **not** a failed database save or a reason to regenerate data.
-9. **File-library indexer:** detect and classify the artefact as exported draft / external imported / explicitly submitted. Index paths and hashes **without mutating the draft**.
+1. **Acquire the blank template:** choose a workbook manually or retrieve it from email; identify its turn; validate the workbook; store its original bytes, hash, source and timestamp as an immutable template version.
+2. **Open or resume the turn plan:** create the plan only when one does not already exist. Re-importing a template for an existing turn must preserve its draft and offer a version comparison if the template differs.
+3. **Edit in the Mapper:** every editable workbook sheet has a corresponding Mapper overview. Each user action saves to the database before the UI reports success.
+4. **Review the saved plan:** show current turn, saved revision, per-sheet order counts and validation messages. The Mapper remains viewable and editable throughout turn N.
+5. **Export:** capture a consistent saved plan revision and render it onto a fresh copy of that turn's blank template.
+6. **Review and adjust in Excel:** opening or editing the exported file does not mutate the Mapper plan. Re-export creates another versioned workbook and preserves the manually adjusted file.
+7. **Close the turn:** when the blank workbook for N+1 is received, mark N complete, retain its plan and exports, and activate N+1. If N+1's actual Results are not yet available, show the baseline as pending.
+8. **Record actual Results:** import the Results report as historical evidence for the turn it resolves. It may update the next turn's starting state but never clears or overwrites saved orders.
 
-### Data flow diagram
+### Data flow
 
-Results (N−1) → immutable start baseline (N)  
-Ravenpost blank Orders (N) → immutable template store  
-Mapper Movement / Scouting / Unit Creation / Transfers / Activities / Skill Attempts → **Turn N plan database**  
-Turn N plan database → immutable snapshot (revision R) → validation → fresh template copy → generated Orders (R)  
-Generated Orders (R) → file library **index only**; optional explicit Submit / Import as reference  
-Submitted Orders + Results (N) → historical evidence; may inform planning N+1, **never overwrite N drafts without consent**.
+Blank Orders N (file or email) → immutable template N  
+Mapper sheet overviews → editable Turn N plan database  
+Turn N plan database → saved snapshot R → fresh copy of template N → exported workbook R  
+Exported workbook R → user review and optional manual edits → sent workbook copy  
+Blank Orders N+1 received → close and retain Turn N; start Turn N+1  
+Results report for N → immutable actual-results record → reconciliation and next-turn baseline
 
-The transfer of data is one-way unless an explicit, reviewed **Import as Editable Plan** feature is invoked; that is a different operation from reference import or export.
+An automatic email retrieval and a manual file import use the same template validation, turn-key resolution and storage path. A received template never replaces an existing plan. A completed workbook is not accepted as a blank template.
 
 ## 4. Canonical turn identity and database ownership
 
@@ -86,85 +92,114 @@ The current app splits storage across planned-routes.sqlite and turn-manager.sql
 
 **Conflict handling:** preserve existing draft records if legacy turn keys conflict. Show a review screen for collisions; never decide which to delete based only on discovery order, code suffix or import time.
 
-## 5. Activities and features feeding the Orders workbook
+## 5. Mapper overviews and features feeding the Orders workbook
 
-Each editable function is an independent order producer whose saved data is read by the same export snapshot. Calculator/preview features are not orders until a user explicitly commits a corresponding plan.
+Each editable workbook sheet has a dedicated Mapper overview button. The overview reads and edits the saved plan for the active turn. The same saved data feeds the matching worksheet during export. Auto-GM is present in the supplied workbook examples, but Mapper support is deferred; its sheet is preserved in exports without Mapper-authored changes until that phase is designed.
+
+| Mapper overview | Workbook sheet | Persisted input / export behaviour |
+|---|---|---|
+| Comments | Comments | Unit and message text. Keep manually written notes. Add the scouting allocation comment only when a newly created unit performs scouting. |
+| GM Actions | GM Actions | Unit and instruction text. Include explicit player instructions and required unit-creation or skill-transfer instructions without duplicates. |
+| Tribe Activities | Tribes_Activities | Activity, item, distinction, people and related activity fields. Saved scouting parties derive SCOUTING activities with ITEM=SCOUTING and DISTINCTION=NONE. |
+| Transfers | Transfers | From, To, Item, Quantity, Transfer_Timing and Notes. Preserve every line and BM/AM timing. |
+| Tribe Movement | Tribe_Movement | Unit, follow target, movement type, starting hex and ordered movement commands. |
+| Scout | Scout_Movement | Scouting unit, scout and horse counts, mission and ordered commands. |
+| Skill Attempts | Skill_Attempts | Tribe, attempt order and exact workbook skill value. Preserve any computed workbook display fields. |
+| Research Attempts | Research_Attempts | Tribe and research topic. |
+| Auto-GM (future) | Auto-GM | Deferred. Keep the worksheet and its template-owned contents intact in exported workbooks. |
+
+The existing Units overview remains an additional unit-state / unit-creation view. It can support information that feeds GM Actions and Valid Units. It does not replace the GM Actions sheet overview.
+
+Calculator previews, map overlays, provision projections and historical report playback are not orders until the user commits the related order in the Mapper. Fair/Fairground remains a separate workflow unless the user later requests a specific integration.
 
 | Planner feature / producer | Persisted input | Output sheet / derived effect | Required behaviour |
 |---|---|---|---|
-| **Move Unit** | Unit ID, ordered directions, optional FOL/FOR and GOTO, movement type/target | Tribe_Movement; Valid Units | Up to 40 commands; no route → Still; saved movement → exact commands |
-| **Send Out Scout** | Unit, party ID/slot, PATROL, scouts, horses, up to nine commands, route | Scout_Movement; Tribes_Activities | Up to 8 shared parties per root Tribe; worker reservations from saved parties |
-| **Scouting Activities** | **Derived** from saved scouting parties, never a separately mutable duplicate | Tribes_Activities | Activity=SCOUTING; Item=SCOUTING; Distinction=NONE; People=sum assigned to source unit |
-| **Split Off / Create Unit** | Parent/new unit, type, BM/AM, skills, initial state | GM Actions; Valid Units; Movement; transfer dependencies | Correct parent/new ID, timing, zero duplicate creation entries; include new unit where eligible |
-| **Scouting by a new unit** | Derived from split + new unit's saved scouts | Tribes_Activities of original source; Comments | One Comment per new unit: "Allocated scouting for [OriginUnit] includes scouting performed by [NewUnit]." Ordinary scouting creates no scouting Comment |
-| **Transfer items/people/provisions** | From/to, item, quantity, BM/AM, notes | Transfers | Correct timing and item codes, retain all line items; transfer allocation affects validation and scouting/movement state |
-| **General planned activities** | Unit, activity type, workforce, item/target, distinction, mining direction, notes | Tribes_Activities; manual Comments if explicitly authored | Keep unit rows contiguous; preserve player-entered fields; no duplicate generated scouting activity |
-| **Skill Attempts** | Tribe, slot order, selected skill, group and level | Skill_Attempts | 1–3 slots, exact workbook name mapping, valid Group A teacher restrictions, no silent remapping |
-| **Explicit GM Actions** | User-authored instructions | GM Actions | Preserve player text; append derived new-unit/skill-transfer instructions without duplicates |
-| **Explicit Comments** | User-authored unit notes | Comments (Unit; Message/Notes) | Retain manual notes; add only necessary derived split-scout comments |
-| **Results/history and starting state** | Imported Results and start-state calculations | Valid Units / baseline validation; planning origins | Read-only context for unit list, inventory, skills, origin; does not overwrite draft orders |
-| **Food gathering / Fishing / Hunting calculators** | Estimates and scenario inputs | **No direct export unless an Activity is committed** | Distinguish calculator preview from saved Activity order |
-| **Provision / carrying capacity panels** | Calculated resource projections | **No direct export**; warnings for Moves/Transfers | Advisory validation; do not silently create transfer or activity rows |
-| **Fair / Fairground** | Fair-specific orders and financial analysis | **Separate Fair workbook/workflow** | Not silently merged into main Orders workbook; explicit integration only if template/requirements later demand it |
-| **Report playback, map fog, route overlays** | Derived UI and historical report data | **No direct export** | Visuals never act as implicit save or reset operations |
+| **Move Unit** | Unit ID, ordered directions, optional FOL/FOR and GOTO, movement type/target | Tribe_Movement; Valid Units | Up to 40 movement commands; no route → Still; saved movement → exact commands |
+| **Send Out Scout** | Unit, party ID/slot, PATROL, scouts, horses, up to nine commands, route | Scout_Movement; Tribes_Activities | Up to 8 shared parties per root Tribe; worker reservations come from saved parties |
+| **Scouting Activities** | Derived from saved scouting parties, never a separately mutable duplicate | Tribes_Activities | Activity=SCOUTING; Item=SCOUTING; Distinction=NONE; People equals the assigned workforce |
+| **Split Off / Create Unit** | Parent/new unit, type, BM/AM, skills, initial state | GM Actions; Valid Units; Movement; transfer dependencies | Correct parent/new ID and timing; no duplicate creation entries; include new unit where eligible |
+| **Scouting by a new unit** | Derived from split + new unit's saved scouts | Tribes_Activities of the originating unit; Comments | Add one comment per new scouting unit: "Allocated scouting for [OriginUnit] includes scouting performed by [NewUnit]." Ordinary scouting creates no scouting comment |
+| **Transfer items/people/provisions** | From/to, item, quantity, BM/AM, notes | Transfers | Preserve exact timing and item codes; transfer allocations inform validation |
+| **General planned activities** | Unit, activity type, workforce, item/target, distinction, mining direction, notes | Tribes_Activities; Comments only when authored | Keep a unit's rows together; preserve every saved field; do not duplicate derived scouting |
+| **Skill Attempts** | Tribe, attempt slot, selected skill, group and level | Skill_Attempts | Preserve 1–3 slots and the exact workbook value; enforce valid group restrictions |
+| **Research Attempts** | Tribe and selected research topic | Research_Attempts | Preserve each saved attempt and its order as required by the template |
+| **Explicit GM Actions** | User-authored instructions | GM Actions | Preserve the user's text and ordering |
+| **Explicit Comments** | User-authored unit notes | Comments (Unit; Message/Notes) | Retain alongside any required derived scouting comment |
+| **Results/history and starting state** | Imported Results and start-state calculations | Valid Units / baseline validation; planning origins | Read-only context for order validation; it never overwrites a draft |
+| **Food gathering / Fishing / Hunting calculators** | Estimates and scenario inputs | No direct export unless an Activity is committed | A preview remains separate from a saved Activity order |
+| **Provision / carrying capacity panels** | Calculated resource projections | No direct export; warnings for Moves/Transfers | Advisory only; do not silently create a transfer or activity row |
+| **Report playback, map fog, route overlays** | Derived UI and historical report data | No direct export | Visual state never acts as an implicit save or reset operation |
 
-Sheet list is based on code-supported mappings. Real Ravenpost templates may include more sheets, formulas and helpers; preserve all unowned sheets unchanged and do not infer authority from a visible worksheet alone.
+## 6. Workbook evidence and schema contracts
 
-## 6. Workbook schema and field contracts
+### Observed workbook structure
 
-- **Tribe_Movement:** Unit code (TRIBE), MOVEMENT_1 through MOVEMENT_40, matching optional follow/GOTO/Hex/movement fields where explicitly supported. Non-moving existing units get Still. Do not replace saved directions with Still because of a missing query result; block export and show missing Unit/turn instead.
-- **Scout_Movement:** TRIBE, No_of_Scouts, No_of_Horses, Mission (currently PATROL in Mapper), Movement1 through Movement9, Processed as required. Export count and verify *every value*, not only the number of rows. Conditional FOL/FOR appears as one workbook command; internal map expansion is not written as extra commands.
-- **Tribes_Activities:** TRIBE, ACTIVITY, PEOPLE, ITEM, DISTINCTION, optional MINING_DIRECTION and processing columns. For derived scouting use SCOUTING / SCOUTING / NONE. Worker allocations reflect exact current saved scouting; removing a party removes its derived workforce. Keep all rows for a given unit contiguous.
-- **Comments:** Unit and **Message/Notes** headings in the real workbook. Scout-generated text only for a newly created unit performing scouting; user-authored notes remain. Do not rely on substituting GM Actions for a known Comments sheet; optional compatibility mapping must be explicit and schema-tested.
-- **GM Actions:** Unit and What does the GM need to do? Includes unit creation and skill reassignment instructions, plus explicit player instructions.
-- **Transfers:** From, To, Item, Quantity, Transfer_Timing / template equivalents and notes, with BM/AM correctness. If this sheet exists but headers are unsupported, fail with visible headings; never silently drop planned transfers.
-- **Skill_Attempts:** TRIBE, ORDER, TOPIC. Preserve exact skill workbook values and all intended slots.
-- **Valid Units:** Every required Tribe, Element, Fleet, Garrison or other permitted unit and planned creation, without stale/duplicate entries.
-- **All other sheets:** preserved byte/structure-equivalent except workbook metadata changes strictly required for recalculation.
+The three supplied completed workbooks have the same 20 worksheet names. Each is marked version 1.13 dated Oct 16, 2025. All contain the requested order sheets, including Auto-GM. The exact activity worksheet spelling in all three is **Tribes_Activities**.
 
-Use a versioned **schema adapter** keyed to validated workbook headers (not presumed column positions). Unsupported template variants fail at *template acquisition* or preview, before export writes anything.
+The main order-sheet headers and fields observed in the samples are:
+
+| Worksheet | Exact observed input headers / fields | Export contract |
+|---|---|---|
+| **Comments** | Unit, Message/Notes | Preserve user-authored notes and append only the required split-scout comment. |
+| **GM Actions** | Unit, What does the GM need to do? | Preserve user-authored instruction text; add generated instructions only when required. |
+| **Auto-GM** | Multi-section form with header/instruction cells and later input columns | Deferred Mapper support. Preserve its template contents and structure. |
+| **Tribes_Activities** | UnitName, TRIBE, ACTIVITY, ITEM, DISTINCTION, PEOPLE, SLAVES, SPECIALISTS, JOINT, OWNING_TRIBE, Building, Implement_1 through Implement_20 with paired Imp_n_Number fields, WHALE_SIZE, MINING_DIRECTION, PROCESSED | Write only the fields owned by Mapper orders. Keep workbook formulas and untouched activity fields. Scouting is derived from saved scouting orders. |
+| **Transfers** | From, To, Item, Quantity, Transfer_Timing, Notes, Processed, Description of Transfer units | Write order fields and preserve calculated/processed fields as template requires. |
+| **Tribe_Movement** | UnitName, TRIBE, FOLLOW_TRIBE, MovementType, Hex, MOVEMENT_1 through MOVEMENT_40, Processed | Preserve unit, movement and optional follow/type/hex fields. A route row contains forty movement slots in these examples. |
+| **Scout_Movement** | UnitName, TRIBE, No_of_Scouts, No_of_Horses, Mission, Movement1 through Movement9, Processed | Preserve party counts, mission and all nine movement slots. |
+| **Skill_Attempts** | TRIBE, ORDER, TOPIC, Processed, Attempting | Mapper owns tribe, order and topic. Preserve Processed; preserve or recalculate Attempting through Excel formulas. |
+| **Research_Attempts** | TRIBE, TOPIC, Processed | Mapper owns tribe and topic. Preserve Processed. |
+
+The remaining worksheets in these examples provide instructions, clan state, valid values, research, goods and reference data. They belong to the template or other app workflows; keep them in their original order and retain formulas, validations, names, styles, hidden state and row capacity.
+
+Auto-GM has 23 columns in the 906-03 and 906-04 examples and 27 columns in 906-05, where an additional Village Ownership section appears. The workbook version cell remains 1.13. Template compatibility must therefore be checked from the actual sheet/header structure, not only the displayed version number.
+
+The schema adapter must identify columns by normalized, validated headers, then write by the resolved column map. It must recognize the exact sheet names and required columns above, preserve additional columns and formula-driven cells, and fail before output if required fields are missing or unsupported. The supplied completed workbooks establish names and layouts; each export must use the matching **blank** workbook for that turn as its template.
+
+### Data ownership rules
+
+- Mapper-owned order cells come from the saved turn plan.
+- Template-owned formula, validation, reference and processed cells remain template-owned unless the workbook contract explicitly requires a value.
+- Derived rows such as scouting activities and split-scout comments are rendered deterministically from saved source orders; they are not duplicated as independently editable records.
+- An unsupported or newly added template field is preserved untouched and surfaced for review if it may affect an order the Mapper owns.
+- All order-sheet row counts and important cell values are checked against the saved snapshot before publishing export.
 
 ## 7. State transitions and command semantics
 
-| Operation | Plan database | Template | Exported file | Historical reference |
+| Operation | Plan database | Template | Exported file | Results / turn lifecycle |
 |---|---|---|---|---|
-| Get blank Orders from Ravenpost | No change | Create/version immutable blank | No change | No change |
-| Save/Edit/Cancel movement/scout | Mutate only targeted order in transaction | No change | No automatic rewrite | No change |
-| Save/Edit/Cancel split, transfer, activity, skill attempt | Mutate only targeted order/dependents after confirmation | No change | No automatic rewrite | No change |
-| Preview Export | **Read only** | **Read only** | No change | No change |
-| Export Orders | **Read only** | **Read only** | Create verified output from fresh copy | Record export metadata only |
-| Open Excel | No change | No change | OS opens output | No change |
-| Refresh / scan Turn File Library | **Read only** | No change | Index file only | Index/import reference read-only |
-| Import Completed Orders (reference) | **Read only** | No change | Read external file | Store reference version / compare |
-| Mark Submitted | Status change with explicit confirmation (not draft deletion) | No change | No forced rewrite | Freeze submitted copy and checksum |
-| Import as Editable Plan (future explicit action) | User-reviewed merge/replace **after backup**, never implicit | No change | No change | Original import retained |
-| Import/Reprocess Results | Preserve current plan; update historical result/cache, flag baseline conflicts | No change | No change | Update results history only |
-| Restart / update application | **Exactly same saved orders** | Preserved | Preserved | Preserved |
+| Import blank workbook for turn N, manually or from email | Create N plan only if one does not already exist; preserve an existing plan | Store/version exact original bytes | No change | N is the active planning turn when appropriate |
+| Re-import a blank workbook for existing turn N | No plan changes | Store as a new template version if its hash/schema differs | No change | Show template-version difference; do not reset N |
+| Save/edit/cancel a Mapper order | Mutate only the targeted saved order and approved dependencies | No change | No automatic rewrite | N remains active |
+| Preview or export N | Read only | Read only | Create a new version from a fresh template copy | N remains active and editable |
+| Manually edit the exported workbook | No change | No change | Changes stay in that specific exported file | Results received later establish actual outcomes |
+| Import the following turn's blank workbook N+1 | Preserve all N orders, revisions and exports | Store the N+1 template | Preserve N's prior files | Mark N complete and activate N+1 |
+| Import Results for turn N | Preserve the N plan and history | No change | No change | Store actual results and reconcile; use as baseline for N+1 |
+| Refresh or scan the file library | Read only | No change | Index only | Never close a turn or clear a plan |
+| Restart or update the application | Retain all saved plans | Preserve all templates | Preserve all exports | Preserve active-turn and completion state |
 
-**Cancel vs clear:** an explicitly requested Cancel/Delete must target a stable order ID; dependencies (for example child unit routes) require a confirmation listing affected records. Switching turns, refreshing the Mapper, export, a failed save or opening a dialog must never clear any orders.
+**Turn completion rule:** arrival of the blank Orders workbook for N+1 is the sole automatic signal that planning turn N is complete. Results arrival by itself does not clear N or move the active turn forward. Export, opening Excel, manually editing a workbook, scanning folders, importing the same turn's template and restarting the app never reset a plan.
 
-**Editing generated workbook in Excel:** external changes are *not* silently imported to Mapper. Offer optional explicit **Compare Workbook to Saved Draft** and **Import Workbook Changes as Draft** with three-way diff, a backup and per-row approval.
+On completion, archive N's last saved Mapper revision and available exports for inspection. Keep them in storage. Do not require a separate Mark Submitted step because subsequent Results are the evidence of what actually took place. If an archived turn needs correction, make any reopening an explicit user action with the old plan intact.
 
-## 8. Lifecycle status and file classification
+**Manual workbook edits:** changes made after export are local to that workbook. The Mapper does not automatically read them back. A later export creates a new version from the saved Mapper plan and blank template, retaining earlier hand-edited files. The next Results report is used to understand actual outcomes.
 
-Suggested statuses:
+**Cancel vs clear:** an explicit Cancel/Delete targets a stable order ID. If dependent orders would be affected, show them before removal. Switching turns, receiving a template, exporting, a failed save, or opening a dialog never clears orders.
 
-- **Planning Draft:** live editable DB revision R.
-- **Exported Draft:** generated file linked to revision R; its existence does not lock or clear the plan.
-- **Submitted:** user explicitly confirms which workbook was actually sent to the GM, stores immutable copy/hash/time and optionally locks editing or creates new revision.
-- **Final Imported / Historical:** external submitted workbook is archived and compared with drafts.
-- **Results Received:** GM report recorded, usable as next-turn baseline.
+## 8. Turn lifecycle and file classification
 
-Store provenance sidecar or ExportRecord: exportId, turnKey, revision, templateVersion/checksum, saved-snapshot checksum, output filename/checksum, generatedAt, sheet row counts and author. An auto scanner should recognize exported drafts from those records and skip historical import. **Even when provenance is missing or the file is external, scanning may not mutate the plan**; the classification is for display and warnings, not for permission to delete.
+Recommended statuses:
 
-**Folder layout suggestion:**
-- private app-data / orders-templates / turn / template-version.xlsx (immutable);
-- private app-data / orders-plan / DB and backups (authoritative);
-- TribeNet Files / Completed Orders / draft-generated files (output only);
-- TribeNet Files / Submitted Orders / frozen copies when explicitly submitted (optional);
-- TribeNet Files / Results / archived GM reports.
+- **Planning Draft:** the active turn's editable Mapper plan, saved at revision R.
+- **Exported Copy:** a workbook rendered from revision R. It may be reviewed and manually edited in Excel.
+- **Completed Turn:** the blank template for the following turn has arrived. The previous plan and its exports remain retained and inspectable.
+- **Actual Results Recorded:** the Results report for a completed turn has been stored and reconciled with its saved plan.
 
-Retain compatibility with current Completed Orders folder; do not relocate or delete existing user files silently.
+Exporting does not mean the workbook was sent. The application does not need a user-facing submission confirmation for turn completion. The following-turn template closes the plan, and the subsequent Results report records actual outcomes.
+
+Store export provenance: exportId, turnKey, saved revision, template version/checksum, saved-snapshot checksum, output filename/checksum, generatedAt, sheet row counts and author. Preserve every generated version so a hand-edited workbook remains available after a later export.
+
+The file-library indexer classifies files and hashes only. It cannot mutate order plans, replace templates, mark turns complete or import results. A file's name or presence in a watched folder is not a lifecycle signal.
 
 ## 9. Export algorithm and consistency contract
 
@@ -188,16 +223,29 @@ Retain compatibility with current Completed Orders folder; do not relocate or de
 
 ## 10. Import, reconciliation and recovery
 
-### Blank Orders import
-- Retrieve workbook from Ravenpost for explicit turn or select manually.
-- Verify workbook is blank in managed player-input cells, verify heading compatibility, extract template version.
-- Preserve raw bytes; replacement of a template requires explicit user acceptance if previous exports exist. Keep older versions for reproducibility.
+### Blank Orders acquisition
 
-### Completed Orders import
-- Manual import or folder scan stores a copy and manifest (source filename, hash, turn, processedAt, status).
-- **Reference-only by default**: parse to independent historical record and produce a comparison against Mapper draft. No automatic clear, replacement or conversion of drafts.
-- Distinguish **our exported draft** (recognized by manifest/hash), **external workbook**, **actually submitted** (explicit user status). A workbook filename such as Orders Complete is not sufficient to mean submitted.
-- Only an explicit "Adopt this workbook as the plan" command may replace draft values; require full diff, confirmation and backup. Preserve the original reference unchanged.
+- Support manual selection and automatic retrieval from the configured email source. Both paths run identical turn-key resolution, workbook validation and template storage.
+- Confirm the workbook's turn from workbook content and validated metadata. Use the filename as supporting evidence, not as the sole turn identity.
+- Validate required editable sheet names and headers, including Tribes_Activities. Report the actual workbook version and observed schema.
+- Save the original workbook bytes as an immutable template version with a checksum. A duplicate file with the same turn and checksum is idempotent.
+- If a different workbook arrives for a turn that already has a template, preserve the current template and plan, store the new version and show a comparison. Do not silently replace the active template.
+- Completed workbooks supplied as examples or from an earlier turn are reference files, not blank templates.
+
+### Mapper planning and workbook review
+
+- Each in-scope editable sheet has a dedicated overview button and a view/edit screen backed by the active turn's saved plan. Auto-GM remains deferred.
+- Export reads one saved revision and renders it into a fresh copy of that turn's blank workbook. The Mapper remains editable after export.
+- The user may make final manual changes in Excel. Those changes remain in the selected workbook and are not imported into the Mapper automatically.
+- Each re-export uses the latest saved Mapper plan and the matching blank template, creates a new versioned filename, and retains previous files including hand-edited copies.
+- A future compare/import feature is out of scope unless explicitly requested. Actual Results from the following turn are used to confirm what took place.
+
+### Results import
+
+- Import Results as immutable actual-turn evidence. Preserve the corresponding planned orders and exported workbooks.
+- Results received before the following turn's blank template do not close the current plan.
+- When the following blank template arrives, close the prior plan and start the next turn. Use the previous turn's Results for the new baseline when available; otherwise display that the baseline is pending.
+- Reconciliation reports differences between intended Mapper orders and actual Results. It does not rewrite either record.
 
 ### Data-loss recovery
 - Before any migration/repair, create dated zipped backups of *all* related SQLite DB files (with WAL checkpoint/consistent snapshot), template copies and order import manifests.
@@ -254,6 +302,11 @@ The confirmed clear helper deletes movement/scouting, activities and splits; oth
 - **OI-20:** Export success is distinct from OS-open failure. A successfully exported draft remains editable. A submitted workbook is never implied by saving a file.
 - **OI-21:** Recovery dry-run enumerates available DB backups, exports, references and precise differences before restoring anything.
 - **OI-22:** Each deletion (including dependent scouts on move changes) is explicit, confirmed and logged; automated actions never delete orders.
+- **OI-23:** Save orders for turn N, export and manually edit the workbook, restart and scan. The saved Mapper plan is unchanged and the manual workbook remains intact. A re-export creates a separate fresh copy from the saved plan.
+- **OI-24:** Import Results for N without the N+1 blank workbook. Turn N remains active and unchanged.
+- **OI-25:** Import the N+1 blank workbook. Turn N is archived with all plan revisions and exports retained, and N+1 becomes active.
+- **OI-26:** Exercise both manual template import and automatic email retrieval with the same template and confirm identical turn identity, validation and stored bytes.
+- **OI-27:** Confirm each in-scope sheet overview opens the active turn's saved data, saves edits, and displays row counts matching export preview. Auto-GM remains preserved without Mapper changes.
 
 ## 13. Delivery sequence
 
@@ -271,24 +324,23 @@ The confirmed clear helper deletes movement/scouting, activities and splits; oth
 **Phase C — P1 planning integration:**
 - Centralize movement/scouting/creation/transfer/manual activities/Skill Attempts in one TurnPlanService contract.
 - Stabilize dependency-aware edits and reservations (workers, horses, equipment) with warnings or hard errors as rules require.
-- Add export preview/diff and submitted/reference lifecycle actions.
+- Add export preview with per-sheet row counts and turn-completion state. Manual workbook edits stay in the workbook; Results reconcile actual outcomes.
 
 **Phase D — P2 polish:**
 - UI turn revision/history, restore/reconciliation interface; explicit integration for additional workbook features; expanded template compatibility and performance tests.
 
 **Release gate:** no production release claiming this fixed until every P0 data-integrity test passes using **real SQLite, real template schema, actual file-library scan path and app restart**. Unit tests of the workbook-writing function alone cannot detect a folder scanner deleting orders later.
 
-## 14. Decisions to confirm before implementation
+## 14. Decisions captured for implementation
 
-1. **Recommended default:** Imported Completed Orders is read-only evidence; an explicit **Mark Submitted** operation is the only lifecycle transition. The draft remains editable even after export. Should a submitted turn become read-only, or remain editable as a new revision?
-2. **Recommended default:** Automatically scanned files are indexed, not applied to editable plans. Any external Excel edits require explicit diff-and-import approval.
-3. **Recommended default:** Use stable versioned filenames for exports and retain older copies rather than overwriting them invisibly; the app can still surface "latest exported" clearly.
-4. **Recommended default:** Keep Fair workbooks separate from normal Orders until the user requests a specific transfer of fair activity into the Orders template.
-5. **Recommended default:** Prefer no data deletion after unit movement changes; offer a dependent-scout replan/confirm workflow instead.
+1. **Editable sheet names:** the three supplied workbooks confirm the exact activity sheet is Tribes_Activities.
+2. **Mapper coverage:** dedicated overview buttons are required for Comments, GM Actions, Tribes_Activities, Transfers, Tribe_Movement, Scout_Movement, Skill_Attempts and Research_Attempts. Auto-GM support is deferred. The existing Units overview remains an additional unit-state / creation view.
+3. **Excel review:** the user may edit exported workbooks manually. Those changes stay in the exported file; the Mapper does not import them back automatically.
+4. **Actual outcomes:** Results from the following turn provide evidence of what took place. They are imported as actual history and used for reconciliation.
+5. **Completion gate:** turn N stays active until a blank Orders workbook for turn N+1 is received. That receipt closes N, retains its data and activates N+1.
+6. **Export files:** use versioned filenames and preserve earlier copies so a later export never overwrites a manually adjusted workbook.
 
-These choices do not block **Phase A**. The no-data-loss invariant and non-destructive scanner are already defined.
-
----
+The implementation must preserve these rules even when email retrieval, file-library scanning, app restart or export fails.
 
 ### Implementation reference index
 
