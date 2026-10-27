@@ -19,6 +19,7 @@ const { applyWagonAnimalRules } = require('./logistics-rules');
 const { ACTIVITY_CATALOG } = require('./activity-catalog');
 const { assembleActivityAssignments } = require('./activity-assignments');
 const { normalizeView } = require('./update-view-state');
+const DESIGN_DOCUMENTS = require('./design-document-catalog');
 const { routesDb, removeRoutesForUnit } = require('./planned-routes-ipc');
 const { canonicalTurnKey, inferTurnKeyFromFilename } = require('./turn-key');
 const { patchOrdersWorkbook, saveOrderTemplate, findOrderTemplate } = require('./orders-workbook');
@@ -449,6 +450,15 @@ ipcMain.handle('hexes:area', (_event, bounds) => database.getHexesInArea(bounds)
 ipcMain.handle('terrain-mesh:read', (_event, key) => terrainMeshDiskCache.read(key));
 ipcMain.handle('terrain-mesh:write', (_event, key, mesh) => terrainMeshDiskCache.write(key,mesh));
 ipcMain.handle('app:open-compendium', (_event, entry, key) => openCompendiumWindow(entry, key));
+ipcMain.handle('design-documents:list', () => DESIGN_DOCUMENTS.map(({ id, title, status, summary, built, partial, notBuilt }) => ({
+  id, title, status, summary, built, partial, notBuilt
+})));
+ipcMain.handle('design-documents:read', (_event, id) => {
+  const document = DESIGN_DOCUMENTS.find(entry => entry.id === String(id || ''));
+  if (!document) throw new Error('Unknown design document.');
+  const filePath = path.join(__dirname, '..', 'docs', document.filename);
+  return { id: document.id, title: document.title, content: fs.readFileSync(filePath, 'utf8') };
+});
 ipcMain.handle('hex:get', (_event, coordinate) => database.getHex(coordinate));
 ipcMain.handle('hex:save', (_event, hex, context) => database.saveHex(hex, context));
 ipcMain.handle('hex:clear', (_event, coordinate, context) => database.clearHex(coordinate, context));

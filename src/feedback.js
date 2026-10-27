@@ -346,16 +346,214 @@
   }
 
   function renderLauncher() {
-    if (!launcher) {
+    if (!launcherGroup) {
+      launcherGroup = document.createElement('div');
+      launcherGroup.className = 'feedback-launcher-group';
+      launcherGroup.setAttribute(ROOT_ATTR, 'true');
+
       launcher = document.createElement('button');
       launcher.type = 'button';
       launcher.className = 'feedback-launcher';
       launcher.setAttribute(ROOT_ATTR, 'true');
       launcher.innerHTML = '<span>Feedback</span><span class="feedback-launcher__count">0</span>';
       launcher.addEventListener('click', openPanel);
-      document.body.appendChild(launcher);
+
+      designLauncher = document.createElement('button');
+      designLauncher.type = 'button';
+      designLauncher.className = 'design-documents-launcher';
+      designLauncher.setAttribute(ROOT_ATTR, 'true');
+      designLauncher.textContent = 'Design Docs';
+      designLauncher.setAttribute('aria-label', 'Open design documents and implementation status');
+      designLauncher.addEventListener('click', openDesignDocumentsPanel);
+
+      launcherGroup.append(launcher, designLauncher);
+      document.body.appendChild(launcherGroup);
     }
     launcher.querySelector('.feedback-launcher__count').textContent = String(notes.filter(note => note.status !== 'resolved').length);
+  }
+
+  function escapeDocumentHtml(value) {
+    return String(value || '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  }
+
+  function formatDocumentInline(value) {
+    return escapeDocumentHtml(value)
+      .replace(/`([^\`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  }
+
+  function renderDocumentMarkdown(source) {
+    const lines = String(source || '').replace(/\r/g, '').split('\n');
+    const out = [];
+    let paragraph = [];
+    let list = '';
+    let code = false;
+    let codeLines = [];
+    const flushParagraph = () => {
+      if (paragraph.length) out.push('<p>' + paragraph.map(formatDocumentInline).join(' ') + '</p>');
+      paragraph = [];
+    };
+    const closeList = () => {
+      if (list) { out.push('</' + list + '>'); list = ''; }
+    };
+    for (const line of lines) {
+      if (/^\s*```/.test(line)) {
+        flushParagraph();
+        closeList();
+        if (code) {
+          out.push('<pre><code>' + escapeDocumentHtml(codeLines.join('\n')) + '</code></pre>');
+          codeLines = [];
+          code = false;
+        } else code = true;
+        continue;
+      }
+      if (code) { codeLines.push(line); continue; }
+      if (!line.trim()) { flushParagraph(); closeList(); continue; }
+      const heading = line.match(/^(#{1,6})\s+(.+)$/);
+      if (heading) {
+        flushParagraph(); closeList();
+        const level = Math.min(6, heading[1].length);
+        out.push('<h' + level + '>' + formatDocumentInline(heading[2]) + '</h' + level + '>');
+        continue;
+      }
+      const quote = line.match(/^>\s?(.*)$/);
+      if (quote) {
+        flushParagraph(); closeList();
+        out.push('<blockquote>' + formatDocumentInline(quote[1]) + '</blockquote>');
+        continue;
+      }
+      const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+      const numbered = line.match(/^\s*\d+\.\s+(.+)$/);
+      if (bullet || numbered) {
+        flushParagraph();
+        const nextList = bullet ? 'ul' : 'ol';
+        if (list !== nextList) { closeList(); out.push('<' + nextList + '>'); list = nextList; }
+        out.push('<li>' + formatDocumentInline((bullet || numbered)[1]) + '</li>');
+        continue;
+      }
+      closeList();
+      paragraph.push(line.trim());
+    }
+    flushParagraph();
+    closeList();
+    if (code) out.push('<pre><code>' + escapeDocumentHtml(codeLines.join('\n')) + '</code></pre>');
+    return out.join('');
+  }
+
+  function openDesignDocumentsPanel() {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'feedback-backdrop design-documents-backdrop';
+    backdrop.setAttribute(ROOT_ATTR, 'true');
+    const panel = document.createElement('section');
+    panel.className = 'design-documents-panel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-label', 'Design documents');
+    panel.innerHTML = `
+      <div class="design-documents-head">
+        <div><h2>Design documents</h2><div class="design-documents-note">Implementation summaries are reviewed against the repository and are not runtime test results.</div></div>
+        <button class="feedback-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="design-documents-layout">
+        <nav class="design-documents-list" aria-label="Design document list"></nav>
+        <main class="design-documents-detail">
+          <div class="design-documents-placeholder">Loading design documents…</div>
+        </main>
+      </div>`;
+    backdrop.appendChild(panel);
+    document.body.appendChild(backdrop);
+    const close = () => backdrop.remove();
+    panel.querySelector('.feedback-close').addEventListener('click', close);
+    backdrop.addEventListener('click', event => { if (event.target === backdrop) close(); });
+    const onKey = event => { if (event.key === 'Escape' && document.body.contains(backdrop)) { close(); document.removeEventListener('keydown', onKey); } };
+    document.addEventListener('keydown', onKey);
+
+    const list = panel.querySelector('.design-documents-list');
+    const detail = panel.querySelector('.design-documents-detail');
+    const selectDocument = async (entry, selectedButton) => {
+      list.querySelectorAll('.design-documents-item').forEach(button => button.classList.toggle('design-documents-item--active', button === selectedButton));
+      detail.innerHTML = '<div class="design-documents-placeholder">Loading document…</div>';
+      try {
+        const result = await window.tribenet.getDesignDocument(entry.id);
+        const groups = [
+          ['Built', 'built'],
+          ['Partially built', 'partial'],
+          ['Not built', 'notBuilt']
+        ];
+        const assessment = document.createElement('section');
+        assessment.className = 'design-documents-assessment';
+        assessment.innerHTML = '<h3>Implementation status</h3>';
+        const grid = document.createElement('div');
+        grid.className = 'design-documents-status-grid';
+        for (const [label, key] of groups) {
+          const items = Array.isArray(entry[key]) ? entry[key] : [];
+          const group = document.createElement('div');
+          group.className = 'design-status-group design-status-group--' + key.toLowerCase();
+          const heading = document.createElement('h4');
+          heading.textContent = label;
+          group.appendChild(heading);
+          if (items.length) {
+            const ul = document.createElement('ul');
+            for (const item of items) {
+              const li = document.createElement('li');
+              li.textContent = item;
+              ul.appendChild(li);
+            }
+            group.appendChild(ul);
+          } else {
+            const empty = document.createElement('p');
+            empty.textContent = 'None listed.';
+            group.appendChild(empty);
+          }
+          grid.appendChild(group);
+        }
+        assessment.appendChild(grid);
+        detail.innerHTML = '';
+        const title = document.createElement('div');
+        title.className = 'design-documents-title';
+        const h3 = document.createElement('h3');
+        h3.textContent = result.title || entry.title;
+        const badge = document.createElement('span');
+        badge.className = 'design-documents-badge';
+        badge.textContent = entry.status;
+        title.append(h3, badge);
+        const summary = document.createElement('p');
+        summary.className = 'design-documents-summary';
+        summary.textContent = entry.summary;
+        const body = document.createElement('article');
+        body.className = 'design-documents-markdown';
+        body.innerHTML = renderDocumentMarkdown(result.content);
+        detail.append(title, summary, assessment, body);
+        panel.querySelector('.design-documents-layout').scrollTop = 0;
+      } catch (error) {
+        detail.innerHTML = '';
+        const message = document.createElement('p');
+        message.className = 'design-documents-error';
+        message.textContent = 'Could not load this document: ' + String(error?.message || error);
+        detail.appendChild(message);
+      }
+    };
+
+    Promise.resolve().then(() => window.tribenet.listDesignDocuments()).then(entries => {
+      if (!Array.isArray(entries) || !entries.length) throw new Error('No design documents are available.');
+      list.innerHTML = '';
+      entries.forEach((entry, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'design-documents-item';
+        const title = document.createElement('span');
+        title.textContent = entry.title;
+        const status = document.createElement('small');
+        status.textContent = entry.status;
+        button.append(title, status);
+        button.addEventListener('click', () => selectDocument(entry, button));
+        list.appendChild(button);
+        if (index === 0) selectDocument(entry, button);
+      });
+    }).catch(error => {
+      list.innerHTML = '';
+      detail.textContent = 'Could not load the design document list: ' + String(error?.message || error);
+    });
   }
 
   function appendFollowUp(note, value) {

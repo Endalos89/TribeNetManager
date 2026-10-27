@@ -146,6 +146,8 @@ contextBridge.exposeInMainWorld('tribenet', {
   scanTurnFiles: () => ipcRenderer.invoke('turn-files:scan'),
   getTurnFilesInfo: () => ipcRenderer.invoke('turn-files:info'),
   openTurnFilesFolder: () => ipcRenderer.invoke('turn-files:open'),
+  listDesignDocuments: () => ipcRenderer.invoke('design-documents:list'),
+  getDesignDocument: id => ipcRenderer.invoke('design-documents:read', id),
   reportCurrentView: view => isEmbeddedFair() ? Promise.resolve(null) : ipcRenderer.invoke('app:report-view', view),
   consumeStartupView: () => ipcRenderer.invoke('app:consume-startup-view'),
   openCompendium: (entry, key) => ipcRenderer.invoke('app:open-compendium', entry, key),
