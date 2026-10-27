@@ -41,12 +41,12 @@ The file library scans on application ready and at approximately eight-second in
 | Export snapshot | Read-only immutable view of all saved draft orders at revision R | Temporary in-memory or persisted manifest | Read-only |
 | Generated Orders workbook | Rendering of snapshot R into a new copy of blank template N | Export artefact (output only) | Create/replace atomically |
 | Imported Completed Orders | A workbook from file import / submission / historical play; evidence, not automatic instruction to replace the draft | Immutable imported reference record | **Never** |
-| Submitted/final Orders | Orders *explicitly* marked by the user as the actually sent version | Versioned reference + explicit state transition | No implicit changes |
+| Hand-edited exported workbook | User's manual changes to a specific generated copy | Retained export file with its own checksum | Never syncs back into the Mapper plan |
 | Reconciliation warning | Difference between draft, imported or submitted workbook | Derived report | **Never** |
 
 **Single source of truth:** draft orders are the database, **not** the Excel workbook, DOM state, a turn overlay, the last completed import, or a file's presence in a watched folder. The blank template defines output shape only; it does not supply movement/scouting intent.
 
-**Exported is not submitted.** Neither file creation nor opening in Excel changes the draft lifecycle.
+**Export does not change the turn lifecycle.** File creation, opening or manual editing in Excel leaves the Mapper plan unchanged.
 
 ## 3. Target architecture and data flow
 
@@ -180,7 +180,7 @@ The schema adapter must identify columns by normalized, validated headers, then 
 
 **Turn completion rule:** arrival of the blank Orders workbook for N+1 is the sole automatic signal that planning turn N is complete. Results arrival by itself does not clear N or move the active turn forward. Export, opening Excel, manually editing a workbook, scanning folders, importing the same turn's template and restarting the app never reset a plan.
 
-On completion, archive N's last saved Mapper revision and available exports for inspection. Keep them in storage. Do not require a separate Mark Submitted step because subsequent Results are the evidence of what actually took place. If an archived turn needs correction, make any reopening an explicit user action with the old plan intact.
+On completion, archive N's last saved Mapper revision and available exports for inspection. Keep them in storage. Do not require a separate submission-confirmation step for turn completion because subsequent Results are the evidence of what actually took place. If an archived turn needs correction, make any reopening an explicit user action with the old plan intact.
 
 **Manual workbook edits:** changes made after export are local to that workbook. The Mapper does not automatically read them back. A later export creates a new version from the saved Mapper plan and blank template, retaining earlier hand-edited files. The next Results report is used to understand actual outcomes.
 
@@ -264,7 +264,7 @@ The file-library indexer classifies files and hashes only. It cannot mutate orde
 | Split stores | Routes and other orders in separate SQLite DBs | One revisioned export snapshot or coordinated consistent snapshot | **P0** |
 | Legacy turn aliases | src/main.js merges current and previous Results route keys; same unit may have duplicates or legacy ghost data | One-time reviewed migration and conflict report | **P0** |
 | Export post-check | Some rows validated; preserved structural integrity is not exhaustively asserted; code-supported sheets may vary | Full per-row/per-field + template-preservation validation | **P0** |
-| Generated vs submitted | Export files named Completed Orders are treated as final evidence by scanner | Explicit lifecycle/provenance status | **P0** |
+| Exported vs hand-edited | Export files in the Completed Orders folder may be mistaken for incoming evidence by the scanner | Provenance-aware indexing; scans never change the plan or mark a turn complete | **P0** |
 | Edit/cancel dependencies | Route updates can clear linked scouts when move destination changes | Preview impacted records and ask before deleting; non-destructive replan option | P1 |
 | Activities architecture | Manual activities persisted; scouting derived dynamically from saved routes | Structured source-linked reservations and consistent cross-activity resources | P1 |
 | Comments/GM actions | Some notes derived; blank template may have optional sheet variants | Versioned adapter; preserve manual notes and user text | P1 |
@@ -299,7 +299,7 @@ The confirmed clear helper deletes movement/scouting, activities and splits; oth
 
 ### Experience
 - **OI-19:** UI shows source turn, planning turn, draft revision, last export revision, per-sheet counts and warnings; a mismatch is detectable before opening Excel.
-- **OI-20:** Export success is distinct from OS-open failure. A successfully exported draft remains editable. A submitted workbook is never implied by saving a file.
+- **OI-20:** Export success is distinct from OS-open failure. A successfully exported draft remains editable. Saving or sending a workbook does not change the Mapper plan or complete the turn.
 - **OI-21:** Recovery dry-run enumerates available DB backups, exports, references and precise differences before restoring anything.
 - **OI-22:** Each deletion (including dependent scouts on move changes) is explicit, confirmed and logged; automated actions never delete orders.
 - **OI-23:** Save orders for turn N, export and manually edit the workbook, restart and scan. The saved Mapper plan is unchanged and the manual workbook remains intact. A re-export creates a separate fresh copy from the saved plan.
