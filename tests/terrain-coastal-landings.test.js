@@ -91,11 +91,54 @@ try{
         if(!p.water&&p.z>seaLevel+.000001&&p.z<seaLevel+height*.08&&p.landing>.95)width+=step;
       }
       minimumShelf=Math.min(minimumShelf,width);
-      assert.ok(width>.05,`${terrain}/${water} share=${share} col=${col}: beach too narrow (${width})`);
+      assert.ok(width>.025,`${terrain}/${water} share=${share} col=${col}: beach too narrow (${width})`);
       const flank=point(.5+.5*share-.01,.28);
       assert.ok(G.surface(flank.x,flank.y,lookup,colour).water,'ordinary shoreline must retain configured water share');
-      if(share>=.7)assert.ok(!at(.5+.5*share-.03).water,'rare beach must extend locally into water');
+      assert.ok(at(.5+.5*share-.003).water,'cove must not project into the configured water area');
+      assert.ok(!at(.5+.5*share+.003).water,'cove must retain the configured shoreline');
     }
+  }
+  // The ascent's sampled centre must traverse the side of the cove, and
+  // its actual surface must rise continuously from the beach to the shoulder.
+  T.set({coastWaterShare:.7,coastRoughness:0});
+  {
+    const col=18,row=100,n=G.regionOwners(col,row,'edge',4)[1];
+    const square=G.sharedSquare({col,row},n);
+    const lookup=(c,r)=>({terrain:c===col&&r===row?'O':'GH'});
+    const centres=[];
+    for(const p of [.40,.60,.80]){
+      let sum=0,weighted=0,height=0;
+      for(let j=-200;j<=200;j++){
+        const lateral=j/1000,u=.85+.15*p;
+        const x=square.center.x+square.normal.x*(u-.5)*G.coreRadius+square.tangent.x*lateral;
+        const y=square.center.y+square.normal.y*(u-.5)*G.coreRadius+square.tangent.y*lateral;
+        const v=G.surface(x,y,lookup,colour),w=v.coastalPath||0;
+        sum+=w;weighted+=lateral*w;height+=v.z*w;
+      }
+      assert.ok(sum>10,'route must have a resolved physical width');
+      centres.push({lateral:weighted/sum,z:height/sum});
+    }
+    assert.ok(Math.abs(centres[2].lateral-centres[0].lateral)>.045,'route must climb diagonally');
+    assert.ok(centres[0].z<centres[1].z&&centres[1].z<centres[2].z,'route must ascend towards the shoulder');
+  }
+  // Broad profile variation must change the actual upper slope, with no
+  // large jumps between adjacent samples and without editing a core.
+  {
+    const heights=[];
+    for(let col=40;col<65;col++){
+      const row=100,n=G.regionOwners(col,row,'edge',4)[1];
+      const q=G.sharedSquare({col,row},n);
+      const lookup=(c,r)=>({terrain:c===col&&r===row?'O':'GH'});
+      const sample=u=>G.surface(q.center.x+q.normal.x*(u-.5)*G.coreRadius+q.tangent.x*.26,
+        q.center.y+q.normal.y*(u-.5)*G.coreRadius+q.tangent.y*.26,lookup,colour);
+      const h=sample(1).z-seaLevel;
+      heights.push((sample(.94).z-seaLevel)/h);
+      let previous=sample(.851).z;
+      for(let u=.852;u<1;u+=.001){const next=sample(u).z;assert.ok(Math.abs(next-previous)<.025,'coastal profile must be continuous');previous=next;}
+      assert.ok(sample(.851).wetness>.5,'foot must receive a narrow wet material band');
+      assert.equal(sample(.99).wetness,0,'wet band must not darken the upper cliff');
+    }
+    assert.ok(Math.max(...heights)-Math.min(...heights)>.08,'cliff shoulder profiles must vary broadly');
   }
   console.log('PHYSICAL_BEACH_WIDTH_PASS',JSON.stringify({minimumShelf}));
   console.log('SEEDED_HILL_MOUNTAIN_COASTAL_LANDINGS_PASS',

@@ -241,11 +241,12 @@ const IsoMapper = (() => {
       const cliff=wet?0:Math.max(0,Math.min(1,(steepness-.48)/.68));
       const rockWeight=wet?0:part.reduce((n,p)=>n+(p.rock||0),0)/part.length;
       const landing=part.reduce((sum,p)=>sum+(p.landing||0),0)/part.length;
+    const wetness=part.reduce((sum,p)=>sum+(p.wetness||0),0)/part.length;
       const exposure=(window.TerrainSettings?.value('cliffExposure')??.85)*(1-landing),stone=[120,120,108];
       const shade=wet?mixed:'#'+[1,3,5].map((i,k)=>{
         const base=parseInt(mixed.slice(i,i+2),16)*light;
         const amount=Math.min(.96,cliff*exposure*(.72+.28*rockWeight));
-        return Math.max(0,Math.min(255,Math.round(base*(1-amount)+stone[k]*amount))).toString(16).padStart(2,'0');
+        return Math.max(0,Math.min(255,Math.round((base*(1-amount)+stone[k]*amount)*(1-.24*wetness)))).toString(16).padStart(2,'0');
       }).join('');
       faces.push({points:part,color:shade,region:activeRegion});
     };

@@ -170,7 +170,7 @@
     const path=pathChance?smooth((routeWidth+.045-Math.abs(lateral))/.045):0;
     const position=.5+((x-mx)*dx+(y-my)*dy)/(distance*coreRadius);
     const canonical=canon([pair.a,pair.b]);
-    return {beach,path,position,waterFirst:ownerKey(pair.a)===ownerKey(canonical[0]),beta:pairFraction(canonical),rocky:fraction('landing-material:'+pair.key)<.48,key:pair.key};
+    return {beach,path,pathChance,routeWidth,lateral,routeSide:fraction('landing-route-side:'+pair.key)<.5?-1:1,position,waterFirst:ownerKey(pair.a)===ownerKey(canonical[0]),beta:pairFraction(canonical),rocky:fraction('landing-material:'+pair.key)<.48,key:pair.key};
   }
   function cornerInfluences(position,owners,junction) {
     const sorted=canon(owners);
@@ -366,10 +366,9 @@
     const waterOwners=owners.filter(o=>water(o.data.terrain));
     const configuredWaterShare=setting('coastWaterShare',.6);
     const landing=coastWater>0?coastalLanding(region,owners,x,y):null;
-    // Rare landing sites need physical dry space even with a high global
-    // water share. Compact support leaves ordinary coast/corners untouched.
-    const waterShare=configuredWaterShare-(landing?.beach||0)*
-      Math.max(0,configuredWaterShare-.35);
+    // A cove removes cliff material inland. It never adds a platform into
+    // the water: ordinary coast and landing use the identical shoreline.
+    const waterShare=configuredWaterShare;
     // A coastal threshold is a pair property. Extend those exact boundary
     // values into a corner with positive pair weights; never switch to a
     // different constant just because regionAt crossed square -> triangle.
@@ -429,10 +428,14 @@
     // a steep rocky coastal face. The core boundary still joins unchanged.
     const inland=Math.max(0,Math.min(1,coastField/(1-threshold)));
     const mountain=weights.low+weights.high;
-    const slope=smooth(inland);
+    // World-space, broad variation is shared by square/corner samples.
+    // The warp is monotone and fixes both endpoints, preserving every core.
+    const coastShape=noise(x*.72+19,y*.72-31,1237);
+    const shaped=inland+(coastShape-.5)*1.1*inland*(1-inland);
+    const slope=smooth(shaped);
     // A zero shoreline tangent keeps steep cliff feet stable when nearby
     // dry and clipped water vertices round to the same Float32 XY position.
-    const cliff=(1-Math.pow(1-inland,3))*smooth(inland/.05);
+    const cliff=(1-Math.pow(1-shaped,3))*smooth(shaped/.05);
     // Ownership weights have flat Hermite tangents: their normalised value
     // is NOT distance from shore. Resolve the noisy shoreline in geometric
     // coordinates so the shelf keeps a measurable width on the actual mesh.
@@ -447,13 +450,18 @@
       const coast=(lo+hi)/2;
       landingInland=Math.max(0,Math.min(1,(landing.position-coast)/(1-coast)));
     }
-    // A cove is a geometric shelf, not paint on the unchanged cliff.
-    // The shelf spans 40% of the physical dry lane. Routes retain a short
-    // beach before their longer ascent; both rejoin the core smoothly.
-    const shelf=p=>p<.40?.025*smooth(p/.40):.025+.975*smooth((p-.40)/.60);
-    const route=p=>p<.28?.025*smooth(p/.28):.025+.975*smooth((p-.28)/.72);
-    const ordinary=slope*(1-mountain)+cliff*mountain;
-    const coveSlope=shelf(landingInland)*(1-(landing?.path||0))+route(landingInland)*(landing?.path||0);
+    // The recessed shelf occupies the landward dry strip. Its rounded lane
+    // support blends the back wall into both headlands without moving shore.
+    // A diagonal route crosses a side shoulder as it climbs; compact support
+    // keeps its excavation and colour away from square/corner boundaries.
+    const routeCentre=landing?landing.routeSide*(.025+.105*smooth((landingInland-.36)/.53)):0;
+    const routeMask=landing?.pathChance?
+      smooth((landing.routeWidth+.025-Math.abs(landing.lateral-routeCentre))/.025)*landing.beach:0;
+    const shelf=p=>p<.58?.025*smooth(p/.58):.025+.975*smooth((p-.58)/.42);
+    const route=p=>p<.32?.025*smooth(p/.32):.025+.975*smooth((p-.32)/.68);
+    const faceMix=mountain+(1-mountain)*smooth((coastShape-.35)/.4)*.65;
+    const ordinary=slope*(1-faceMix)+cliff*faceMix;
+    const coveSlope=shelf(landingInland)*(1-routeMask)+route(landingInland)*routeMask;
     const coastalSlope=ordinary*(1-(landing?.beach||0))+coveSlope*(landing?.beach||0);
     const coastalRaw=waterLevel+(raw-waterLevel)*coastalSlope;
     const layer=(.10+weights.hill*.025+weights.low*.035+weights.high*.065)/3;
@@ -482,9 +490,12 @@
     const band=coastalRaw/layer-Math.floor(coastalRaw/layer);
     const riser=region.kind==='core'?smooth((band-.22)/.14)*(1-smooth((band-.64)/.14)):.45;
     const patch=smooth((detail-.38)/.28);
-    const rock=Math.min(.92,weights.hill*patch*riser*setting('rockExposure',.72)+
+    let rock=Math.min(.92,weights.hill*patch*riser*setting('rockExposure',.72)+
       weights.low*(.12+.68*patch)*(.4+.6*riser)+
       weights.high*(.38+.48*patch)*(.65+.35*riser));
+    // Keep grassy coastal shoulders; actual steep faces receive stone from
+    // their triangle normals in both renderer paths. Core materials stay fixed.
+    if(region.kind!=='core'&&coastWater>0)rock*=.35+.65*mountain;
     const stone=[132,136,119];
     land=land.map((v,i)=>v*(1-rock)+stone[i]*rock);
     const snowCover=weights.snow*smooth((z-(.14+(2/3)*((weights.high>weights.low?1.64:.86)-.14)))/(.38*2/3));
@@ -494,18 +505,22 @@
     land=land.map((v,i)=>bank[i]*(1-shore)+v*shore);
     if(landing){
       // Short shingle/sand coves rather than continuous coastal bands.
-      const cove=landing.beach*(1-smooth((landingInland-.34)/.28));
+      const cove=landing.beach*(1-smooth((landingInland-.52)/.22));
       const material=landing.rocky?[155,148,124]:[203,181,137];
       land=land.map((v,i)=>v*(1-cove*.82)+material[i]*cove*.82);
-      if(landing.path){
-        const track=landing.path*smooth((landingInland-.28)/.15)*
+      if(routeMask){
+        const track=routeMask*smooth((landingInland-.32)/.15)*
           (1-smooth((landingInland-.78)/.22));
         const dust=landing.rocky?[142,137,119]:[159,145,109];
         land=land.map((v,i)=>v*(1-track*.58)+dust[i]*track*.58);
       }
     }
+    // Elevation, rather than ownership weight, anchors the wet strip to
+    // the actual waterline on both cliff faces and landing shelves.
+    const wetBand=region.kind!=='core'&&coastWater>0?
+      1-smooth(Math.max(0,z-waterLevel)/.009):0;
     const color='#'+land.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
-    return {x,y,z,color,water:false,rock,landing:landing?landing.beach*(1-smooth((landingInland-.40)/.25)):0};
+    return {x,y,z,color,water:false,rock,wetness:wetBand,coastalPath:routeMask,landing:landing?landing.beach*(1-smooth((landingInland-.58)/.20)):0};
   }
   // Keep scenery bases inside the revealed polygon. Raised crowns may extend
   // naturally across a fog bank, but no hidden-side trees are generated.

@@ -7,7 +7,7 @@ const {chromium}=require('playwright');
 (async()=>{
   const browser=await chromium.launch({channel:process.env.CHROME_CHANNEL || 'msedge',headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--no-sandbox']});
   try{
-   for(const fixture of [{name:'hill-mountain-coast',col:317,row:327},{name:'landing-cove',col:28,row:100},{name:'landing-ascent',col:18,row:100},{name:'hill-beach-share-07',col:28,row:100,terrain:'GH',share:.7},{name:'mountain-beach-share-07',col:28,row:100,terrain:'LAM',share:.7}]){
+   for(const fixture of [{name:'hill-mountain-coast',col:317,row:327},{name:'landing-cove',col:28,row:100},{name:'landing-ascent',col:18,row:100,share:.7},{name:'hill-beach-share-07',col:28,row:100,terrain:'GH',share:.7},{name:'mountain-beach-share-07',col:28,row:100,terrain:'LAM',share:.7}]){
     const page=await browser.newPage({viewport:{width:1400,height:900},deviceScaleFactor:1});
     const errors=[];
     page.on('pageerror',e=>errors.push('PAGE: '+e.stack));
