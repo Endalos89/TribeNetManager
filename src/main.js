@@ -297,10 +297,10 @@ function buildOrdersExportData(turnKey) {
     routeGroups,
     splitGroups: ordersExportDraftSplits(turnKey),
     transferGroups: draftKeys.map(key => turnManagerDatabase.listTransfers(key)),
-    comments: turnManagerDatabase.listOrderText(turnKey, 'Comments'),
-    gmActions: turnManagerDatabase.listOrderText(turnKey, 'GM Actions'),
+    comments: typeof turnManagerDatabase.listOrderText === 'function' ? turnManagerDatabase.listOrderText(turnKey, 'Comments') : [],
+    gmActions: typeof turnManagerDatabase.listOrderText === 'function' ? turnManagerDatabase.listOrderText(turnKey, 'GM Actions') : [],
     skillAttempts,
-    researchAttempts: turnManagerDatabase.listResearchAttempts(turnKey),
+    researchAttempts: typeof turnManagerDatabase.listResearchAttempts === 'function' ? turnManagerDatabase.listResearchAttempts(turnKey) : [],
     activities: turnManagerDatabase.listActivities(turnKey)
   });
   // Do not allow a silently incomplete export when a saved SQLite route is
