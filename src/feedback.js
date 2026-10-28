@@ -7,7 +7,9 @@
   const TYPES = ['change', 'bug', 'data', 'ui'];
   let notes = loadNotes();
   let markerLayer = null;
+  let launcherGroup = null;
   let launcher = null;
+  let designLauncher = null;
   let renderQueued = false;
   let showResolved = loadShowResolved();
 
