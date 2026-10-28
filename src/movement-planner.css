@@ -746,6 +746,10 @@
 .map-corner-actions { position:absolute; z-index:20; top:12px; left:12px; display:flex; gap:7px; }
 .transfer-map-button { position:relative; display:inline-flex; align-items:center; gap:5px; padding:8px 11px; border:1px solid rgba(170,205,182,.55); border-radius:8px; background:rgba(7,16,20,.88); color:#edf5ee; font-weight:700; box-shadow:0 3px 12px rgba(0,0,0,.38); cursor:pointer; backdrop-filter:blur(5px); }
 .transfer-map-button:hover { background:rgba(24,49,37,.96); border-color:#a6d4ac; }
+.order-sheet-menu { position:absolute; z-index:21; top:52px; left:12px; display:grid; grid-template-columns:repeat(2,minmax(130px,1fr)); gap:5px; min-width:280px; padding:8px; border:1px solid rgba(170,205,182,.38); border-radius:10px; background:rgba(7,16,20,.96); box-shadow:0 6px 20px rgba(0,0,0,.42); backdrop-filter:blur(8px); }
+.order-sheet-menu.hidden { display:none; }
+.order-sheet-menu button { padding:8px 10px; border:1px solid rgba(170,205,182,.24); border-radius:7px; background:#14251a; color:#e5efe7; text-align:left; cursor:pointer; }
+.order-sheet-menu button:hover { border-color:#91c69a; background:#1d3927; }
 .scout-overview-dialog .turn-action-dialog-form { max-height:calc(100vh - 28px); overflow:auto; }
 .scout-overview-table { min-width:1120px; }
 .unit-creation-overview-table { min-width:640px; }
@@ -806,6 +810,17 @@
 .transfer-table-item img { width:20px; height:20px; image-rendering:pixelated; object-fit:contain; }
 .transfer-overview-empty { padding:24px !important; color:#91a89a !important; text-align:center !important; }
 .transfer-overview-actions { justify-content:space-between; }
+.order-sheet-overview-dialog { width:min(1100px,calc(100vw - 28px)); }
+.order-sheet-overview-editor { display:grid; gap:8px; margin:0 0 12px; padding:10px; border:1px solid rgba(130,160,139,.25); border-radius:8px; background:rgba(11,25,20,.5); }
+.order-sheet-overview-editor[hidden] { display:none; }
+.order-sheet-overview-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; }
+.order-sheet-overview-fields label { display:grid; gap:4px; color:#a9c1ac; font-size:10px; }
+.order-sheet-overview-fields input,.order-sheet-overview-fields textarea,.order-sheet-overview-fields select { width:100%; min-width:0; padding:7px 8px; border:1px solid rgba(130,160,139,.38); border-radius:6px; background:#09150e; color:#e7f3ea; font:inherit; }
+.order-sheet-overview-fields textarea { min-height:62px; resize:vertical; }
+.order-sheet-overview-form-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; }
+#orderSheetOverviewStatus { margin-right:auto; color:#9fc4a3; font-size:10px; }
+.order-sheet-overview-table { min-width:600px; }
+.order-sheet-overview-table td:last-child { white-space:nowrap; }
 @media (max-width: 650px) {
   .transfer-editor-grid { grid-template-columns:1fr; }
   .transfer-rosters { grid-template-columns:1fr; }

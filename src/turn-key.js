@@ -24,4 +24,16 @@ function sameTurnKey(a, b) {
   return Boolean(left && right && left === right);
 }
 
-module.exports = { canonicalTurnKey, inferTurnKeyFromFilename, sameTurnKey };
+function previousTurnKey(value) {
+  const key = canonicalTurnKey(value);
+  const match = String(key || '').match(/^(\d+)-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return null;
+  return month === 1
+    ? `${String(year - 1).padStart(match[1].length, '0')}-12`
+    : `${match[1]}-${String(month - 1).padStart(2, '0')}`;
+}
+
+module.exports = { canonicalTurnKey, inferTurnKeyFromFilename, sameTurnKey, previousTurnKey };

@@ -91,17 +91,21 @@ The supplied workbook samples show Auto-GM changing from 23 to 27 columns while 
 
 ## Bugs and areas still to implement
 
-### Confirmed bug
+### Fixed in the current implementation
 
-The automatic scan in `src/turn-file-library-ipc.js` calls `clearDraftPlanning` when a changed Completed Orders workbook is detected. That helper deletes planned activities, unit splits and movement/scouting routes. The scan can therefore erase saved orders. This is a bug and violates the lifecycle rule above; it is not intended behavior.
+- The automatic Completed Orders scan no longer deletes saved Mapper activities, unit splits or movement/scouting routes.
+- Completed Orders imports are references and leave the saved Mapper plan editable and unchanged.
+- Blank workbook receipt is recorded as the lifecycle boundary. Only receipt of N+1's blank workbook marks N complete; export, Results import, file scan and restart do not clear N's plan.
+- Exports target `Exported Files/Orders_<turn>.xlsx`, replace the same turn's export, and report a lock/write error without writing an alternate filename.
+- Mapper overview entry points now cover Comments, GM Actions, Tribe Activities, Tribe Movement, Transfers, Scout, Units, Skill Attempts and Research Attempts. Auto-GM remains deferred.
+- Manual Comments, GM Actions and Research Attempts have saved database storage and are included in workbook export. Tribe Activities can edit distinction and mining direction as well as existing activity fields.
 
-### Still to implement
+### Bugs and areas still to implement
 
-- Remove all plan-clearing or plan-mutating behavior from automatic scans and completed/reference workbook imports.
-- Keep `Exported Files` under the application installation directory, separate from the watched Completed Orders directory.
-- Implement the one-file-per-turn export path, replacing the existing file safely and preserving it if validation fails or it is locked.
-- Validate every managed sheet and emitted field against the actual blank template; reject unsupported layouts and insufficient row capacity.
-- Verify persistence through the real export → scan → restart path before considering the data-loss issue fixed.
-- Add the remaining editable Mapper overviews for Comments, GM Actions, Tribes_Activities, Tribe_Movement, Research_Attempts and any other planned sheets not yet covered. Keep Auto-GM deferred.
+- Same-turn template replacement currently updates the stored template. Retaining multiple candidate templates and showing their differences still needs implementation.
+- The exporter validates managed rows and emitted values, but the full preservation contract still needs a systematic audit across workbook versions, including formulas, validations, macros, hidden state, defined names and template-owned cells.
+- The export → automatic scan → app restart persistence path has not yet been verified end to end. The destructive clear has been removed in code, but release-level confirmation remains outstanding.
+- Confirm that the installed application's directory is writable on supported installation types. When it is not, the app should explain the required folder permission without silently exporting elsewhere.
+- Auto-GM Mapper editing remains deferred. The workbook sheet must remain intact through import and export.
 
 **Relevant code:** `src/turn-file-library-ipc.js` (scan), `src/turn-file-library-ui.js` (scan schedule), `src/orders-export-path.js` (export destination), `src/orders-workbook.js` (template writer/validation), `src/orders-export-data.js` (order assembly), `src/main.js` (import/export IPC).

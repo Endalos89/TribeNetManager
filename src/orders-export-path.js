@@ -1,44 +1,49 @@
 const fs = require('fs');
 const path = require('path');
-const { canonicalTurnKey, inferTurnKeyFromFilename } = require('./turn-key');
-const { preferredLibraryRoot } = require('./tribenet-files-path');
+const { canonicalTurnKey } = require('./turn-key');
 
-function completedOrdersDirectory(appLike, options = {}) {
-  const preferred = options.preferredRoot || preferredLibraryRoot(appLike);
+function installationDirectory(appLike, options = {}) {
+  if (options.installationDirectory) return path.resolve(options.installationDirectory);
+  // `preferredRoot` remains a convenient explicit root for local callers and
+  // tests; production passes no override and uses the installed executable's
+  // directory. Development builds use userData so generated workbooks do not
+  // end up beside source files or in the watched Completed Orders library.
+  if (options.preferredRoot) return path.resolve(options.preferredRoot);
+  if (appLike?.isPackaged) return path.dirname(options.executablePath || process.execPath);
+  return appLike?.getPath ? appLike.getPath('userData') : process.cwd();
+}
+
+function exportedOrdersDirectory(appLike, options = {}) {
+  const directory = path.join(installationDirectory(appLike, options), 'Exported Files');
+  fs.mkdirSync(directory, { recursive: true });
+  const probe = path.join(directory, `.write-test-${process.pid}`);
   try {
-    const directory = path.join(preferred, 'Completed Orders');
-    fs.mkdirSync(directory, { recursive: true });
-    const probe = path.join(directory, '.write-test');
     fs.writeFileSync(probe, 'ok', 'utf8');
     fs.unlinkSync(probe);
-    return directory;
-  } catch (_) {
-    const directory = path.join(appLike.getPath('userData'), 'TribeNet Files', 'Completed Orders');
-    fs.mkdirSync(directory, { recursive: true });
-    return directory;
+  } catch (error) {
+    try { fs.unlinkSync(probe); } catch (_) {}
+    const wrapped = new Error(`Cannot write to the Orders export folder at ${directory}: ${error.message}`);
+    wrapped.code = error.code;
+    throw wrapped;
   }
+  return directory;
 }
 
 function canonicalOrdersFilename(turnKey) {
-  return `${String(turnKey).replace(/-/g, '_')}_Orders Complete.xlsx`;
+  return `Orders_${String(turnKey)}.xlsx`;
 }
 
 function resolveOrdersExportPath(appLike, requestedTurnKey, options = {}) {
   const turnKey = canonicalTurnKey(requestedTurnKey);
   if (!turnKey) throw new Error('A planning turn is required before exporting Orders.');
-  const directory = completedOrdersDirectory(appLike, options);
-  const canonicalName = canonicalOrdersFilename(turnKey);
-  const names = fs.readdirSync(directory, { withFileTypes: true })
-    .filter(entry => entry.isFile() && /\.(xlsx|xlsm)$/i.test(entry.name))
-    .map(entry => entry.name);
-  const exact = names.find(name => name.toLowerCase() === canonicalName.toLowerCase());
-  if (exact) return { turnKey, outputPath: path.join(directory, exact), updatedExisting: true };
-
-  const sameTurn = names
-    .filter(name => canonicalTurnKey(inferTurnKeyFromFilename(name)) === turnKey)
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  if (sameTurn.length) return { turnKey, outputPath: path.join(directory, sameTurn[0]), updatedExisting: true };
-  return { turnKey, outputPath: path.join(directory, canonicalName), updatedExisting: false };
+  const directory = exportedOrdersDirectory(appLike, options);
+  const outputPath = path.join(directory, canonicalOrdersFilename(turnKey));
+  return { turnKey, outputPath, outputDirectory: directory, updatedExisting: fs.existsSync(outputPath) };
 }
 
-module.exports = { canonicalOrdersFilename, completedOrdersDirectory, resolveOrdersExportPath };
+module.exports = {
+  canonicalOrdersFilename,
+  installationDirectory,
+  exportedOrdersDirectory,
+  resolveOrdersExportPath
+};

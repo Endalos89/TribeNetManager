@@ -3,6 +3,11 @@
 // from the latest Results report.
 
 function lifecyclePlanningTurnKey() {
+  const importedTemplateTurn = String(localStorage.getItem('tribenet:activeOrdersTemplateTurn') || '').trim();
+  const importedTemplateMatch = importedTemplateTurn.match(/^(\d+)[-_](\d+)$/);
+  if (importedTemplateMatch) {
+    return `${importedTemplateMatch[1]}-${String(Number(importedTemplateMatch[2])).padStart(2, '0')}`;
+  }
   if (resultsTimeline?.turn?.isPlanningTurn) return resultsTimeline.turn.turnKey;
   return TurnLifecycleCore.planningTurnKey(resultsTimeline?.turn || null)
     || state?.planImport?.turnKey
@@ -145,39 +150,35 @@ syncPlannerOverlayToResultTurn = async function syncPlannerOverlayWithActualResu
     const select = document.getElementById('turnSelect');
     if (select) {
       select.innerHTML = '';
-      if (!imports.length) {
-        const draftOption = document.createElement('option');
-        draftOption.value = 'draft';
-        draftOption.textContent = `Turn ${turnKey} · Draft planning`;
-        select.appendChild(draftOption);
-      } else {
-        for (const row of imports) {
-          const option = document.createElement('option');
-          option.value = String(row.id);
-          const date = row.importedAt ? new Date(row.importedAt).toLocaleDateString() : '';
-          option.textContent = `Turn ${row.turnKey} · Completed Orders · ${row.sourceFile}${date ? ` · ${date}` : ''}`;
-          select.appendChild(option);
-        }
+      const draftOption = document.createElement('option');
+      draftOption.value = 'draft';
+      draftOption.textContent = `Turn ${turnKey} · Mapper draft`;
+      select.appendChild(draftOption);
+      for (const row of imports) {
+        const option = document.createElement('option');
+        option.value = String(row.id);
+        const date = row.importedAt ? new Date(row.importedAt).toLocaleDateString() : '';
+        option.textContent = `Turn ${row.turnKey} · Imported reference · ${row.sourceFile}${date ? ` · ${date}` : ''}`;
+        select.appendChild(option);
       }
-      select.title = imports.length
-        ? `Completed Orders are authoritative for Turn ${turnKey}`
-        : `Planning Turn ${turnKey} from the Turn ${resultTurn.baselineTurnKey || 'previous'} Results baseline`;
+      select.value = preferredId != null && preferredId !== 'draft' ? String(preferredId) : 'draft';
+      select.title = `Mapper draft for Turn ${turnKey} remains editable. Imported workbooks are read-only references.`;
     }
 
-    if (imports.length) {
+    if (imports.length && preferredId != null && preferredId !== 'draft') {
       const requestedId = Number(preferredId);
-      const preferred = preferredId !== 'draft' && Number.isFinite(requestedId) && imports.some(row => Number(row.id) === requestedId)
+      const preferred = Number.isFinite(requestedId) && imports.some(row => Number(row.id) === requestedId)
         ? await window.tribenet.getPlannerPlan(requestedId)
-        : await window.tribenet.getPlannerPlanForTurn(turnKey);
+        : null;
       if (preferred) {
         const hydrated = lifecycleHydrateCompletedRecord(preferred, resultTurn);
         lifecycleSetPlanRecord(hydrated, hydrated.id, false);
         const status = document.getElementById('planStatus');
         const title = document.getElementById('plannerTurnTitle');
         const source = document.getElementById('plannerSourceLabel');
-        if (status) status.textContent = `Turn ${hydrated.turnKey} · Completed Orders are authoritative; displaying submitted movement and scouting.`;
-        if (title) title.textContent = `Turn ${hydrated.turnKey} · Completed Orders`;
-        if (source) source.textContent = hydrated.sourceFile || 'Completed Orders';
+        if (status) status.textContent = `Turn ${hydrated.turnKey} · displaying an imported reference. The Mapper draft remains unchanged.`;
+        if (title) title.textContent = `Turn ${hydrated.turnKey} · Imported Reference`;
+        if (source) source.textContent = hydrated.sourceFile || 'Imported workbook reference';
         if (redraw) draw();
         return hydrated;
       }
@@ -368,17 +369,51 @@ const lifecycleOriginalRefreshResultTurns = refreshResultTurns;
 refreshResultTurns = async function refreshResultsAndPlanningTurn(preferredTurnKey = null) {
   const storedBefore = preferredTurnKey || localStorage.getItem(RESULT_TURN_STORAGE_KEY);
   await lifecycleOriginalRefreshResultTurns(preferredTurnKey);
-  const planningEntry = TurnLifecycleCore.planningTimelineEntry(resultsTimeline.turns);
+  const actualTurns = (resultsTimeline.turns || []).filter(row => !row.isPlanningTurn);
+  let activeTemplateTurn = String(localStorage.getItem('tribenet:activeOrdersTemplateTurn') || '').trim();
+  try {
+    const savedTemplateTurn = await window.tribenet.getLatestOrdersTemplateTurn();
+    if (savedTemplateTurn) activeTemplateTurn = String(savedTemplateTurn);
+  } catch (error) {
+    console.warn('Could not load the latest blank Orders template turn', error);
+  }
+  const activeMatch = activeTemplateTurn.match(/^(\d+)[-_](\d+)$/);
+  if (activeMatch) {
+    activeTemplateTurn = `${activeMatch[1]}-${String(Number(activeMatch[2])).padStart(2, '0')}`;
+    localStorage.setItem('tribenet:activeOrdersTemplateTurn', activeTemplateTurn);
+  }
+
+  // The blank workbook is the authority for which turn is currently being
+  // planned. Results imports can update the map baseline, but must not advance
+  // the Mapper plan until the next turn's blank workbook has arrived.
+  let planningEntry = null;
+  if (activeTemplateTurn) {
+    const baseline = actualTurns.find(row => String(TurnLifecycleCore.planningTurnKey(row)) === activeTemplateTurn);
+    if (baseline) planningEntry = TurnLifecycleCore.planningTimelineEntry([baseline]);
+    if (!planningEntry && actualTurns.length) {
+      const latestActual = [...actualTurns].sort((a, b) => Number(a.turnSort || 0) - Number(b.turnSort || 0)).at(-1);
+      const fallbackEntry = TurnLifecycleCore.planningTimelineEntry([latestActual]);
+      if (fallbackEntry) {
+        planningEntry = {
+          ...fallbackEntry,
+          turnKey: activeTemplateTurn,
+          sourceFile: `Planning baseline from Turn ${latestActual.turnKey}`,
+          metadata: { ...(fallbackEntry.metadata || {}), baselineTurn: latestActual.turnKey, planningTurn: activeTemplateTurn, nextTurn: activeTemplateTurn }
+        };
+      }
+    }
+  }
+  if (!planningEntry) planningEntry = TurnLifecycleCore.planningTimelineEntry(actualTurns);
   if (!planningEntry) return;
 
-  resultsTimeline.turns = [...resultsTimeline.turns, planningEntry];
+  resultsTimeline.turns = [...actualTurns, planningEntry];
   updateMapTimelineUI();
 
-  // Existing installs will normally have the latest actual turn persisted. On
-  // startup move them into its next planning turn. An explicit preferred planning
-  // turn also selects that synthetic planning state.
-  const shouldOpenPlanning = String(storedBefore || '') === String(planningEntry.turnKey)
-    || (!preferredTurnKey && (!storedBefore || String(storedBefore) === String(planningEntry.baselineTurnKey)));
+  const explicitPlanningSelection = String(preferredTurnKey || '') === String(planningEntry.turnKey);
+  const storedPlanningSelection = String(storedBefore || '') === String(planningEntry.turnKey);
+  const storedBaselineSelection = !preferredTurnKey
+    && String(storedBefore || '') === String(planningEntry.baselineTurnKey);
+  const shouldOpenPlanning = explicitPlanningSelection || storedPlanningSelection || storedBaselineSelection;
   if (shouldOpenPlanning) {
     await applyResultTurn(planningEntry.turnKey, { persist: true, preservePlayback: true });
   }

@@ -90,7 +90,10 @@ function validateOrdersTemplate(filePath) {
     scoutRows: rowCapacity(workbook.Sheets.Scout_Movement) - 1,
     gmRows: rowCapacity(workbook.Sheets['GM Actions']) - 1,
     skillAttemptRows: rowCapacity(workbook.Sheets.Skill_Attempts) - 1,
-    activityRows: rowCapacity(workbook.Sheets.Tribes_Activities) - 1
+    activityRows: rowCapacity(workbook.Sheets.Tribes_Activities) - 1,
+    researchAttemptRows: workbook.Sheets.Research_Attempts
+      ? Math.max(0, rowCapacity(workbook.Sheets.Research_Attempts) - 1)
+      : 0
   };
 }
 
@@ -237,6 +240,40 @@ function skillAttemptCells(rows) {
     cells.push({ address: `A${sheetRow}`, value: row.tribe });
     cells.push({ address: `B${sheetRow}`, value: row.order, kind: 'number' });
     cells.push({ address: `C${sheetRow}`, value: row.topic });
+  }
+  return cells;
+}
+
+function researchAttemptColumns(workbook) {
+  if (!workbook.Sheets.Research_Attempts) return {};
+  return mapInputColumns(workbook, 'Research_Attempts', {
+    tribe: ['TRIBE'],
+    topic: ['TOPIC', 'RESEARCH', 'RESEARCH TOPIC']
+  });
+}
+
+function normalizeResearchAttemptRows(rows, maxRows) {
+  const normalized = (rows || []).map(row => ({
+    tribe: String(row.tribe || '').trim(),
+    topic: String(row.topic || '').trim()
+  })).filter(row => row.tribe || row.topic);
+  if (normalized.length > maxRows) throw new Error(`The blank workbook has room for ${maxRows} research attempts, but ${normalized.length} are planned.`);
+  const seen = new Set();
+  for (const row of normalized) {
+    if (!/^\d{4}$/.test(row.tribe) || !row.topic) throw new Error('Each research attempt needs a four-digit Tribe and a topic.');
+    const key = `${row.tribe}:${row.topic.toLowerCase()}`;
+    if (seen.has(key)) throw new Error(`Tribe ${row.tribe} has the same research attempt more than once.`);
+    seen.add(key);
+  }
+  return normalized;
+}
+
+function researchAttemptCells(rows, columns) {
+  const cells = [];
+  for (const [index, row] of (rows || []).entries()) {
+    const sheetRow = index + 2;
+    cells.push({ address: `${columnName(columns.tribe)}${sheetRow}`, value: row.tribe });
+    cells.push({ address: `${columnName(columns.topic)}${sheetRow}`, value: row.topic });
   }
   return cells;
 }
@@ -519,10 +556,17 @@ function validatePatchedWorkbook(sourceXml, outputPath, expected) {
       }
     }
   }
+  if (expected.researchAttempts.length) {
+    const actual = readRows('Research_Attempts').filter(row => row.TRIBE && row.TOPIC)
+      .map(row => ({ tribe:String(row.TRIBE).padStart(4, '0'), topic:String(row.TOPIC).trim() }));
+    if (JSON.stringify(actual) !== JSON.stringify(expected.researchAttempts)) {
+      throw new Error('Workbook validation failed: Research_Attempts rows do not match the saved Mapper orders.');
+    }
+  }
   return output;
 }
 
-async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], scouts = [], gmActions = [], validUnits = [], skillAttempts = [], transfers = [], activities = [], comments = [] }) {
+async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], scouts = [], gmActions = [], validUnits = [], skillAttempts = [], researchAttempts = [], transfers = [], activities = [], comments = [] }) {
   const template = validateOrdersTemplate(templatePath);
   const normalizedMovements = normalizeMovementRows(movements, template.movementRows);
   const normalizedScouts = normalizeScoutRows(scouts, template.scoutRows);
@@ -532,6 +576,10 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
     .filter((row, index, rows) => rows.findIndex(item => item.unitCode.toLowerCase() === row.unitCode.toLowerCase()) === index);
   const normalizedActions = (gmActions || []).filter(action => action?.text).map(action => ({ unit: String(action.unit || '').trim(), text: String(action.text).trim() }));
   const normalizedSkillAttempts = normalizeSkillAttemptRows(skillAttempts, template.skillAttemptRows);
+  if (researchAttempts.length && !template.workbook.Sheets.Research_Attempts) throw new Error('The blank Orders workbook is missing the Research_Attempts sheet.');
+  const researchColumns = researchAttemptColumns(template.workbook);
+  if (template.workbook.Sheets.Research_Attempts && (!researchColumns.tribe || !researchColumns.topic)) throw new Error('Research_Attempts needs TRIBE and TOPIC columns.');
+  const normalizedResearchAttempts = normalizeResearchAttemptRows(researchAttempts, template.researchAttemptRows);
   const normalizedActivities = normalizeActivityRows(activities, template.activityRows);
   const activityMap = activityColumns(template.workbook);
   if (normalizedActivities.length && (!activityMap.unit || !activityMap.activity || !activityMap.people))
@@ -604,6 +652,16 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   skillAttemptsXml = patchCells(skillAttemptsXml, skillAttemptCells(normalizedSkillAttempts));
   zip.file(paths.get('Skill_Attempts'), skillAttemptsXml);
 
+  if (template.workbook.Sheets.Research_Attempts) {
+    const researchPath = paths.get('Research_Attempts');
+    if (!researchPath) throw new Error('Could not locate Research_Attempts inside the workbook archive.');
+    let researchXml = await zip.file(researchPath).async('string');
+    const editableColumns = Object.values(researchColumns).filter(Boolean).map(columnName);
+    researchXml = clearInputRows(researchXml, 2, template.researchAttemptRows + 1, editableColumns);
+    researchXml = patchCells(researchXml, researchAttemptCells(normalizedResearchAttempts, researchColumns));
+    zip.file(researchPath, researchXml);
+  }
+
   let activityXml = await zip.file(paths.get('Tribes_Activities')).async('string');
   activityXml = clearInputRows(activityXml, 2, template.activityRows + 1,
     Object.values(activityMap).map(columnName));
@@ -651,12 +709,12 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
     `.${path.basename(outputPath)}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`);
   try {
     await fs.promises.writeFile(stagingPath, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
-    validatePatchedWorkbook(buffer, stagingPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, transfers: normalizedTransfers, activities: normalizedActivities, comments: normalizedComments });
+    validatePatchedWorkbook(buffer, stagingPath, { templatePath, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, researchAttempts: normalizedResearchAttempts, transfers: normalizedTransfers, activities: normalizedActivities, comments: normalizedComments });
     await fs.promises.rename(stagingPath, outputPath);
   } finally {
     await fs.promises.rm(stagingPath, { force: true }).catch(() => {});
   }
-  return { outputPath, activities: normalizedActivities, comments: normalizedComments, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, transfers: normalizedTransfers };
+  return { outputPath, activities: normalizedActivities, comments: normalizedComments, movements: normalizedMovements, scouts: normalizedScouts, gmActions: normalizedActions, validUnits: normalizedValidUnits, skillAttempts: normalizedSkillAttempts, researchAttempts: normalizedResearchAttempts, transfers: normalizedTransfers };
 }
 
 function templateDirectory(userDataPath) {

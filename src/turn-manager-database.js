@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
-const { canonicalTurnKey } = require('./turn-key');
+const { canonicalTurnKey, previousTurnKey } = require('./turn-key');
 
 function normalizeUnitCode(value) {
   return String(value || '').trim().toLowerCase();
@@ -57,6 +57,16 @@ class TurnManagerDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_tm_workbooks_turn ON turn_workbooks(turn_key);
 
+      CREATE TABLE IF NOT EXISTS turn_lifecycle (
+        turn_key TEXT PRIMARY KEY,
+        status TEXT NOT NULL CHECK(status IN ('planning','completed')),
+        completed_by_turn_key TEXT,
+        template_source_file TEXT,
+        template_received_at TEXT,
+        completed_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS planned_activities (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         turn_key TEXT NOT NULL,
@@ -64,6 +74,8 @@ class TurnManagerDatabase {
         activity_code TEXT NOT NULL,
         people INTEGER NOT NULL DEFAULT 0,
         target TEXT NOT NULL DEFAULT '',
+        distinction TEXT NOT NULL DEFAULT '',
+        mining_direction TEXT NOT NULL DEFAULT '',
         notes TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -119,6 +131,28 @@ class TurnManagerDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_skill_attempts_turn ON planned_skill_attempts(turn_key, tribe, order_number);
 
+      CREATE TABLE IF NOT EXISTS planned_order_text (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        turn_key TEXT NOT NULL,
+        sheet_key TEXT NOT NULL CHECK(sheet_key IN ('Comments','GM Actions')),
+        unit TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_order_text_turn ON planned_order_text(turn_key, sheet_key, id);
+
+      CREATE TABLE IF NOT EXISTS planned_research_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        turn_key TEXT NOT NULL,
+        tribe TEXT NOT NULL,
+        topic TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(turn_key, tribe, topic)
+      );
+      CREATE INDEX IF NOT EXISTS idx_research_attempts_turn ON planned_research_attempts(turn_key, tribe, id);
+
       CREATE TABLE IF NOT EXISTS skill_attempt_streaks (
         tribe TEXT NOT NULL,
         skill_key TEXT NOT NULL,
@@ -134,6 +168,10 @@ class TurnManagerDatabase {
         reconciled_at TEXT NOT NULL
       );
     `);
+
+    const activityColumns = new Set(this.db.prepare('PRAGMA table_info(planned_activities)').all().map(row => row.name));
+    if (!activityColumns.has('distinction')) this.db.exec("ALTER TABLE planned_activities ADD COLUMN distinction TEXT NOT NULL DEFAULT ''");
+    if (!activityColumns.has('mining_direction')) this.db.exec("ALTER TABLE planned_activities ADD COLUMN mining_direction TEXT NOT NULL DEFAULT ''");
 
     const columns = new Set(this.db.prepare('PRAGMA table_info(planned_unit_splits)').all().map(row => row.name));
     if (!columns.has('creation_phase') || !columns.has('skills_json')) {
@@ -176,20 +214,32 @@ class TurnManagerDatabase {
 
   listTurns() {
     return this.db.prepare(`
-      SELECT turn_key AS turnKey,
+      WITH turn_keys AS (
+        SELECT turn_key FROM turn_workbooks
+        UNION
+        SELECT turn_key FROM turn_lifecycle
+      )
+      SELECT turn_keys.turn_key AS turnKey,
              MAX(CASE WHEN role='start' THEN source_file END) AS startFile,
              MAX(CASE WHEN role='start' THEN imported_at END) AS startImportedAt,
              MAX(CASE WHEN role='final' THEN source_file END) AS finalFile,
-             MAX(CASE WHEN role='final' THEN imported_at END) AS finalImportedAt
-      FROM turn_workbooks
-      GROUP BY turn_key
-      ORDER BY turn_key DESC
+             MAX(CASE WHEN role='final' THEN imported_at END) AS finalImportedAt,
+             COALESCE(MAX(turn_lifecycle.status), 'planning') AS lifecycleStatus,
+             MAX(turn_lifecycle.completed_by_turn_key) AS completedByTurnKey,
+             MAX(turn_lifecycle.template_source_file) AS templateSourceFile,
+             MAX(turn_lifecycle.template_received_at) AS templateReceivedAt,
+             MAX(turn_lifecycle.completed_at) AS completedAt
+      FROM turn_keys
+      LEFT JOIN turn_workbooks ON turn_workbooks.turn_key=turn_keys.turn_key
+      LEFT JOIN turn_lifecycle ON turn_lifecycle.turn_key=turn_keys.turn_key
+      GROUP BY turn_keys.turn_key
+      ORDER BY turn_keys.turn_key DESC
     `).all();
   }
 
   getTurn(turnKey) {
     const rows = this.db.prepare('SELECT * FROM turn_workbooks WHERE turn_key = ?').all(turnKey);
-    if (!rows.length) return null;
+    if (!rows.length && !this.getTurnLifecycle(turnKey)) return null;
     const result = {
       turnKey,
       start: null,
@@ -197,6 +247,7 @@ class TurnManagerDatabase {
       activities: this.listActivities(turnKey),
       unitSplits: this.listUnitSplits(turnKey),
       transfers: this.listTransfers(turnKey),
+      lifecycle: this.getTurnLifecycle(turnKey),
       context: this.getContext(turnKey)
     };
     for (const row of rows) {
@@ -206,21 +257,77 @@ class TurnManagerDatabase {
     return result;
   }
 
+  recordBlankTemplateReceived(turnKey, sourceFile = '') {
+    const nextKey = canonicalTurnKey(turnKey);
+    if (!nextKey) throw new Error('A canonical turn is required to record a blank Orders workbook.');
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO turn_lifecycle(turn_key, status, template_source_file, template_received_at, updated_at)
+      VALUES (?, 'planning', ?, ?, ?)
+      ON CONFLICT(turn_key) DO UPDATE SET
+        template_source_file=excluded.template_source_file,
+        template_received_at=excluded.template_received_at,
+        updated_at=excluded.updated_at
+    `).run(nextKey, String(sourceFile || ''), now, now);
+    const priorKey = previousTurnKey(nextKey);
+    if (priorKey) {
+      this.db.prepare(`
+        INSERT INTO turn_lifecycle(turn_key, status, completed_by_turn_key, completed_at, updated_at)
+        VALUES (?, 'completed', ?, ?, ?)
+        ON CONFLICT(turn_key) DO UPDATE SET
+          status='completed', completed_by_turn_key=excluded.completed_by_turn_key,
+          completed_at=excluded.completed_at,
+          updated_at=excluded.updated_at
+      `).run(priorKey, nextKey, now, now);
+    }
+    return {
+      turnKey: nextKey,
+      current: this.getTurnLifecycle(nextKey),
+      completedTurnKey: priorKey,
+      completed: priorKey ? this.getTurnLifecycle(priorKey) : null
+    };
+  }
+
+  getTurnLifecycle(turnKey) {
+    const key = canonicalTurnKey(turnKey) || turnKey;
+    if (!key) return null;
+    const row = this.db.prepare(`
+      SELECT turn_key AS turnKey, status, completed_by_turn_key AS completedByTurnKey,
+             template_source_file AS templateSourceFile, template_received_at AS templateReceivedAt,
+             completed_at AS completedAt,
+             updated_at AS updatedAt
+      FROM turn_lifecycle WHERE turn_key=?
+    `).get(key);
+    return row || null;
+  }
+
+  latestBlankTemplateTurn() {
+    const rows = this.db.prepare(`
+      SELECT turn_key AS turnKey, template_received_at AS templateReceivedAt
+      FROM turn_lifecycle WHERE template_received_at IS NOT NULL
+    `).all();
+    const sort = value => {
+      const match = String(canonicalTurnKey(value) || '').match(/^(\d+)-(\d{2})$/);
+      return match ? Number(match[1]) * 12 + Number(match[2]) : -1;
+    };
+    return rows.sort((a,b) => sort(b.turnKey) - sort(a.turnKey))[0]?.turnKey || null;
+  }
+
   addActivity(turnKey, activity) {
     const now = new Date().toISOString();
     const result = this.db.prepare(`
-      INSERT INTO planned_activities(turn_key, unit, activity_code, people, target, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(turnKey, activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)), activity.target || '', activity.notes || '', now, now);
-    return this.db.prepare(`SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, notes, created_at AS createdAt, updated_at AS updatedAt FROM planned_activities WHERE id = ?`).get(Number(result.lastInsertRowid));
+      INSERT INTO planned_activities(turn_key, unit, activity_code, people, target, distinction, mining_direction, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(turnKey, activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)), activity.target || '', activity.distinction || '', activity.miningDirection || '', activity.notes || '', now, now);
+    return this.db.prepare(`SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, distinction, mining_direction AS miningDirection, notes, created_at AS createdAt, updated_at AS updatedAt FROM planned_activities WHERE id = ?`).get(Number(result.lastInsertRowid));
   }
 
   updateActivity(id, activity) {
     const now = new Date().toISOString();
     this.db.prepare(`
-      UPDATE planned_activities SET unit=?, activity_code=?, people=?, target=?, notes=?, updated_at=? WHERE id=?
-    `).run(activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)), activity.target || '', activity.notes || '', now, id);
-    return this.db.prepare(`SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, notes, created_at AS createdAt, updated_at AS updatedAt FROM planned_activities WHERE id = ?`).get(id) || null;
+      UPDATE planned_activities SET unit=?, activity_code=?, people=?, target=?, distinction=?, mining_direction=?, notes=?, updated_at=? WHERE id=?
+    `).run(activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)), activity.target || '', activity.distinction || '', activity.miningDirection || '', activity.notes || '', now, id);
+    return this.db.prepare(`SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, distinction, mining_direction AS miningDirection, notes, created_at AS createdAt, updated_at AS updatedAt FROM planned_activities WHERE id = ?`).get(id) || null;
   }
 
   deleteActivity(id) {
@@ -230,9 +337,106 @@ class TurnManagerDatabase {
 
   listActivities(turnKey) {
     return this.db.prepare(`
-      SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, notes, created_at AS createdAt, updated_at AS updatedAt
+      SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, distinction, mining_direction AS miningDirection, notes, created_at AS createdAt, updated_at AS updatedAt
       FROM planned_activities WHERE turn_key=? ORDER BY id
     `).all(turnKey);
+  }
+
+  listOrderText(turnKey, sheetKey) {
+    const key = canonicalTurnKey(turnKey) || turnKey;
+    if (!key || !['Comments', 'GM Actions'].includes(sheetKey)) return [];
+    return this.db.prepare(`
+      SELECT id, turn_key AS turnKey, sheet_key AS sheet, unit, message,
+             created_at AS createdAt, updated_at AS updatedAt
+      FROM planned_order_text WHERE turn_key=? AND sheet_key=? ORDER BY id
+    `).all(key, sheetKey);
+  }
+
+  addOrderText(turnKey, sheetKey, row) {
+    const key = canonicalTurnKey(turnKey) || turnKey;
+    const unit = String(row?.unit || '').trim();
+    const message = String(row?.message || row?.text || '').trim();
+    if (!key || !['Comments', 'GM Actions'].includes(sheetKey) || !unit || !message) {
+      throw new Error('Turn, unit and text are required for this Orders row.');
+    }
+    const now = new Date().toISOString();
+    const inserted = this.db.prepare(`
+      INSERT INTO planned_order_text(turn_key, sheet_key, unit, message, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(key, sheetKey, unit, message, now, now);
+    return this.db.prepare(`
+      SELECT id, turn_key AS turnKey, sheet_key AS sheet, unit, message,
+             created_at AS createdAt, updated_at AS updatedAt
+      FROM planned_order_text WHERE id=?
+    `).get(Number(inserted.lastInsertRowid));
+  }
+
+  updateOrderText(id, row) {
+    const unit = String(row?.unit || '').trim();
+    const message = String(row?.message || row?.text || '').trim();
+    if (!unit || !message) throw new Error('Unit and text are required for this Orders row.');
+    this.db.prepare('UPDATE planned_order_text SET unit=?, message=?, updated_at=? WHERE id=?')
+      .run(unit, message, new Date().toISOString(), Number(id));
+    return this.db.prepare(`
+      SELECT id, turn_key AS turnKey, sheet_key AS sheet, unit, message,
+             created_at AS createdAt, updated_at AS updatedAt
+      FROM planned_order_text WHERE id=?
+    `).get(Number(id)) || null;
+  }
+
+  deleteOrderText(id) {
+    const row = this.db.prepare(`
+      SELECT id, turn_key AS turnKey, sheet_key AS sheet, unit, message
+      FROM planned_order_text WHERE id=?
+    `).get(Number(id)) || null;
+    if (row) this.db.prepare('DELETE FROM planned_order_text WHERE id=?').run(Number(id));
+    return row;
+  }
+
+  listResearchAttempts(turnKey) {
+    const key = canonicalTurnKey(turnKey) || turnKey;
+    if (!key) return [];
+    return this.db.prepare(`
+      SELECT id, turn_key AS turnKey, tribe, topic,
+             created_at AS createdAt, updated_at AS updatedAt
+      FROM planned_research_attempts WHERE turn_key=? ORDER BY tribe, id
+    `).all(key);
+  }
+
+  addResearchAttempt(turnKey, attempt) {
+    const key = canonicalTurnKey(turnKey) || turnKey;
+    const tribe = String(attempt?.tribe || '').trim().slice(0, 4);
+    const topic = String(attempt?.topic || '').trim();
+    if (!key || !/^\d{4}$/.test(tribe) || !topic) throw new Error('A planning turn, four-digit Tribe and research topic are required.');
+    const now = new Date().toISOString();
+    const inserted = this.db.prepare(`
+      INSERT INTO planned_research_attempts(turn_key, tribe, topic, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(key, tribe, topic, now, now);
+    return this.db.prepare(`
+      SELECT id, turn_key AS turnKey, tribe, topic, created_at AS createdAt, updated_at AS updatedAt
+      FROM planned_research_attempts WHERE id=?
+    `).get(Number(inserted.lastInsertRowid));
+  }
+
+  updateResearchAttempt(id, attempt) {
+    const tribe = String(attempt?.tribe || '').trim().slice(0, 4);
+    const topic = String(attempt?.topic || '').trim();
+    if (!/^\d{4}$/.test(tribe) || !topic) throw new Error('A four-digit Tribe and research topic are required.');
+    this.db.prepare('UPDATE planned_research_attempts SET tribe=?, topic=?, updated_at=? WHERE id=?')
+      .run(tribe, topic, new Date().toISOString(), Number(id));
+    return this.db.prepare(`
+      SELECT id, turn_key AS turnKey, tribe, topic, created_at AS createdAt, updated_at AS updatedAt
+      FROM planned_research_attempts WHERE id=?
+    `).get(Number(id)) || null;
+  }
+
+  deleteResearchAttempt(id) {
+    const row = this.db.prepare(`
+      SELECT id, turn_key AS turnKey, tribe, topic FROM planned_research_attempts WHERE id=?
+    `).get(Number(id)) || null;
+    if (row) this.db.prepare('DELETE FROM planned_research_attempts WHERE id=?').run(Number(id));
+    return row;
   }
 
   beginningUnits(turnKey) {

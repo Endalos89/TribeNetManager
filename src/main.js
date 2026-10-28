@@ -297,7 +297,10 @@ function buildOrdersExportData(turnKey) {
     routeGroups,
     splitGroups: ordersExportDraftSplits(turnKey),
     transferGroups: draftKeys.map(key => turnManagerDatabase.listTransfers(key)),
+    comments: turnManagerDatabase.listOrderText(turnKey, 'Comments'),
+    gmActions: turnManagerDatabase.listOrderText(turnKey, 'GM Actions'),
     skillAttempts,
+    researchAttempts: turnManagerDatabase.listResearchAttempts(turnKey),
     activities: turnManagerDatabase.listActivities(turnKey)
   });
   // Do not allow a silently incomplete export when a saved SQLite route is
@@ -499,7 +502,8 @@ ipcMain.handle('orders:template-import', async (_event, expectedTurnKey) => {
     const turnKey = requested || inferred;
     if (!turnKey) throw new Error('The workbook filename does not identify a turn, and no planning turn is selected.');
     const saved = await saveOrderTemplate(filePath, app.getPath('userData'), turnKey);
-    return { canceled: false, ...saved };
+    const lifecycle = turnManagerDatabase.recordBlankTemplateReceived(turnKey, path.basename(filePath));
+    return { canceled: false, ...saved, lifecycle };
   } catch (error) {
     console.error('Blank Orders template import failed', error);
     return { canceled: false, error: error.message };
@@ -519,7 +523,8 @@ async function importOrdersTemplateFromRavenpost(expectedTurnKey) {
     const filePath = path.join(stagingDirectory, `blank-orders${extension}`);
     fs.writeFileSync(filePath, attachment.data);
     const saved = await saveOrderTemplate(filePath, app.getPath('userData'), turnKey);
-    return { ...saved, source: 'Ravenpost', emailSubject: attachment.subject };
+    const lifecycle = turnManagerDatabase.recordBlankTemplateReceived(turnKey, attachment.filename || 'Ravenpost blank Orders workbook');
+    return { ...saved, lifecycle, source: 'Ravenpost', emailSubject: attachment.subject };
   } catch (error) {
     console.error('Ravenpost blank Orders import failed', error);
     return { error: error.message };
@@ -553,24 +558,7 @@ ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
     const data = buildOrdersExportData(turnKey);
     const { savedRouteCounts, ...workbookData } = data;
     console.info('Export Orders source', { turnKey, ...savedRouteCounts });
-    let exported;
-    let usedAlternativePath = false;
-    try {
-      exported = await patchOrdersWorkbook({ templatePath, outputPath: destination.outputPath, ...workbookData });
-    } catch (error) {
-      // Excel on Windows may lock a previously exported Orders file. Preserve
-      // it and create a distinct new workbook instead of failing silently.
-      if (!['EPERM', 'EBUSY', 'EACCES'].includes(error?.code)) throw error;
-      const extension = path.extname(destination.outputPath);
-      const stem = path.basename(destination.outputPath, extension);
-      for (let index = 2; index <= 20 && !exported; index++) {
-        const alternate = path.join(path.dirname(destination.outputPath), `${stem} (export ${index})${extension}`);
-        if (fs.existsSync(alternate)) continue;
-        exported = await patchOrdersWorkbook({ templatePath, outputPath: alternate, ...workbookData });
-        usedAlternativePath = true;
-      }
-      if (!exported) throw new Error('Completed Orders workbook is locked and no alternative filename was available. Close Excel and try again.');
-    }
+    const exported = await patchOrdersWorkbook({ templatePath, outputPath: destination.outputPath, ...workbookData });
     let openError = '';
     try {
       openError = await shell.openPath(exported.outputPath);
@@ -582,8 +570,8 @@ ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
       outputFile: path.basename(exported.outputPath),
       outputPath: exported.outputPath,
       outputFolder: path.dirname(exported.outputPath),
-      updatedExisting: destination.updatedExisting && !usedAlternativePath,
-      usedAlternativePath,
+      updatedExisting: destination.updatedExisting,
+      usedAlternativePath: false,
       opened: !openError,
       openError: openError || null,
       baselineSource,
@@ -591,7 +579,10 @@ ipcMain.handle('orders:export', async (_event, requestedTurnKey) => {
     };
   } catch (error) {
     console.error('Orders workbook export failed', error);
-    return { canceled: false, error: error.message };
+    const message = ['EPERM', 'EBUSY', 'EACCES'].includes(error?.code)
+      ? `Could not replace the existing Orders export. Close the workbook in Excel and try again. ${error.message}`
+      : error.message;
+    return { canceled: false, error: message };
   }
 });
 
@@ -614,6 +605,7 @@ ipcMain.handle('turn-manager:import', async (_event, role) => {
   }
 });
 ipcMain.handle('turn-manager:list-turns', () => turnManagerDatabase.listTurns());
+ipcMain.handle('turn-manager:latest-template-turn', () => turnManagerDatabase.latestBlankTemplateTurn());
 ipcMain.handle('turn-manager:get-turn', (_event, turnKey) => effectiveManagedTurn(turnKey));
 ipcMain.handle('turn-manager:add-activity', (_event, turnKey, activity) => turnManagerDatabase.addActivity(turnKey, activity));
 ipcMain.handle('turn-manager:update-activity', (_event, id, activity) => turnManagerDatabase.updateActivity(id, activity));
@@ -646,6 +638,14 @@ ipcMain.handle('turn-manager:delete-all-unit-splits', (_event, turnKey) => {
 ipcMain.handle('turn-manager:save-context', (_event, turnKey, notes) => turnManagerDatabase.saveContext(turnKey, notes));
 ipcMain.handle('turn-manager:get-skill-attempts', (_event, turnKey, tribe) => turnManagerDatabase.getSkillAttempts(turnKey, tribe));
 ipcMain.handle('turn-manager:save-skill-attempts', (_event, turnKey, tribe, attempts) => turnManagerDatabase.saveSkillAttempts(turnKey, tribe, attempts));
+ipcMain.handle('turn-manager:list-order-text', (_event, turnKey, sheet) => turnManagerDatabase.listOrderText(turnKey, sheet));
+ipcMain.handle('turn-manager:add-order-text', (_event, turnKey, sheet, row) => turnManagerDatabase.addOrderText(turnKey, sheet, row));
+ipcMain.handle('turn-manager:update-order-text', (_event, id, row) => turnManagerDatabase.updateOrderText(id, row));
+ipcMain.handle('turn-manager:delete-order-text', (_event, id) => turnManagerDatabase.deleteOrderText(id));
+ipcMain.handle('turn-manager:list-research-attempts', (_event, turnKey) => turnManagerDatabase.listResearchAttempts(turnKey));
+ipcMain.handle('turn-manager:add-research-attempt', (_event, turnKey, attempt) => turnManagerDatabase.addResearchAttempt(turnKey, attempt));
+ipcMain.handle('turn-manager:update-research-attempt', (_event, id, attempt) => turnManagerDatabase.updateResearchAttempt(id, attempt));
+ipcMain.handle('turn-manager:delete-research-attempt', (_event, id) => turnManagerDatabase.deleteResearchAttempt(id));
 ipcMain.handle('turn-manager:get-skill-streaks', (_event, tribe) => turnManagerDatabase.getSkillStreaks(tribe));
 ipcMain.handle('turn-manager:set-skill-streak', (_event, tribe, skill, count, turnKey) => turnManagerDatabase.setSkillStreak(tribe, skill, count, turnKey));
 ipcMain.handle('turn-manager:catalog', () => ACTIVITY_CATALOG);

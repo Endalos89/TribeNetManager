@@ -7,6 +7,7 @@
   const exportOrdersButton = document.getElementById('launcherExportOrdersButton');
   const ordersStatus = document.getElementById('launcherOrdersStatus');
   const RESULT_TURN_STORAGE_KEY = 'tribenet:selectedResultTurn';
+  const ACTIVE_ORDERS_TURN_STORAGE_KEY = 'tribenet:activeOrdersTemplateTurn';
   let busy = false;
 
   const fairButton = () => document.getElementById('launcherImportFairButton');
@@ -52,6 +53,8 @@
   }
 
   function selectedPlanningTurnKey() {
+    const templateTurn = canonicalTurnKey(localStorage.getItem(ACTIVE_ORDERS_TURN_STORAGE_KEY));
+    if (templateTurn) return templateTurn;
     // Export the turn whose orders the Mapper is actually editing. An
     // historical Results snapshot shows Turn 906-04 while saved Mapper routes
     // belong to its planning successor 906-05. Previously the launcher could
@@ -69,6 +72,12 @@
 
   async function refreshOrdersStatus(options = {}) {
     if (!blankOrdersButton && !exportOrdersButton && !ordersStatus) return;
+    try {
+      const savedTemplateTurn = await window.tribenet.getLatestOrdersTemplateTurn();
+      if (savedTemplateTurn) localStorage.setItem(ACTIVE_ORDERS_TURN_STORAGE_KEY, canonicalTurnKey(savedTemplateTurn));
+    } catch (error) {
+      console.warn('Could not load the latest blank Orders template turn', error);
+    }
     const turnKey = selectedPlanningTurnKey();
     if (exportOrdersButton) exportOrdersButton.disabled = busy || !turnKey;
     if (ordersStatus && !options.preserveMessage) {
@@ -164,7 +173,14 @@
       return false;
     }
     const nextTurn = planningTurnKey(result.turn);
-    await refreshPlanningTurn(nextTurn);
+    let activeTemplateTurn = canonicalTurnKey(localStorage.getItem(ACTIVE_ORDERS_TURN_STORAGE_KEY));
+    try {
+      activeTemplateTurn = canonicalTurnKey(await window.tribenet.getLatestOrdersTemplateTurn()) || activeTemplateTurn;
+      if (activeTemplateTurn) localStorage.setItem(ACTIVE_ORDERS_TURN_STORAGE_KEY, activeTemplateTurn);
+    } catch (error) {
+      console.warn('Could not load the latest blank Orders template turn', error);
+    }
+    await refreshPlanningTurn(activeTemplateTurn || nextTurn);
     if (typeof playImportedResultsTransition === 'function') {
       await playImportedResultsTransition(result.turn.turnKey);
     }
@@ -216,9 +232,10 @@
       const movementCount = imported?.plan?.movements?.filter(row => (row.orders || []).length).length || 0;
       const scoutCount = imported?.plan?.scouts?.length || 0;
       const turnKey = canonicalTurnKey(imported?.turnKey);
-      await refreshPlanningTurn(turnKey, imported?.id);
+      const activeTemplateTurn = canonicalTurnKey(localStorage.getItem(ACTIVE_ORDERS_TURN_STORAGE_KEY));
+      await refreshPlanningTurn(activeTemplateTurn || turnKey, 'draft');
       window.dispatchEvent(new CustomEvent('tribenet-import-complete'));
-      if (status) status.textContent = `Turn ${turnKey} Completed Orders imported and made authoritative. ${movementCount} movement route${movementCount === 1 ? '' : 's'} and ${scoutCount} scout route${scoutCount === 1 ? '' : 's'} loaded for verification.`;
+      if (status) status.textContent = `Turn ${turnKey} Completed Orders imported as a reference. ${movementCount} movement route${movementCount === 1 ? '' : 's'} and ${scoutCount} scout route${scoutCount === 1 ? '' : 's'} available for review; your saved Mapper plan is unchanged.`;
     } finally {
       setBusy(false);
       await refreshFairStatus().catch(console.error);
@@ -264,8 +281,15 @@
         return;
       }
       const turnKey = canonicalTurnKey(result.turnKey);
-      if (turnKey) localStorage.setItem(RESULT_TURN_STORAGE_KEY, turnKey);
-      if (ordersStatus) ordersStatus.textContent = `Blank Orders workbook loaded for Turn ${turnKey}.`;
+      if (turnKey) {
+        localStorage.setItem(ACTIVE_ORDERS_TURN_STORAGE_KEY, turnKey);
+        localStorage.setItem(RESULT_TURN_STORAGE_KEY, turnKey);
+        await refreshPlanningTurn(turnKey, 'draft');
+      }
+      const completedTurn = canonicalTurnKey(result.lifecycle?.completedTurnKey);
+      if (ordersStatus) ordersStatus.textContent = completedTurn
+        ? `Blank Orders workbook loaded for Turn ${turnKey}. Turn ${completedTurn} is complete; its saved plan remains available.`
+        : `Blank Orders workbook loaded for Turn ${turnKey}.`;
     } finally {
       setBusy(false);
       await refreshOrdersStatus();
@@ -287,7 +311,13 @@
         if (ordersStatus) ordersStatus.textContent = `Ravenpost Orders pickup failed: ${result.error}`;
         return;
       }
-      if (ordersStatus) ordersStatus.textContent = `Blank Orders workbook from Ravenpost loaded for Turn ${turnKey}.`;
+      localStorage.setItem(ACTIVE_ORDERS_TURN_STORAGE_KEY, turnKey);
+      localStorage.setItem(RESULT_TURN_STORAGE_KEY, turnKey);
+      await refreshPlanningTurn(turnKey, 'draft');
+      const completedTurn = canonicalTurnKey(result.lifecycle?.completedTurnKey);
+      if (ordersStatus) ordersStatus.textContent = completedTurn
+        ? `Blank Orders workbook from Ravenpost loaded for Turn ${turnKey}. Turn ${completedTurn} is complete; its saved plan remains available.`
+        : `Blank Orders workbook from Ravenpost loaded for Turn ${turnKey}.`;
     } finally {
       setBusy(false);
       await refreshOrdersStatus();
@@ -320,7 +350,7 @@
       const sourceMessage = routeCounts
         ? ` Mapper database: ${routeCounts.movement} movement route(s), ${routeCounts.scouting} scouting route(s) applied.`
         : '';
-      if (ordersStatus) ordersStatus.textContent = `${result.updatedExisting ? 'Updated' : 'Created'} Orders workbook for Turn ${turnKey}: ${result.outputFile}. Saved in the Completed Orders folder.${sourceMessage}${baselineMessage}${openMessage}`;
+      if (ordersStatus) ordersStatus.textContent = `${result.updatedExisting ? 'Updated' : 'Created'} Orders workbook for Turn ${turnKey}: ${result.outputFile}. Saved in the Exported Files folder beside the app.${sourceMessage}${baselineMessage}${openMessage}`;
     } catch (error) {
       console.error('Export Orders failed', error);
       if (ordersStatus) ordersStatus.textContent = `Orders export failed: ${error.message || String(error)}`;

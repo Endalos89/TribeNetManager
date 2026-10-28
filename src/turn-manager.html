@@ -30,7 +30,7 @@
             <div class="tm-workbook-card"><span>Results baseline</span><strong id="startFile">No Results baseline</strong><small id="startTime"></small></div>
             <div class="tm-workbook-card"><span>Completed orders</span><strong id="finalFile">Planning in progress</strong><small id="finalTime"></small></div>
           </div>
-          <p class="tm-help">Use the Launcher for both imports. Results automatically creates the next turn baseline here and in the Mapper. Plan against that state; when Completed Orders is imported from the Launcher it becomes authoritative and replaces the draft plan.</p>
+          <p class="tm-help">Use the Launcher to import Results and blank Orders workbooks. Results provide the actual baseline; Completed Orders imports are references and do not replace the saved Mapper plan. The next turn's blank Orders workbook completes the previous turn.</p>
         </section>
 
         <section class="tm-panel tm-grow">
@@ -107,8 +107,8 @@
           </div>
 
           <section class="tm-panel tm-export-note">
-            <strong>Results are the baseline; completed orders are the final state.</strong>
-            <span>Draft planning remains local until Completed Orders is imported from the Launcher. That import updates both the Turn Manager and Mapper and clears obsolete draft planning for the turn.</span>
+            <strong>Results show what happened; the Mapper keeps your saved plan.</strong>
+            <span>Completed Orders are imported as a reference and do not replace your editable Mapper plan. The next turn's blank Orders workbook marks this turn complete; exports and Results imports do not clear its saved plan.</span>
           </section>
         </div>
       </section>

@@ -75,12 +75,6 @@ function listFiles(dir, extensions) {
     .sort((a, b) => path.basename(a).localeCompare(path.basename(b), undefined, { numeric: true }));
 }
 
-function clearDraftPlanning(turnManagerDatabase, turnKey) {
-  for (const activity of turnManagerDatabase.listActivities(turnKey)) turnManagerDatabase.deleteActivity(activity.id);
-  for (const split of turnManagerDatabase.listUnitSplits(turnKey)) turnManagerDatabase.deleteUnitSplit(split.id);
-  for (const route of routesDb().list(turnKey)) routesDb().remove(route.id);
-}
-
 function backfillArchivedResults(resultsDatabase, folders) {
   const copied = [];
   for (const source of resultsDatabase.listSources()) {
@@ -196,7 +190,6 @@ async function performSync() {
         const plan = applyWagonAnimalRules(parsed.rawPlan);
         database.saveTurnPlan(plan);
         turnManagerDatabase.saveWorkbook(parsed);
-        clearDraftPlanning(turnManagerDatabase, parsed.turnKey);
         nextManifest[key] = sig;
         processed.push({ kind: 'completed', file: path.basename(filePath), turnKey: parsed.turnKey });
       } catch (error) {

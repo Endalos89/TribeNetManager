@@ -55,7 +55,7 @@ function mergeDraftTransfers(groups = []) {
   return merged;
 }
 
-function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGroups = [], transferGroups = [], skillAttempts = [], activities = [] } = {}) {
+function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGroups = [], transferGroups = [], skillAttempts = [], researchAttempts = [], activities = [], comments:manualComments = [], gmActions:manualGmActions = [] } = {}) {
   const unitsByCode = new Map();
   for (const unit of baselineUnits || []) {
     const unitCode = String(unit?.unit || unit?.unitCode || '').trim();
@@ -131,16 +131,16 @@ function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGrou
       mission: route.mission || 'PATROL',
       directions: route.directions
     }));
-  const gmActions = [];
+  const generatedGmActions = [];
   for (const split of splits.sort((a, b) => String(a.unitCode).localeCompare(String(b.unitCode), undefined, { numeric: true }))) {
     const afterMovement = split.creationPhase === 'after';
-    gmActions.push({
+    generatedGmActions.push({
       unit: split.parentUnit,
       text: `Create ${split.unitType} ${split.unitCode} from ${split.parentUnit}${afterMovement ? ' after movement' : ''}`
     });
     if (split.unitType === 'Tribe') {
       for (const skill of split.skills || []) {
-        gmActions.push({
+        generatedGmActions.push({
           unit: split.unitCode,
           text: `Skill ${skill.skill} ${skill.level} should be moved from Tribe ${String(split.parentUnit).slice(0, 4)} to Tribe ${split.unitCode}`
         });
@@ -148,14 +148,24 @@ function buildOrdersExportData({ baselineUnits = [], routeGroups = [], splitGrou
     }
   }
   const assigned = assembleActivityAssignments({ activities, routes, unitSplits:splits, baselineUnits });
+  const uniqueRows = rows => {
+    const seen = new Set();
+    return rows.filter(row => {
+      const key = `${exportUnitKey(row.unit)}|${String(row.text || '').trim().toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
   return {
     movements,
     scouts,
     activities:assigned.activities,
-    comments:assigned.comments,
-    gmActions,
+    comments:uniqueRows([...(manualComments || []).map(row => ({ unit:String(row.unit || '').trim(), text:String(row.message || row.text || '').trim() })).filter(row => row.unit && row.text), ...assigned.comments]),
+    gmActions:uniqueRows([...(manualGmActions || []).map(row => ({ unit:String(row.unit || '').trim(), text:String(row.message || row.text || '').trim() })).filter(row => row.unit && row.text), ...generatedGmActions]),
     transfers: mergeDraftTransfers(transferGroups),
     skillAttempts: normalizedSkillAttempts,
+    researchAttempts: (researchAttempts || []).map(row => ({ tribe:String(row.tribe || '').trim(), topic:String(row.topic || '').trim() })).filter(row => row.tribe && row.topic),
     validUnits: units.map(unit => ({ unitCode: unit.unitCode, unitName: unit.unitName || '' }))
   };
 }

@@ -9,7 +9,7 @@
     const title = copy?.querySelector('strong');
     const description = title?.nextElementSibling?.tagName === 'BR' ? title.nextElementSibling.nextSibling : null;
     if (title) title.textContent = 'Shared turn & Fair imports';
-    if (description?.nodeType === Node.TEXT_NODE) description.textContent = ' Results creates the next planning turn. Completed Orders becomes authoritative for that turn. Fair workbooks are imported once here and shared by both Fair views.';
+    if (description?.nodeType === Node.TEXT_NODE) description.textContent = ' Results provide the planning baseline. Completed Orders imports are references and do not replace the saved Mapper plan. Fair workbooks are imported once here and shared by both Fair views.';
   }
 
   if (importPanel && importActions && !document.getElementById('launcherImportFairButton')) {

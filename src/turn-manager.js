@@ -4,13 +4,13 @@ const state = { turns: [], turn: null, catalog: [], selectedUnit: null };
 function esc(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function num(value) { return Number(value || 0).toLocaleString(); }
 function rootTribe(unit) { const m = String(unit || '').match(/^(\d{4})/); return m ? m[1] : String(unit || ''); }
-function currentData() { return state.turn?.final?.data || state.turn?.start?.data || null; }
+function currentData() { return state.turn?.start?.data || state.turn?.final?.data || null; }
 function allUnits() { return currentData()?.units || []; }
 function selected() { return allUnits().find(u => String(u.unit) === String(state.selectedUnit)) || null; }
 function skillsForTribe(tribe) { return currentData()?.skillsByTribe?.[tribe] || []; }
 function canonical(value) { return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
 function activityFor(code) { return state.catalog.find(a => a.code === code) || null; }
-function finalized() { return Boolean(state.turn?.final); }
+function finalized() { return state.turn?.lifecycle?.status === 'completed'; }
 
 function skillLevel(activity, tribe) {
   if (!activity?.skill) return null;
@@ -168,7 +168,7 @@ function validateActivity() {
 function renderPlannedActivities(u) {
   const rows = plannedForUnit(u.unit); $('unitPlanCount').textContent = String(rows.length);
   if (finalized()) {
-    $('plannedActivityList').innerHTML = '<div class="history-empty">Draft planning was replaced by the completed orders workbook.</div>';
+    $('plannedActivityList').innerHTML = `<div class="history-empty">Turn ${esc(state.turn?.lifecycle?.turnKey || state.turn?.turnKey)} is complete because the blank Orders workbook for Turn ${esc(state.turn?.lifecycle?.completedByTurnKey || '')} arrived. Its saved plan is retained for review.</div>`;
     return;
   }
   $('plannedActivityList').innerHTML = rows.length ? rows.map(row => {
