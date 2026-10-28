@@ -72,9 +72,9 @@ module.exports = [
   {
     id: 'orders-workbook-lifecycle-design',
     filename: 'orders-workbook-lifecycle-design.md',
-    title: 'Orders Workbook Lifecycle',
+    title: 'Orders Workbook Lifecycle + Export Safety',
     status: 'Partially built',
-    summary: 'Workbook import/export and several saved order types exist. The full sheet-by-sheet Mapper workflow and turn completion gate are still planned.',
+    summary: 'A unified design for workbook acquisition, editable Mapper planning, safe workbook export, manual review and turn completion. Several saved order types exist; full sheet coverage and lifecycle safeguards remain planned.',
     built: [
       'Manual Orders template import and Ravenpost template retrieval.',
       'Workbook export from a fresh template copy for currently supported order data.',
@@ -90,21 +90,4 @@ module.exports = [
       'Read-only file scanning with no path that clears a saved plan.'
     ]
   },
-  {
-    id: 'workbook-export-safety',
-    filename: 'workbook-export-safety.md',
-    title: 'Workbook Export Safety',
-    status: 'Partially built',
-    summary: 'The exporter writes into a copy of the imported workbook. Full validation against every managed sheet remains to be completed.',
-    built: [
-      'Template-based export and XML-level workbook patching.',
-      'Existing order values are written into workbook input cells while preserving template-owned structure.'
-    ],
-    partial: [
-      'Export checks cover current supported fields, but the design calls for broader structural and per-field comparison.'
-    ],
-    notBuilt: [
-      'Complete input/output verification across all requested editable sheets and template variants.'
-    ]
-  }
 ];
