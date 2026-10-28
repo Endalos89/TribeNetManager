@@ -1,6 +1,6 @@
-# TribeNet Manager — Orders Workbook & Turn Planning Lifecycle
+# TribeNet Manager — Orders Workbook Lifecycle & Export Safety
 
-**Design specification:** v1.1 (proposed; not implemented)  
+**Design specification:** v1.2 (proposed; not implemented)  
 **Date:** 27 October 2026  
 **Repository:** Endalos89/TribeNetManager  
 **Review basis:** code on main at the time of writing (release v0.1.757), earlier scouting/export requirements and observed data-loss reports.  
@@ -164,6 +164,18 @@ The schema adapter must identify columns by normalized, validated headers, then 
 - An unsupported or newly added template field is preserved untouched and surfaced for review if it may affect an order the Mapper owns.
 - All order-sheet row counts and important cell values are checked against the saved snapshot before publishing export.
 
+### Workbook export safety contract
+
+Every export must:
+
+1. Create a new workbook from the immutable blank template for the selected turn. Never overwrite the imported template or an earlier export by default.
+2. Preserve worksheet names and order, hidden state, formulas, defined names, data validation, formatting, macros and other template-owned workbook structures.
+3. Write only to cells and rows designated as Mapper inputs by the validated template schema. Use allowed values from the template and never invent dropdown labels.
+4. Avoid inserting, deleting or reordering rows or columns. Use only existing input capacity; fail clearly when a workbook cannot fit the saved plan.
+5. Compare the output with the source template and saved plan before offering the file. Validate structure, written values, row counts and untouched template-owned fields; report discrepancies and do not present a partial export as successful.
+6. Retain the original blank template, each generated export and any imported/finalized workbook as separate, versioned records. Record their hashes and provenance so review, recovery and reconciliation do not require mutating source evidence.
+7. Keep manual edits in the specific exported workbook. Re-export from Mapper creates a separate file and does not import those edits into the saved plan.
+
 ## 7. State transitions and command semantics
 
 | Operation | Plan database | Template | Exported file | Results / turn lifecycle |
@@ -201,7 +213,7 @@ Store export provenance: exportId, turnKey, saved revision, template version/che
 
 The file-library indexer classifies files and hashes only. It cannot mutate order plans, replace templates, mark turns complete or import results. A file's name or presence in a watched folder is not a lifecycle signal.
 
-## 9. Export algorithm and consistency contract
+## 9. Workbook Export Safety: Algorithm and Consistency Contract
 
 **Backend API shape (proposal):** ExportOrders(turnKey, outputOptions) → exportId, turnKey, revision, templateVersion, sourceCounts, outputPath, warnings.
 
@@ -356,7 +368,7 @@ The implementation must preserve these rules even when email retrieval, file-lib
 - src/turn-lifecycle.js; src/results-map.js — planning/actual turn state and overlay selection.
 - src/launcher-imports.js — export invocation and user messages.
 - src/turn-workflow.js — Results-to-start-state projection.
-- docs/workbook-export-safety.md — earlier workbook structure-preservation contract.
+- This document, Sections 6 and 9 — workbook structure preservation, export validation and consistent snapshot requirements.
 - tests/mapper-orders-export-regression.test.js; tests/scouting-activity-export.test.js — existing export tests that must be supplemented by a **file-library scan and restart** integration test.
 
 **Document status:** proposed implementation specification. The confirmed destructive scanner remains unpatched as part of this documentation-only change.
