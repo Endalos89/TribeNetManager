@@ -55,7 +55,8 @@
   function selectedPlanningTurnKey() {
     const templateTurn = canonicalTurnKey(localStorage.getItem('tribenet:activeOrdersTemplateTurn'));
     const displayedTurn = typeof resultsTimeline !== 'undefined' ? resultsTimeline?.turn : null;
-    if (templateTurn && (displayedTurn?.isPlanningTurn || templateTurn !== canonicalTurnKey(displayedTurn?.turnKey))) return templateTurn;
+    if (displayedTurn?.isPlanningTurn) return canonicalTurnKey(displayedTurn.turnKey);
+    if (templateTurn && templateTurn !== canonicalTurnKey(displayedTurn?.turnKey)) return templateTurn;
     // Export the turn whose orders the Mapper is actually editing. An
     // historical Results snapshot shows Turn 906-04 while saved Mapper routes
     // belong to its planning successor 906-05. Previously the launcher could
