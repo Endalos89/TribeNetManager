@@ -53,7 +53,7 @@
   }
 
   function selectedPlanningTurnKey() {
-    const templateTurn = canonicalTurnKey(localStorage.getItem(ACTIVE_ORDERS_TURN_STORAGE_KEY));
+    const templateTurn = canonicalTurnKey(localStorage.getItem('tribenet:activeOrdersTemplateTurn'));
     if (templateTurn) return templateTurn;
     // Export the turn whose orders the Mapper is actually editing. An
     // historical Results snapshot shows Turn 906-04 while saved Mapper routes
