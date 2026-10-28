@@ -74,7 +74,7 @@ module.exports = [
     filename: 'orders-workbook-lifecycle-design.md',
     title: 'Orders Workbook Lifecycle + Export Safety',
     status: 'Partially built',
-    summary: 'A unified design for workbook acquisition, editable Mapper planning, safe workbook export, manual review and turn completion. Several saved order types exist; full sheet coverage and lifecycle safeguards remain planned.',
+    summary: 'Unified import, Mapper planning and turn completion design. Each turn has one export in the installation folder; re-export replaces it. Full sheet coverage and lifecycle safeguards remain planned.',
     built: [
       'Manual Orders template import and Ravenpost template retrieval.',
       'Workbook export from a fresh template copy for currently supported order data.',
