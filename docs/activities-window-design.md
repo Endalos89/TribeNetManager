@@ -1,6 +1,6 @@
 # TribeNet Manager — Activities Window & Skill-by-Skill Rollout
 
-**Design version:** 0.8 — Hunting pilot, cargo forecasts and Auto Allocate Tools  
+**Design version:** 0.9 — selected-unit Turn Action, turn-wide Activities Overview, Hunting pilot  
 **Updated:** 29 October 2026  
 **Status:** Proposed design, not an implementation-complete claim  
 **Related designs:** [Orders Workbook Lifecycle & Export Safety](orders-workbook-lifecycle-design.md), [Compendium](compendium.md), [Compendium Skill Dossier Baselines](skill-dossier-baselines.md).
@@ -62,7 +62,7 @@ This approach allows small releases and practical player testing of each skill r
 The Activities workflow is **three distinct menus**, with no combined skill/recipe browser:
 
 ```text
-Selected unit → Activities
+Selected unit → Turn Actions → Activities
   └─ MENU 1 — Skills icon grid
        └─ Click skill → MENU 2 — Selected skill's activities/recipes icon grid
             └─ Click activity or recipe → MENU 3
@@ -74,11 +74,13 @@ Compendium eye on a skill icon → That skill's Compendium entry
 Back from Menu 3 → Menu 2; Back from Menu 2 → Menu 1
 ```
 
-**Menus 1 and 2 use a compact File Explorer-style icon grid** with names underneath. **Menu 3 contains both the allocation editor and a separate internal Saved Activities panel/tab.** There is no fourth Activities menu or standalone Saved Activities screen. The dedicated **Running Orders manager** remains separate for long-term priorities, which is a different purpose.
+**Menus 1 and 2 use a compact File Explorer-style icon grid** with names underneath. **Menu 3 contains both the allocation editor and a separate internal Saved Activities panel/tab.** There is no fourth menu in the unit-editing sequence or separate unit-scoped Saved Activities screen. A **turn-wide Activities Overview** is available from the Mapper's map-corner overview controls (independent of selected unit); the dedicated **Running Orders manager** remains separate for long-term priorities.
 
 ### 3.1 Shared context and icon-grid rules
 
-Open Activities from the selected Mapper unit at **Menu 1**. Carry the same unit, canonical turn, existing saved orders and calculated reservations through all three menus.
+**Primary entry point: select a unit on the Mapper and choose `Activities` in that unit's `TURN ACTIONS` toolbar**, beside Move, Split, Transfer and Scout. This passes the exact initiating unit code and opens **Menu 1**. The unit's Orders tab can forward to the same Turn Action. Carry the same unit, canonical planning turn, existing saved orders and calculated reservations through all three menus. **Do not silently return** if the selected unit or turn cannot be resolved: open the interface and show a clear actionable reason.
+
+**Secondary entry point: `Activities Overview` in the map-corner overview toolbar** (alongside Transfers, Scout and Units) opens a **turn-wide overview**, even when no unit is selected. It shows the saved `Tribes_Activities` rows for all units and provides actions to open a unit's Activities editor or navigate to the separate Running Orders priority screen. If no planning turn or saved activities exist, display explicit empty-state guidance. The overview is not Menu 1, does not silently depend on unit selection, and does not replace Menu 3's Saved Activities panel.
 
 **Common icon-grid design for Menus 1 and 2:**
 
@@ -150,7 +152,9 @@ Open Activities from the selected Mapper unit at **Menu 1**. Carry the same unit
 
 | User action | Result |
 |---|---|
-| Open Activities | Menu 1 — Skills icon grid. |
+| Click selected unit **Turn Actions → Activities** | Open Menu 1 — Skills icon grid for that exact unit, with planning turn context. |
+| Click map-corner **Activities Overview** | Open turn-wide saved activities list, with no selected unit required; empty/error state must be visible rather than no-op. |
+| Open unit from Activities Overview | Open Menu 1 for the chosen unit, retaining the planning turn. |
 | Click skill | Menu 2 — activities and recipes icon grid for that skill. |
 | Click activity/recipe | Open **Menu 3** allocation editor, with **Saved Activities visible in its own pane/tab**. |
 | Click eye on skill | Open skill Compendium entry, not Menu 2. |
@@ -314,7 +318,7 @@ A Maximise order can consume all spare capacity and **starve lower-priority orde
 
 ### 3B.4 The Running Orders management screen
 
-Add a clearly named **Running Orders** button near the Activities / Orders overview controls. This opens a **dedicated screen**, separate from the three-menu selection sequence. Also offer a direct “Manage Running Orders” link in Menu 3 after creating one. **The separate Running Orders screen manages long-term goals and priorities only; current-turn Saved Activities remain inside Menu 3.**
+Add a clearly named **Running Orders** button in the turn-wide Activities Overview and within the unit Activities editor. This opens a **dedicated screen**, separate from the three-menu selection sequence. Also offer a direct “Manage Running Orders” link in Menu 3 after creating one. **The separate Running Orders screen manages long-term goals and priorities only; current-turn Saved Activities remain inside Menu 3.**
 
 ![Proposed Running Orders management screen: a list ordered from highest to lowest priority with drag handles and up/down controls, target progress, current turn allocation preview and state.](assets/activities-running-orders-manager-wireframe.svg)
 
@@ -338,7 +342,7 @@ Add a clearly named **Running Orders** button near the Activities / Orders overv
 
 ### 3B.5 Example running-order workflow
 
-1. Open a unit → **Activities → select skill → select activity**.
+1. Select a unit → **Turn Actions → Activities → select skill → select activity**.
 2. In **Menu 3**, switch from **One Turn** to **Running Order**, choose **Maintain Stock 100**, verify the automatically resolved Goods Tribe **input/output inventory owner**, and optionally limit workers.
 3. Review the example: **62 confirmed starting stock − 10 reserved consumption = 52**, so **48 output is required**; if feasible output is only 25, forecast **77 next turn**. Save Running Order.
 4. The running instruction appears in **Running Orders** with its priority, target, current status and a link to edit.
@@ -496,6 +500,8 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 
 ### 4A.1 Hunting — first skill pilot
 
+**UI entry point:** unit `TURN ACTIONS → Activities` opens Hunting through Menus 1–3. The turn-wide `Activities Overview` is accessible without a selected unit and links to the unit editor. Neither entry point may fail without visible feedback.
+
 **Implementation status:** In progress — saved Running Bills, calculator/allocator, initial three-menu editor and workbook integration are being introduced in stages; regression tests and publishing verification must pass before declaring the pilot production-ready.
 
 
@@ -622,6 +628,7 @@ For **every** newly added skill, demonstrate:
 13. Orders export produces exact activity mappings, re-export replaces the same turn's file, and nothing about export changes the database plan.
 14. Existing completed skills and specialist planners pass regression tests.
 15. Current/projected weight is visible in Cargo & Equipment, including all activities and BM Transfers **before eating**, and numeric skill-level badges appear bottom-left in Menu 1.
+17. The selected unit's **Turn Actions** offers Activities, opening Menu 1 for that unit. **Activities Overview** opens independently of unit selection, lists the planning turn's saved activities, and provides meaningful empty/error states plus a route to the Running Orders manager.
 16. Hunting Bills automatically allocate tools each turn by **clan-wide priority** for shared Goods Tribe stocks, and the optional weight cap creates the correct derived BM keep-only Provs Transfer when the unit is not Goods Tribe-linked.
 
 ## 9. Implementation order and definition of done
