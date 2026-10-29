@@ -111,6 +111,9 @@ vm.runInNewContext(instrumented,vm.createContext(sandbox),{filename:'activities-
     'The Hunting Compendium shortcut must appear on the skill tile.');
   assert.match(element('activitiesBody').innerHTML,/skill-icons\/hunting\.svg/,
     'Hunting must use its own icon instead of an emoji.');
+  assert.match(element('activitiesBody').innerHTML,/id="hideSkill"/);
+  assert.match(element('activitiesBody').innerHTML,/id="hideInputs"/);
+  assert.equal(window.__ActivitiesTest.ui.mode,'once','New unit Activities must default to One Turn');
   const internals=window.__ActivitiesTest;
   internals.ui.page='allocate';internals.ui.unit='0485';internals.ui.mode='running';
   internals.ui.goal='months';internals.ui.months=0;internals.ui.yieldMode='average';
@@ -119,7 +122,7 @@ vm.runInNewContext(instrumented,vm.createContext(sandbox),{filename:'activities-
   internals.ui.months=3;internals.autofillHunters();
   assert.ok(internals.ui.workers>0,'A longer food goal should calculate hunters automatically.');
   internals.ui.goal='maximise';internals.autofillHunters();
-  assert.equal(internals.ui.workers,30,'Maximise should automatically fill all available workers.');
+  assert.equal(internals.ui.workers,22,'Maximise should use remaining workers after the saved 8-worker activity.');
   const input=element('huntWorkersSlider'),number=element('huntWorkers');
   const before=input;
   internals.handleInput({target:{id:'huntWorkersSlider',value:'7'}});
