@@ -8,7 +8,7 @@ const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 const engine = window.TribeNetHuntingEngine;
 if(!engine)return;
 const ui={page:'skills',unit:'',skill:'Hunting',mode:'once',bills:[],activities:[],
-  editing:null,editingActivity:null,workers:0,selectedTools:[],list:[],status:'',preview:null,otherStatuses:[],
+  editing:null,editingActivity:null,workers:0,selectedTools:[],list:[],transfers:[],status:'',preview:null,otherStatuses:[],
   goal:'months',months:3,yieldMode:'average',loadEnabled:false,loadPercent:90,goalHint:'',toolsCustomized:false,showSavedAll:false,
   hideSkill:false,hideInputs:false,managerUnit:'all',managerState:'all'};
 const unitCode = unit => String(unit?.unitCode||unit?.unit||'').trim();
@@ -151,28 +151,50 @@ function goalAllocation(){
   if(ui.mode!=='running')return null;
   const unit=currentUnit();
   if(!unit)return {error:'Select a unit to calculate hunters'};
-  const ctx=contextFor(unit),available=availableWorkers(unit);
-  if(available===null||ctx.skill===null||!ctx.terrain||!ctx.month)
-    return {error:'Automatic hunter count needs confirmed worker totals, turn month and start-of-turn terrain'};
-  const pool=ownerCode(unit),source=resultUnit(pool)||unit;
-  const poolContext=contextFor(source);
-  if(poolContext.provs==null)return {error:'Automatic hunter count needs verified Provisions inventory'};
+  const ctx=contextFor(unit),total=availableWorkers(unit);
+  if(total===null||ctx.skill===null||!ctx.terrain||!ctx.month)
+    return {error:'Automatic hunter count requires verified workers, skill, turn month and start terrain'};
+  const pool=ownerCode(unit),source=resultUnit(pool)||unit,poolContext=contextFor(source);
+  if(poolContext.provs==null)return {error:'Confirm the Goods Tribe Provisions inventory before calculating a goal'};
+  const higher=new Set(ui.bills.filter(b=>ui.editing!=null&&ui.bills.findIndex(x=>x.id===b.id)<
+    ui.bills.findIndex(x=>x.id===ui.editing)).map(b=>b.id));
+  const relevant=ui.activities.filter(row=>{
+    const u=resultUnit(row.unit);
+    return u&&ownerCode(u).toLowerCase()===pool.toLowerCase()&&
+      row.generatedBillId!==ui.editing&&(!row.generatedBillId||higher.has(row.generatedBillId));
+  });
+  let otherOutput=0;
+  for(const row of relevant){
+    if(row.activityCode!=='HUNTING')continue;
+    const worker=resultUnit(row.unit),base=contextFor(worker);
+    const am=whole(row.people)+(row.implements||[]).reduce((sum,t)=>
+      sum+whole(t.quantity)*(t.name==='Hunting Dog'?2:(engine.TOOLS.find(x=>x.name===t.name)?.bonus||0)),0);
+    const range=engine.forecast({workers:row.people,effectiveAM:am,skill:base.skill,
+      terrain:base.terrain,month:base.month,waterBorders:base.waterBorders});
+    if(!range)continue;
+    const basis=ui.bills.find(b=>b.id===row.generatedBillId)?.yieldMode||'average';
+    otherOutput+=engine.predicted(range,basis)||0;
+  }
+  const netBm=ui.transfers.filter(t=>t.timing==='BM'&&String(t.from).toLowerCase()!==String(t.to).toLowerCase()
+    &&/^(PROVS|PROVISIONS)$/i.test(t.item)).reduce((sum,t)=>
+      sum+(String(t.to).toLowerCase()===pool.toLowerCase()?whole(t.quantity):0)-
+      (String(t.from).toLowerCase()===pool.toLowerCase()?whole(t.quantity):0),0);
   const eaters=contextList().filter(c=>{
-    const u=resultUnit(c.code);
-    return u && ownerCode(u).toLowerCase()===pool.toLowerCase();
+    const u=resultUnit(c.code);return u&&ownerCode(u).toLowerCase()===pool.toLowerCase();
   }).reduce((sum,c)=>sum+whole(c.eaters),0);
   const demand=engine.provisionTarget(ui.months,eaters);
-  const shortfall=Math.max(0,demand.beforeEating-poolContext.provs);
-  if(ui.goal==='maximise')return {workers:available,reason:'Maximise uses all available hunters'};
-  const planned=engine.allocation({
-    workersAvailable:available,goalProvs:shortfall,mode:ui.yieldMode,
+  const shortfall=Math.max(0,demand.beforeEating-poolContext.provs-netBm-otherOutput);
+  const otherWorkers=ui.activities.filter(row=>String(row.unit).toLowerCase()===ctx.code.toLowerCase()
+    &&row.generatedBillId!==ui.editing).reduce((sum,row)=>sum+whole(row.people),0);
+  const available=Math.max(0,total-otherWorkers);
+  if(ui.goal==='maximise')return {workers:available,reason:'Maximise uses workers remaining after saved activities'};
+  const planned=engine.allocation({workersAvailable:available,goalProvs:shortfall,mode:ui.yieldMode,
     skill:ctx.skill,terrain:ctx.terrain,month:ctx.month,waterBorders:ctx.waterBorders,
-    stock:sourceStock()
-  });
+    stock:sourceStock(),reservations:reservedTools()});
   if(planned.error)return {error:planned.error};
   return {workers:planned.workers,
-    reason:`Target: ${display(demand.afterEating)} Provisions after eating; ${display(shortfall)} more needed before eating`+
-    (planned.achievable?'':' · Goal exceeds the available hunters')};
+    reason:`Goal: ${display(demand.afterEating)} Provisions after eating · ${display(shortfall)} expected needed before eating (after saved BM changes and higher-priority output)`+
+    (planned.achievable?'':' · Goal exceeds available hunters')};
 }
 function autofillHunters(){
   const result=goalAllocation();
@@ -197,6 +219,7 @@ function updateAllocationPreview(){
 async function load(){
   ui.bills=await window.tribenet.listActivityBills();
   ui.activities=sourceTurn()?await window.tribenet.listPlannedActivities(sourceTurn()):[];
+  ui.transfers=sourceTurn()?await window.tribenet.listPlannedTransfers(sourceTurn()):[];
 }
 function showDialog(){
   ensure();
