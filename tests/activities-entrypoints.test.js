@@ -38,7 +38,7 @@ function element(id){
   return nodes.get(id);
 }
 const document={
-  getElementById:id=>nodes.get(id)||null,
+  getElementById:id=>id==='activitiesDialog'&&!nodes.has(id)?null:element(id),
   createElement:tag=>element(tag==='dialog'?'activitiesDialog':tag),
   body:{appendChild:node=>{nodes.set(node.id,node);}},
   addEventListener:(name,handler)=>{listeners[name]=handler;}
