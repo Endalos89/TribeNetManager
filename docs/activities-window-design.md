@@ -1,6 +1,6 @@
 # TribeNet Manager — Activities Window & Skill-by-Skill Rollout
 
-**Design version:** 1.0 — Hunting usability fixes, implemented-skills-only catalogue, Compendium-linked icons  
+**Design version:** 1.1 — Hunting completion workstream and staged implementation register  
 **Updated:** 29 October 2026  
 **Status:** Proposed design, not an implementation-complete claim  
 **Related designs:** [Orders Workbook Lifecycle & Export Safety](orders-workbook-lifecycle-design.md), [Compendium](compendium.md), [Compendium Skill Dossier Baselines](skill-dossier-baselines.md).
@@ -664,32 +664,35 @@ These are **not yet assumed rules**; resolve them while defining the affected wo
 - What specific warnings should be non-blocking when the game outcome is intrinsically uncertain, versus hard validation failures.
 - Per-skill handling for unit creation/splits, location-dependent activities and skill-ownership exceptions.
 
-## 11. Existing code and gaps to verify
+## 11. Implementation status, known gaps and release gate
 
-### Reusable foundation already present (not a completion claim)
+This is a **living implementation register**, not an assertion that a feature passes in-app validation. The source code can contain a feature while its Mandate-correctness or full acceptance test is still unverified.
 
-- **src/activity-catalog.js:** Catalogue of activity codes, skill mapping, some level-zero flags and worker-limit types.
-- **src/activity-assignments.js:** Normalization of manual activities and derived scouting reservations/comments.
-- **src/compendium-*.js** and **docs/skill-dossier-baselines.md:** Skill articles/dossiers, rules descriptions and source references.
-- **src/orders-workbook.js** and related export modules: Existing workbook creation and mapping flow.
+| Area | Status | Notes / next acceptance gate |
+|---|---|---|
+| Three-menu structure, Unit Turn Action, turn-wide Activities Overview | Implemented, player verification required | Hunting-only skills, linked Compendium article, Provisions output and current-turn saved list |
+| Unique Hunting and Provisions artwork | Implemented, visual review required | Pixel-art sprites, earthy limited palette and subtle Viking motifs; reuse same asset in Activities and Compendium, not flat vector illustrations |
+| One Turn Hunting, user-entered hunters and weather yield estimates | Implemented, verification required | One Turn default; numeric/slider controls and three weather bases; forecast must reflect exactly selected implements |
+| Editable tools and Auto Allocate Tools | Partial | Editable quantities and initial per-tool/primary-slot limits; review Mandate primary/support combinations, research gating, stock aliases, exclusivity and full optimality against all reservations |
+| Saved Activities within Menu 3 | Partial | List, source/worker/tool summary, edit/remove, internal expand, source-linked generated order Skip for this turn; derived scouting navigation, detailed conflict totals and special planner ownership still require work |
+| Locked per-turn Running Order overrides | Implemented safety fix, test required | Preserve generated Bill link and avoid auto-duplicates; explicit Skip/Reset per turn, idempotent recalculation, never mutate unrelated manual orders |
+| Persistent Hunting Running Bills, priority and pause | Partial | Months after consumption, maximise, yield basis, move priorities and basic queue unit/state filtering; broader status/audit UI and Results-based production reconciliation remain outstanding |
+| Goods Tribe inventory and workforce reservations | Partial | Shared tool priority and pool goals; still need a **single validated cross-activity stock, facility and workforce reservation model** and tests for new units/splits/transfer timing |
+| Cargo & Equipment projected pre-movement load | Partial | Hunting range and BM Transfers are projected; other activity outputs, unit-vs-Goods-Tribe ownership and unknown weights/quantity remain blockers for a complete claim |
+| Provisions BM retention cap | Partial | Same-unit keep-only derived BM row with Bill linkage; end-to-end verify actual workbook/game BM execution ordering, zero-cap constraints and highest other-goods load |
+| Orders workbook | Partial | DB reads, activities/implements and BM Transfers are written; perform a real blank Orders workbook round-trip with Hunting-specific values and re-export/restart preservation |
+| Other skills | Not started | Hunting must meet its end-to-end acceptance checklist first |
 
-### Bugs, missing features and verification still required
+### High-priority remaining work
 
-- A dedicated **three-menu** Activities interface (skill list → per-skill activities/recipes → final allocation) is **not yet established as complete**.
-- Unique, shared skill-icon coverage and a verified Compendium eye/deep-link action need implementation/audit.
-- Full per-skill recipe coverage and consistent input/output icons need phased implementation.
-- **Menu 1 skill-level badges**, current/projected **Cargo & Equipment weight** and the Hunting-specific Bill/cap mechanics (§4A) need implementation and tests.
-- Skill-specific **level-zero**, worker-cap and mixed tribe/unit-level validation must be checked for each new skill.
-- Start-of-turn hex and area-building constraints need a reusable source, eligibility evaluator and tests.
-- **Goods Tribe assignment** remains a separate future step; Activities must resolve the **same inventory owner for inputs and outputs**, reserve against turn-start stock across linked units, and forecast produced goods for the **following turn only**.
-- Cross-planner workforce/stock/facility reservation and conflict handling require end-to-end tests.
-- Saved edit/cancel/reload and workbook export must be regression-tested for every added skill, including re-export safety and preservation of legacy orders.
-- Existing skill dossier and activity-catalog rules may require reconciliation against the latest Mandate/research before being treated as authoritative.
-- **Auto Allocate Tools is not implemented:** add verified per-skill optimiser formulas, availability and reservation checks, editable suggestion UI and workbook mapping tests. Hunting Bills must auto-select tools **every turn in priority order across shared Goods Tribe inventory**.
-- **Saved Activities in Menu 3 remains to be implemented:** separate in-menu pane/tab, inline edit/remove, source-derived navigation, accurate worker/tool totals and immediate refresh on Save. The older standalone overview concept is superseded.
-- **Inventory timing and Goods Tribe routing still need implementation:** block consumption of current-turn production; credit every output to the effective Goods Tribe; aggregate all linked-unit feasible consumption when forecasting next-turn stock, with acceptance tests covering input shortages, current-turn use and priority changes.
-- **Running Orders are not implemented:** build persistent goal/mode/priority storage, cross-unit resource-aware allocation, current-turn regeneration, stock/Results reconciliation, per-turn manual override protection, and a dedicated prioritisation screen. Verify no standing-order state is lost or spuriously treated as workbook output.
-- Implement/test clear statuses for target met, insufficient inputs, priority starvation, paused, completed and Results-needs-review; add an audit trail explaining each turn's worker and input allocation.
+1. **Reservation/ownership correctness:** one canonical resource and worker budget across activities, scouting, facilities, goods tribes and transfers. Reject conflicts at save and export; avoid consuming future-turn production this turn.
+2. **Verified Hunting optimiser:** Mandate-correct primary/support tool combinations, actual item stock and caps, research restrictions, duplicate reservations and effective benefit optimization.
+3. **Cargo and weight safety:** verified item weights, all producing/consuming activities, Goods Tribe routing, conservative maximum load and BM keep-only execution semantics.
+4. **Full generated-order lifecycle:** reconcile Results before rolling forward, preserve manual overrides and changed Goods Tribe state, display target/waiting/review reasons, and validate across multiple turns.
+5. **End-to-end workbook tests:** real blank Orders fixture for generated and manual Hunting, tool columns, derived Transfers, correct item/distinction fields, repeated overwrite and no lost saved orders.
+6. **Additional UI refinements:** complete filters/status validation, derived scouting view, detailed reservation totals, draggable Running Bill priorities and accessible expanded table.
+
+**Release gate:** Do not call Hunting “fully delivered” merely because Menu 3 renders, tests pass on a synthetic fixture, or a Windows installer is published. Confirm the Mandate formula, actual workbook export, shared goods reservations, weight safety and real user workflows before beginning another skill.
 
 ---
 
