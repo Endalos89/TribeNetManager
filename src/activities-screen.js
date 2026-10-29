@@ -643,11 +643,18 @@ async function refreshWeight(code){
       const item=(window.TribeNetOrdersReferenceRaw?.goods||[]).find(x=>String(x.name||x.rawName).toLowerCase()===String(name).toLowerCase());
       return num(item?.weight??item?.weightLb);
     };
-    for(const activity of activities.filter(x=>String(x.unit).toLowerCase()===ctx.code.toLowerCase())){
+    for(const activity of activities){
+      const performer=resultUnit(activity.unit);
+      if(!performer)continue;
+      const actualOwner=ownerCode(performer).toLowerCase();
+      const affectsThisUnit=actualOwner===ctx.code.toLowerCase();
+      if(!affectsThisUnit)continue;
       if(activity.activityCode==='HUNTING'){
-        const tools=activity.implements||[];
+        const workContext=contextFor(performer),tools=activity.implements||[];
         const am=whole(activity.people)+tools.reduce((v,t)=>v+Number(t.quantity||0)*(engine.TOOLS.find(x=>x.name===t.name)?.bonus||(t.name==='Hunting Dog'?2:0)),0);
-        const range=engine.forecast({workers:activity.people,effectiveAM:am,skill:ctx.skill,terrain:ctx.terrain,month:ctx.month,waterBorders:ctx.waterBorders});
+        const range=workContext.skill===null?null:engine.forecast({workers:activity.people,
+          effectiveAM:am,skill:workContext.skill,terrain:workContext.terrain,month:workContext.month,
+          waterBorders:workContext.waterBorders});
         if(range){minimum+=range.min;maximum+=range.max;}else unknown=true;
       }else if(whole(activity.people)>0)unknown=true;
     }
@@ -670,7 +677,7 @@ async function refreshWeight(code){
     host.innerHTML=`<strong>Current weight:</strong> ${display(ctx.currentWeight)} lb / ${display(ctx.capacity)} lb<br>
       <strong>Projected before movement:</strong> ${unknown?'Unknown (some activities/weights unverified)':`${display(minimum)}–${display(maximum)} lb (${pct(maximum)} max)`}
       ${!unknown&&ctx.capacity>0&&maximum>ctx.capacity?'<span class="activities-warning">Projected load exceeds capacity.</span>':''}
-      <small>Includes Hunting yield and saved BM Transfers; food is eaten after movement.</small>`;
+      <small>Includes Hunting yield credited to its effective Goods Tribe and saved BM Transfers. Food is eaten after movement; unverified goods weights remain unknown.</small>`;
   }catch(error){host.textContent='Projected weight unavailable: '+(error.message||error);}
 }
 document.addEventListener('click',event=>{
