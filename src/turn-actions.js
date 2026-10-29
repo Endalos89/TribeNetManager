@@ -128,6 +128,7 @@ function turnActionsRender() {
       ${!stationary ? `<button class="turn-action-button${turnActionState.active === 'unit' ? ' active' : ''}" data-turn-action="move"${!canMove && !active ? ' disabled' : ''} aria-label="Move Unit" title="Move Unit · M">${TURN_ACTION_ICONS.move}</button>` : ''}
       <button class="turn-action-button${turnActionState.active === 'split' ? ' active' : ''}" data-turn-action="split"${active ? ' disabled' : ''} aria-label="Split Off Unit" title="Split Off Unit · X">${TURN_ACTION_ICONS.split}</button>
       <button class="turn-action-button" data-turn-action="transfer"${active ? ' disabled' : ''} aria-label="Transfer" title="Transfer goods or people">⇄</button>
+      <button class="turn-action-button" data-turn-action="activities"${active ? ' disabled' : ''} aria-label="Activities" title="Plan this unit's activities">⚒</button>
       <button class="turn-action-button${turnActionState.active === 'scout' ? ' active' : ''}" data-turn-action="scout"${active || !savedMovementCanScoutUnit(unit) ? ' disabled' : ''} aria-label="Send Out Scout" title="Send Out Scout · C">${TURN_ACTION_ICONS.scout}</button>
       ${turnActionState.active === 'scout' ? `<button class="turn-action-utility" data-turn-action="scout-confirm" aria-label="Confirm scouting route" title="Save this scouting route"${movementPlannerState.route?.status === 'ok' && movementPlannerState.route?.directions?.length ? '' : ' disabled'}>Save Scout</button><button class="turn-action-utility danger" data-turn-action="scout-cancel" aria-label="Cancel scouting route" title="Discard this scouting route">Cancel</button>` : ''}
       ${turnActionState.active === 'scout' ? `<button class="turn-action-button route-action${turnActionState.followOceanMode ? ' active' : ''}" data-turn-action="follow-ocean" aria-label="Follow Ocean" title="Follow Ocean · F">${TURN_ACTION_ICONS.followOcean}</button>` : ''}
@@ -1094,6 +1095,7 @@ async function turnActionsHandle(action) {
   if (action === 'scout') return turnActionsStart('scout');
   if (action === 'split') return turnActionsOpenSplit();
   if (action === 'transfer') return typeof transferScreenOpen === 'function' ? transferScreenOpen({ from: savedMovementSelectedUnit()?.unitCode }) : false;
+  if (action === 'activities') return window.TribeNetActivities?.open?.(turnActionsUnit()?.unitCode);
   if (action === 'cancel' || action === 'scout-cancel') return turnActionsCancel();
   if (action === 'scout-confirm') return turnActionsCommit();
   if (action === 'scout-fol') return turnActionsAddScoutConditional('FOL');
