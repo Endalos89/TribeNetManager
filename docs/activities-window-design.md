@@ -380,17 +380,17 @@ The current code has manual/derived activity assembly and Orders export, but it 
 ### 3B.7 Usability safeguards and acceptance tests
 
 - **Show what will happen now:** Every Running Order displays **this turn's workers, expected output and bottleneck reason**, plus its long-term objective. Users should not have to open every allocation to know what it is doing.
-- **Avoid false completion:** “Target met” is based on **confirmed stock**; “Completed” for Produce X Total is based on **verified attributable output**; “Projected this turn” is always labelled as a forecast.
-- **Keep goals understandable:** “Maintain 100 planks (count in Unit 0485)” is clearer than “Repeat: 100”; “Maximise” must visibly indicate that it takes **remaining** capacity, not every worker regardless of prior orders.
-- **Explain priority conflicts:** When Order #1 uses the last 20 available ore from a shared goods tribe, lower-priority orders show **Waiting — ore reserved by #1** rather than a generic red error.
+- **Avoid false completion:** A Maintain Stock goal may show **“Forecast meets target”** after accounting for all feasible same-turn consumption and all planned output, but must not imply the forecast is confirmed. **“Confirmed stock”** comes only from Results/a validated next-turn baseline. “Completed” for Produce X Total is based on verified attributable production.
+- **Keep goals understandable:** “Maintain 100 planks in Goods Tribe 0485g1 (start 62, planned use 10, need 48)” is clearer than “Repeat: 100”; “Maximise” must visibly indicate that it takes **remaining** capacity, not every worker regardless of prior orders.
+- **Explain priority conflicts:** When Order #1 uses the last 20 **turn-start** ore from a shared Goods Tribe, lower-priority orders show **Waiting — ore reserved by #1** rather than a generic red error. Newly produced ore cannot alleviate their current-turn shortage.
 - **Reorder without lost work:** Changing priorities recalculates a **preview**, not past completed turns. Manual locked changes and all saved orders remain protected.
 - **Remain usable with many units:** Filters, compact queue rows, status counters, sticky table header, optional search, and full-name tooltips prevent the management screen from becoming overwhelming.
 - **Make controls accessible:** Drag-and-drop is optional; keyboard/touch up/down moves, Pause/Resume and explicit status text all work independently of hover or colour.
 - **Fail safely:** Invalid goods source, insufficient skill, missing facility or uncertain Results never delete a Running Order. Mark it waiting/needs review and calculate a feasible 0 rather than fabricate input or output.
-- **Export once:** Generated activity orders appear in `Tribes_Activities` **once**; recurring metadata itself is **not** written as extra workbook rows. Scouting orders remain derived from the scouting planner.
+- **Export once:** Generated activity orders appear in `Tribes_Activities` **once** for the performing unit, while Goods Tribe input/output ownership follows the game's verified stock mechanics. Recurring metadata itself is **not** written as extra workbook rows. Scouting orders remain derived from its planner.
 - **Turn roll-forward test:** With target 100, confirmed start stock 62, and 10 planned use, request 48; if only 25 output is feasible, forecast 77 next turn (unconfirmed). When N+1 becomes active, use **its confirmed** stock and **its current-turn consumption**, not the old estimate. Starting with 100 and planning use of 40 must trigger replacement production of 40.
 - **Shared Goods Tribe test:** Several performing units linked to B reserve against B's **start-of-turn stock**, with all produced goods routed into **B's next-turn forecast**. Priority reordering changes feasible consumption and recalculates stock-maintenance needs without double-counting.
-- **Maximise test:** An order exhausts only the **allowed remaining** workers/resources under its limits, and a blocked high-priority order does not stop lower-priority eligible work.
+- **Maximise test:** An order exhausts only the **allowed remaining** workforce and **turn-start** resources under its limits; production in the current turn cannot create additional current-turn inputs. A blocked high-priority order does not stop eligible lower-priority work.
 - **Recalculation test:** Re-running the same turn with unchanged inputs produces identical proposed rows, never duplicates or clears manual allocations; a locked override remains unchanged.
 - **Results test:** Missing, late or insufficiently attributable Results leave progress unconfirmed, with a visible next-step message rather than an invented total.
 
@@ -463,7 +463,7 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 
 A single turn-level reservation/validation model covers all relevant activity allocations, including allocations originating outside this window.
 
-- Track workers by unit, relevant workforce class and turn; account for existing saved activities and scouting/other planner reservations.
+- Track workers by **performing unit**, workforce class and turn (including scouting/other planner commitments). Inventory, by contrast, belongs to the **Goods Tribe pool** or own unit if unlinked; never transfer worker ownership merely because stock is shared.
 - Track consumables by **effective Goods Tribe inventory owner** (or own unit), item and turn, counting all linked-unit reservations against the same start-of-turn stock. Keep predicted turn-N output in a **separate N+1 forecast**, not N's spendable stock.
 - Track reusable tools/implements and capacity constraints separately rather than subtracting them like consumed goods.
 - Track skill-specific worker limits, building capacity and any recipe-specific limits as separate restrictions.
