@@ -482,6 +482,12 @@ function normalizeTransferRows(rows, maxRows) {
     return { from, to, item: String(row.item).trim(), quantity, timing: String(row.timing || 'BM').toUpperCase() === 'AM' ? 'AM' : 'BM', notes: String(row.notes || '').trim() };
   });
   if (normalized.length > maxRows) throw new Error(`The blank workbook has room for ${maxRows} transfer rows, but ${normalized.length} are planned.`);
+  // BM keep-only rows must follow the other BM movements they account for.
+  // Preserve relative order within each category; AM rows remain in their phase.
+  normalized.sort((a,b)=>{
+    const group=r=>r.timing==='AM'?2:r.from.toLowerCase()===r.to.toLowerCase()?1:0;
+    return group(a)-group(b);
+  });
   return normalized;
 }
 
