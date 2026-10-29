@@ -7,9 +7,9 @@ const $ = id => document.getElementById(id);
 const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const engine = window.TribeNetHuntingEngine;
 if(!engine)return;
-const ui={page:'skills',unit:'',skill:'Hunting',mode:'running',bills:[],activities:[],
+const ui={page:'skills',unit:'',skill:'Hunting',mode:'once',bills:[],activities:[],
   editing:null,editingActivity:null,workers:0,selectedTools:[],list:[],status:'',preview:null,otherStatuses:[],
-  goal:'months',months:3,yieldMode:'average',loadEnabled:false,loadPercent:90,goalHint:''};
+  goal:'months',months:3,yieldMode:'average',loadEnabled:false,loadPercent:90,goalHint:'',toolsCustomized:false,showSavedAll:false};
 const unitCode = unit => String(unit?.unitCode||unit?.unit||'').trim();
 const num = v => v==null||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const whole = v => Math.max(0,Math.floor(Number(v)||0));
@@ -204,7 +204,7 @@ async function open(unit=selectedCode()){
   ui.unit=unitCode(resolved)||String(unit||'');
   ui.page='skills';ui.editing=null;ui.editingActivity=null;resetBillSettings();
   ui.workers=Math.min(availableWorkers(resolved)||0,10);
-  ui.selectedTools=[];ui.status='';
+  ui.selectedTools=[];ui.toolsCustomized=false;ui.status='';
   if(!sourceTurn())ui.status='No planning turn selected. Import the Results baseline or select the planning turn first.';
   else if(!resolved)ui.status='Select a unit in the Mapper first, then use its Activities Turn Action.';
   $('activitiesBody').textContent='Loading unit activities…';
@@ -291,11 +291,61 @@ function renderRecipes(){
 function sourceStock(){
   const unit=currentUnit();return dataStock(resultUnit(ownerCode(unit))||unit);
 }
+function reservedTools(){
+  const owner=ownerCode(currentUnit()).toLowerCase(),reserved={};
+  for(const row of ui.activities){
+    if(row.id===ui.editingActivity)continue;
+    const performer=resultUnit(row.unit);
+    if(!performer||ownerCode(performer).toLowerCase()!==owner)continue;
+    for(const t of row.implements||[]){
+      const key=String(t.name||'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
+      reserved[key]=(reserved[key]||0)+whole(t.quantity);
+    }
+  }
+  return reserved;
+}
+function toolsAvailable(){
+  const stock=sourceStock(),reserved=reservedTools();
+  const names=[...engine.TOOLS.map(t=>t.name),'Hunting Dog'];
+  return names.map(name=>{
+    const total=engine.stockCount(stock,name),key=name.toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
+    const inUse=reserved[key]||0;
+    return {name,total,reserved:inUse,available:Math.max(0,total-inUse)};
+  }).filter(t=>t.total>0);
+}
+function toolsTable(){
+  const selected=ui.toolsCustomized?ui.selectedTools:engine.optimizeTools(ui.workers,sourceStock(),reservedTools()).implements;
+  const amounts=new Map(selected.map(t=>[t.name,whole(t.quantity)]));
+  const rows=toolsAvailable();
+  if(!rows.length)return '<p class="activities-note">No Hunting implements confirmed in the effective inventory pool.</p>';
+  return `<div class="activities-tools-grid">
+    <span>Implement</span><span>Owned / reserved</span><span>Selected</span>
+    ${rows.map(t=>`<label>${esc(t.name)}</label><small>${t.total} / ${t.reserved}</small>
+      <input data-tool-item="${esc(t.name)}" aria-label="${esc(t.name)} quantity"
+        type="number" min="0" step="1" max="${t.available}" value="${amounts.get(t.name)||0}">`).join('')}
+  </div>`;
+}
+function validateOneTurn(){
+  const total=availableWorkers(currentUnit());
+  const other=ui.activities.filter(row=>String(row.unit||'').toLowerCase()===ui.unit.toLowerCase()&&row.id!==ui.editingActivity)
+    .reduce((n,row)=>n+whole(row.people),0);
+  if(total===null)throw Error('Worker total unavailable; cannot validate this order.');
+  if(ui.workers+other>total)throw Error(`Not enough workers: ${ui.workers} hunters plus ${other} existing activity workers exceeds ${total} available.`);
+  const selected=preview().tools;
+  const stock=toolsAvailable();
+  for(const tool of selected){
+    const row=stock.find(t=>t.name===tool.name);
+    if(!row||whole(tool.quantity)>row.available)throw Error(`${tool.name} is over-allocated across saved activities in the shared Goods Tribe stock.`);
+    const eligible=engine.TOOLS.find(t=>t.name===tool.name);
+    const cap=(eligible?.max||1)*whole(ui.workers);
+    if(whole(tool.quantity)>cap)throw Error(`${tool.name} exceeds the ${cap}-item Hunting workforce limit.`);
+  }
+}
 function preview(){
   const unit=currentUnit();
   const context=contextFor(unit);
   const workers=whole(ui.workers);
-  const tools=ui.selectedTools.length?ui.selectedTools:engine.optimizeTools(workers,sourceStock()).implements;
+  const tools=ui.toolsCustomized?ui.selectedTools:engine.optimizeTools(workers,sourceStock(),reservedTools()).implements;
   const am=workers+tools.reduce((v,t)=>{const def=engine.TOOLS.find(x=>x.name===t.name);
     return v+t.quantity*(def?.bonus|| (t.name==='Hunting Dog'?2:0));},0);
   const range=engine.forecast({workers,effectiveAM:am,skill:context.skill,terrain:context.terrain,month:context.month,waterBorders:context.waterBorders});
@@ -328,6 +378,7 @@ function renderAllocate(){
       <div class="activities-tools-title"><strong>IMPLEMENTS / TOOLS</strong>
       <button class="button" id="huntAutoTools">Auto Allocate Tools</button></div>
       <p class="activities-note">Running Bills automatically allocate available implements each turn, with shared Goods Tribe stock assigned by priority.</p>
+      <div id="huntToolsEditor">${toolsTable()}</div>
       <div class="activities-tool-list" id="huntToolsList">${p.tools.length?p.tools.map(t=>`<span>${esc(t.name)}</span><strong>× ${whole(t.quantity)}</strong>`).join(''):'No eligible tools allocated'}</div>
       <section class="activities-yield"><small>EXPECTED PROVISIONS (WEATHER RANGE)</small>
         <strong id="huntYieldRange">${p.range?`${display(p.range.min)} – ${display(p.range.max)} Provisions`:'Unknown terrain / calculator rate'}</strong>
@@ -372,9 +423,10 @@ async function refreshAll(){
 async function save(){
   const unit=currentUnit();if(!unit)throw Error('No unit is selected.');
   const workers=whole(ui.workers);
-  if(ui.mode==='once'&&workers>(availableWorkers(unit)||0))throw Error('Too many workers assigned.');
+  if(ui.mode==='once')validateOneTurn();
   if(ui.mode==='once'){
     if(!workers)throw Error('Select at least one hunter.');
+    if(!preview().range)throw Error('Hunting terrain and turn month are unverified; cannot save an unvalidated forecast.');
     const order={unit:ui.unit,activityCode:'HUNTING',people:workers,
       target:'NONE',distinction:'NONE',implements:preview().tools};
     if(ui.editingActivity!==null)await window.tribenet.updatePlannedActivity(ui.editingActivity,order);
@@ -438,16 +490,18 @@ async function handleClick(event){
     if(b.dataset.compendiumEntry){await openCompendium(b.dataset.compendiumEntry,b.dataset.compendiumKey);return;}
     if(b.dataset.go){ui.page=b.dataset.go;render();return;}
     if(b.dataset.skill){ui.skill=b.dataset.skill;ui.page='recipes';render();return;}
-    if(b.dataset.recipe){ui.page='allocate';ui.editing=null;ui.editingActivity=null;ui.mode='running';resetBillSettings();autofillHunters();ui.selectedTools=[];render();return;}
+    if(b.dataset.recipe){ui.page='allocate';ui.editing=null;ui.editingActivity=null;ui.mode='once';resetBillSettings();ui.workers=Math.min(10,availableWorkers(currentUnit())||0);ui.selectedTools=[];ui.toolsCustomized=false;render();return;}
     if(b.id==='huntAutoTools'){
-      ui.selectedTools=engine.optimizeTools(ui.workers,sourceStock()).implements;ui.status='Best eligible tools suggested for the selected workforce.';render();return;
+      if(ui.toolsCustomized&&!window.confirm('Replace your unsaved tool selection with the available recommended implements?'))return;
+      ui.selectedTools=engine.optimizeTools(ui.workers,sourceStock(),reservedTools()).implements;
+      ui.toolsCustomized=true;ui.status='Tool suggestion prepared for your review. Nothing is saved until you select Save.';render();return;
     }
     if(b.id==='huntSave'){await save();return;}
     if(b.id==='huntApply'){ui.otherStatuses=await applyBills();ui.status='Generated Hunting allocations refreshed in the saved Mapper draft.';await refreshAll();return;}
     if(b.dataset.editActivity){const row=ui.activities.find(x=>x.id===Number(b.dataset.editActivity));
       if(!row||row.activityCode!=='HUNTING')return;
       ui.editing=null;ui.editingActivity=row.id;ui.unit=row.unit;ui.page='allocate';ui.mode='once';
-      ui.workers=whole(row.people);ui.selectedTools=Array.isArray(row.implements)?row.implements:[];render();return;}
+      ui.workers=whole(row.people);ui.selectedTools=Array.isArray(row.implements)?row.implements:[];ui.toolsCustomized=true;render();return;}
     if(b.dataset.removeActivity){
       if(!window.confirm('Remove this saved activity for the turn? Running Bills may regenerate their own drafts when applied again.'))return;
       await window.tribenet.deletePlannedActivity(Number(b.dataset.removeActivity));ui.status='Saved activity removed.';await refreshAll();return;}
@@ -488,9 +542,17 @@ function handleChange(event){
 function handleInput(event){
   const id=event.target.id;
   if(id==='huntMonths'){ui.months=Number(event.target.value);autofillHunters();updateAllocationPreview();return;}
+  if(event.target.hasAttribute?.('data-tool-item')){
+    const name=event.target.dataset.toolItem,quantity=whole(event.target.value);
+    const values=new Map(preview().tools.map(x=>[x.name,whole(x.quantity)]));
+    values.set(name,quantity);
+    ui.selectedTools=[...values.entries()].filter(([,n])=>n>0).map(([name,quantity])=>({name,quantity}));
+    ui.toolsCustomized=true;updateAllocationPreview();return;
+  }
   if(id==='huntLoad'){ui.loadPercent=Number(event.target.value);return;}
   if(!['huntWorkers','huntWorkersSlider'].includes(id))return;
-  ui.workers=whole(event.target.value);ui.selectedTools=[];
+  ui.workers=whole(event.target.value);
+  if(!ui.toolsCustomized)ui.selectedTools=[];
   // Do not recreate the range input or its ancestor while dragging:
   // replacing the DOM element resets pointer capture and causes stutter.
   updateAllocationPreview();
