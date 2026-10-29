@@ -5,6 +5,7 @@ const { autoUpdater } = require('electron-updater');
 const { TerrainMeshDiskCache } = require('./terrain-mesh-disk-cache');
 const { TribeNetDatabase } = require('./database');
 const { TurnManagerDatabase } = require('./turn-manager-database');
+const { ActivityBillStore } = require('./activities-bills-store');
 const { ResultsDatabase } = require('./results-database');
 const {
   findLatestRavenpostResultsReport,
@@ -45,6 +46,7 @@ let mainWindow;
 let compendiumWindow;
 let database;
 let turnManagerDatabase;
+let activityBillStore;
 let resultsDatabase;
 let terrainMeshDiskCache;
 let currentView = normalizeView({ page: 'index.html', screen: 'launcher' });
@@ -430,6 +432,7 @@ function unitSupplyRequirements(turnKey, unitCode) {
 app.whenReady().then(() => {
   database = new TribeNetDatabase(app.getPath('userData'));
   turnManagerDatabase = new TurnManagerDatabase(app.getPath('userData'));
+  activityBillStore = new ActivityBillStore(turnManagerDatabase);
   resultsDatabase = new ResultsDatabase(app.getPath('userData'));
   terrainMeshDiskCache = new TerrainMeshDiskCache(app.getPath('userData'));
   // Old LRU files can be pruned asynchronously; no first-launch delay.
@@ -604,6 +607,13 @@ ipcMain.handle('turn-manager:import', async (_event, role) => {
     return { canceled: false, error: error.message };
   }
 });
+ipcMain.handle('activities:list-bills', () => activityBillStore.list());
+ipcMain.handle('activities:save-bill', (_event, row) => activityBillStore.save(row));
+ipcMain.handle('activities:remove-bill', (_event, id, turn) => activityBillStore.remove(id,turn));
+ipcMain.handle('activities:move-bill', (_event, id, direction) => activityBillStore.move(id,direction));
+ipcMain.handle('activities:pause-bill', (_event, id, paused) => activityBillStore.pause(id,paused));
+ipcMain.handle('activities:apply-bills', (_event, turn, units) => activityBillStore.apply(turn,units));
+
 ipcMain.handle('turn-manager:list-turns', () => turnManagerDatabase.listTurns());
 ipcMain.handle('turn-manager:latest-template-turn', () => turnManagerDatabase.latestBlankTemplateTurn());
 ipcMain.handle('turn-manager:get-turn', (_event, turnKey) => effectiveManagedTurn(turnKey));
