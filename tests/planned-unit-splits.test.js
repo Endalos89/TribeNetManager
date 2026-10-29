@@ -36,7 +36,11 @@ try {
   assert.equal(transfer.timing, 'BM');
   assert.equal(turns.listTransfers('048-12').length, 1);
   assert.equal(turns.deleteTransfer(transfer.id).item, 'WARRIORS');
-  assert.throws(() => turns.addTransfer('048-12', { from:'0485', to:'0485', item:'WAGON', quantity:1 }), /different units/);
+  // Self-transfers are now a valid keep-only cap for goods (not for humans).
+  const keepOnly = turns.addTransfer('048-12', { from:'0485', to:'0485', item:'WAGON', quantity:1, timing:'BM' });
+  assert.equal(keepOnly.from, keepOnly.to);
+  turns.deleteTransfer(keepOnly.id);
+  assert.throws(() => turns.addTransfer('048-12', { from:'0485', to:'0485', item:'WARRIORS', quantity:1 }), /goods, not people/);
   turns.addTransfer('048-12', { from:'0485', to:'0485e1', item:'LOG', quantity:80, timing:'BM' });
   turns.addTransfer('048-12', { from:'0485e1', to:'0485', item:'WAGON', quantity:2, timing:'BM' });
   turns.addTransfer('048-12', { from:'0485', to:'0485e1', item:'PROVS', quantity:12, timing:'AM' });
