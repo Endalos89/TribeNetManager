@@ -612,7 +612,21 @@ ipcMain.handle('activities:save-bill', (_event, row) => activityBillStore.save(r
 ipcMain.handle('activities:remove-bill', (_event, id, turn) => activityBillStore.remove(id,turn));
 ipcMain.handle('activities:move-bill', (_event, id, direction) => activityBillStore.move(id,direction));
 ipcMain.handle('activities:pause-bill', (_event, id, paused) => activityBillStore.pause(id,paused));
-ipcMain.handle('activities:apply-bills', (_event, turn, units) => activityBillStore.apply(turn,units));
+ipcMain.handle('activities:apply-bills', (_event, turn, units) => {
+  // Scout-route workers are a separate saved planner commitment and need
+  // reserving before allocating Hunting, including newly split scout parties.
+  const splits=ordersExportDraftSplits(turn).flat();
+  const parentOf=new Map(splits.map(row=>[String(row.unitCode||'').toLowerCase(),String(row.parentUnit||'').toLowerCase()]));
+  const commitments=new Map();
+  for(const scout of mergeDraftRoutes(ordersExportDraftRoutes(turn)).filter(r=>r.routeType==='scout')){
+    const unit=String(scout.unitCode||'').toLowerCase();
+    const origin=parentOf.get(unit)||unit;
+    commitments.set(origin,(commitments.get(origin)||0)+Math.max(0,Number(scout.noOfScouts)||0));
+  }
+  return activityBillStore.apply(turn,(units||[]).map(unit=>({
+    ...unit,externalReservedWorkers:(commitments.get(String(unit.code||'').toLowerCase())||0)
+  })));
+});
 
 ipcMain.handle('turn-manager:list-turns', () => turnManagerDatabase.listTurns());
 ipcMain.handle('turn-manager:latest-template-turn', () => turnManagerDatabase.latestBlankTemplateTurn());
