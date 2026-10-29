@@ -67,6 +67,29 @@ try{
   assert.equal(again.length,2);
   assert.equal(db.listActivities('906-05').length,2,'Recalculation must replace generated rows, not append');
 
+  const linked=db.listActivities('906-05').find(row=>row.generatedBillId===second.id);
+  assert.ok(linked,'Generated activities expose their original Running Bill');
+  db.updateActivity(linked.id,{unit:'0485e1',activityCode:'HUNTING',people:3,target:'NONE',
+    distinction:'NONE',implements:[{name:'Bow',quantity:1}]});
+  assert.equal(db.listActivities('906-05').find(x=>x.id===linked.id).generatedLocked,1);
+  const lockedRun=store.apply('906-05',context).find(x=>x.id===second.id);
+  assert.match(lockedRun.status,/Locked:/);
+  assert.equal(db.listActivities('906-05').filter(x=>x.unit==='0485e1').length,1,
+    'Re-running a locked Bill must not create an additional row.');
+  assert.equal(db.listActivities('906-05').find(x=>x.id===linked.id).generatedBillId,second.id,
+    'The locked row must retain its Bill association.');
+  store.skip(second.id,'906-05');
+  assert.equal(db.listActivities('906-05').filter(x=>x.unit==='0485e1').length,0,
+    'Explicit Skip this turn removes only this Bill generated draft.');
+  const skipRun=store.apply('906-05',context).find(x=>x.id===second.id);
+  assert.match(skipRun.status,/Skipped this turn/);
+  assert.equal(db.listActivities('906-05').filter(x=>x.unit==='0485e1').length,0,
+    'Skip persists across recalculations.');
+  store.reset(second.id,'906-05');
+  store.apply('906-05',context);
+  assert.equal(db.listActivities('906-05').filter(x=>x.unit==='0485e1').length,1,
+    'Reset this turn allows the Bill to regenerate.');
+
   const third=store.save({unit:'0499',mode:'months',months:1,yieldMode:'optimistic',loadPercent:75});
   const own={code:'0499',eaters:10,workersAvailable:10,skill:0,terrain:'PR',waterBorders:0,
     month:1,stock:{Provs:25},provs:25,capacity:100,otherMaxWeight:20};
