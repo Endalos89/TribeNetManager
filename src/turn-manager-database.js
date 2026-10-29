@@ -319,15 +319,18 @@ class TurnManagerDatabase {
       INSERT INTO planned_activities(turn_key, unit, activity_code, people, target, distinction, mining_direction, notes, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(turnKey, activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)), activity.target || '', activity.distinction || '', activity.miningDirection || '', activity.notes || '', now, now);
-    return this.db.prepare(`SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, distinction, mining_direction AS miningDirection, notes, created_at AS createdAt, updated_at AS updatedAt FROM planned_activities WHERE id = ?`).get(Number(result.lastInsertRowid));
+    return this.listActivities(turnKey).find(row=>row.id===Number(result.lastInsertRowid)) || null;
   }
 
   updateActivity(id, activity) {
     const now = new Date().toISOString();
+    const existing=this.db.prepare('SELECT turn_key AS turnKey, implements_json AS implementsJson FROM planned_activities WHERE id=?').get(id);
+    if(!existing)return null;
+    const tools=Array.isArray(activity.implements) ? JSON.stringify(activity.implements) : existing.implementsJson;
     this.db.prepare(`
-      UPDATE planned_activities SET unit=?, activity_code=?, people=?, target=?, distinction=?, mining_direction=?, notes=?, updated_at=? WHERE id=?
-    `).run(activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)), activity.target || '', activity.distinction || '', activity.miningDirection || '', activity.notes || '', now, id);
-    return this.db.prepare(`SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, distinction, mining_direction AS miningDirection, notes, created_at AS createdAt, updated_at AS updatedAt FROM planned_activities WHERE id = ?`).get(id) || null;
+      UPDATE planned_activities SET unit=?, activity_code=?, people=?, target=?, distinction=?, mining_direction=?, notes=?, updated_at=?, implements_json=?, generated_locked=CASE WHEN EXISTS (SELECT 1 FROM generated_activity_links WHERE activity_id=?) THEN 1 ELSE generated_locked END WHERE id=?
+    `).run(activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)), activity.target || '', activity.distinction || '', activity.miningDirection || '', activity.notes || '', now, tools,id,id);
+    return this.listActivities(existing.turnKey).find(row=>row.id===Number(id))||null;
   }
 
   deleteActivity(id) {
@@ -337,9 +340,9 @@ class TurnManagerDatabase {
 
   listActivities(turnKey) {
     return this.db.prepare(`
-      SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, distinction, mining_direction AS miningDirection, notes, created_at AS createdAt, updated_at AS updatedAt
+      SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, distinction, mining_direction AS miningDirection, notes, implements_json AS implementsJson, generated_locked AS generatedLocked, created_at AS createdAt, updated_at AS updatedAt
       FROM planned_activities WHERE turn_key=? ORDER BY id
-    `).all(turnKey);
+    `).all(turnKey).map(row=>({...row,implements:(()=>{try{return JSON.parse(row.implementsJson||'[]')}catch{return []}})()}));
   }
 
   listOrderText(turnKey, sheetKey) {
@@ -611,7 +614,8 @@ class TurnManagerDatabase {
     const item = String(transfer?.item || '').trim();
     const quantity = Number(transfer?.quantity);
     const timing = String(transfer?.timing || 'BM').toUpperCase() === 'AM' ? 'AM' : 'BM';
-    if (!turnKey || !from || !to || from === to || !item) throw new Error('Choose two different units and an item to transfer.');
+    if (!turnKey || !from || !to || !item) throw new Error('Choose a unit and an item to transfer.');
+    if(from===to && /^(WARRIORS|ACTIVES|INACTIVES|SLAVES?|PEOPLE|HIRELINGS|LOCALS|MERCENARIES)$/.test(item.toUpperCase())) throw new Error('Same-unit keep-only Transfers apply to goods, not people.');
     if (!Number.isInteger(quantity) || quantity <= 0) throw new Error('Transfer quantity must be a positive whole number.');
     const now = new Date().toISOString();
     const result = this.db.prepare(`
