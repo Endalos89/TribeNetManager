@@ -460,7 +460,7 @@ function renderManager(){
     <div class="activities-bills">${selected.length?selected.map((b,i)=>{
       const preview=ui.otherStatuses.find(x=>x.id===b.id);
       return `<div class="activities-bill">
-        <strong>#${i+1} · ${esc(b.unit)} · Hunting</strong>
+        <strong>#${ui.bills.findIndex(x=>x.id===b.id)+1} · ${esc(b.unit)} · Hunting</strong>
         <span>${b.mode==='maximise'?'Maximise':`Keep ${b.months} months after eating`} · ${esc(b.yieldMode)}</span>
         <small>${b.loadPercent==null?'No weight limit':`Max ${b.loadPercent}% capacity`} · ${b.paused?'Paused':esc(preview?.status||'Active / awaiting recalculation')}</small>
         <div class="activities-bill-buttons">
