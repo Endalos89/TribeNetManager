@@ -102,7 +102,7 @@ function contextFor(unit){
   return {code,goodsTribe:owner!==code?owner:null,skill:huntingLevel(unit),
     terrain:hexAt(hex)?.terrain||null,waterBorders:waterBorders(hex),month:match?Number(match[1]):null,
     workersAvailable:availableWorkers(unit),eaters:eaters(unit),stock,
-    provs:knownStock?provs:null,currentWeight,capacity,provsWeight:1,
+    provs:knownStock?provs:null,currentWeight,capacity,provsWeight:10,
     otherMaxWeight:currentWeight!==null&&knownStock?Math.max(0,currentWeight-provs):null};
 }
 const contextList = () => allUnits().map(contextFor);
