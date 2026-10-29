@@ -26,6 +26,10 @@ class ActivityBillStore {
         bill_id INTEGER NOT NULL, turn_key TEXT NOT NULL, activity_id INTEGER,
         transfer_id INTEGER, PRIMARY KEY(bill_id,turn_key)
       );
+      CREATE TABLE IF NOT EXISTS skipped_activity_bills (
+        bill_id INTEGER NOT NULL, turn_key TEXT NOT NULL,
+        PRIMARY KEY(bill_id,turn_key)
+      );
     `);
     const columns = new Set(this.db.prepare('PRAGMA table_info(planned_activities)').all().map(x=>x.name));
     if(!columns.has('implements_json'))this.db.exec("ALTER TABLE planned_activities ADD COLUMN implements_json TEXT NOT NULL DEFAULT '[]'");
@@ -80,19 +84,42 @@ class ActivityBillStore {
     const key=canonicalTurnKey(turnKey)||turnKey;
     this.db.exec('BEGIN IMMEDIATE');
     try{
-      if(key)this.clearGenerated(Number(id),key);
+      if(key)this.clearGenerated(Number(id),key,{explicit:true});
+      this.db.prepare('DELETE FROM skipped_activity_bills WHERE bill_id=?').run(Number(id));
       this.db.prepare('DELETE FROM running_activity_bills WHERE id=?').run(Number(id));
       this.db.exec('COMMIT');
     }catch(error){this.db.exec('ROLLBACK');throw error;}
     return this.list();
   }
-  clearGenerated(id,turnKey) {
-    const link=this.db.prepare('SELECT * FROM generated_activity_links WHERE bill_id=? AND turn_key=?').get(id,turnKey);
-    if(link?.activity_id)this.db.prepare('DELETE FROM planned_activities WHERE id=? AND generated_locked=0')
-      .run(link.activity_id);
-    if(link?.transfer_id)this.db.prepare('DELETE FROM planned_transfers WHERE id=? AND derived_bill_id=?')
-      .run(link.transfer_id,id);
+  clearGenerated(id,turnKey,{explicit=false}={}) {
+    const link=this.linkFor(id,turnKey);
+    if(!link)return true;
+    const row=link.activity_id?this.db.prepare('SELECT generated_locked FROM planned_activities WHERE id=?').get(link.activity_id):null;
+    // A locked row is the user's edit for this turn. Keep its link and
+    // associated retention row until the user explicitly skips/deletes it.
+    if(row?.generated_locked&&!explicit)return false;
+    if(link.activity_id)this.db.prepare('DELETE FROM planned_activities WHERE id=?').run(link.activity_id);
+    if(link.transfer_id)this.db.prepare('DELETE FROM planned_transfers WHERE id=? AND derived_bill_id=?').run(link.transfer_id,id);
     this.db.prepare('DELETE FROM generated_activity_links WHERE bill_id=? AND turn_key=?').run(id,turnKey);
+    return true;
+  }
+  skip(id,turnKey){
+    id=Number(id);
+    const key=canonicalTurnKey(turnKey)||turnKey;
+    if(!key||!this.db.prepare('SELECT 1 FROM running_activity_bills WHERE id=?').get(id))throw Error('Select an existing Bill and turn.');
+    this.db.exec('BEGIN IMMEDIATE');
+    try{
+      // Explicit user intent: remove only the row belonging to this Bill.
+      this.clearGenerated(id,key,{explicit:true});
+      this.db.prepare('INSERT OR IGNORE INTO skipped_activity_bills(bill_id,turn_key) VALUES (?,?)').run(id,key);
+      this.db.exec('COMMIT');
+    }catch(error){this.db.exec('ROLLBACK');throw error;}
+    return {id,turnKey:key,skipped:true};
+  }
+  reset(id,turnKey){
+    const key=canonicalTurnKey(turnKey)||turnKey;
+    this.db.prepare('DELETE FROM skipped_activity_bills WHERE bill_id=? AND turn_key=?').run(Number(id),key);
+    return {id:Number(id),turnKey:key,skipped:false};
   }
   linkFor(id,turnKey){
     return this.db.prepare('SELECT * FROM generated_activity_links WHERE bill_id=? AND turn_key=?').get(id,turnKey)||null;
@@ -156,26 +183,43 @@ class ActivityBillStore {
       for(const bill of bills){
         const context=unitMap.get(code(bill.unit));
         const link=this.linkFor(bill.id,key);
+        if(this.db.prepare('SELECT 1 FROM skipped_activity_bills WHERE bill_id=? AND turn_key=?').get(bill.id,key)){
+          summaries.push({id:bill.id,unit:bill.unit,status:'Skipped this turn',workers:0});
+          continue;
+        }
         if(bill.paused){
-          this.clearGenerated(bill.id,key);
-          summaries.push({id:bill.id,unit:bill.unit,status:'Paused',workers:0});
+          const removed=this.clearGenerated(bill.id,key);
+          summaries.push({id:bill.id,unit:bill.unit,status:removed?'Paused':'Paused; locked turn override preserved',workers:0});
+          continue;
+        }
+        const retained=link?.activity_id?this.db.prepare('SELECT * FROM planned_activities WHERE id=?').get(link.activity_id):null;
+        if(retained?.generated_locked){
+          const reservedForBill=JSON.parse(retained.implements_json||'[]');
+          const retainedWorkers=whole(retained.people);
+          // Worker and tool claims for locked plans were already reserved above.
+          const owner=sourceFor(context);
+          const ownerContext=unitMap.get(owner)||context;
+          const f=forecast({workers:retainedWorkers,skill:context.skill,terrain:context.terrain,month:context.month,
+            waterBorders:context.waterBorders,effectiveAM:retainedWorkers+reservedForBill.reduce((sum,t)=>
+              sum+whole(t.quantity)*(t.name==='Hunting Dog'?2:({ 'Advanced Trap':1,'Improved Trap':.15,'Trap':.1,'Snare':.05,'Arbalest':.2,'Bow':.15,'Sling':.1,'Net':.1,'Spear':.05,'Bone Spear':.05,'Stone Spear':.05,'Spetum':.05}[t.name]||0)),0)});
+          const amount=predicted(f,bill.yieldMode);
+          if(amount!=null)projectedOutputs.set(owner,(projectedOutputs.get(owner)||0)+amount);
+          summaries.push({id:bill.id,unit:bill.unit,status:'Locked: this-turn manual override',workers:retainedWorkers,
+            expected:amount,tools:reservedForBill,activityId:link.activity_id,transferId:link.transfer_id});
           continue;
         }
         const poolKey=sourceFor(context),poolUnit=unitMap.get(poolKey);
         if(!poolUnit){
-          this.clearGenerated(bill.id,key);
-          summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Goods Tribe inventory not available',workers:0});
+          summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Goods Tribe inventory not available; existing draft preserved',workers:0});
           continue;
         }
         const goods=poolUnit.stock||{};
         if(!validNumber(context.month)||!context.terrain){
-          this.clearGenerated(bill.id,key);
-          summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Hunting month or terrain not verified',workers:0});
+          summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Hunting month or terrain not verified; existing draft preserved',workers:0});
           continue;
         }
         if(!validNumber(poolUnit.provs)){
-          this.clearGenerated(bill.id,key);
-          summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Provs baseline missing',workers:0});
+          summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Provisions baseline missing; existing draft preserved',workers:0});
           continue;
         }
         const pool=pools.get(poolKey)||{eaters:whole(context.eaters)};
@@ -194,12 +238,7 @@ class ActivityBillStore {
             skill:context.skill,terrain:context.terrain,month:context.month,waterBorders:context.waterBorders,
             stock:goods,reservations:reserved});
         if(!result.range){
-          this.clearGenerated(bill.id,key);
-          summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Unknown Hunting yield for start terrain',workers:0});
-          continue;
-        }
-        if(link?.activity_id&&this.db.prepare('SELECT generated_locked FROM planned_activities WHERE id=?').get(link.activity_id)?.generated_locked){
-          summaries.push({id:bill.id,unit:bill.unit,status:'Locked: manual turn override',workers:0});
+          summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Unknown Hunting yield for start terrain; existing draft preserved',workers:0});
           continue;
         }
         this.clearGenerated(bill.id,key);
