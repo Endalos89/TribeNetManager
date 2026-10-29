@@ -8,7 +8,8 @@ const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 const engine = window.TribeNetHuntingEngine;
 if(!engine)return;
 const ui={page:'skills',unit:'',skill:'Hunting',mode:'running',bills:[],activities:[],
-  editing:null,editingActivity:null,workers:0,selectedTools:[],list:[],status:'',preview:null,otherStatuses:[]};
+  editing:null,editingActivity:null,workers:0,selectedTools:[],list:[],status:'',preview:null,otherStatuses:[],
+  goal:'months',months:3,yieldMode:'average',loadEnabled:false,loadPercent:90,goalHint:''};
 const unitCode = unit => String(unit?.unitCode||unit?.unit||'').trim();
 const num = v => v==null||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const whole = v => Math.max(0,Math.floor(Number(v)||0));
@@ -137,6 +138,57 @@ function ensure(){
 }
 function currentUnit(){return resultUnit(ui.unit);}
 function selectedBill(){return ui.editing==null?null:ui.bills.find(b=>b.id===ui.editing);}
+function resetBillSettings(bill=null){
+  ui.goal=bill?.mode||'months';ui.months=bill?.months??3;
+  ui.yieldMode=bill?.yieldMode||'average';
+  ui.loadEnabled=bill?.loadPercent!=null;ui.loadPercent=bill?.loadPercent??90;
+  ui.goalHint='';
+}
+function goalAllocation(){
+  if(ui.mode!=='running')return null;
+  const unit=currentUnit();
+  if(!unit)return {error:'Select a unit to calculate hunters'};
+  const ctx=contextFor(unit),available=availableWorkers(unit);
+  if(available===null||!ctx.terrain||!ctx.month)
+    return {error:'Automatic hunter count needs confirmed worker totals, turn month and start-of-turn terrain'};
+  const pool=ownerCode(unit),source=resultUnit(pool)||unit;
+  const poolContext=contextFor(source);
+  if(poolContext.provs==null)return {error:'Automatic hunter count needs verified Provisions inventory'};
+  const eaters=contextList().filter(c=>{
+    const u=resultUnit(c.code);
+    return u && ownerCode(u).toLowerCase()===pool.toLowerCase();
+  }).reduce((sum,c)=>sum+whole(c.eaters),0);
+  const demand=engine.provisionTarget(ui.months,eaters);
+  const shortfall=Math.max(0,demand.beforeEating-poolContext.provs);
+  if(ui.goal==='maximise')return {workers:available,reason:'Maximise uses all available hunters'};
+  const planned=engine.allocation({
+    workersAvailable:available,goalProvs:shortfall,mode:ui.yieldMode,
+    skill:ctx.skill,terrain:ctx.terrain,month:ctx.month,waterBorders:ctx.waterBorders,
+    stock:sourceStock()
+  });
+  if(planned.error)return {error:planned.error};
+  return {workers:planned.workers,
+    reason:`Target: ${display(demand.afterEating)} Provisions after eating; ${display(shortfall)} more needed before eating`+
+    (planned.achievable?'':' · Goal exceeds the available hunters')};
+}
+function autofillHunters(){
+  const result=goalAllocation();
+  if(result?.workers!=null){ui.workers=whole(result.workers);ui.selectedTools=[];}
+  ui.goalHint=result?.reason||result?.error||'';
+}
+function updateAllocationPreview(){
+  if(ui.page!=='allocate')return;
+  const number=$('huntWorkers'),slider=$('huntWorkersSlider');
+  if(number)number.value=String(ui.workers);
+  if(slider)slider.value=String(ui.workers);
+  const p=preview();
+  const range=$('huntYieldRange'),details=$('huntYieldDetail'),tools=$('huntToolsList'),hint=$('huntGoalHint');
+  if(range)range.textContent=p.range?`${display(p.range.min)} – ${display(p.range.max)} Provisions`:'Unknown terrain / calculator rate';
+  if(details)details.textContent=p.range?`Fine weather: ${display(p.range.fine)} · Scenario average: ${display(p.range.average)}`:
+    'Verify the unit’s start-of-turn terrain before saving a forecast.';
+  if(tools)tools.innerHTML=p.tools.length?p.tools.map(t=>`<span>${esc(t.name)}</span><strong>× ${whole(t.quantity)}</strong>`).join(''):'No eligible tools allocated';
+  if(hint)hint.textContent=ui.goalHint;
+}
 async function load(){
   ui.bills=await window.tribenet.listActivityBills();
   ui.activities=sourceTurn()?await window.tribenet.listPlannedActivities(sourceTurn()):[];
@@ -150,7 +202,7 @@ async function open(unit=selectedCode()){
   showDialog();
   const resolved=resultUnit(unit);
   ui.unit=unitCode(resolved)||String(unit||'');
-  ui.page='skills';ui.editing=null;ui.editingActivity=null;
+  ui.page='skills';ui.editing=null;ui.editingActivity=null;resetBillSettings();
   ui.workers=Math.min(availableWorkers(resolved)||0,10);
   ui.selectedTools=[];ui.status='';
   if(!sourceTurn())ui.status='No planning turn selected. Import the Results baseline or select the planning turn first.';
@@ -251,7 +303,7 @@ function preview(){
 }
 function renderAllocate(){
   const unit=currentUnit(),ctx=contextFor(unit),max=availableWorkers(unit)||0;
-  const running=ui.mode==='running',selected=selectedBill();
+  const running=ui.mode==='running';
   const p=preview();
   const goods=Boolean(ctx.goodsTribe);
   const ratio=r=>Number.isFinite(Number(r))?Number(r):0;
@@ -265,20 +317,21 @@ function renderAllocate(){
         <input id="huntWorkersSlider" type="range" min="0" max="${max}" value="${ui.workers}" aria-label="Hunters assigned">
       </div>
       <p class="activities-note">${max} possible Actives/Warriors before saved commitments. Hunting allowed at level 0; actual allocation is validated against other orders.</p>
+      <p id="huntGoalHint" class="activities-goal-hint">${esc(ui.goalHint)}</p>
       ${running?`<div class="activities-fields">
-        <label>Goal<select id="huntGoal"><option value="months" ${selected?.mode!=='maximise'?'selected':''}>Maintain months after eating</option><option value="maximise" ${selected?.mode==='maximise'?'selected':''}>Maximise</option></select></label>
-        <label>Months after consumption<input id="huntMonths" type="number" min="0" max="120" step=".5" value="${selected?.months??3}"></label>
-        <label>Yield basis<select id="huntYield"><option value="optimistic" ${selected?.yieldMode==='optimistic'?'selected':''}>Optimistic</option><option value="average" ${!selected||selected.yieldMode==='average'?'selected':''}>Average</option><option value="conservative" ${selected?.yieldMode==='conservative'?'selected':''}>Conservative</option></select></label>
-      </div><label class="activities-check"><input type="checkbox" id="huntLimitToggle" ${selected?.loadPercent!=null?'checked':''} ${goods?'disabled':''}> Limit movement weight to a percentage of capacity</label>
-      <label class="activities-weight-input">Max load (%) <input id="huntLoad" type="number" min="1" max="100" value="${selected?.loadPercent??90}" ${goods?'disabled':''}></label>
+        <label>Goal<select id="huntGoal"><option value="months" ${ui.goal!=='maximise'?'selected':''}>Maintain months after eating</option><option value="maximise" ${ui.goal==='maximise'?'selected':''}>Maximise</option></select></label>
+        <label>Months after consumption<input id="huntMonths" type="number" min="0" max="120" step=".5" value="${ui.months}"></label>
+        <label>Yield basis<select id="huntYield"><option value="optimistic" ${ui.yieldMode==='optimistic'?'selected':''}>Optimistic</option><option value="average" ${ui.yieldMode==='average'?'selected':''}>Average</option><option value="conservative" ${ui.yieldMode==='conservative'?'selected':''}>Conservative</option></select></label>
+      </div><label class="activities-check"><input type="checkbox" id="huntLimitToggle" ${ui.loadEnabled?'checked':''} ${goods?'disabled':''}> Limit movement weight to a percentage of capacity</label>
+      <label class="activities-weight-input">Max load (%) <input id="huntLoad" type="number" min="1" max="100" value="${ui.loadPercent}" ${goods?'disabled':''}></label>
       ${goods?'<p class="activities-warning">Weight limit disabled: this unit uses a Goods Tribe. The shared Goods Tribe stock cannot use automatic same-unit retention.</p>':''}`:''}
       <div class="activities-tools-title"><strong>IMPLEMENTS / TOOLS</strong>
       <button class="button" id="huntAutoTools">Auto Allocate Tools</button></div>
       <p class="activities-note">Running Bills automatically allocate available implements each turn, with shared Goods Tribe stock assigned by priority.</p>
-      <div class="activities-tool-list">${p.tools.length?p.tools.map(t=>`<span>${esc(t.name)}</span><strong>× ${whole(t.quantity)}</strong>`).join(''):'No eligible tools allocated'}</div>
+      <div class="activities-tool-list" id="huntToolsList">${p.tools.length?p.tools.map(t=>`<span>${esc(t.name)}</span><strong>× ${whole(t.quantity)}</strong>`).join(''):'No eligible tools allocated'}</div>
       <section class="activities-yield"><small>EXPECTED PROVISIONS (WEATHER RANGE)</small>
-        <strong>${p.range?`${display(p.range.min)} – ${display(p.range.max)} Provisions`:'Unknown terrain / calculator rate'}</strong>
-        <span>${p.range?`Fine weather: ${display(p.range.fine)} · Scenario average: ${display(p.range.average)}`:'Verify the unit’s start-of-turn terrain before saving a forecast.'}</span>
+        <strong id="huntYieldRange">${p.range?`${display(p.range.min)} – ${display(p.range.max)} Provisions`:'Unknown terrain / calculator rate'}</strong>
+        <span id="huntYieldDetail">${p.range?`Fine weather: ${display(p.range.fine)} · Scenario average: ${display(p.range.average)}`:'Verify the unit’s start-of-turn terrain before saving a forecast.'}</span>
       </section>
       <div class="activities-actions"><button class="button accent" id="huntSave">${ui.editing?'Update Running Bill':running?'Save Running Bill':'Save One Turn Activity'}</button>
        <button class="button" data-go="skills">Cancel</button></div>
@@ -329,14 +382,18 @@ async function save(){
     ui.editingActivity=null;
   }else{
     const goods=ownerCode(unit)!==unitCode(unit);
-    const loadOn=$('huntLimitToggle')?.checked&&!goods;
+    const loadOn=ui.loadEnabled&&!goods;
     const bill=await window.tribenet.saveActivityBill({id:ui.editing,unit:ui.unit,
-      mode:$('huntGoal').value,months:Number($('huntMonths').value),
-      yieldMode:$('huntYield').value,loadPercent:loadOn?Number($('huntLoad').value):null});
+      mode:ui.goal,months:Number(ui.months),
+      yieldMode:ui.yieldMode,loadPercent:loadOn?Number(ui.loadPercent):null});
     ui.editing=bill.id;
-    // Allocation uses confirmed context for every participating unit.
-    const applied=await applyBills();
-    ui.otherStatuses=applied;
+    // A saved Bill is not lost just because current-turn context is incomplete.
+    try{ui.otherStatuses=await applyBills();}
+    catch(error){
+      ui.status='Running Bill saved, but its current-turn allocation needs review: '+(error.message||String(error));
+      await refreshAll();
+      return;
+    }
   }
   ui.status='Saved in Mapper. Re-export Orders when ready; saved data is not cleared.';
   await refreshAll();
@@ -381,7 +438,7 @@ async function handleClick(event){
     if(b.dataset.compendiumEntry){await openCompendium(b.dataset.compendiumEntry,b.dataset.compendiumKey);return;}
     if(b.dataset.go){ui.page=b.dataset.go;render();return;}
     if(b.dataset.skill){ui.skill=b.dataset.skill;ui.page='recipes';render();return;}
-    if(b.dataset.recipe){ui.page='allocate';ui.editing=null;ui.editingActivity=null;ui.mode='running';ui.selectedTools=[];render();return;}
+    if(b.dataset.recipe){ui.page='allocate';ui.editing=null;ui.editingActivity=null;ui.mode='running';resetBillSettings();autofillHunters();ui.selectedTools=[];render();return;}
     if(b.id==='huntAutoTools'){
       ui.selectedTools=engine.optimizeTools(ui.workers,sourceStock()).implements;ui.status='Best eligible tools suggested for the selected workforce.';render();return;
     }
@@ -395,7 +452,7 @@ async function handleClick(event){
       if(!window.confirm('Remove this saved activity for the turn? Running Bills may regenerate their own drafts when applied again.'))return;
       await window.tribenet.deletePlannedActivity(Number(b.dataset.removeActivity));ui.status='Saved activity removed.';await refreshAll();return;}
     if(b.id==='huntViewOrders'){const button=document.querySelector('#orderSheetMenu [data-order-sheet="activities"]');$('activitiesDialog').close();button?.click();return;}
-    if(b.dataset.edit){const bill=ui.bills.find(x=>x.id===Number(b.dataset.edit));ui.unit=bill.unit;ui.editing=bill.id;ui.editingActivity=null;ui.mode='running';ui.page='allocate';ui.selectedTools=[];ui.workers=Math.min(10,availableWorkers(currentUnit())||0);render();return;}
+    if(b.dataset.edit){const bill=ui.bills.find(x=>x.id===Number(b.dataset.edit));ui.unit=bill.unit;ui.editing=bill.id;ui.editingActivity=null;ui.mode='running';ui.page='allocate';ui.selectedTools=[];resetBillSettings(bill);autofillHunters();render();return;}
     if(b.dataset.up||b.dataset.down){
       ui.bills=await window.tribenet.moveActivityBill(Number(b.dataset.up||b.dataset.down),b.dataset.up?-1:1);
       ui.otherStatuses=await applyBills();render();return;
@@ -408,13 +465,35 @@ async function handleClick(event){
   }catch(error){ui.status=error?.message||String(error);render();}
 }
 function handleChange(event){
-  if(event.target.id==='huntOrderType'){ui.mode=event.target.value==='once'?'once':'running';ui.selectedTools=[];render();}
+  if(event.target.id==='huntOrderType'){
+    ui.mode=event.target.value==='once'?'once':'running';
+    if(ui.mode==='running')autofillHunters();
+    else ui.goalHint='';
+    render();
+    return;
+  }
+  if(event.target.id==='huntGoal'){
+    ui.goal=event.target.value;autofillHunters();updateAllocationPreview();return;
+  }
+  if(event.target.id==='huntYield'){
+    ui.yieldMode=event.target.value;autofillHunters();updateAllocationPreview();return;
+  }
+  if(event.target.id==='huntMonths'){
+    ui.months=Number(event.target.value);
+    autofillHunters();updateAllocationPreview();return;
+  }
+  if(event.target.id==='huntLimitToggle'){ui.loadEnabled=event.target.checked;return;}
+  if(event.target.id==='huntLoad'){ui.loadPercent=Number(event.target.value);return;}
 }
 function handleInput(event){
-  if(!['huntWorkers','huntWorkersSlider'].includes(event.target.id))return;
-  ui.workers=whole(event.target.value);
-  ui.selectedTools=[];
-  render();
+  const id=event.target.id;
+  if(id==='huntMonths'){ui.months=Number(event.target.value);autofillHunters();updateAllocationPreview();return;}
+  if(id==='huntLoad'){ui.loadPercent=Number(event.target.value);return;}
+  if(!['huntWorkers','huntWorkersSlider'].includes(id))return;
+  ui.workers=whole(event.target.value);ui.selectedTools=[];
+  // Do not recreate the range input or its ancestor while dragging:
+  // replacing the DOM element resets pointer capture and causes stutter.
+  updateAllocationPreview();
 }
 async function refreshWeight(code){
   const host=$('unitProjectedWeight');
