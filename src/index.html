@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="results-map.css" />
   <link rel="stylesheet" href="movement-planner.css" />
   <link rel="stylesheet" href="selected-unit-panel.css" />
+  <link rel="stylesheet" href="activities-screen.css" />
   <link rel="stylesheet" href="terrain-dev-mode.css" />
 </head>
 <body>
@@ -120,6 +121,7 @@
           <div class="map-corner-actions">
             <button id="openTransferOverviewButton" class="transfer-map-button" type="button" aria-label="Open transfers">Transfers <span id="transferOverviewCount" class="transfer-count-badge">0</span></button>
             <button id="openScoutOverviewButton" class="transfer-map-button" type="button" aria-label="Open scout overview">Scout <span id="scoutOverviewCount" class="transfer-count-badge">0</span></button>
+            <button id="openActivitiesButton" class="transfer-map-button" type="button" aria-label="Open unit activities">Activities</button>
             <button id="openUnitCreationOverviewButton" class="transfer-map-button" type="button" aria-label="Open created units overview">Units <span id="unitCreationOverviewCount" class="transfer-count-badge">0</span></button>
             <button id="toggleOrderSheetMenu" class="transfer-map-button" type="button" aria-expanded="false" aria-controls="orderSheetMenu">More Orders ▾</button>
           </div>
@@ -163,7 +165,7 @@
               <button class="unit-menu-tab active" id="unitTabOverview" role="tab" aria-selected="true" aria-controls="unitPaneOverview" data-unit-tab="overview">Overview</button>
               <button class="unit-menu-tab" id="unitTabSkills" role="tab" aria-selected="false" aria-controls="unitPaneSkills" data-unit-tab="skills">Skills</button>
               <button class="unit-menu-tab" id="unitTabSustenance" role="tab" aria-selected="false" aria-controls="unitPaneSustenance" data-unit-tab="sustenance">Sustenance</button>
-              <button class="unit-menu-tab" id="unitTabInventory" role="tab" aria-selected="false" aria-controls="unitPaneInventory" data-unit-tab="inventory">Gear &amp; Cargo</button>
+              <button class="unit-menu-tab" id="unitTabInventory" role="tab" aria-selected="false" aria-controls="unitPaneInventory" data-unit-tab="inventory">Cargo &amp; Equipment</button>
               <button class="unit-menu-tab" id="unitTabOrders" role="tab" aria-selected="false" aria-controls="unitPaneOrders" data-unit-tab="orders">Orders</button>
             </div>
 
@@ -215,6 +217,7 @@
                 <div class="capacity-bar"><div id="unitCapacityFill" class="capacity-fill"></div></div>
                 <div id="unitLoadText" class="capacity-caption">—</div>
                 <div id="unitTransportText" class="transport-caption"></div>
+                <div id="unitProjectedWeight" class="unit-projected-weight" role="status">Projected weight will appear here when a unit is selected.</div>
               </section>
               <div class="unit-menu-section-heading"><span>UNIT STORES</span><small id="unitInventoryBasis"></small></div>
               <div id="unitInventoryList" class="inventory-list"></div>
@@ -225,6 +228,7 @@
                 <button class="button" type="button" data-unit-action="move">Move Unit</button>
                 <button class="button" type="button" data-unit-action="scout">Send Out Scout</button>
                 <button class="button" type="button" data-unit-action="split">Split Off Unit</button>
+                <button class="button" id="unitOpenActivities" type="button">Activities</button>
                 <button class="button" type="button" data-unit-action="transfer">Transfer</button>
                 <button class="button" type="button" data-unit-action="open-scouts">View Scout Routes</button>
               </div>
@@ -438,5 +442,7 @@
   <script src="turn-actions.js"></script>
   <script src="transfer-screen.js"></script>
   <script src="orders-overviews.js"></script>
+  <script src="activities-hunting-engine.js"></script>
+  <script src="activities-screen.js"></script>
 </body>
 </html>
