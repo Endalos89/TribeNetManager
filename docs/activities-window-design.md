@@ -236,6 +236,8 @@ On first opening Menu 3, default to **One Turn** to avoid accidentally creating 
 
 ![Third-menu Running Order setup extension: One Turn or Running Order, Maintain Stock goal, explicit target stock owner, per-turn cap and current-turn preview.](assets/activities-running-order-setup-wireframe.svg)
 
+*This wireframe focuses on the **Running Order settings portion** of Menu 3; the separate **Saved Activities pane/tab is still present within Menu 3**, as shown in the main Menu 3 wireframe (§3A.3).*
+
 **Recommended goal modes:**
 
 | Goal mode | Plain-language label | Rule | When to stop or restart |
@@ -309,7 +311,7 @@ A Maximise order can consume all spare capacity and **starve lower-priority orde
 
 ### 3B.4 The Running Orders management screen
 
-Add a clearly named **Running Orders** button near the Activities / Orders overview controls. This opens a **dedicated screen**, separate from the three-menu selection sequence. Also offer a direct “Manage Running Orders” link in Menu 3 after creating one.
+Add a clearly named **Running Orders** button near the Activities / Orders overview controls. This opens a **dedicated screen**, separate from the three-menu selection sequence. Also offer a direct “Manage Running Orders” link in Menu 3 after creating one. **The separate Running Orders screen manages long-term goals and priorities only; current-turn Saved Activities remain inside Menu 3.**
 
 ![Proposed Running Orders management screen: a list ordered from highest to lowest priority with drag handles and up/down controls, target progress, current turn allocation preview and state.](assets/activities-running-orders-manager-wireframe.svg)
 
