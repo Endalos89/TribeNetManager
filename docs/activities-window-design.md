@@ -1,13 +1,13 @@
 # TribeNet Manager — Activities Window & Skill-by-Skill Rollout
 
-**Design version:** 0.7 — Menu 3 Saved Activities and Maximise Tools  
+**Design version:** 0.8 — Hunting pilot, cargo forecasts and Auto Allocate Tools  
 **Updated:** 29 October 2026  
 **Status:** Proposed design, not an implementation-complete claim  
 **Related designs:** [Orders Workbook Lifecycle & Export Safety](orders-workbook-lifecycle-design.md), [Compendium](compendium.md), [Compendium Skill Dossier Baselines](skill-dossier-baselines.md).
 
 ## 1. Purpose
 
-The Mapper's **Activities Window** is a **three-menu workflow**. **Menu 1** is a compact skill icon grid; **Menu 2** shows the chosen skill's activities/recipes; **Menu 3** combines the detailed allocation editor **with a separate Saved Activities area inside the same menu**. The editor includes **Maximise Tools** for automatically selecting the best verified available implements. Detailed recipe/rule browsing remains in the Compendium.
+The Mapper's **Activities Window** is a **three-menu workflow**. **Menu 1** is a compact skill icon grid; **Menu 2** shows the chosen skill's activities/recipes; **Menu 3** combines the detailed allocation editor **with a separate Saved Activities area inside the same menu**. The editor includes **Auto Allocate Tools** for automatically selecting the best verified available implements. Detailed recipe/rule browsing remains in the Compendium.
 
 The **Running Orders** extension allows recurring production goals across turns and is configured from Menu 3, while a separate manager controls priorities (see §3B). The implementation is **incremental, one skill at a time**. Do not build every skill in one pass or expose a skill as fully supported simply because it appears in an existing catalogue. Each skill must be checked end-to-end before starting the next.
 
@@ -21,8 +21,10 @@ The **Running Orders** extension allows recurring production goals across turns 
 6. **Goods Tribe:** A linked unit **consumes all required goods from its Goods Tribe and adds all produced goods to that same Goods Tribe's inventory**. Goods Tribe assignment remains a separate workflow; Activities must use the resulting shared pool for both input and output.
 7. **Turn-boundary inventory:** Production in turn N **cannot be used in turn N**; it can enter the available inventory at N+1 only after confirmation. Maintaining stock must take account of **feasible consumption across all tasks in the same turn**.
 8. **Saved Activities is inside Menu 3:** All current-turn saved allocations for the selected unit, across skills, are accessible in a dedicated panel/tab **inside Menu 3**, not in a separate Activities overview window.
-9. **Maximise Tools:** A button beside Menu 3's implements selector picks an optimal *available* tool mix for the current activity and workforce, within skill-specific benefit limits and shared Goods Tribe stock reservations. The suggestion remains editable and must be saved explicitly.
+9. **Auto Allocate Tools:** The renamed tool-selection button chooses the best verified available implements for the current activity and workers. Hunting Running Orders **automatically select tools afresh every turn**, allocating scarce Goods Tribe implements across multiple units in **Running Order priority**. A One Turn suggestion remains editable and requires explicit Save.
 10. **Saved plan is authoritative:** The Mapper database owns the orders; export reads them but never clears them. A fresh blank Orders workbook is always used for each export.
+11. **Skill level indicator:** Every Menu 1 skill tile shows a small circular **numeric badge at the bottom-left**, reflecting the selected unit/Tribe's effective level (including 0).
+12. **Carrying-weight preview:** The selected unit's **Cargo & Equipment** tab shows current and projected **pre-movement** weight/capacity from all saved activities and BM Transfers, before the end-of-turn provisions are consumed.
 
 ## 2. Skill rollout contract — required for every new skill
 
@@ -37,7 +39,7 @@ A skill is considered ready only when all relevant items below are complete. Som
 | Geography and facilities | Whether the rule uses start-of-turn hex/terrain, buildings in the area, their capacity, season and other location restrictions |
 | Goods Tribe inventory and turn timing | Input goods come from the acting unit or its Goods Tribe, **and outputs go to that same inventory owner**. Current-turn production is not current-turn available stock. Stock maintenance includes all current-turn consumption |
 | Activity/recipes | Each supported variant, correct requirements, conversion/output rules, tool/implement compatibility, benefit limits and workbook activity/item/distinction mappings |
-| UI | Three menus: compact skills icon grid; compact skill activities/recipes grid; **Menu 3 allocation editor + internal Saved Activities area**, including **Maximise Tools**. Grey/red tile statuses and hide toggles in Menus 1/2 |
+| UI | Three menus: compact skills icon grid; compact skill activities/recipes grid; **Menu 3 allocation editor + internal Saved Activities area**, including **Auto Allocate Tools**. Grey/red tile statuses and hide toggles in Menus 1/2 |
 | Compendium | Update the skill's article with the same eligibility, worker limits, recipes, inputs/outputs, modifiers and source links |
 | Persistence and export | Save/edit/delete or source-derived order handling, reload after restart, re-export safety, no duplicates |
 | Tests | Level-zero/boundary cases, cap, missing goods, buildings/start position, **tool optimality and shared reservations**, Saved Activities edits, workbook output |
@@ -64,7 +66,7 @@ Selected unit → Activities
   └─ MENU 1 — Skills icon grid
        └─ Click skill → MENU 2 — Selected skill's activities/recipes icon grid
             └─ Click activity or recipe → MENU 3
-                 ├─ Allocation editor + Maximise Tools
+                 ├─ Allocation editor + Auto Allocate Tools
                  └─ Saved Activities (same menu)
                       └─ Save → refresh this area
 
@@ -82,6 +84,7 @@ Open Activities from the selected Mapper unit at **Menu 1**. Carry the same unit
 
 - Compact, uniformly sized icon tiles arranged **left to right, wrapping into multiple columns and rows**, similar to File Explorer's medium/large icon view. Target approximately **six columns at the illustrated desktop width**, with responsive column count as the window changes size; avoid the former full-width rows and large cards.
 - Each tile displays **one icon at the top and a readable name underneath**. There is no permanent paragraph of metadata or detailed information panel inside a tile.
+- **Menu 1 level badge:** a small circle at the **bottom-left** of each skill tile displays the selected unit's effective skill level, including level **0**. Resolve unit-vs-parent-Tribe skill ownership by verified rules, and explain that source on hover/focus. Show `?` for unknown levels instead of inventing a zero. The badge remains visible on disabled/grey/red tiles.
 - Long names should wrap to a sensible second line or truncate with the full name available on hover and keyboard focus. Grid tile spacing and keyboard navigation must remain consistent.
 - **Normal icon:** available under the current rules. **Greyed-out icon/name:** lacks the required skill or required skill level. **Red-tinted/red icon/name:** lacks required input goods. Two independent checkboxes, **Hide lacking skill** and **Hide lacking inputs**, can hide those tiles **in either Menu 1 or Menu 2**.
 - Colour is never the sole signal: each restricted tile has an accessible status name (and an unobtrusive indicator/tooltip). The filters operate on eligibility classification, not on colour alone.
@@ -97,7 +100,7 @@ Open Activities from the selected Mapper unit at **Menu 1**. Carry the same unit
 **Purpose:** Select the skill. **Only skills appear here** — no activities, recipes, ingredient table or allocation controls.
 
 - Populate the icons using **established skill-list/ownership/availability logic**, reconciled per skill. The implementation state is separate from the player's skill level.
-- Every skill uses its **unique shared Compendium icon**, displayed above its full name. Hovering reveals its full name.
+- Every skill uses its **unique shared Compendium icon**, displayed above its full name. Hovering reveals its full name; the **bottom-left numeric skill-level circle** remains visible at all times.
 - A **small eye** appears in the top-right of the hovered/focused skill tile. Clicking it **opens that skill directly in the Compendium**, without selecting the skill or entering Menu 2. The eye is keyboard accessible with an explicit label.
 - Clicking anywhere else on a skill tile opens **Menu 2**, scoped to that skill. Grey/red may communicate current inability to perform activities, but the tile can still be selected to see which activities exist; no invalid allocation can be saved. The eye remains accessible even on an unavailable skill.
 - Both **Hide lacking skill** and **Hide lacking inputs** toggles are available above the grid. Skills hidden by either toggle may be restored by switching the filter off.
@@ -126,8 +129,8 @@ Open Activities from the selected Mapper unit at **Menu 1**. Carry the same unit
 
 - Breadcrumb **Skills → [Skill] → [Activity/Recipe]**, plus **Back to Activities**. Unit, turn, worker availability, start-of-turn terrain/buildings, skill level and effective Goods Tribe remain visible as relevant.
 - **One Turn | Running Order** choice, worker slider and numeric input, inputs/implements from **confirmed turn-start goods**, outputs projected for next turn (credited to Goods Tribe), and validation messages.
-- Show an **Implements / Tools** section with item icons and editable quantities plus **Maximise Tools** and optional **Clear** buttons. **Maximise Tools optimises implement selection** for the selected activity; it does **not** choose a production goal or change the worker count.
-- When clicked, Maximise Tools selects the best **available, eligible combination and quantities** under verified per-skill rules, including benefits/caps, required primary/support combinations and other activity reservations. Show a short **Selected tools / effective benefit** summary; let the user freely amend selections before saving.
+- Show an **Implements / Tools** section with item icons and editable quantities plus **Auto Allocate Tools** and optional **Clear** buttons. **Auto Allocate Tools optimises implement selection** for the selected activity; it does **not** choose a production goal or change the worker count.
+- When clicked, Auto Allocate Tools selects the best **available, eligible combination and quantities** under verified per-skill rules, including benefits/caps, required primary/support combinations and other activity reservations. Show a short **Selected tools / effective benefit** summary; let the user freely amend selections before saving.
 - **Save** revalidates against the latest plan, persists the allocation, **stays in Menu 3**, and immediately refreshes the Saved Activities list and resource/worker totals. To choose another recipe, click **Back to Activities** to Menu 2.
 - **Back, Cancel and Close** discard only uncommitted changes, never existing saved activities or Running Orders. Specialist-derived rows remain owned by their specialist planners.
 
@@ -151,7 +154,7 @@ Open Activities from the selected Mapper unit at **Menu 1**. Carry the same unit
 | Click skill | Menu 2 — activities and recipes icon grid for that skill. |
 | Click activity/recipe | Open **Menu 3** allocation editor, with **Saved Activities visible in its own pane/tab**. |
 | Click eye on skill | Open skill Compendium entry, not Menu 2. |
-| Click **Maximise Tools** | Preview/populate optimal permitted **tool mix**, subject to skill rules, inventory and existing reservations; no save until confirmed. |
+| Click **Auto Allocate Tools** | Preview/populate optimal permitted **tool mix**, subject to skill rules, inventory and existing reservations; no save until confirmed. |
 | Manually edit suggested tools | Keep edits and update effective benefit/output preview. |
 | Save allocation | Save only after validation; **remain in Menu 3** and refresh Saved Activities. |
 | Edit/remove Saved Activities row | Act **within Menu 3**; confirm removal, handle source-derived rows appropriately. |
@@ -167,7 +170,7 @@ These wireframes illustrate design only; quantities, tool choices, recipes and b
 
 ### 3A.1 Menu 1 — Skills icon grid
 
-![Compact skills grid with unique icons, names underneath and hover eye for Compendium.](assets/activities-window-wireframe.svg)
+![Compact skills grid with unique icons, bottom-left skill-level circles, names underneath and hover eye for Compendium.](assets/activities-window-wireframe.svg)
 
 ### 3A.2 Menu 2 — Activities/recipes icon grid
 
@@ -175,7 +178,7 @@ These wireframes illustrate design only; quantities, tool choices, recipes and b
 
 ### 3A.3 Menu 3 — Allocation editor and Saved Activities side by side
 
-![Menu 3: allocation editor with Maximise Tools, current workers and tools, and a distinct Saved Activities panel on the right with saved allocations and edit actions.](assets/activities-allocation-popup-wireframe.svg)
+![Menu 3: allocation editor with Auto Allocate Tools, current workers and tools, and a distinct Saved Activities panel on the right with saved allocations and edit actions.](assets/activities-allocation-popup-wireframe.svg)
 
 **Allocation inputs/implements table:**
 
@@ -188,7 +191,7 @@ These wireframes illustrate design only; quantities, tool choices, recipes and b
 | Benefit / cap | Verified per-tool contribution, quantity limits and combined skill-specific benefit cap; surplus tools are not assigned without benefit. |
 | Status | Skill/research requirement, compatibility, missing goods, prior reservations or validation. |
 
-**Tool controls:** **Maximise Tools** (separate from Running Order **Maximise Production**), optional **Clear Tools**, live total implement bonus and explanation when the requested tool set is not available. Clicking Maximise Tools does not save a row; Save revalidates and commits.
+**Tool controls:** **Auto Allocate Tools** (separate from Running Order **Maximise Production**), optional **Clear Tools**, live total implement bonus and explanation when the requested tool set is not available. Clicking Auto Allocate Tools does not save a row; Save revalidates and commits.
 
 **Outputs:** Product icon/name, forecast next-turn amount, **Goods Tribe destination**, output certainty. No same-turn spending of goods produced.
 
@@ -212,7 +215,7 @@ These wireframes illustrate design only; quantities, tool choices, recipes and b
 
 - The **Saved Activities area belongs inside Menu 3**, never as a separate Activities overview screen. Its compact and expanded presentations read **the same saved database records**.
 - **Menu 3 Save remains in Menu 3**, refreshing saved rows and totals. Use Back to Activities to pick a new recipe.
-- **Maximise Tools is a tool selection helper**, not the recurring **Maximise** mode and not an instruction to allocate maximum workers.
+- **Auto Allocate Tools is a tool selection helper**, not the recurring **Maximise** mode and not an instruction to allocate maximum workers.
 - Every proposed tool must be genuinely available at turn start from the right Goods Tribe pool, eligible for this skill, within its stacking/quantity benefit cap and not already reserved by another order.
 - No duplicate item reservation from the row currently being edited. Saved activities are always visible even when no current recipe is selected.
 - The Compendium holds detailed recipe/tool reference material; Menu 3 shows only enough rule/result information to explain and validate allocations.
@@ -367,7 +370,7 @@ Persistent Running Orders and individual turn orders are **different database en
 - Changes to priorities, available stock, transfers, scouting, buildings or goods-tribe assignments can trigger a **new preview**. Apply only safe non-locked changes to current-turn drafts; surface conflicts explicitly before replacing user changes.
 - When a user changes the running goal, future turns follow the new definition. Already completed turns and their exports remain historical; no retroactive alterations.
 - If a user moves or splits the performing unit, revalidate the running instruction's owner and context. Never silently transfer it to a new unit or evaluate at its end-of-turn position.
-- For a Running Order with **Optimise tools each turn** enabled, recalculate its best eligible implement selection from that new turn's verified inventory, workforce and saved reservations, while preserving any manual this-turn tool override. The choice of Running Order **Maximise** does not itself imply “Maximise Tools.”
+- **Hunting Bills always automatically run Auto Allocate Tools for each new turn**, based on confirmed stock, available workers and higher-priority reservations. When several units share one Goods Tribe, allocate eligible implements through the **clan-wide priority queue**, not independently for each unit. Preserve manual locked this-turn overrides. Other skills may offer an optional auto-tools setting when verified. Running Order **Maximise** remains the separate production goal, not a synonym for tool selection.
 - **Export is read-only** with respect to Running Orders and Mapper plans. It renders a consistent saved turn snapshot onto the turn's blank Orders template and replaces that turn's existing export in its configured path.
 
 The current code has manual/derived activity assembly and Orders export, but it does **not** establish this persistent, deterministic recurring-order engine. This section is a new feature design, not an implemented capability.
@@ -398,6 +401,14 @@ The current code has manual/derived activity assembly and Orders export, but it 
 5. **Priority/manual conflicts:** Recommended manual fixed commitments reserve first, and Running Orders use remaining capacity. Expose conflicting or overridden allocations prominently.
 6. **Same-turn production chains:** **Not allowed.** Turn-N produced goods are never available as turn-N inputs.
 7. **Target hysteresis:** Optional “Resume below Y” / “Pause when satisfied” for later enhancement, without complicating the initial setup screen.
+
+---
+
+## 3C. Cargo & Equipment — current and projected weight
+
+When a unit is selected, **Cargo & Equipment** shows both **current weight/capacity** and **projected pre-movement weight/capacity**, accounting for **all saved activities**, applicable production and consumption, and all **Before Movement incoming/outgoing Transfers**. Show a range for uncertain yields and flag the **highest projected weight** as the conservative risk estimate. Display pounds and percentage of usable carrying capacity; if a weight or timing is unknown, flag it rather than treating it as zero. Account for physical ownership correctly when a unit uses Goods Tribe stock; do not duplicate the Goods Tribe's whole pool onto every linked unit.
+
+This is **before end-of-turn food consumption**: current-turn provisions must be carried during movement. Recalculate after changes to activities, transfers, tools, capacity or running-order priorities. The projected weight is not a confirmed Results value.
 
 ---
 
@@ -454,9 +465,9 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 
 **Example:** A and C both use B. B starts with 50 Planks; A uses 20 and C uses 30. A produces 60 and C produces 40, both credited **to B**. Neither A nor C can use the 100 newly made Planks during this turn. The projected next-turn stock for **B** is **50 − 20 − 30 + 60 + 40 = 100**. The result remains unconfirmed until the actual turn outcome is known.
 
-### 4.4 Maximise Tools — best available implements for this activity
+### 4.4 Auto Allocate Tools — best available implements for this activity
 
-**Confirmed user intent:** The **Maximise Tools** button in **Menu 3** automatically picks the **optimal eligible tools already available** for the chosen activity. This is separate from the **Maximise production** Running Order mode and separate from the worker-allocation slider.
+**Confirmed user intent:** The **Auto Allocate Tools** button in **Menu 3** automatically picks the **optimal eligible tools already available** for the chosen activity. This is separate from the **Maximise production** Running Order mode and separate from the worker-allocation slider.
 
 **Recommended objective:** Maximise the **verified effective benefit for the current activity and selected worker count**, not the number/value of tools. For example, if two tools provide identical total benefit and one needs fewer scarce items, select the less wasteful combination. The objective can be output, efficiency, capacity or another skill-specific measure when verified. If benefits cannot be compared, do **not** label a guessed selection “optimal.”
 
@@ -466,14 +477,51 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 2. **Skill eligibility:** Use the skill's verified tool types, skill/research unlocks, primary and supporting implement restrictions, any per-worker allowance, equipment/facility requirements, and how the game combines tool effects. **Hunting's Compendium dossier already separates one primary implement type from support implements and shows tool-specific maximum benefits**; similar exceptions must not be flattened into a generic ranking.
 3. **True benefit optimisation:** Evaluate the benefit of feasible combinations/quantities **at the current workers assigned**, including individual and aggregate caps, any diminishing returns and overlapping bonuses. Stop adding tools once no additional benefit is gained. If no valid bonus formula exists, disable the button and display **“Tool optimiser not yet implemented for this skill”** with a Compendium link.
 4. **Ties and scarcity:** When combinations give the same effective result, use a deterministic tie-breaker: prefer fewer required items, then conserve tools with the least spare availability in the shared Goods Tribe pool. Do not move or take tools from other saved orders to improve this order silently.
-5. **Preview, not action:** Populate the **Selected** quantity fields in the current editor and show which implements, effective benefit and caps were applied. Allow manual changes before saving. **Maximise Tools neither saves an order, transfers goods, crafts implements, changes workers nor creates a Running Order**.
-6. **Respect edits and refresh:** If the editor has unsaved manual tool choices, ask before replacing them with the optimiser's suggestion. Changes to workforce, tool stock, Goods Tribe assignment, research, buildings or other allocations trigger revalidation; rerunning Maximise Tools recalculates from the latest effective data.
+5. **Preview, not action:** Populate the **Selected** quantity fields in the current editor and show which implements, effective benefit and caps were applied. Allow manual changes before saving. **Auto Allocate Tools neither saves an order, transfers goods, crafts implements, changes workers nor creates a Running Order**.
+6. **Respect edits and refresh:** If the editor has unsaved manual tool choices, ask before replacing them with the optimiser's suggestion. Changes to workforce, tool stock, Goods Tribe assignment, research, buildings or other allocations trigger revalidation; rerunning Auto Allocate Tools recalculates from the latest effective data.
 7. **Editing existing orders:** When editing a saved row, calculate available stock **without subtracting that same row's existing tool allocations twice**. Other rows' validated reservations and any user locks remain protected. Do not over-commit tools when the rule makes them exclusive across activities.
 8. **Persistence and workbook export:** Save explicit implement IDs/quantities on the **current-turn activity order** and export them via the validated `Tribes_Activities` implement-number columns. The resulting workbook rows must reflect the actual saved selection, not run an optimiser during export.
-9. **Recurring orders:** When a Running Order uses the optimiser, offer a separate **“Optimise available tools each turn”** setting (proposed default on when created via Maximise Tools), so future turns choose from their **new confirmed inventory** without assuming last turn's items are unchanged. A **manual locked override for one turn** remains untouched. Keep this entirely distinct from Running Order **Maximise production**.
+9. **Recurring orders:** For **Hunting Running Orders, Auto Allocate Tools runs each turn without an opt-in switch**. Use that turn's confirmed equipment stock and reserve eligible exclusive implements by **clan-wide Running Order priority**, across all linked units drawing from a Goods Tribe. Respect manual/locked commitments, never double-reserve, and recalculate worker numbers when tools change expected yield. A manually locked override is protected. For other future skills, automatic selection may be optional when verified. This is distinct from **Maximise production**.
 10. **Validation/testing:** For every supported skill, test limited stock, shared Goods Tribe claims, incompatible tool combinations, primary/support rules, caps and zero marginal benefit, researching better implements, variable worker counts, same-turn production exclusion, equal-benefit tie cases, manual overrides, stable repeated optimisation and exact workbook mapping.
 
-**User feedback:** After clicking Maximise Tools, show an inline result such as **“Selected 2 Tool A + 1 Tool B · estimated benefit +X · limited by available stock”** when a verified computation supports it. If nothing helps, say **“No additional beneficial tools available”**. Never claim optimality when data is incomplete.
+**User feedback:** After clicking Auto Allocate Tools, show an inline result such as **“Selected 2 Tool A + 1 Tool B · estimated benefit +X · limited by available stock”** when a verified computation supports it. If nothing helps, say **“No additional beneficial tools available”**. Never claim optimality when data is incomplete.
+
+## 4A. Hunting pilot — confirmed design decisions
+
+**Implement Hunting first, skill by skill.** The rule sources are Mandate N02.2 §§7.2, 8.3.1 and 13.1.15; existing Compendium Hunting dossier; existing assumption-based calculator in `src/mapper-food-gathering.js`. Hunting works at **level 0** with no skill-specific worker cap. Its variable provision yield depends on workforce, Hunting level, season/weather, terrain/water and eligible tools.
+
+### Provision estimate and target
+
+- **Menu 3 displays the Hunting calculator's expected Provs range** for the allocated workers and **actually selected implements** (not hypothetical equipment). Label min/max and any fine-weather value as **estimates**, not guaranteed outcomes.
+- Each Hunting Bill lets the player select **Optimistic** (highest calculator weather scenario), **Average** (arithmetic mean of the calculator's weather scenarios), or **Conservative** (lowest scenario). The chosen basis determines **how many hunters to allocate** toward the goal; always show the whole estimated range. Average is a simple scenario mean, not an asserted probability forecast.
+- **Months means months remaining AFTER this turn's Provs are eaten.** The hunting work target is calculated before end-of-turn eating, including the consumption required for the current turn. Example: 700 eaters, goal 3 months → **2,800 Provs needed before eating** and **2,100 afterwards**, before considering current inventory and other supply/consumption. Population changes can make actual consumption differ.
+- With a **Goods Tribe**, month calculations use **all units sharing the pool**, not just the hunter unit. Hunting Bills in one Goods Tribe with the same months target **share a single stock goal**. Higher-priority Bills try to fill it first; lower-priority Bills handle only the remaining expected shortfall, using their own yield choices.
+- Hunting is never written to the workbook as an illegal conditional “stop at X Provs” order. Its export contains the planned **workers and legal implements**. Hunting output is unavailable as an input to other activities the same turn, but provisions can be eaten at the end of the turn under the game's turn sequence.
+
+### Tool allocation for recurring Hunting Bills
+
+- **Auto Allocate Tools** is the UI control name. Each Hunting Running Order **automatically chooses the best legal available implements every turn** using the current turn's confirmed inventory, workers, skill/research rules, caps and reservations. This is not the separate **Maximise** production mode.
+- **Shared Goods Tribe pool:** if units A and C draw implements from B, **higher-priority Running Orders reserve eligible exclusive equipment first**, and lower-priority Bills use what remains. A tool cannot be reserved for two exclusive activities; protected manual/locked plans remain protected. Reordering bills recalculates the preview, and the workforce estimate must be recalculated alongside equipment because tools change yield.
+- Continue to expose the button for editable tool selection on **One Turn** activities. Do not claim an optimiser is complete for a skill until its formulas and tool combinations are verified.
+
+### Optional capacity percentage and automatic Provs retention
+
+- A Hunting Bill may specify a **maximum carrying weight as a percentage of total capacity**. Calculate the Provs that fit after subtracting the **highest projected weight from all other goods and activities** and accounting for other saved **Before Movement outgoing/incoming Transfers**. Evaluate carrying weight **before eating**; **Provs are the first and initially only goods** auto-dropped. The months target continues to determine hunters; the weight limit is enforced **independently by a Transfer**, even when hunting overproduces.
+- If enabled **and the hunting unit is not using a Goods Tribe**, automatically create/update a **Before Movement** `Transfers` row with **`From = To = unit`**, **`Item = PROVS`**, and **`Quantity = X`** where **X means “keep up to X Provs”**. Create it even when expected production is under the cap as protection from higher-than-expected yields. Link it to the Bill and turn, and update/delete only its own generated row without duplicates. Re-export renders the saved plan; manually edited exported Excel rows are not imported.
+- **Disable the weight-cap option with a warning for any Goods Tribe-linked unit.** Do not generate a retention row; on subsequent linkage remove/invalidate that Bill's derived retention transfer, not unrelated orders.
+- If the target months cannot fit after the retention limit, **weight protection takes priority**: show a shortfall warning but do **not** reduce hunters just because extra Provs may be dropped. If other cargo alone exceeds the threshold, warn instead of automatically dropping different goods. Future skills may opt into similar protection **case by case**.
+- The derived **keep-only BM Transfer must execute in an order compatible with the other BM Transfers** used for the calculation. Verify the actual game/workbook execution order; until verified, show **Needs review** instead of promising a safe final load.
+
+### Acceptance criteria for the Hunting pilot
+
+1. Calculator yield min/max and three yield bases; level-zero accessibility; actual selected implements and worker estimates.
+2. Months target **after** eating, but full provision weight **before** eating and movement; current/projected Cargo & Equipment weight from all activities.
+3. Goods Tribe has **shared eaters and shared target**; scarce tools are allocated **by running-order priority across linked units** without double reservation.
+4. Auto Allocate Tools runs again each turn for every Hunting Bill; recalculation changes workers/tools together; manual locked overrides survive.
+5. Weight cap automatically produces a **single BM keep-only PROVS Transfer** when not linked to a Goods Tribe, incorporating other BM Transfers and maximum non-Provs weight. Goods Tribe disables this option; no other goods are silently discarded.
+6. Saved Bills, derived Transfers, `Tribes_Activities` export and `Transfers` export are idempotent, reload safely and never clear the Mapper database.
+
+---
 
 ## 5. Shared resources and validation
 
@@ -481,7 +529,7 @@ A single turn-level reservation/validation model covers all relevant activity al
 
 - Track workers by **performing unit**, workforce class and turn (including scouting/other planner commitments). Inventory, by contrast, belongs to the **Goods Tribe pool** or own unit if unlinked; never transfer worker ownership merely because stock is shared.
 - Track consumables by **effective Goods Tribe inventory owner** (or own unit), item and turn, counting all linked-unit reservations against the same start-of-turn stock. Keep predicted turn-N output in a **separate N+1 forecast**, not N's spendable stock.
-- Track **reusable implements/tools** and facility capacity separately from consumed goods; reserve against other orders **only to the extent required by the skill's actual sharing/exclusivity rule**, preventing false double-use without falsely treating tools as consumed. Maximise Tools draws only on available eligible implements.
+- Track **reusable implements/tools** and facility capacity separately from consumed goods; reserve against other orders **only to the extent required by the skill's actual sharing/exclusivity rule**, preventing false double-use without falsely treating tools as consumed. Auto Allocate Tools draws only on available eligible implements.
 - Track skill-specific worker limits, building capacity and any recipe-specific limits as separate restrictions.
 - Account for transfers, splits and unit creation only at their verified effective times. **Never treat goods made this turn as spendable this turn**, regardless of transfers or Goods Tribe membership.
 - Every edit triggers revalidation of affected activities. Saving a different order must not erase a previously saved order that now conflicts; show a conflict and require resolution.
@@ -550,24 +598,26 @@ For **every** newly added skill, demonstrate:
 7. Multiple skills can be allocated together without exceeding the performing unit's shared workforce.
 8. For location-dependent skills, availability and facility limits use the **unit's start-of-turn hex and area buildings**, not its planned end position.
 9. For inventory-dependent skills, **all inputs come from and all outputs are credited to the assigned Goods Tribe inventory**, if linked, and multiple units cannot reserve the same turn-N goods twice. Turn-N output is not usable until N+1.
-10. **Maximise Tools** selects the highest effective-benefit implement combination *available* to the activity, within verified skill caps, legal compatibility, worker count and Goods Tribe stock/reservations; it leaves suggestions editable and does not silently modify other orders. Consumables and reusable tools follow their distinct rules. Maintain Stock still includes all feasible same-turn consumption.
+10. **Auto Allocate Tools** selects the highest effective-benefit implement combination *available* to the activity, within verified skill caps, legal compatibility, worker count and Goods Tribe stock/reservations; it leaves suggestions editable and does not silently modify other orders. Consumables and reusable tools follow their distinct rules. Maintain Stock still includes all feasible same-turn consumption.
 11. **Menu 3 has a Saved Activities pane/tab within the same menu** listing all current-turn activities for the selected unit across skills, including edit/remove/source-view controls and worker/tool totals. **Saving stays in Menu 3** and updates the saved area. Optimiser selections, configuration calculations, saved records and Compendium descriptions agree with the verified source.
 12. Save, cancel, edit, remove, navigation and restart preserve correct plans without phantom/duplicate activity rows.
 13. Orders export produces exact activity mappings, re-export replaces the same turn's file, and nothing about export changes the database plan.
 14. Existing completed skills and specialist planners pass regression tests.
+15. Current/projected weight is visible in Cargo & Equipment, including all activities and BM Transfers **before eating**, and numeric skill-level badges appear bottom-left in Menu 1.
+16. Hunting Bills automatically allocate tools each turn by **clan-wide priority** for shared Goods Tribe stocks, and the optional weight cap creates the correct derived BM keep-only Provs Transfer when the unit is not Goods Tribe-linked.
 
 ## 9. Implementation order and definition of done
 
-Begin with the reusable **three-menu navigation framework (skills → activities/recipes → allocation + Saved Activities inside Menu 3), shared icon registry, Compendium deep link, skill-aware Maximise Tools engine, reservation validator and persistence adapter**. Then add a **persistent Running Orders definition store, repeat-mode editor, priority manager, deterministic turn allocator, result-based reconciliation and idempotent generated-order adapter** before enabling recurring production per skill. Complete the inventory-source abstraction and start-of-turn context abstraction early, even if first skills do not yet exercise every option. They must not be retrofitted separately into every subsequent recipe.
+Begin with the reusable **three-menu navigation framework (skills → activities/recipes → allocation + Saved Activities inside Menu 3), shared icon registry, Compendium deep link, skill-aware Auto Allocate Tools engine, reservation validator and persistence adapter**. Then add a **persistent Running Orders definition store, repeat-mode editor, priority manager, deterministic turn allocator, result-based reconciliation and idempotent generated-order adapter** before enabling recurring production per skill. Complete the inventory-source abstraction and start-of-turn context abstraction early, even if first skills do not yet exercise every option. They must not be retrofitted separately into every subsequent recipe.
 
-Then choose **one skill per implementation batch** (the precise sequence is a later decision). For each batch: agree its rules, tools/benefit caps and icons; update its Compendium article; implement activities/recipes **and Maximise Tools when applicable**; wire DB and workbook export; test saved activity editing within Menu 3, tool optimisation and all boundaries; and verify existing activity functionality. The user can then test that specific skill before the next one.
+**Hunting is the agreed first implementation batch.** Then choose one skill per later implementation batch. For each batch: agree its rules, tools/benefit caps and icons; update its Compendium article; implement activities/recipes **and Auto Allocate Tools when applicable**; wire DB and workbook export; test saved activity editing within Menu 3, tool optimisation and all boundaries; and verify existing activity functionality. The user can then test that specific skill before the next one.
 
 ## 10. Open design decisions
 
 These are **not yet assumed rules**; resolve them while defining the affected workflow or skill. The proposed recurring-order defaults and their exceptions are detailed in **§3B.8**:
 
-- Which skill is first, and how many skills should appear as not-yet-supported tiles?
-- For each skill, which tool/implement benefit formula, caps, compatible combinations and exclusivity rules are sufficiently verified to enable **Maximise Tools**? What is its skill-specific optimisation metric if output is not the only benefit?
+- **Hunting is the first skill.** How many other skills should appear as not-yet-supported tiles?
+- For each skill, which tool/implement benefit formula, caps, compatible combinations and exclusivity rules are sufficiently verified to enable **Auto Allocate Tools**? What is its skill-specific optimisation metric if output is not the only benefit?
 - Exact empty states in Menu 1/2 and whether multi-skill recipes appear under secondary skills.
 - How a unit is assigned one or more goods tribes, effective-turn rules, authorization/ownership and what happens if the source changes. The assignment UI is a separate design.
 - Whether a missing goods-tribe assignment always falls back to own inventory, or whether certain skills require an explicit goods-source setting.
@@ -590,13 +640,14 @@ These are **not yet assumed rules**; resolve them while defining the affected wo
 - A dedicated **three-menu** Activities interface (skill list → per-skill activities/recipes → final allocation) is **not yet established as complete**.
 - Unique, shared skill-icon coverage and a verified Compendium eye/deep-link action need implementation/audit.
 - Full per-skill recipe coverage and consistent input/output icons need phased implementation.
+- **Menu 1 skill-level badges**, current/projected **Cargo & Equipment weight** and the Hunting-specific Bill/cap mechanics (§4A) need implementation and tests.
 - Skill-specific **level-zero**, worker-cap and mixed tribe/unit-level validation must be checked for each new skill.
 - Start-of-turn hex and area-building constraints need a reusable source, eligibility evaluator and tests.
 - **Goods Tribe assignment** remains a separate future step; Activities must resolve the **same inventory owner for inputs and outputs**, reserve against turn-start stock across linked units, and forecast produced goods for the **following turn only**.
 - Cross-planner workforce/stock/facility reservation and conflict handling require end-to-end tests.
 - Saved edit/cancel/reload and workbook export must be regression-tested for every added skill, including re-export safety and preservation of legacy orders.
 - Existing skill dossier and activity-catalog rules may require reconciliation against the latest Mandate/research before being treated as authoritative.
-- **Maximise Tools is not implemented:** add verified per-skill implement optimiser inputs/bonus calculations, availability and reservation checks, optional recurrent re-optimisation, editable suggestion UI and exact workbook implement mapping tests.
+- **Auto Allocate Tools is not implemented:** add verified per-skill optimiser formulas, availability and reservation checks, editable suggestion UI and workbook mapping tests. Hunting Bills must auto-select tools **every turn in priority order across shared Goods Tribe inventory**.
 - **Saved Activities in Menu 3 remains to be implemented:** separate in-menu pane/tab, inline edit/remove, source-derived navigation, accurate worker/tool totals and immediate refresh on Save. The older standalone overview concept is superseded.
 - **Inventory timing and Goods Tribe routing still need implementation:** block consumption of current-turn production; credit every output to the effective Goods Tribe; aggregate all linked-unit feasible consumption when forecasting next-turn stock, with acceptance tests covering input shortages, current-turn use and priority changes.
 - **Running Orders are not implemented:** build persistent goal/mode/priority storage, cross-unit resource-aware allocation, current-turn regeneration, stock/Results reconciliation, per-turn manual override protection, and a dedicated prioritisation screen. Verify no standing-order state is lost or spuriously treated as workbook output.
