@@ -365,6 +365,7 @@ Persistent Running Orders and individual turn orders are **different database en
 - Changes to priorities, available stock, transfers, scouting, buildings or goods-tribe assignments can trigger a **new preview**. Apply only safe non-locked changes to current-turn drafts; surface conflicts explicitly before replacing user changes.
 - When a user changes the running goal, future turns follow the new definition. Already completed turns and their exports remain historical; no retroactive alterations.
 - If a user moves or splits the performing unit, revalidate the running instruction's owner and context. Never silently transfer it to a new unit or evaluate at its end-of-turn position.
+- For a Running Order with **Optimise tools each turn** enabled, recalculate its best eligible implement selection from that new turn's verified inventory, workforce and saved reservations, while preserving any manual this-turn tool override. The choice of Running Order **Maximise** does not itself imply “Maximise Tools.”
 - **Export is read-only** with respect to Running Orders and Mapper plans. It renders a consistent saved turn snapshot onto the turn's blank Orders template and replaces that turn's existing export in its configured path.
 
 The current code has manual/derived activity assembly and Orders export, but it does **not** establish this persistent, deterministic recurring-order engine. This section is a new feature design, not an implemented capability.
@@ -451,13 +452,34 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 
 **Example:** A and C both use B. B starts with 50 Planks; A uses 20 and C uses 30. A produces 60 and C produces 40, both credited **to B**. Neither A nor C can use the 100 newly made Planks during this turn. The projected next-turn stock for **B** is **50 − 20 − 30 + 60 + 40 = 100**. The result remains unconfirmed until the actual turn outcome is known.
 
+### 4.4 Maximise Tools — best available implements for this activity
+
+**Confirmed user intent:** The **Maximise Tools** button in **Menu 3** automatically picks the **optimal eligible tools already available** for the chosen activity. This is separate from the **Maximise production** Running Order mode and separate from the worker-allocation slider.
+
+**Recommended objective:** Maximise the **verified effective benefit for the current activity and selected worker count**, not the number/value of tools. For example, if two tools provide identical total benefit and one needs fewer scarce items, select the less wasteful combination. The objective can be output, efficiency, capacity or another skill-specific measure when verified. If benefits cannot be compared, do **not** label a guessed selection “optimal.”
+
+**Algorithm and validations:**
+
+1. **Inventory:** Determine the acting unit's effective **Goods Tribe pool** (or its own inventory if unlinked). Only consider available **turn-start implements**. Exclude any amounts already committed to other activities **when the game's equipment-sharing rules require exclusivity**. Treat reusable tools differently from consumable inputs; do not automatically subtract every implement as consumed.
+2. **Skill eligibility:** Use the skill's verified tool types, skill/research unlocks, primary and supporting implement restrictions, any per-worker allowance, equipment/facility requirements, and how the game combines tool effects. **Hunting's Compendium dossier already separates one primary implement type from support implements and shows tool-specific maximum benefits**; similar exceptions must not be flattened into a generic ranking.
+3. **True benefit optimisation:** Evaluate the benefit of feasible combinations/quantities **at the current workers assigned**, including individual and aggregate caps, any diminishing returns and overlapping bonuses. Stop adding tools once no additional benefit is gained. If no valid bonus formula exists, disable the button and display **“Tool optimiser not yet implemented for this skill”** with a Compendium link.
+4. **Ties and scarcity:** When combinations give the same effective result, use a deterministic tie-breaker: prefer fewer required items, then conserve tools with the least spare availability in the shared Goods Tribe pool. Do not move or take tools from other saved orders to improve this order silently.
+5. **Preview, not action:** Populate the **Selected** quantity fields in the current editor and show which implements, effective benefit and caps were applied. Allow manual changes before saving. **Maximise Tools neither saves an order, transfers goods, crafts implements, changes workers nor creates a Running Order**.
+6. **Respect edits and refresh:** If the editor has unsaved manual tool choices, ask before replacing them with the optimiser's suggestion. Changes to workforce, tool stock, Goods Tribe assignment, research, buildings or other allocations trigger revalidation; rerunning Maximise Tools recalculates from the latest effective data.
+7. **Editing existing orders:** When editing a saved row, calculate available stock **without subtracting that same row's existing tool allocations twice**. Other rows' validated reservations and any user locks remain protected. Do not over-commit tools when the rule makes them exclusive across activities.
+8. **Persistence and workbook export:** Save explicit implement IDs/quantities on the **current-turn activity order** and export them via the validated `Tribes_Activities` implement-number columns. The resulting workbook rows must reflect the actual saved selection, not run an optimiser during export.
+9. **Recurring orders:** When a Running Order uses the optimiser, offer a separate **“Optimise available tools each turn”** setting (proposed default on when created via Maximise Tools), so future turns choose from their **new confirmed inventory** without assuming last turn's items are unchanged. A **manual locked override for one turn** remains untouched. Keep this entirely distinct from Running Order **Maximise production**.
+10. **Validation/testing:** For every supported skill, test limited stock, shared Goods Tribe claims, incompatible tool combinations, primary/support rules, caps and zero marginal benefit, researching better implements, variable worker counts, same-turn production exclusion, equal-benefit tie cases, manual overrides, stable repeated optimisation and exact workbook mapping.
+
+**User feedback:** After clicking Maximise Tools, show an inline result such as **“Selected 2 Tool A + 1 Tool B · estimated benefit +X · limited by available stock”** when a verified computation supports it. If nothing helps, say **“No additional beneficial tools available”**. Never claim optimality when data is incomplete.
+
 ## 5. Shared resources and validation
 
 A single turn-level reservation/validation model covers all relevant activity allocations, including allocations originating outside this window.
 
 - Track workers by **performing unit**, workforce class and turn (including scouting/other planner commitments). Inventory, by contrast, belongs to the **Goods Tribe pool** or own unit if unlinked; never transfer worker ownership merely because stock is shared.
 - Track consumables by **effective Goods Tribe inventory owner** (or own unit), item and turn, counting all linked-unit reservations against the same start-of-turn stock. Keep predicted turn-N output in a **separate N+1 forecast**, not N's spendable stock.
-- Track reusable tools/implements and capacity constraints separately rather than subtracting them like consumed goods.
+- Track **reusable implements/tools** and facility capacity separately from consumed goods; reserve against other orders **only to the extent required by the skill's actual sharing/exclusivity rule**, preventing false double-use without falsely treating tools as consumed. Maximise Tools draws only on available eligible implements.
 - Track skill-specific worker limits, building capacity and any recipe-specific limits as separate restrictions.
 - Account for transfers, splits and unit creation only at their verified effective times. **Never treat goods made this turn as spendable this turn**, regardless of transfers or Goods Tribe membership.
 - Every edit triggers revalidation of affected activities. Saving a different order must not erase a previously saved order that now conflicts; show a conflict and require resolution.
@@ -519,30 +541,31 @@ For **every** newly added skill, demonstrate:
 
 1. The Compendium and Activities Window show the **same unique skill icon**; applicable input and output goods have correctly matched icons.
 2. **Menu 1 shows only skills in a compact multi-column icon grid**, each with icon above its name; hover/focus reveals the Compendium eye without triggering selection.
-3. Clicking a skill opens a **separate Menu 2** showing that skill's activities/recipes as a matching compact icon grid, without a details table/sidebar; clicking one opens **Menu 3** to allocate workers and goods. Save returns to Menu 2 without losing other activities.
+3. Clicking a skill opens a **separate Menu 2** with that skill's activities/recipes as a compact icon grid; selecting one opens **Menu 3** with an allocation editor **and separate Saved Activities area within the same menu**. Save stays in Menu 3 and refreshes the saved list without losing other activities.
 4. Both icon menus show **grey for insufficient skill** and **red for missing input goods**, with independent toggles to hide each; validate level-zero eligibility and assigned goods-tribe inventory first.
 5. A level-zero-allowed skill can be used at level 0; a restricted skill refuses ineligible levels with an understandable explanation.
 6. The skill's maximum-worker rule is enforced, including across multiple recipes of the same skill where appropriate.
 7. Multiple skills can be allocated together without exceeding the performing unit's shared workforce.
 8. For location-dependent skills, availability and facility limits use the **unit's start-of-turn hex and area buildings**, not its planned end position.
 9. For inventory-dependent skills, **all inputs come from and all outputs are credited to the assigned Goods Tribe inventory**, if linked, and multiple units cannot reserve the same turn-N goods twice. Turn-N output is not usable until N+1.
-10. Required implements and consumable goods are handled according to their different rules. **Maintain Stock considers all other feasible same-turn consumption before computing next-turn target production.**
-11. Configuration calculations, saved records and Compendium description agree with the verified source.
+10. **Maximise Tools** selects the highest effective-benefit implement combination *available* to the activity, within verified skill caps, legal compatibility, worker count and Goods Tribe stock/reservations; it leaves suggestions editable and does not silently modify other orders. Consumables and reusable tools follow their distinct rules. Maintain Stock still includes all feasible same-turn consumption.
+11. **Menu 3 has a Saved Activities pane/tab within the same menu** listing all current-turn activities for the selected unit across skills, including edit/remove/source-view controls and worker/tool totals. **Saving stays in Menu 3** and updates the saved area. Optimiser selections, configuration calculations, saved records and Compendium descriptions agree with the verified source.
 12. Save, cancel, edit, remove, navigation and restart preserve correct plans without phantom/duplicate activity rows.
 13. Orders export produces exact activity mappings, re-export replaces the same turn's file, and nothing about export changes the database plan.
 14. Existing completed skills and specialist planners pass regression tests.
 
 ## 9. Implementation order and definition of done
 
-Begin with the reusable **three-menu navigation framework (skills → activities/recipes → allocation), shared icon registry, Compendium deep link, validation interface and persistence adapter**. Then add a **persistent Running Orders definition store, repeat-mode editor, priority manager, deterministic turn allocator, result-based reconciliation and idempotent generated-order adapter** before enabling recurring production per skill. Complete the inventory-source abstraction and start-of-turn context abstraction early, even if first skills do not yet exercise every option. They must not be retrofitted separately into every subsequent recipe.
+Begin with the reusable **three-menu navigation framework (skills → activities/recipes → allocation + Saved Activities inside Menu 3), shared icon registry, Compendium deep link, skill-aware Maximise Tools engine, reservation validator and persistence adapter**. Then add a **persistent Running Orders definition store, repeat-mode editor, priority manager, deterministic turn allocator, result-based reconciliation and idempotent generated-order adapter** before enabling recurring production per skill. Complete the inventory-source abstraction and start-of-turn context abstraction early, even if first skills do not yet exercise every option. They must not be retrofitted separately into every subsequent recipe.
 
-Then choose **one skill per implementation batch** (the precise sequence is a later decision). For each batch: agree its rules and icons, update its Compendium article, implement activities/recipes, wire DB and workbook export, test all boundaries, and verify existing activity functionality. The user can then test that specific skill before the next one.
+Then choose **one skill per implementation batch** (the precise sequence is a later decision). For each batch: agree its rules, tools/benefit caps and icons; update its Compendium article; implement activities/recipes **and Maximise Tools when applicable**; wire DB and workbook export; test saved activity editing within Menu 3, tool optimisation and all boundaries; and verify existing activity functionality. The user can then test that specific skill before the next one.
 
 ## 10. Open design decisions
 
 These are **not yet assumed rules**; resolve them while defining the affected workflow or skill. The proposed recurring-order defaults and their exceptions are detailed in **§3B.8**:
 
 - Which skill is first, and how many skills should appear as not-yet-supported tiles?
+- For each skill, which tool/implement benefit formula, caps, compatible combinations and exclusivity rules are sufficiently verified to enable **Maximise Tools**? What is its skill-specific optimisation metric if output is not the only benefit?
 - Exact empty states in Menu 1/2 and whether multi-skill recipes appear under secondary skills.
 - How a unit is assigned one or more goods tribes, effective-turn rules, authorization/ownership and what happens if the source changes. The assignment UI is a separate design.
 - Whether a missing goods-tribe assignment always falls back to own inventory, or whether certain skills require an explicit goods-source setting.
@@ -571,6 +594,8 @@ These are **not yet assumed rules**; resolve them while defining the affected wo
 - Cross-planner workforce/stock/facility reservation and conflict handling require end-to-end tests.
 - Saved edit/cancel/reload and workbook export must be regression-tested for every added skill, including re-export safety and preservation of legacy orders.
 - Existing skill dossier and activity-catalog rules may require reconciliation against the latest Mandate/research before being treated as authoritative.
+- **Maximise Tools is not implemented:** add verified per-skill implement optimiser inputs/bonus calculations, availability and reservation checks, optional recurrent re-optimisation, editable suggestion UI and exact workbook implement mapping tests.
+- **Saved Activities in Menu 3 remains to be implemented:** separate in-menu pane/tab, inline edit/remove, source-derived navigation, accurate worker/tool totals and immediate refresh on Save. The older standalone overview concept is superseded.
 - **Inventory timing and Goods Tribe routing still need implementation:** block consumption of current-turn production; credit every output to the effective Goods Tribe; aggregate all linked-unit feasible consumption when forecasting next-turn stock, with acceptance tests covering input shortages, current-turn use and priority changes.
 - **Running Orders are not implemented:** build persistent goal/mode/priority storage, cross-unit resource-aware allocation, current-turn regeneration, stock/Results reconciliation, per-turn manual override protection, and a dedicated prioritisation screen. Verify no standing-order state is lost or spuriously treated as workbook output.
 - Implement/test clear statuses for target met, insufficient inputs, priority starvation, paused, completed and Results-needs-review; add an audit trail explaining each turn's worker and input allocation.
