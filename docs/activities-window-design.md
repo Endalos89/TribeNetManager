@@ -486,11 +486,23 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 
 **User feedback:** After clicking Auto Allocate Tools, show an inline result such as **“Selected 2 Tool A + 1 Tool B · estimated benefit +X · limited by available stock”** when a verified computation supports it. If nothing helps, say **“No additional beneficial tools available”**. Never claim optimality when data is incomplete.
 
-## 4A. Hunting pilot — confirmed design decisions
+## 4A. Per-skill implementation specifications
+
+**Permanent structure:** Maintain a **separate numbered subsection for every skill** implemented in the Activities system. Each subsection must be independently reviewable and cover: Mandate/Compendium sources and revision; eligible unit types and minimum skill; worker class and caps; selectable activities/recipes; inputs and goods-owner rules; outputs and uncertain production; equipment/research effects and Auto Allocate Tools eligibility; turn-start terrain/building requirements; Running Bill goals and priority behaviour; available one-turn/manual controls; movement/weight implications; exact `Tribes_Activities` and any supplementary workbook mappings; UI states and errors; and skill-specific acceptance tests.
+
+**Shared rules live in §§2–4:** A skill subsection must reference the shared persistence, turn timing, Goods Tribe, priority, Cargo & Equipment and workbook rules rather than silently redefine them. Skill-specific exceptions must be explicit. Mark each feature **Implemented**, **Partially implemented** or **Planned** independently, so a UI preview cannot be mistaken for a finished export mechanism.
+
+**Rollout order:** Hunting is **4A.1**, and new skills will be appended as **4A.2**, **4A.3**, etc. without merging their rules into a single generic recipe description.
+
+### 4A.1 Hunting — first skill pilot
+
+**Implementation status:** In progress — saved Running Bills, calculator/allocator, initial three-menu editor and workbook integration are being introduced in stages; regression tests and publishing verification must pass before declaring the pilot production-ready.
+
+
 
 **Implement Hunting first, skill by skill.** The rule sources are Mandate N02.2 §§7.2, 8.3.1 and 13.1.15; existing Compendium Hunting dossier; existing assumption-based calculator in `src/mapper-food-gathering.js`. Hunting works at **level 0** with no skill-specific worker cap. Its variable provision yield depends on workforce, Hunting level, season/weather, terrain/water and eligible tools.
 
-### Provision estimate and target
+#### Provision estimate and target
 
 - **Menu 3 displays the Hunting calculator's expected Provs range** for the allocated workers and **actually selected implements** (not hypothetical equipment). Label min/max and any fine-weather value as **estimates**, not guaranteed outcomes.
 - Each Hunting Bill lets the player select **Optimistic** (highest calculator weather scenario), **Average** (arithmetic mean of the calculator's weather scenarios), or **Conservative** (lowest scenario). The chosen basis determines **how many hunters to allocate** toward the goal; always show the whole estimated range. Average is a simple scenario mean, not an asserted probability forecast.
@@ -498,13 +510,13 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 - With a **Goods Tribe**, month calculations use **all units sharing the pool**, not just the hunter unit. Hunting Bills in one Goods Tribe with the same months target **share a single stock goal**. Higher-priority Bills try to fill it first; lower-priority Bills handle only the remaining expected shortfall, using their own yield choices.
 - Hunting is never written to the workbook as an illegal conditional “stop at X Provs” order. Its export contains the planned **workers and legal implements**. Hunting output is unavailable as an input to other activities the same turn, but provisions can be eaten at the end of the turn under the game's turn sequence.
 
-### Tool allocation for recurring Hunting Bills
+#### Tool allocation for recurring Hunting Bills
 
 - **Auto Allocate Tools** is the UI control name. Each Hunting Running Order **automatically chooses the best legal available implements every turn** using the current turn's confirmed inventory, workers, skill/research rules, caps and reservations. This is not the separate **Maximise** production mode.
 - **Shared Goods Tribe pool:** if units A and C draw implements from B, **higher-priority Running Orders reserve eligible exclusive equipment first**, and lower-priority Bills use what remains. A tool cannot be reserved for two exclusive activities; protected manual/locked plans remain protected. Reordering bills recalculates the preview, and the workforce estimate must be recalculated alongside equipment because tools change yield.
 - Continue to expose the button for editable tool selection on **One Turn** activities. Do not claim an optimiser is complete for a skill until its formulas and tool combinations are verified.
 
-### Optional capacity percentage and automatic Provs retention
+#### Optional capacity percentage and automatic Provs retention
 
 - A Hunting Bill may specify a **maximum carrying weight as a percentage of total capacity**. Calculate the Provs that fit after subtracting the **highest projected weight from all other goods and activities** and accounting for other saved **Before Movement outgoing/incoming Transfers**. Evaluate carrying weight **before eating**; **Provs are the first and initially only goods** auto-dropped. The months target continues to determine hunters; the weight limit is enforced **independently by a Transfer**, even when hunting overproduces.
 - If enabled **and the hunting unit is not using a Goods Tribe**, automatically create/update a **Before Movement** `Transfers` row with **`From = To = unit`**, **`Item = PROVS`**, and **`Quantity = X`** where **X means “keep up to X Provs”**. Create it even when expected production is under the cap as protection from higher-than-expected yields. Link it to the Bill and turn, and update/delete only its own generated row without duplicates. Re-export renders the saved plan; manually edited exported Excel rows are not imported.
@@ -512,7 +524,7 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 - If the target months cannot fit after the retention limit, **weight protection takes priority**: show a shortfall warning but do **not** reduce hunters just because extra Provs may be dropped. If other cargo alone exceeds the threshold, warn instead of automatically dropping different goods. Future skills may opt into similar protection **case by case**.
 - The derived **keep-only BM Transfer must execute in an order compatible with the other BM Transfers** used for the calculation. Verify the actual game/workbook execution order; until verified, show **Needs review** instead of promising a safe final load.
 
-### Acceptance criteria for the Hunting pilot
+#### Acceptance criteria for the Hunting pilot
 
 1. Calculator yield min/max and three yield bases; level-zero accessibility; actual selected implements and worker estimates.
 2. Months target **after** eating, but full provision weight **before** eating and movement; current/projected Cargo & Equipment weight from all activities.
@@ -520,6 +532,12 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 4. Auto Allocate Tools runs again each turn for every Hunting Bill; recalculation changes workers/tools together; manual locked overrides survive.
 5. Weight cap automatically produces a **single BM keep-only PROVS Transfer** when not linked to a Goods Tribe, incorporating other BM Transfers and maximum non-Provs weight. Goods Tribe disables this option; no other goods are silently discarded.
 6. Saved Bills, derived Transfers, `Tribes_Activities` export and `Transfers` export are idempotent, reload safely and never clear the Mapper database.
+
+---
+
+### 4A.2 Next skill (reserved)
+
+Add the next skill here after Mandate review and user confirmation. Do not assume Hunting's production uncertainty, implement rules or movement-weight controls apply to unrelated skills. The shared three-menu framework is reused, while each skill receives its own eligibility, recipes, formulae, equipment, bills, workbook mapping and tests.
 
 ---
 
