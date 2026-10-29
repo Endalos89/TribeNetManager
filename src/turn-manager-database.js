@@ -348,7 +348,7 @@ class TurnManagerDatabase {
 
   listActivities(turnKey) {
     return this.db.prepare(`
-      SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, distinction, mining_direction AS miningDirection, notes, implements_json AS implementsJson, generated_locked AS generatedLocked, created_at AS createdAt, updated_at AS updatedAt
+      SELECT id, turn_key AS turnKey, unit, activity_code AS activityCode, people, target, distinction, mining_direction AS miningDirection, notes, implements_json AS implementsJson, generated_locked AS generatedLocked, (SELECT bill_id FROM generated_activity_links WHERE activity_id=planned_activities.id AND turn_key=planned_activities.turn_key LIMIT 1) AS generatedBillId, created_at AS createdAt, updated_at AS updatedAt
       FROM planned_activities WHERE turn_key=? ORDER BY id
     `).all(turnKey).map(row=>({...row,implements:(()=>{try{return JSON.parse(row.implementsJson||'[]')}catch{return []}})()}));
   }
