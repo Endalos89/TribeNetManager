@@ -22,8 +22,9 @@ const rootCode = code => String(code||'').slice(0,4);
 function ownerCode(unit){
   const id=unitCode(unit);
   const row=(state?.planImport?.plan?.clan||[]).find(r=>String(r.unit||'').toLowerCase()===rootCode(id).toLowerCase());
-  const gt=String(row?.gt||'').trim();
-  return gt && gt.toLowerCase()!==id.toLowerCase() && gt.toLowerCase()!==rootCode(id).toLowerCase()?gt:id;
+  const gt=String(unit?.goodsTribe||row?.gt||'').trim();
+  if(!/^\d{4}(?:[efgc]\d+)?$/i.test(gt))return id;
+  return gt.toLowerCase()!==id.toLowerCase()?gt:id;
 }
 function dataStock(unit){
   const stock={};
