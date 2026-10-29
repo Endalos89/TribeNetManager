@@ -9,7 +9,8 @@ const engine = window.TribeNetHuntingEngine;
 if(!engine)return;
 const ui={page:'skills',unit:'',skill:'Hunting',mode:'once',bills:[],activities:[],
   editing:null,editingActivity:null,workers:0,selectedTools:[],list:[],status:'',preview:null,otherStatuses:[],
-  goal:'months',months:3,yieldMode:'average',loadEnabled:false,loadPercent:90,goalHint:'',toolsCustomized:false,showSavedAll:false};
+  goal:'months',months:3,yieldMode:'average',loadEnabled:false,loadPercent:90,goalHint:'',toolsCustomized:false,showSavedAll:false,
+  hideSkill:false,hideInputs:false,managerUnit:'all',managerState:'all'};
 const unitCode = unit => String(unit?.unitCode||unit?.unit||'').trim();
 const num = v => v==null||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const whole = v => Math.max(0,Math.floor(Number(v)||0));
@@ -262,6 +263,7 @@ function renderSkills(){
   if(!sourceTurn())return '<p class="activities-warning">No planning turn selected. Import Results or select a planning turn before allocating activities.</p>';
   const unit=currentUnit();
   return `<div class="activities-toolbar"><strong>1. Select skill</strong><span>Implemented skills only · Level badge = effective skill level</span></div>
+    <div class="activities-filter-row"><label><input id="hideSkill" type="checkbox" ${ui.hideSkill?'checked':''}> Hide lacking skill</label><label><input id="hideInputs" type="checkbox" ${ui.hideInputs?'checked':''}> Hide lacking inputs</label></div>
     <div class="activities-grid">${skillList().map(name=>{
       const level=skillLevel(unit,name);
       return `<div class="activities-skill-wrap">
@@ -275,6 +277,7 @@ function renderSkills(){
 function renderRecipes(){
   return `<div class="activities-toolbar"><strong>2. ${esc(ui.skill)} — available activities</strong>
     <button class="button" data-go="skills">Back to skills</button></div>
+    <div class="activities-filter-row"><label><input id="hideSkill" type="checkbox" ${ui.hideSkill?'checked':''}> Hide lacking skill</label><label><input id="hideInputs" type="checkbox" ${ui.hideInputs?'checked':''}> Hide lacking inputs</label></div>
     <div class="activities-grid">
       <div class="activities-skill-wrap">
         <button class="activities-tile activity-recipe" data-recipe="HUNTING">
@@ -415,25 +418,36 @@ function renderAllocate(){
   </div>`;
 }
 function renderManager(){
+  const selected=ui.bills.filter(b=>(ui.managerUnit==='all'||b.unit===ui.managerUnit)&&
+    (ui.managerState==='all'||(ui.managerState==='paused'?b.paused:ui.managerState==='active'?!b.paused:
+      (ui.otherStatuses.find(x=>x.id===b.id)?.status||'').toLowerCase().includes('review'))));
+  const active=ui.bills.filter(b=>!b.paused).length,paused=ui.bills.filter(b=>b.paused).length;
   return `<div class="activities-toolbar"><strong>Running Orders — highest priority first</strong>
-    <button class="button" data-go="skills">New activity</button><button class="button accent" id="huntApply">Apply to this turn</button></div>
-    <p class="activities-note">Recalculation updates only generated draft rows. No workbook is exported or submitted; manual turn overrides remain protected.</p>
-    <div class="activities-bills">${ui.bills.length?ui.bills.map((b,i)=>{
+    <button class="button" data-go="skills">New activity</button><button class="button accent" id="huntApply">Recalculate this turn</button></div>
+    <p class="activities-note">${ui.bills.length} total · ${active} active · ${paused} paused. Forecasts are not confirmed Results. Manual locked rows remain protected.</p>
+    <div class="activities-filter-row"><label>Unit <select id="managerUnit">
+      <option value="all">All units</option>
+      ${[...new Set(ui.bills.map(b=>b.unit))].map(u=>`<option value="${esc(u)}" ${ui.managerUnit===u?'selected':''}>${esc(u)}</option>`).join('')}
+    </select></label><label>State <select id="managerState">
+      ${[['all','All states'],['active','Active'],['paused','Paused'],['review','Needs review']].map(([key,label])=>
+        `<option value="${key}" ${ui.managerState===key?'selected':''}>${label}</option>`).join('')}
+    </select></label></div>
+    <div class="activities-bills">${selected.length?selected.map((b,i)=>{
       const preview=ui.otherStatuses.find(x=>x.id===b.id);
       return `<div class="activities-bill">
         <strong>#${i+1} · ${esc(b.unit)} · Hunting</strong>
         <span>${b.mode==='maximise'?'Maximise':`Keep ${b.months} months after eating`} · ${esc(b.yieldMode)}</span>
         <small>${b.loadPercent==null?'No weight limit':`Max ${b.loadPercent}% capacity`} · ${b.paused?'Paused':esc(preview?.status||'Active / awaiting recalculation')}</small>
         <div class="activities-bill-buttons">
-         <button data-up="${b.id}" ${i===0?'disabled':''} title="Increase priority">↑</button>
-         <button data-down="${b.id}" ${i===ui.bills.length-1?'disabled':''} title="Decrease priority">↓</button>
+         <button data-up="${b.id}" ${ui.bills.findIndex(x=>x.id===b.id)===0?'disabled':''} title="Increase priority">↑</button>
+         <button data-down="${b.id}" ${ui.bills.findIndex(x=>x.id===b.id)===ui.bills.length-1?'disabled':''} title="Decrease priority">↓</button>
          <button data-edit="${b.id}">Edit</button>
          <button data-skip="${b.id}">Skip turn</button>
          <button data-reset="${b.id}">Reset turn</button>
          <button data-pause="${b.id}">${b.paused?'Resume':'Pause'}</button>
          <button data-remove="${b.id}">Delete</button>
         </div></div>`;
-    }).join(''):'<p>No Running Orders yet. Select a unit and Hunting to create one.</p>'}</div>`;
+    }).join(''):'<p>No Running Orders match this filter, or none have been created.</p>'}</div>`;
 }
 async function refreshAll(){
   await load();render();
@@ -548,6 +562,10 @@ async function handleClick(event){
   }catch(error){ui.status=error?.message||String(error);render();}
 }
 function handleChange(event){
+  if(event.target.id==='hideSkill'){ui.hideSkill=event.target.checked;render();return;}
+  if(event.target.id==='hideInputs'){ui.hideInputs=event.target.checked;render();return;}
+  if(event.target.id==='managerUnit'){ui.managerUnit=event.target.value;render();return;}
+  if(event.target.id==='managerState'){ui.managerState=event.target.value;render();return;}
   if(event.target.id==='huntOrderType'){
     ui.mode=event.target.value==='once'?'once':'running';
     if(ui.mode==='running')autofillHunters();
