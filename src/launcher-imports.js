@@ -287,6 +287,7 @@
         localStorage.setItem(ACTIVE_ORDERS_TURN_STORAGE_KEY, turnKey);
         localStorage.setItem(RESULT_TURN_STORAGE_KEY, turnKey);
         await refreshPlanningTurn(turnKey, 'draft');
+        window.dispatchEvent(new CustomEvent('tribenet-planning-turn-activated', { detail:{ turnKey, source:'blank-orders' } }));
       }
       const completedTurn = canonicalTurnKey(result.lifecycle?.completedTurnKey);
       if (ordersStatus) ordersStatus.textContent = completedTurn
@@ -316,6 +317,7 @@
       localStorage.setItem(ACTIVE_ORDERS_TURN_STORAGE_KEY, turnKey);
       localStorage.setItem(RESULT_TURN_STORAGE_KEY, turnKey);
       await refreshPlanningTurn(turnKey, 'draft');
+      window.dispatchEvent(new CustomEvent('tribenet-planning-turn-activated', { detail:{ turnKey, source:'blank-orders' } }));
       const completedTurn = canonicalTurnKey(result.lifecycle?.completedTurnKey);
       if (ordersStatus) ordersStatus.textContent = completedTurn
         ? `Blank Orders workbook from Ravenpost loaded for Turn ${turnKey}. Turn ${completedTurn} is complete; its saved plan remains available.`
