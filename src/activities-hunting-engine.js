@@ -108,7 +108,7 @@
     return {afterEating:Math.ceil(Math.max(0,Number(months)||0)*perTurn),
       beforeEating:Math.ceil((Math.max(0,Number(months)||0)+1)*perTurn),currentTurn:perTurn};
   }
-  function retentionCap({capacity,percent,otherWeight,provsWeight=1}){
+  function retentionCap({capacity,percent,otherWeight,provsWeight=10}){
     const values=[capacity,percent,otherWeight,provsWeight].map(v=>v==null||v===''?NaN:Number(v));
     if(values.some(v=>!Number.isFinite(v))||values[0]<=0||values[1]<=0||values[1]>100||values[2]<0||values[3]<=0)
       return {quantity:null,warning:'Carrying capacity, non-Provs weight or Provs unit weight is unavailable'};
