@@ -407,6 +407,18 @@ function activityColumns(workbook) {
     processed: ['PROCESSED']
   });
 }
+function activityImplementColumns(workbook) {
+  const names=sheetHeaders(workbook,'Tribes_Activities');
+  const columns=new Map();
+  names.forEach((name,index)=>{
+    const header=String(name||'').trim().toUpperCase().replace(/\s+/g,'_');
+    let match=header.match(/^IMPLEMENT_(\d{1,2})$/);
+    if(match){const n=Number(match[1]);if(n>=1&&n<=20)columns.set('name'+n,index+1);}
+    match=header.match(/^IMP_(\d{1,2})_NUMBER$/);
+    if(match){const n=Number(match[1]);if(n>=1&&n<=20)columns.set('quantity'+n,index+1);}
+  });
+  return columns;
+}
 function normalizeActivityRows(rows, maxRows) {
   const normalized = (rows || []).map(row => ({
     unit: String(row.unit || row.unitCode || '').trim(),
@@ -414,12 +426,15 @@ function normalizeActivityRows(rows, maxRows) {
     people: Number(row.people ?? 0),
     item: String(row.item || '').trim(),
     distinction: String(row.distinction || '').trim(),
-    miningDirection: String(row.miningDirection || '').trim()
+    miningDirection: String(row.miningDirection || '').trim(),
+    implements: Array.isArray(row.implements) ? row.implements.map(t=>({name:String(t.name||t.item||'').trim(),quantity:Number(t.quantity)})) : []
   }));
   if (normalized.length > maxRows) throw new Error('Too many activities: the blank workbook has ' + maxRows + ' input rows.');
   for (const row of normalized) {
     if (!row.unit || !row.activity || !Number.isInteger(row.people) || row.people < 0)
       throw new Error('An activity needs a unit, activity name and nonnegative whole-number workers.');
+    if(row.implements.length>20||row.implements.some(t=>!t.name||!Number.isInteger(t.quantity)||t.quantity<=0))
+      throw new Error('An activity supports up to 20 implements with positive whole-number quantities.');
   }
   // The game processes an entire unit block at once; a later disconnected
   // block for the same unit can overwrite that unit's earlier activities.
@@ -461,7 +476,8 @@ function normalizeTransferRows(rows, maxRows) {
   const normalized = (rows || []).filter(row => row?.from && row?.to && row?.item).map(row => {
     const quantity = Number(row.quantity);
     const from = String(row.from).trim(); const to = String(row.to).trim();
-    if (from.toLowerCase() === to.toLowerCase()) throw new Error('A transfer must go between two different units.');
+    if (from.toLowerCase() === to.toLowerCase() && /^(WARRIORS|ACTIVES|INACTIVES|SLAVES?|PEOPLE|HIRELINGS|LOCALS|MERCENARIES)$/i.test(String(row.item||'')))
+      throw new Error('Same-unit retention Transfers apply to goods, not people.');
     if (!Number.isInteger(quantity) || quantity <= 0) throw new Error(`Transfer ${from} → ${to} needs a positive whole-number quantity.`);
     return { from, to, item: String(row.item).trim(), quantity, timing: String(row.timing || 'BM').toUpperCase() === 'AM' ? 'AM' : 'BM', notes: String(row.notes || '').trim() };
   });
@@ -582,6 +598,12 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   const normalizedResearchAttempts = normalizeResearchAttemptRows(researchAttempts, template.researchAttemptRows);
   const normalizedActivities = normalizeActivityRows(activities, template.activityRows);
   const activityMap = activityColumns(template.workbook);
+  const implementMap = activityImplementColumns(template.workbook);
+  if(normalizedActivities.some(row=>row.implements.length)){
+    const missing=normalizedActivities.flatMap(row=>row.implements.map((_,index)=>index+1))
+      .filter(n=>!implementMap.get('name'+n)||!implementMap.get('quantity'+n));
+    if(missing.length)throw new Error('Tribes_Activities template lacks the implement/name/quantity columns for tool slots: '+[...new Set(missing)].join(', '));
+  }
   if (normalizedActivities.length && (!activityMap.unit || !activityMap.activity || !activityMap.people))
     throw new Error('Tribes_Activities has no usable Unit, Activity or People columns.');
   if (normalizedActivities.some(row => row.item) && !activityMap.item)
@@ -664,11 +686,16 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
 
   let activityXml = await zip.file(paths.get('Tribes_Activities')).async('string');
   activityXml = clearInputRows(activityXml, 2, template.activityRows + 1,
-    Object.values(activityMap).map(columnName));
+    [...Object.values(activityMap),...implementMap.values()].map(columnName));
   for (const [index, row] of normalizedActivities.entries()) {
-    activityXml = patchCells(activityXml, rowInputCells(index + 2,
-      { ...row, processed:'N' }, activityMap,
-      ['unit', 'activity', 'people', 'item', 'distinction', 'miningDirection', 'processed'], ['people']));
+    activityXml = patchCells(activityXml, [
+      ...rowInputCells(index + 2, { ...row, processed:'N' }, activityMap,
+        ['unit', 'activity', 'people', 'item', 'distinction', 'miningDirection', 'processed'], ['people']),
+      ...row.implements.flatMap((tool,slot)=>[
+        {address:columnName(implementMap.get('name'+(slot+1)))+(index+2),value:tool.name},
+        {address:columnName(implementMap.get('quantity'+(slot+1)))+(index+2),value:tool.quantity,kind:'number'}
+      ])
+    ]);
   }
   zip.file(paths.get('Tribes_Activities'), activityXml);
 
