@@ -15,7 +15,7 @@ const whole = v => Math.max(0,Math.floor(Number(v)||0));
 const display = v => Number.isFinite(Number(v))?Math.round(Number(v)).toLocaleString():'—';
 const sourceTurn = () => typeof savedMovementCurrentTurnKey==='function' ? savedMovementCurrentTurnKey() : state?.planImport?.turnKey;
 const allUnits = () => typeof savedMovementUnits==='function' ? savedMovementUnits() : (window.resultsTimeline?.turn?.units||[]);
-const selectedCode = () => String(state?.selectedUnit||savedMovementPlansState?.selectedUnitCode||'').trim();
+const selectedCode = () => String(state?.selectedUnit||(typeof savedMovementPlansState==='object'?savedMovementPlansState?.selectedUnitCode:'')||'').trim();
 const resultUnit = code => allUnits().find(u=>unitCode(u).toLowerCase()===String(code||'').toLowerCase());
 const baseStats = code => (state?.planImport?.plan?.unitStats||[]).find(u=>String(u.unit||'').toLowerCase()===String(code||'').toLowerCase())||null;
 const rootCode = code => String(code||'').slice(0,4);
@@ -73,7 +73,7 @@ function waterBorders(ref){
   const parser=window.MovementPlannerCore?.parseCoordinate;
   const parsed=parser?.(ref);
   let n=/river|lake|ocean|water/i.test(String(hexAt(ref)?.notes||''))?1:0;
-  for(const adjacent of window.MovementPlannerCore?.adjacentHexes?.(parsed)||[]){
+  for(const adjacent of (parsed?window.MovementPlannerCore?.adjacentHexes?.(parsed):[])||[]){
     const hex=hexAt(adjacent.coordinate);
     if(hex && (['L','O'].includes(String(hex.terrain||'').toUpperCase())||/river|lake|ocean|water/i.test(String(hex.notes||''))))n++;
   }
@@ -256,7 +256,7 @@ async function refreshAll(){
 async function save(){
   const unit=currentUnit();if(!unit)throw Error('No unit is selected.');
   const workers=whole(ui.workers);
-  if(workers>(availableWorkers(unit)||0))throw Error('Too many workers assigned.');
+  if(ui.mode==='once'&&workers>(availableWorkers(unit)||0))throw Error('Too many workers assigned.');
   if(ui.mode==='once'){
     if(!workers)throw Error('Select at least one hunter.');
     await window.tribenet.addPlannedActivity(sourceTurn(),{unit:ui.unit,activityCode:'HUNTING',people:workers,
@@ -305,8 +305,7 @@ async function applyBills(){
     }
     ctx.otherMaxWeight=unknown||ctx.otherMaxWeight===null?null:Math.max(0,ctx.otherMaxWeight+additional);
   }
-  const valid=contexts.filter(x=>x.workersAvailable!==null);
-  return window.tribenet.applyActivityBills(sourceTurn(),valid);
+  return window.tribenet.applyActivityBills(sourceTurn(),contexts);
 }
 async function handleClick(event){
   const b=event.target.closest('button');if(!b)return;
@@ -320,7 +319,7 @@ async function handleClick(event){
     if(b.id==='huntSave'){await save();return;}
     if(b.id==='huntApply'){ui.otherStatuses=await applyBills();ui.status='Generated Hunting allocations refreshed in the saved Mapper draft.';await refreshAll();return;}
     if(b.id==='huntViewOrders'){const button=document.querySelector('#orderSheetMenu [data-order-sheet="activities"]');$('activitiesDialog').close();button?.click();return;}
-    if(b.dataset.edit){const bill=ui.bills.find(x=>x.id===Number(b.dataset.edit));ui.unit=bill.unit;ui.editing=bill.id;ui.mode='running';ui.page='allocate';ui.selectedTools=[];render();return;}
+    if(b.dataset.edit){const bill=ui.bills.find(x=>x.id===Number(b.dataset.edit));ui.unit=bill.unit;ui.editing=bill.id;ui.mode='running';ui.page='allocate';ui.selectedTools=[];ui.workers=Math.min(10,availableWorkers(currentUnit())||0);render();return;}
     if(b.dataset.up||b.dataset.down){
       ui.bills=await window.tribenet.moveActivityBill(Number(b.dataset.up||b.dataset.down),b.dataset.up?-1:1);
       ui.otherStatuses=await applyBills();render();return;
