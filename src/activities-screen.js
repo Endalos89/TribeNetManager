@@ -337,13 +337,16 @@ function validateOneTurn(){
   if(ui.workers+other>total)throw Error(`Not enough workers: ${ui.workers} hunters plus ${other} existing activity workers exceeds ${total} available.`);
   const selected=preview().tools;
   const stock=toolsAvailable();
+  let primarySlots=0;
   for(const tool of selected){
     const row=stock.find(t=>t.name===tool.name);
     if(!row||whole(tool.quantity)>row.available)throw Error(`${tool.name} is over-allocated across saved activities in the shared Goods Tribe stock.`);
     const eligible=engine.TOOLS.find(t=>t.name===tool.name);
     const cap=(eligible?.max||1)*whole(ui.workers);
     if(whole(tool.quantity)>cap)throw Error(`${tool.name} exceeds the ${cap}-item Hunting workforce limit.`);
+    if(tool.name!=='Hunting Dog')primarySlots+=Math.ceil(whole(tool.quantity)/(eligible?.max||1));
   }
+  if(primarySlots>ui.workers)throw Error(`Hunting implements need ${primarySlots} primary equipment slots, but only ${ui.workers} hunters are allocated. Select one primary set per hunter.`);
 }
 function preview(){
   const unit=currentUnit();
