@@ -23,6 +23,8 @@ try{
   assert.equal(engine.forecast({workers:5,terrain:'UNKNOWN',month:1}),null);
   assert.deepEqual(engine.provisionTarget(3,700),{beforeEating:2800,afterEating:2100,currentTurn:700});
   assert.deepEqual(engine.retentionCap({capacity:100,percent:75,otherWeight:20,provsWeight:1}),{quantity:55,warning:''});
+  assert.deepEqual(engine.retentionCap({capacity:100,percent:75,otherWeight:20}),{quantity:5,warning:''},
+    'Mandate specifies ten pounds per Provision; default cap must not treat Provisions as one pound');
   assert.equal(engine.retentionCap({capacity:100,percent:75,otherWeight:null}).quantity,null,
     'Unknown weight must never silently become zero');
 
@@ -97,9 +99,9 @@ try{
   const thirdRun=store.apply('906-05',contexts).find(x=>x.id===third.id);
   assert.equal(thirdRun.workers,0,'Confirmed Provs already exceed the one-month goal');
   const safety=db.listTransfers('906-05').find(x=>x.from==='0499'&&x.to==='0499');
-  assert.equal(safety.quantity,55,'BM quantity means how much to keep, not how much to drop');
+  assert.equal(safety.quantity,5,'BM quantity means how many ten-pound Provisions to keep, not how many to drop');
   assert.equal(safety.timing,'BM');
-  assert.equal(normalizeTransferRows([safety],10)[0].quantity,55);
+  assert.equal(normalizeTransferRows([safety],10)[0].quantity,5);
   assert.throws(()=>normalizeTransferRows([{from:'0499',to:'0499',item:'WARRIORS',quantity:5,timing:'BM'}],10),
     /people/);
   assert.equal(db.listTransfers('906-05').length,1,'Only one derived retention per Bill');
