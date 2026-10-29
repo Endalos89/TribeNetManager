@@ -1557,7 +1557,7 @@ window.TribeNetItemIconCatalogue = [
   },
   {
     key: "PROVS",
-    name: "Provs",
+    name: "Provisions",
   },
   {
     key: "PUFFIN",
@@ -2277,6 +2277,7 @@ window.TribeNetItemIconCatalogue = [
   },
 ];
 window.TribeNetItemIconManifest = {
+  PROVS: "provisions.svg",
   ABSINTH: "absinth.png",
   "ABSINTH BRANDED": "absinth-branded.png",
   ABSINTHE: "absinthe.png",
