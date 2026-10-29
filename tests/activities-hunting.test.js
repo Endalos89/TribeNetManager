@@ -41,6 +41,14 @@ try{
   const first=store.save({unit:'0485',mode:'months',months:1,yieldMode:'average'});
   const second=store.save({unit:'0485e1',mode:'months',months:1,yieldMode:'conservative'});
   assert.equal(store.list().length,2);
+  const changed=store.save({id:first.id,unit:'0485',mode:'months',months:2,yieldMode:'optimistic',loadPercent:80});
+  assert.equal(changed.id,first.id,'Editing must update the existing Bill, not add another');
+  assert.equal(changed.months,2);
+  assert.equal(changed.yieldMode,'optimistic');
+  assert.equal(changed.loadPercent,80);
+  const restored=store.save({id:first.id,unit:'0485',mode:'months',months:1,yieldMode:'average'});
+  assert.equal(restored.loadPercent,null);
+  assert.equal(store.list().length,2,'Editing should not duplicate Running Bills');
   const context=[
     {code:'0485',goodsTribe:'0485g1',eaters:20,workersAvailable:15,skill:0,terrain:'PR',waterBorders:0,
       month:1,stock:{},provs:0},
