@@ -260,7 +260,7 @@ class ActivityBillStore {
         if(bill.loadPercent!==null&&bill.loadPercent!==undefined){
           if(context.goodsTribe&&code(context.goodsTribe)!==code(bill.unit))warning='Weight limit unavailable while using a Goods Tribe';
           else{
-            const perProvs=validNumber(context.provsWeight)?Number(context.provsWeight):1;
+            const perProvs=validNumber(context.provsWeight)?Number(context.provsWeight):10;
             const otherWeight=Number(context.otherMaxWeight);
             const cap=retentionCap({capacity:context.capacity,percent:bill.loadPercent,
               otherWeight:validNumber(context.otherMaxWeight)?otherWeight:null,provsWeight:perProvs});
