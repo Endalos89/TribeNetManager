@@ -109,7 +109,8 @@ class ActivityBillStore {
     const availableWorkers=new Map();
     for(const unit of units){
       const unitCode=code(unit.code||unit.unit||unit.unitCode);
-      if(!validNumber(unit.workersAvailable))throw Error('Unknown available worker count for '+unitCode);
+      if(active.some(b=>code(b.unit)===unitCode)&&!validNumber(unit.workersAvailable))
+        throw Error('Unknown available worker count for '+unitCode);
       const committed=manual.filter(row=>code(row.unit)===unitCode
         && !this.db.prepare('SELECT 1 FROM generated_activity_links WHERE turn_key=? AND activity_id=?').get(key,row.id))
         .reduce((sum,row)=>sum+whole(row.people),0);
@@ -152,6 +153,11 @@ class ActivityBillStore {
           continue;
         }
         const goods=poolUnit.stock||{};
+        if(!validNumber(context.month)||!context.terrain){
+          this.clearGenerated(bill.id,key);
+          summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Hunting month or terrain not verified',workers:0});
+          continue;
+        }
         if(!validNumber(poolUnit.provs)){
           this.clearGenerated(bill.id,key);
           summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Provs baseline missing',workers:0});
