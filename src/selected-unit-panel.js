@@ -593,6 +593,7 @@
     renderOverview(unit, code);
     renderSkills(unit, code);
     inventoryRows(unit, code);
+    root.TribeNetActivities?.refreshWeight?.(code)?.catch?.(error=>console.warn('Projected Cargo weight unavailable',error));
     renderOrders(unit, code);
     renderSustenance(unit, code, version);
   }
