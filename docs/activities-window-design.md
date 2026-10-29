@@ -628,8 +628,8 @@ For **every** newly added skill, demonstrate:
 13. Orders export produces exact activity mappings, re-export replaces the same turn's file, and nothing about export changes the database plan.
 14. Existing completed skills and specialist planners pass regression tests.
 15. Current/projected weight is visible in Cargo & Equipment, including all activities and BM Transfers **before eating**, and numeric skill-level badges appear bottom-left in Menu 1.
-17. The selected unit's **Turn Actions** offers Activities, opening Menu 1 for that unit. **Activities Overview** opens independently of unit selection, lists the planning turn's saved activities, and provides meaningful empty/error states plus a route to the Running Orders manager.
 16. Hunting Bills automatically allocate tools each turn by **clan-wide priority** for shared Goods Tribe stocks, and the optional weight cap creates the correct derived BM keep-only Provs Transfer when the unit is not Goods Tribe-linked.
+17. The selected unit's **Turn Actions** offers Activities, opening Menu 1 for that unit. **Activities Overview** opens independently of unit selection, lists the planning turn's saved activities, and provides meaningful empty/error states plus a route to the Running Orders manager.
 
 ## 9. Implementation order and definition of done
 
