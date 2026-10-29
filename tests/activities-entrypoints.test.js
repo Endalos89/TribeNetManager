@@ -10,6 +10,24 @@ const actions=fs.readFileSync(path.join(root,'src/turn-actions.js'),'utf8');
 const html=fs.readFileSync(path.join(root,'src/index.html'),'utf8');
 const docs=fs.readFileSync(path.join(root,'docs/activities-window-design.md'),'utf8');
 const engine=require('../src/activities-hunting-engine');
+const preload=fs.readFileSync(path.join(root,'src/preload.js'),'utf8');
+const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+const css=fs.readFileSync(path.join(root,'src/activities-screen.css'),'utf8');
+const dossier=fs.readFileSync(path.join(root,'src/compendium-skill-overhaul.js'),'utf8');
+
+assert.match(preload,/listPlannedActivities:\s*turnKey\s*=>\s*ipcRenderer\.invoke\('turn-manager:list-activities',\s*turnKey\)/,
+  'The renderer must expose the planned Activities list IPC.');
+assert.match(main,/ipcMain\.handle\('turn-manager:list-activities'/,
+  'The main process must register the matching planned Activities IPC.');
+assert.match(css,/user-select:text/,'Text inside Activities should be selectable and copyable.');
+assert.match(dossier,/skill-icons\/hunting\.svg/,'The Compendium Hunting article must use the Activities icon.');
+assert.match(screen,/data-compendium-entry/,'Skills need an exact Compendium link.');
+assert.match(screen,/item-icons\/provisions\.svg/,'Hunting must display Provisions as a proper output item.');
+assert.match(screen,/return \['Hunting'\]/,'Only the implemented Hunting skill should appear in Menu 1.');
+const inputHandler=screen.split('function handleInput(event)')[1]?.split('async function refreshWeight')[0];
+assert.ok(inputHandler&&!inputHandler.includes('render();'),
+  'Slider input must update in place, never rebuild the editor on every pointer movement.');
+
 
 assert.match(actions,/data-turn-action="activities"/,'Selected unit Turn Actions must contain Activities.');
 assert.match(actions,/action === 'activities'[\s\S]*?TribeNetActivities\?\.open\?\.\(turnActionsUnit\(\)\?\.unitCode\)/,
@@ -52,7 +70,7 @@ const api={
 const window={tribenet:api,TribeNetHuntingEngine:engine,
   SelectedUnitPanelUtils:{levelForSkill:()=>2},
   addEventListener(){}};
-const state={selectedUnit:selected,planImport:{turnKey:turn,plan:{units}}};
+const state={selectedUnit:selected,planImport:{turnKey:turn,plan:{units}},hexCache:new Map([['PK1614',{terrain:'PR',notes:''}]])};
 const sandbox={
   document,window,state,
   savedMovementCurrentTurnKey:()=>turn,
@@ -61,7 +79,12 @@ const sandbox={
   MovementPlannerCore:{},
   console
 };
-vm.runInNewContext(screen,vm.createContext(sandbox),{filename:'activities-screen.js'});
+const instrumented=screen.replace(
+  'window.TribeNetActivities={open,openOverview,applyCurrentTurn,refreshWeight,contextFor};',
+  'window.__ActivitiesTest={ui,goalAllocation,autofillHunters,handleInput,handleChange};window.TribeNetActivities={open,openOverview,applyCurrentTurn,refreshWeight,contextFor};'
+);
+assert.notEqual(instrumented,screen,'The test must attach to the actual Hunting editor internals.');
+vm.runInNewContext(instrumented,vm.createContext(sandbox),{filename:'activities-screen.js'});
 
 (async()=>{
   assert.equal(typeof window.TribeNetActivities?.openOverview,'function',
@@ -82,6 +105,29 @@ vm.runInNewContext(screen,vm.createContext(sandbox),{filename:'activities-screen
     'Unit Turn Action must open Menu 1.');
   assert.match(element('activitiesBody').innerHTML,/Hunting/,
     'Hunting must be available to select.');
+  assert.equal((element('activitiesBody').innerHTML.match(/data-skill="/g)||[]).length,1,
+    'Only the Hunting skill is visible in Menu 1.');
+  assert.match(element('activitiesBody').innerHTML,/data-compendium-key="Hunting"/,
+    'The Hunting Compendium shortcut must appear on the skill tile.');
+  assert.match(element('activitiesBody').innerHTML,/skill-icons\/hunting\.svg/,
+    'Hunting must use its own icon instead of an emoji.');
+  const internals=window.__ActivitiesTest;
+  internals.ui.page='allocate';internals.ui.unit='0485';internals.ui.mode='running';
+  internals.ui.goal='months';internals.ui.months=0;internals.ui.yieldMode='average';
+  internals.autofillHunters();
+  assert.equal(internals.ui.workers,0,'No hunters needed when confirmed Provisions already exceed target.');
+  internals.ui.months=3;internals.autofillHunters();
+  assert.ok(internals.ui.workers>0,'A longer food goal should calculate hunters automatically.');
+  internals.ui.goal='maximise';internals.autofillHunters();
+  assert.equal(internals.ui.workers,30,'Maximise should automatically fill all available workers.');
+  const input=element('huntWorkersSlider'),number=element('huntWorkers');
+  const before=input;
+  internals.handleInput({target:{id:'huntWorkersSlider',value:'7'}});
+  assert.equal(input,before,'Slider DOM node must survive input updates.');
+  assert.equal(number.value,'7','Numeric input and slider must remain synchronized.');
+  assert.equal(internals.ui.workers,7);
+  internals.ui.page='skills';
+
   assert.match(element('activitiesSubtitle').textContent,/Unit 0485/,
     'The initiating unit must be preserved.');
 
