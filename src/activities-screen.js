@@ -13,7 +13,7 @@ const unitCode = unit => String(unit?.unitCode||unit?.unit||'').trim();
 const num = v => v==null||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const whole = v => Math.max(0,Math.floor(Number(v)||0));
 const display = v => Number.isFinite(Number(v))?Math.round(Number(v)).toLocaleString():'—';
-const sourceTurn = () => typeof savedMovementCurrentTurnKey==='function' ? savedMovementCurrentTurnKey() : state?.planImport?.turnKey;
+const sourceTurn = () => state?.planImport?.turnKey || (typeof savedMovementCurrentTurnKey==='function' ? savedMovementCurrentTurnKey() : null);
 const allUnits = () => typeof savedMovementUnits==='function' ? savedMovementUnits() : (window.resultsTimeline?.turn?.units||[]);
 const selectedCode = () => String(state?.selectedUnit||(typeof savedMovementPlansState==='object'?savedMovementPlansState?.selectedUnitCode:'')||'').trim();
 const resultUnit = code => allUnits().find(u=>unitCode(u).toLowerCase()===String(code||'').toLowerCase());
@@ -391,5 +391,25 @@ document.addEventListener('click',event=>{
   if(event.target.closest('#openActivitiesButton, #unitOpenActivities'))open().catch(console.error);
 });
 window.addEventListener('tribenet-import-complete',()=>{if($('activitiesDialog')?.open)load().then(render).catch(console.error);});
+window.addEventListener('tribenet-planning-turn-activated',async event=>{
+  const turn=String(event.detail?.turnKey||'');
+  if(!turn||String(sourceTurn())!==turn)return;
+  try{
+    const bills=await window.tribenet.listActivityBills();
+    if(!bills.some(b=>!b.paused))return;
+    const verified=String(state?.planImport?.plan?.turnKey||'')===turn
+      || String(window.resultsTimeline?.turn?.turnKey||'')===turn;
+    if(!verified){
+      const notice=$('launcherOrdersStatus');
+      if(notice)notice.textContent+=' Running Hunting Bills need a verified start-of-turn unit/stock baseline before allocation.';
+      return;
+    }
+    ui.otherStatuses=await applyBills();
+    if($('activitiesDialog')?.open)await refreshAll();
+  }catch(error){
+    const notice=$('launcherOrdersStatus');
+    if(notice)notice.textContent+=' Hunting Bill recalculation needs review: '+(error.message||error);
+  }
+});
 window.TribeNetActivities={open,applyCurrentTurn:applyBills,refreshWeight,contextFor};
 })();
