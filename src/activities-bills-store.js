@@ -214,7 +214,7 @@ class ActivityBillStore {
           continue;
         }
         const goods=poolUnit.stock||{};
-        if(!validNumber(context.month)||!context.terrain){
+        if(!validNumber(context.month)||!context.terrain||!validNumber(context.skill)){
           summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Hunting month or terrain not verified; existing draft preserved',workers:0});
           continue;
         }
