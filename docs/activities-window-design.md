@@ -1,13 +1,13 @@
 # TribeNet Manager — Activities Window & Skill-by-Skill Rollout
 
-**Design version:** 0.6 — Goods Tribe output routing and next-turn stock balances  
+**Design version:** 0.7 — Menu 3 Saved Activities and Maximise Tools  
 **Updated:** 29 October 2026  
 **Status:** Proposed design, not an implementation-complete claim  
 **Related designs:** [Orders Workbook Lifecycle & Export Safety](orders-workbook-lifecycle-design.md), [Compendium](compendium.md), [Compendium Skill Dossier Baselines](skill-dossier-baselines.md).
 
 ## 1. Purpose
 
-The Mapper's **Activities Window** is a **three-menu workflow** for planning a selected unit's skill-linked activities and recipes. **Menu 1** is a compact multi-column grid of skill icons with names beneath; selecting a skill opens **Menu 2**, another compact icon grid of that skill's activities and recipes; selecting an activity opens **Menu 3** to allocate workers/goods and save to the Mapper database for workbook export. Recipe/rule browsing stays in the Compendium, not in a separate details panel.
+The Mapper's **Activities Window** is a **three-menu workflow**. **Menu 1** is a compact skill icon grid; **Menu 2** shows the chosen skill's activities/recipes; **Menu 3** combines the detailed allocation editor **with a separate Saved Activities area inside the same menu**. The editor includes **Maximise Tools** for automatically selecting the best verified available implements. Detailed recipe/rule browsing remains in the Compendium.
 
 The **Running Orders** extension allows recurring production goals across turns and is configured from Menu 3, while a separate manager controls priorities (see §3B). The implementation is **incremental, one skill at a time**. Do not build every skill in one pass or expose a skill as fully supported simply because it appears in an existing catalogue. Each skill must be checked end-to-end before starting the next.
 
@@ -20,7 +20,9 @@ The **Running Orders** extension allows recurring production goals across turns 
 5. **Start-of-turn context:** Some skills depend on the unit's **location at the start of the turn** and the buildings/facilities in that area; use the required time snapshot, not automatically the unit's planned end position.
 6. **Goods Tribe:** A linked unit **consumes all required goods from its Goods Tribe and adds all produced goods to that same Goods Tribe's inventory**. Goods Tribe assignment remains a separate workflow; Activities must use the resulting shared pool for both input and output.
 7. **Turn-boundary inventory:** Production in turn N **cannot be used in turn N**; it can enter the available inventory at N+1 only after confirmation. Maintaining stock must take account of **feasible consumption across all tasks in the same turn**.
-8. **Saved plan is authoritative:** The Mapper database owns the orders; export reads them but never clears them. A fresh blank Orders workbook is always used for each export.
+8. **Saved Activities is inside Menu 3:** All current-turn saved allocations for the selected unit, across skills, are accessible in a dedicated panel/tab **inside Menu 3**, not in a separate Activities overview window.
+9. **Maximise Tools:** A button beside Menu 3's implements selector picks an optimal *available* tool mix for the current activity and workforce, within skill-specific benefit limits and shared Goods Tribe stock reservations. The suggestion remains editable and must be saved explicitly.
+10. **Saved plan is authoritative:** The Mapper database owns the orders; export reads them but never clears them. A fresh blank Orders workbook is always used for each export.
 
 ## 2. Skill rollout contract — required for every new skill
 
@@ -34,11 +36,11 @@ A skill is considered ready only when all relevant items below are complete. Som
 | Workforce | Maximum workers, cap grouping across recipes, workforce class, special exceptions, and actual available headcount |
 | Geography and facilities | Whether the rule uses start-of-turn hex/terrain, buildings in the area, their capacity, season and other location restrictions |
 | Goods Tribe inventory and turn timing | Input goods come from the acting unit or its Goods Tribe, **and outputs go to that same inventory owner**. Current-turn production is not current-turn available stock. Stock maintenance includes all current-turn consumption |
-| Activity/recipes | Each supported variant, correct requirements, conversion/output rules, and workbook activity/item/distinction mappings |
-| UI | **Three separate menus:** compact icon grid of skills (name below icon, Compendium eye), compact icon grid of selected skill's activities/recipes (name below icon), final detailed allocation editor; grey/red statuses and hide toggles; separate saved allocations overview |
+| Activity/recipes | Each supported variant, correct requirements, conversion/output rules, tool/implement compatibility, benefit limits and workbook activity/item/distinction mappings |
+| UI | Three menus: compact skills icon grid; compact skill activities/recipes grid; **Menu 3 allocation editor + internal Saved Activities area**, including **Maximise Tools**. Grey/red tile statuses and hide toggles in Menus 1/2 |
 | Compendium | Update the skill's article with the same eligibility, worker limits, recipes, inputs/outputs, modifiers and source links |
 | Persistence and export | Save/edit/delete or source-derived order handling, reload after restart, re-export safety, no duplicates |
-| Tests | Level-zero/boundary cases, cap, missing goods, buildings/start position, shared allocations, workbook output |
+| Tests | Level-zero/boundary cases, cap, missing goods, buildings/start position, **tool optimality and shared reservations**, Saved Activities edits, workbook output |
 
 ### Proposed implementation sequence
 
@@ -46,8 +48,8 @@ A skill is considered ready only when all relevant items below are complete. Som
 2. Confirm the rule contract, including level-zero behaviour, skill owner, workers, starting location, buildings and inventory source. Where game documentation is ambiguous, flag the question before encoding a rule.
 3. Add/reuse the shared **skill icon**; reconcile icons for its inputs and outputs with the item catalogue.
 4. Update its Compendium dossier, linking relevant items, buildings, recipes, other skills, research and exact Mandate sections.
-5. Implement the skill-specific activity/recipe definitions, calculations and eligibility checks behind a reusable validation interface.
-6. Connect the activity UI, saved planning data and precise Orders workbook mappings.
+5. Implement the skill-specific activity/recipe definitions, calculations, eligibility checks **and any verified implement optimiser rules** behind a reusable validation interface.
+6. Connect Menu 3's **Saved Activities panel**, selected implements, saved planning data and precise Orders workbook mappings.
 7. Exercise its complete test matrix and regression-test already completed skills.
 8. Only then classify that skill as **implemented and verified** and move to another skill.
 
@@ -61,14 +63,16 @@ The Activities workflow is **three distinct menus**, with no combined skill/reci
 Selected unit → Activities
   └─ MENU 1 — Skills icon grid
        └─ Click skill → MENU 2 — Selected skill's activities/recipes icon grid
-            └─ Click activity or recipe → MENU 3 — Allocation editor
-                 └─ Save → MENU 2 (same selected skill)
+            └─ Click activity or recipe → MENU 3
+                 ├─ Allocation editor + Maximise Tools
+                 └─ Saved Activities (same menu)
+                      └─ Save → refresh this area
 
 Compendium eye on a skill icon → That skill's Compendium entry
 Back from Menu 3 → Menu 2; Back from Menu 2 → Menu 1
 ```
 
-**Menus 1 and 2 use a compact File Explorer-style grid** (multiple columns and rows). Icons appear **above** their names, not alongside them in large list rows. **Menu 3** remains the detailed allocation view. A separate cross-skill saved-activities overview is a shortcut for managing existing orders, not a fourth required menu.
+**Menus 1 and 2 use a compact File Explorer-style icon grid** with names underneath. **Menu 3 contains both the allocation editor and a separate internal Saved Activities panel/tab.** There is no fourth Activities menu or standalone Saved Activities screen. The dedicated **Running Orders manager** remains separate for long-term priorities, which is a different purpose.
 
 ### 3.1 Shared context and icon-grid rules
 
@@ -112,118 +116,106 @@ Open Activities from the selected Mapper unit at **Menu 1**. Carry the same unit
 - Recipe identities and secondary skill prerequisites must be stable and deduplicated so an item listed under multiple related skills never creates duplicate orders.
 - The two hide filters on Menu 2 affect only its grid. Filter states may be retained while navigating back/forward for convenience and must never alter saved orders.
 
-### 3.4 Menu 3 — Final allocation editor
+### 3.4 Menu 3 — Allocation editor and internal Saved Activities area
 
-**Purpose:** Configure **one** chosen activity/recipe, then save an order.
+**Purpose:** Configure the selected activity while keeping all of the selected unit's **current-turn saved activity orders** readily visible and editable **inside the same Menu 3**.
 
-Keep the detailed popup/table design. This is the place for **worker slider + precise numeric input**, required consumables, implements, **turn-start stock** available/reserved, outputs **projected for next turn**, the effective Goods Tribe for **both ingredients and finished goods**, and relevant start-of-turn hex/buildings. All detailed quantities and allocation calculations stay here rather than cluttering Menus 1 and 2.
+**Layout:** Desktop Menu 3 is a single workspace with two visually distinct areas: an **Allocation Editor** (main/left pane) and **Saved Activities** (right-side pane). On smaller windows, use an **Allocation | Saved Activities** tab or collapsible panel **within Menu 3**. The Saved Activities area can expand inside Menu 3; it must never require a separate standalone window or fourth menu.
 
-- Header/breadcrumb: **Skills → [Skill] → [Activity/Recipe]**, with Back to the selected skill's Menu 2.
-- Show performing unit, turn, relevant skill levels/ownership and source of goods. For applicable skills, check start-of-turn location and area facilities independently of the planned end location.
-- Update worker constraints and relevant input/output calculations live from verified per-skill rules; do not present unverified or uncertain yields as guaranteed.
-- **Save** revalidates against the database snapshot and all shared workforce, goods and capacity reservations; successful save returns to **Menu 2**, keeping the skill selected and its allocation marker current.
-- **Back/Cancel/Close** discard unsaved edits only. They do not delete existing orders or change the goods tribe assignment. A derived order such as scouting must still be edited in its authoritative planner.
+**Allocation Editor**
 
-The Compendium remains the authoritative **browsing/reference surface** for explanatory information; Menu 3 contains only the information needed to **make and validate an actual allocation**, with a way to open the corresponding Compendium article when appropriate.
+- Breadcrumb **Skills → [Skill] → [Activity/Recipe]**, plus **Back to Activities**. Unit, turn, worker availability, start-of-turn terrain/buildings, skill level and effective Goods Tribe remain visible as relevant.
+- **One Turn | Running Order** choice, worker slider and numeric input, inputs/implements from **confirmed turn-start goods**, outputs projected for next turn (credited to Goods Tribe), and validation messages.
+- Show an **Implements / Tools** section with item icons and editable quantities plus **Maximise Tools** and optional **Clear** buttons. **Maximise Tools optimises implement selection** for the selected activity; it does **not** choose a production goal or change the worker count.
+- When clicked, Maximise Tools selects the best **available, eligible combination and quantities** under verified per-skill rules, including benefits/caps, required primary/support combinations and other activity reservations. Show a short **Selected tools / effective benefit** summary; let the user freely amend selections before saving.
+- **Save** revalidates against the latest plan, persists the allocation, **stays in Menu 3**, and immediately refreshes the Saved Activities list and resource/worker totals. To choose another recipe, click **Back to Activities** to Menu 2.
+- **Back, Cancel and Close** discard only uncommitted changes, never existing saved activities or Running Orders. Specialist-derived rows remain owned by their specialist planners.
 
-### 3.5 Navigation and saved activities overview
+**Saved Activities (inside Menu 3)**
+
+- Distinct heading **Saved Activities**, count of saved rows, and **Assigned / Available workers** for the selected unit and turn. The list includes saved orders across **all skills**, regardless of the activity being edited, and is not affected by Menu 1/2 hide filters.
+- Compact rows show **activity/skill**, allocated workers, **selected tools (summary)**, One Turn / Running-generated / Manual override / Derived status and a clear validation warning if needed.
+- **Edit** loads a saved activity directly into the Menu 3 editor, switching its skill and recipe context without leaving Menu 3. **Remove** asks for confirmation and removes only user-authored orders. For Running-generated rows, offer **Skip this turn** or **Edit Running Order** without silently cancelling the persistent goal. **View** a derived scouting row in its authoritative planner.
+- After saving/editing/removing, refresh worker, shared Goods Tribe stock and tool reservations and running-order previews. **Exclude the row being edited from its own previous reservation** when computing what it can use; avoid double allocation.
+- **View All / Expand** opens a larger saved-orders table **inside Menu 3**, returning to the prior editor without losing its state. On small windows, the Saved Activities tab is a way to navigate **within Menu 3**.
+- If no activity is selected (for example, the user chose a shortcut to Saved Activities), show an editor placeholder and open Menu 3 focused on Saved Activities; do not require creating a dummy activity.
+- Do not silently hide a saved order due to missing skill, missing goods, a new Goods Tribe assignment or an invalid plan; show the conflict for correction.
+
+**Saved Activities vs Running Orders:** This in-menu area manages the **current turn's saved allocations**, including recurring-order generated drafts. The **separate Running Orders manager (§3B)** manages **persistent cross-turn instructions and priorities**, not the Saved Activities list.
+
+### 3.5 Navigation and actions
 
 | User action | Result |
 |---|---|
-| Open Activities for a unit | Open **Menu 1 — Skills icon grid**. |
-| Click a skill icon/name (not the eye) | Open **Menu 2 — compact grid of that skill's activities/recipes**. |
-| Click the eye on a skill | Open **that skill's Compendium article**, without triggering Menu 2. |
-| Click an activity/recipe icon | Open **Menu 3 — allocation editor** for that action. |
-| Save from Menu 3 | Save validated allocation; return to **Menu 2** for the same skill. |
-| Back/Cancel from Menu 3 | Return to Menu 2 **without saving** the unfinished edit. |
-| Back from Menu 2 | Return to Menu 1, preserving saved orders. |
-| Toggle either hide filter | Remove/show matching unavailable **tiles only**, without changing orders. |
-| Open the separate saved-activities overview | Show allocations across all skills; Edit opens the appropriate allocation editor, or a specialist planner for derived orders. |
+| Open Activities | Menu 1 — Skills icon grid. |
+| Click skill | Menu 2 — activities and recipes icon grid for that skill. |
+| Click activity/recipe | Open **Menu 3** allocation editor, with **Saved Activities visible in its own pane/tab**. |
+| Click eye on skill | Open skill Compendium entry, not Menu 2. |
+| Click **Maximise Tools** | Preview/populate optimal permitted **tool mix**, subject to skill rules, inventory and existing reservations; no save until confirmed. |
+| Manually edit suggested tools | Keep edits and update effective benefit/output preview. |
+| Save allocation | Save only after validation; **remain in Menu 3** and refresh Saved Activities. |
+| Edit/remove Saved Activities row | Act **within Menu 3**; confirm removal, handle source-derived rows appropriately. |
+| Expand Saved Activities | Open a larger **within-Menu-3** table/tab, not a separate screen. |
+| Open unit's Saved Activities shortcut | Open **Menu 3 focused on Saved Activities**, with neutral editor until a row is chosen. |
+| Back/Cancel from Menu 3 | Return to Menu 2 without saving uncommitted edits. |
+| Back from Menu 2 | Return to Menu 1; saved orders unchanged. |
+| Manage Running Orders | Go to the separate long-term priority screen (§3B), not a Saved Activities overview. |
 
-The separate saved-activities overview can remain a **detailed cross-skill table** of existing allocations, inputs and source units; it is not a browsing/recipe-details pane. Derived scouting workers and shared goods reservations count only once.
+## 3A. Visual design — Menu 3 split workspace
 
-## 3A. Visual design — compact grids and allocation tables
+These wireframes illustrate design only; quantities, tool choices, recipes and benefits are **examples**, never asserted game values. **Menus 1 and 2 remain compact File Explorer-style icon grids.**
 
-These **rendered wireframes** are proposals rather than screenshots of app functionality. Named skills and example recipes show the intended layout but are **not assertions about actual available recipes, eligibility or output amounts**.
+### 3A.1 Menu 1 — Skills icon grid
 
-### 3A.1 Menu 1 — Skills, File Explorer-style icon view
+![Compact skills grid with unique icons, names underneath and hover eye for Compendium.](assets/activities-window-wireframe.svg)
 
-![Compact six-column grid of skills, each with a distinctive icon above its name; Forestry shows the Compendium eye on hover. Some skill tiles are grey for missing skill, red for missing inputs, and two hide toggles are visible.](assets/activities-window-wireframe.svg)
+### 3A.2 Menu 2 — Activities/recipes icon grid
 
-- Multiple columns and rows with a compact, consistent tile footprint; no full-width skill rows.
-- Every tile has the **shared skill icon above its name**, a status colour if needed, and an **eye in the top-right on hover/focus** for Compendium navigation.
-- Both hide toggles are above the grid. For a skill with a mixture of recipe statuses, display normal styling if at least one implemented activity is usable, and show per-recipe limitations in Menu 2.
+![Compact activity/recipe icon grid for one selected skill, with grey missing-skill and red missing-input states.](assets/activities-recipe-menu-wireframe.svg)
 
-### 3A.2 Menu 2 — Activities/recipes, File Explorer-style icon view
+### 3A.3 Menu 3 — Allocation editor and Saved Activities side by side
 
-![Compact six-column grid of activities and recipes for the one selected skill, with icon above name, grey and red unavailable examples, and no recipe detail table or sidebar.](assets/activities-recipe-menu-wireframe.svg)
+![Menu 3: allocation editor with Maximise Tools, current workers and tools, and a distinct Saved Activities panel on the right with saved allocations and edit actions.](assets/activities-allocation-popup-wireframe.svg)
 
-- Same icon view as Menu 1: compact **icon on top, name below**, wrapping over multiple rows.
-- Grid shows **only the selected skill's activities and recipes**. Grey means insufficient skill; red means lacking input goods; independent toggles can hide each.
-- **No browsing comparison table, requirements panel or recipe description sidebar.** The Compendium owns full reference/browsing information.
-- Clicking the icon opens Menu 3 to allocate workers and resources. Already-allocated items may have a tiny indicator.
+**Allocation inputs/implements table:**
 
-### 3A.3 Menu 3 — Allocation popup and detailed tables
-
-![Third menu: worker slider, performing unit and start-of-turn building context, goods tribe inventory, input and implement table, output table, and Save or Cancel.](assets/activities-allocation-popup-wireframe.svg)
-
-**This is where detailed data belongs**, not in either icon grid.
-
-**Inputs / required implements:**
-
-| Column | Meaning |
+| Column | Purpose |
 |---|---|
-| Item | Existing canonical item icon and name. Distinguish consumable goods and reusable implements. |
-| Goods inventory owner | Acting unit or assigned **Goods Tribe**, as the source of inputs **and** destination of outputs; assignment is managed separately. |
-| Stock | Confirmed inventory available **this turn**, excluding everything planned to be produced during this turn. |
-| Reserved | Quantity committed by every saved order using the same stock source. |
-| This order | Required quantity for the current proposed allocation, recalculated with worker count. |
-| Remaining / rule | Remaining consumables, or applicable reusable-equipment/capacity constraint; identify shortages. |
+| Input / Tool | Existing item icon and name; distinguish consumed ingredients from reusable implements. |
+| Goods Tribe / stock | Owner of goods used and produced; confirmed **turn-start** available inventory only. |
+| Reserved / free | Existing allocations across all units sharing that pool; do not double-count the edited row. |
+| Selected | Consumable requirement or **editable chosen implement quantity**. |
+| Benefit / cap | Verified per-tool contribution, quantity limits and combined skill-specific benefit cap; surplus tools are not assigned without benefit. |
+| Status | Skill/research requirement, compatibility, missing goods, prior reservations or validation. |
 
-**Outputs:**
+**Tool controls:** **Maximise Tools** (separate from Running Order **Maximise Production**), optional **Clear Tools**, live total implement bonus and explanation when the requested tool set is not available. Clicking Maximise Tools does not save a row; Save revalidates and commits.
 
-| Column | Meaning |
+**Outputs:** Product icon/name, forecast next-turn amount, **Goods Tribe destination**, output certainty. No same-turn spending of goods produced.
+
+**Saved Activities panel:** compact current-turn list with skill/activity name, workers, selected tools summary, source/status, **Edit/Remove/View** controls and worker totals. Keep all skills visible here, including invalid orders. **View all** expands **within Menu 3**.
+
+### 3A.4 Expanded Saved Activities inside Menu 3 (not a new menu)
+
+![Expanded Saved Activities area within Menu 3: tabular cross-skill saved orders and actions, returned to the same allocation editor.](assets/activities-overview-table-wireframe.svg)
+
+| Column | Purpose |
 |---|---|
-| Output | Canonical item icon and name, including multiple outputs when applicable. |
-| Estimated quantity | Forecast production **for next turn's inventory**, not currently spendable goods. |
-| Rule / certainty | Guaranteed, estimated/variable or not calculable; state limitations clearly. |
+| Skill / activity | Saved records across all skills for the selected unit/turn, including derived rows. |
+| Workers | Allocation and total committed workforce. |
+| Tools | Selected implement names and quantities; details on edit. |
+| Goods Tribe | Source of inputs **and** destination of outputs. |
+| Inputs / next-turn outputs | Goods reserved now and projected production for following turn. |
+| Status | Valid, waiting, needs review, conflicting or derived. |
+| Action | Edit within Menu 3; remove user-created order with confirmation; view authoritative planner for derived orders. |
 
-The worker slider and precise input share a value and enforce skill-specific limits, total unit workers, facility capacity and other relevant rules. Show the **performing unit** separately from the **Goods Tribe inventory owner for both inputs and outputs**, plus skill-specific start-of-turn area/building requirements.
+### 3A.5 Presentation rules
 
-### 3A.4 Saved activities overview — separate management table
-
-![Saved Activities overview: cross-skill rows showing performing unit, workers, goods source, inputs, output and status, including read-only derived scouting reservation.](assets/activities-overview-table-wireframe.svg)
-
-Unlike the two browsing menus, the saved-activities overview is a **management view** for reviewing existing allocations across skills. It can retain a traditional table.
-
-| Column | Meaning |
-|---|---|
-| Skill / activity | Name and icon with manual/derived distinction. |
-| Performing unit | Acting unit, not automatically the goods tribe. |
-| Workers | Saved allocation, counted once per source. |
-| Inventory owner | Own unit or assigned Goods Tribe receiving outputs and supplying inputs; N/A where not applicable. |
-| Reserved inputs | Summary of planned material commitment. |
-| Expected output | Supported estimate or a clear uncertainty label. |
-| State | Valid, blocked, needs review or linked/derived, with reason available. |
-| Action | Edit/Remove for manual orders, View for a specialist planner's derived order. |
-
-### 3A.5 Icon view and status presentation
-
-| Element | Visual/interaction contract |
-|---|---|
-| Tile layout | Uniform icon tiles in multiple columns/rows, with icon **above** the name; approximately 6 columns at desktop mockup width, responsive elsewhere. |
-| Normal | Standard icon and text when at least one available action is possible (for Menu 1) or the selected action is available (Menu 2). |
-| Insufficient skill | **Greyed-out** icon/text; hide with **Hide lacking skill**. Check actual per-skill level-zero eligibility first. |
-| Insufficient input | **Red** icon/text; hide with **Hide lacking inputs**. Resolve stock from assigned goods tribe/own inventory first. |
-| Both conditions | Grey (skill deficiency takes priority) until skill requirement is met; never double-label ambiguous availability. |
-| Other blockers | Explicit distinct status, without falsely using skill-grey or input-red. Full rules remain in Compendium. |
-| Compendium eye | Appears at top-right **of a skill tile on hover/focus**; separate click target from selecting that skill. |
-| Browsing content | Menu 1 = skills only; Menu 2 = activities/recipes only; **neither uses a details table/sidebar**. |
-| Allocation | Menu 3 alone presents detailed workers, inputs/outputs and validation. |
-| Saved orders | Management overview may remain tabular; icon filters and navigation never change saved orders. |
-| Accessibility | Tooltips/labels reveal full names and status, keyboard focus works, accessible controls do not rely solely on colour. |
-
-These wireframes are the common layout. During each incremental skill implementation, verify the shared icon, individual recipe status, level-zero rule, worker limit, starting-area/building requirements, effective goods tribe, persistence and Orders workbook export.
+- The **Saved Activities area belongs inside Menu 3**, never as a separate Activities overview screen. Its compact and expanded presentations read **the same saved database records**.
+- **Menu 3 Save remains in Menu 3**, refreshing saved rows and totals. Use Back to Activities to pick a new recipe.
+- **Maximise Tools is a tool selection helper**, not the recurring **Maximise** mode and not an instruction to allocate maximum workers.
+- Every proposed tool must be genuinely available at turn start from the right Goods Tribe pool, eligible for this skill, within its stacking/quantity benefit cap and not already reserved by another order.
+- No duplicate item reservation from the row currently being edited. Saved activities are always visible even when no current recipe is selected.
+- The Compendium holds detailed recipe/tool reference material; Menu 3 shows only enough rule/result information to explain and validate allocations.
 
 ---
 
