@@ -172,6 +172,13 @@ class TurnManagerDatabase {
     const activityColumns = new Set(this.db.prepare('PRAGMA table_info(planned_activities)').all().map(row => row.name));
     if (!activityColumns.has('distinction')) this.db.exec("ALTER TABLE planned_activities ADD COLUMN distinction TEXT NOT NULL DEFAULT ''");
     if (!activityColumns.has('mining_direction')) this.db.exec("ALTER TABLE planned_activities ADD COLUMN mining_direction TEXT NOT NULL DEFAULT ''");
+    if (!activityColumns.has('implements_json')) this.db.exec("ALTER TABLE planned_activities ADD COLUMN implements_json TEXT NOT NULL DEFAULT '[]'");
+    if (!activityColumns.has('generated_locked')) this.db.exec('ALTER TABLE planned_activities ADD COLUMN generated_locked INTEGER NOT NULL DEFAULT 0');
+    const transferColumns = new Set(this.db.prepare('PRAGMA table_info(planned_transfers)').all().map(row => row.name));
+    if (!transferColumns.has('derived_bill_id')) this.db.exec('ALTER TABLE planned_transfers ADD COLUMN derived_bill_id INTEGER');
+    this.db.exec(`CREATE TABLE IF NOT EXISTS generated_activity_links (
+      bill_id INTEGER NOT NULL, turn_key TEXT NOT NULL, activity_id INTEGER, transfer_id INTEGER,
+      PRIMARY KEY(bill_id,turn_key));`);
 
     const columns = new Set(this.db.prepare('PRAGMA table_info(planned_unit_splits)').all().map(row => row.name));
     if (!columns.has('creation_phase') || !columns.has('skills_json')) {
@@ -319,6 +326,7 @@ class TurnManagerDatabase {
       INSERT INTO planned_activities(turn_key, unit, activity_code, people, target, distinction, mining_direction, notes, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(turnKey, activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)), activity.target || '', activity.distinction || '', activity.miningDirection || '', activity.notes || '', now, now);
+    if (Array.isArray(activity.implements)) this.db.prepare('UPDATE planned_activities SET implements_json=? WHERE id=?').run(JSON.stringify(activity.implements),Number(result.lastInsertRowid));
     return this.listActivities(turnKey).find(row=>row.id===Number(result.lastInsertRowid)) || null;
   }
 
