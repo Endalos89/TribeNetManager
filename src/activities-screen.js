@@ -103,7 +103,9 @@ function contextFor(unit){
     terrain:hexAt(hex)?.terrain||null,waterBorders:waterBorders(hex),month:match?Number(match[1]):null,
     workersAvailable:availableWorkers(unit),eaters:eaters(unit),stock,
     provs:knownStock?provs:null,currentWeight,capacity,provsWeight:10,
-    otherMaxWeight:currentWeight!==null&&knownStock?Math.max(0,currentWeight-provs*10):null};
+    // Mandate §8.3: report weight can exclude Provisions carried for end-turn eating. For a safe BM cap,
+    // treat the entire reported load as the conservative non-Provisions upper bound until breakdown is verified.
+    otherMaxWeight:currentWeight!==null&&knownStock?currentWeight:null};
 }
 const contextList = () => allUnits().map(contextFor);
 function skillList(){
@@ -689,7 +691,7 @@ async function refreshWeight(code){
     host.innerHTML=`<strong>Current weight:</strong> ${display(ctx.currentWeight)} lb / ${display(ctx.capacity)} lb<br>
       <strong>Projected before movement:</strong> ${unknown?'Unknown (some activities/weights unverified)':`${display(minimum)}–${display(maximum)} lb (${pct(maximum)} max)`}
       ${!unknown&&ctx.capacity>0&&maximum>ctx.capacity?'<span class="activities-warning">Projected load exceeds capacity.</span>':''}
-      <small>Includes Hunting yield credited to its effective Goods Tribe and saved BM Transfers. Food is eaten after movement; unverified goods weights remain unknown.</small>`;
+      <small>Includes ten-pound Provisions and Hunting yield credited to the effective Goods Tribe. Before eating; report weight may omit food eaten this turn, so weight caps use a conservative baseline and uncertain goods weights remain unverified.</small>`;
   }catch(error){host.textContent='Projected weight unavailable: '+(error.message||error);}
 }
 document.addEventListener('click',event=>{
