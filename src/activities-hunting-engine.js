@@ -116,5 +116,5 @@
     return {quantity:Math.max(0,Math.floor(space/values[3])),
       warning:space<0?'Non-Provs cargo already exceeds the selected weight limit':''};
   }
-  return {TERRAIN,WEATHER,TOOLS,canonicalTerrain,forecast,predicted,optimizeTools,allocation,provisionTarget,retentionCap};
+  return {TERRAIN,WEATHER,TOOLS,canonicalTerrain,stockCount,forecast,predicted,optimizeTools,allocation,provisionTarget,retentionCap};
 });
