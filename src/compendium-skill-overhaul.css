@@ -3,3 +3,6 @@
 
 /* Hunting shares its skill illustration with Activities Menu 1. */
 .skill-dossier-title .skill-dossier-icon{width:68px;height:68px;object-fit:contain;flex:none;border:1px solid #466758;border-radius:12px;background:#11271d}
+
+/* Compendium skill art uses the same low-resolution pixel sprite as Activities. */
+.skill-dossier-title .skill-dossier-icon{image-rendering:pixelated;image-rendering:crisp-edges}
