@@ -80,8 +80,8 @@ const sandbox={
   console
 };
 const instrumented=screen.replace(
-  'window.TribeNetActivities={open,openOverview,applyCurrentTurn,refreshWeight,contextFor};',
-  'window.__ActivitiesTest={ui,goalAllocation,autofillHunters,handleInput,handleChange};window.TribeNetActivities={open,openOverview,applyCurrentTurn,refreshWeight,contextFor};'
+  'window.TribeNetActivities={open,openOverview,applyCurrentTurn:applyBills,refreshWeight,contextFor};',
+  'window.__ActivitiesTest={ui,goalAllocation,autofillHunters,handleInput,handleChange};window.TribeNetActivities={open,openOverview,applyCurrentTurn:applyBills,refreshWeight,contextFor};'
 );
 assert.notEqual(instrumented,screen,'The test must attach to the actual Hunting editor internals.');
 vm.runInNewContext(instrumented,vm.createContext(sandbox),{filename:'activities-screen.js'});
