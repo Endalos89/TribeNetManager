@@ -13,7 +13,7 @@ const ui={page:'skills',unit:'',skill:'Hunting',mode:'once',bills:[],activities:
 const unitCode = unit => String(unit?.unitCode||unit?.unit||'').trim();
 const num = v => v==null||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const whole = v => Math.max(0,Math.floor(Number(v)||0));
-const display = v => Number.isFinite(Number(v))?Math.round(Number(v)).toLocaleString():'—';
+const display = v => v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v))?Math.round(Number(v)).toLocaleString():'—';
 const sourceTurn = () => state?.planImport?.turnKey || (typeof savedMovementCurrentTurnKey==='function' ? savedMovementCurrentTurnKey() : null);
 const allUnits = () => {
   const combined=new Map();
@@ -65,12 +65,14 @@ function eaters(unit){
 function huntingLevel(unit){
   const code=unitCode(unit),tribe=resultUnit(rootCode(code));
   const data=Object.keys(unit?.skills||{}).length?unit.skills:tribe?.skills||{};
-  return window.SelectedUnitPanelUtils?.levelForSkill?.('Hunting',data)??0;
+  if(!Object.keys(data).length)return null;
+  return window.SelectedUnitPanelUtils?.levelForSkill?.('Hunting',data)??null;
 }
 function skillLevel(unit,name){
   const tribe=resultUnit(rootCode(unitCode(unit)));
   const data=Object.keys(unit?.skills||{}).length?unit.skills:tribe?.skills||{};
-  return window.SelectedUnitPanelUtils?.levelForSkill?.(name,data)??0;
+  if(!Object.keys(data).length)return '?';
+  return window.SelectedUnitPanelUtils?.levelForSkill?.(name,data)??'?';
 }
 function hexAt(ref){
   if(!ref)return null;
@@ -149,7 +151,7 @@ function goalAllocation(){
   const unit=currentUnit();
   if(!unit)return {error:'Select a unit to calculate hunters'};
   const ctx=contextFor(unit),available=availableWorkers(unit);
-  if(available===null||!ctx.terrain||!ctx.month)
+  if(available===null||ctx.skill===null||!ctx.terrain||!ctx.month)
     return {error:'Automatic hunter count needs confirmed worker totals, turn month and start-of-turn terrain'};
   const pool=ownerCode(unit),source=resultUnit(pool)||unit;
   const poolContext=contextFor(source);
@@ -187,6 +189,8 @@ function updateAllocationPreview(){
   if(details)details.textContent=p.range?`Fine weather: ${display(p.range.fine)} · Scenario average: ${display(p.range.average)}`:
     'Verify the unit’s start-of-turn terrain before saving a forecast.';
   if(tools)tools.innerHTML=p.tools.length?p.tools.map(t=>`<span>${esc(t.name)}</span><strong>× ${whole(t.quantity)}</strong>`).join(''):'No eligible tools allocated';
+  const editor=$('huntToolsEditor');
+  if(editor&&!document.activeElement?.hasAttribute?.('data-tool-item'))editor.innerHTML=toolsTable();
   if(hint)hint.textContent=ui.goalHint;
 }
 async function load(){
@@ -367,6 +371,7 @@ function renderAllocate(){
         <input id="huntWorkersSlider" type="range" min="0" max="${max}" value="${ui.workers}" aria-label="Hunters assigned">
       </div>
       <p class="activities-note">${max} possible Actives/Warriors before saved commitments. Hunting allowed at level 0; actual allocation is validated against other orders.</p>
+      <p class="activities-note">Start terrain: ${esc(ctx.terrain||'unknown')} · Hunting level: ${esc(ctx.skill??'?')} · Inventory owner: ${esc(ownerCode(unit))} · Turn: ${esc(sourceTurn())}</p>
       <p id="huntGoalHint" class="activities-goal-hint">${esc(ui.goalHint)}</p>
       ${running?`<div class="activities-fields">
         <label>Goal<select id="huntGoal"><option value="months" ${ui.goal!=='maximise'?'selected':''}>Maintain months after eating</option><option value="maximise" ${ui.goal==='maximise'?'selected':''}>Maximise</option></select></label>
@@ -380,12 +385,13 @@ function renderAllocate(){
       <p class="activities-note">Running Bills automatically allocate available implements each turn, with shared Goods Tribe stock assigned by priority.</p>
       <div id="huntToolsEditor">${toolsTable()}</div>
       <div class="activities-tool-list" id="huntToolsList">${p.tools.length?p.tools.map(t=>`<span>${esc(t.name)}</span><strong>× ${whole(t.quantity)}</strong>`).join(''):'No eligible tools allocated'}</div>
+      <section class="activities-outputs"><div class="activities-output-item"><img src="item-icons/provisions.svg" alt="" /><span><strong>Provisions</strong><small>Output destination: ${esc(ownerCode(unit))} · forecast only</small></span>${compendiumLink('item','PROVS','Provisions')}</div></section>
       <section class="activities-yield"><small>EXPECTED PROVISIONS (WEATHER RANGE)</small>
         <strong id="huntYieldRange">${p.range?`${display(p.range.min)} – ${display(p.range.max)} Provisions`:'Unknown terrain / calculator rate'}</strong>
         <span id="huntYieldDetail">${p.range?`Fine weather: ${display(p.range.fine)} · Scenario average: ${display(p.range.average)}`:'Verify the unit’s start-of-turn terrain before saving a forecast.'}</span>
       </section>
       <div class="activities-actions"><button class="button accent" id="huntSave">${ui.editing?'Update Running Bill':running?'Save Running Bill':'Save One Turn Activity'}</button>
-       <button class="button" data-go="skills">Cancel</button></div>
+       <button class="button" data-go="recipes">Cancel</button></div>
     </div>
     <aside class="activities-saved">
       <h3>Saved Activities · ${ui.activities.filter(row=>String(row.unit).toLowerCase()===ui.unit.toLowerCase()).length}</h3>
