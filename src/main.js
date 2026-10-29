@@ -612,6 +612,8 @@ ipcMain.handle('activities:save-bill', (_event, row) => activityBillStore.save(r
 ipcMain.handle('activities:remove-bill', (_event, id, turn) => activityBillStore.remove(id,turn));
 ipcMain.handle('activities:move-bill', (_event, id, direction) => activityBillStore.move(id,direction));
 ipcMain.handle('activities:pause-bill', (_event, id, paused) => activityBillStore.pause(id,paused));
+ipcMain.handle('activities:skip-bill', (_event, id, turn) => activityBillStore.skip(id,turn));
+ipcMain.handle('activities:reset-bill', (_event, id, turn) => activityBillStore.reset(id,turn));
 ipcMain.handle('activities:apply-bills', (_event, turn, units) => {
   // Scout-route workers are a separate saved planner commitment and need
   // reserving before allocating Hunting, including newly split scout parties.
