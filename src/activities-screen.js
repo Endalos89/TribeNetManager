@@ -381,7 +381,7 @@ function preview(){
   const tools=ui.toolsCustomized?ui.selectedTools:engine.optimizeTools(workers,sourceStock(),reservedTools()).implements;
   const am=workers+tools.reduce((v,t)=>{const def=engine.TOOLS.find(x=>x.name===t.name);
     return v+t.quantity*(def?.bonus|| (t.name==='Hunting Dog'?2:0));},0);
-  const range=engine.forecast({workers,effectiveAM:am,skill:context.skill,terrain:context.terrain,month:context.month,waterBorders:context.waterBorders});
+  const range=context.skill===null?null:engine.forecast({workers,effectiveAM:am,skill:context.skill,terrain:context.terrain,month:context.month,waterBorders:context.waterBorders});
   return {workers,range,tools,context};
 }
 function renderAllocate(){
