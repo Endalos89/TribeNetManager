@@ -631,6 +631,7 @@ ipcMain.handle('activities:apply-bills', (_event, turn, units) => {
 ipcMain.handle('turn-manager:list-turns', () => turnManagerDatabase.listTurns());
 ipcMain.handle('turn-manager:latest-template-turn', () => turnManagerDatabase.latestBlankTemplateTurn());
 ipcMain.handle('turn-manager:get-turn', (_event, turnKey) => effectiveManagedTurn(turnKey));
+ipcMain.handle('turn-manager:list-activities', (_event, turnKey) => turnManagerDatabase.listActivities(turnKey));
 ipcMain.handle('turn-manager:add-activity', (_event, turnKey, activity) => turnManagerDatabase.addActivity(turnKey, activity));
 ipcMain.handle('turn-manager:update-activity', (_event, id, activity) => turnManagerDatabase.updateActivity(id, activity));
 ipcMain.handle('turn-manager:delete-activity', (_event, id) => turnManagerDatabase.deleteActivity(id));
