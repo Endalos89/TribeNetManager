@@ -1,6 +1,6 @@
 # TribeNet Manager — Activities Window & Skill-by-Skill Rollout
 
-**Design version:** 0.4 — compact icon-grid browsing menus  
+**Design version:** 0.5 — persistent Running Orders and priority queue  
 **Updated:** 29 October 2026  
 **Status:** Proposed design, not an implementation-complete claim  
 **Related designs:** [Orders Workbook Lifecycle & Export Safety](orders-workbook-lifecycle-design.md), [Compendium](compendium.md), [Compendium Skill Dossier Baselines](skill-dossier-baselines.md).
@@ -9,7 +9,7 @@
 
 The Mapper's **Activities Window** is a **three-menu workflow** for planning a selected unit's skill-linked activities and recipes. **Menu 1** is a compact multi-column grid of skill icons with names beneath; selecting a skill opens **Menu 2**, another compact icon grid of that skill's activities and recipes; selecting an activity opens **Menu 3** to allocate workers/goods and save to the Mapper database for workbook export. Recipe/rule browsing stays in the Compendium, not in a separate details panel.
 
-The implementation is **incremental, one skill at a time**. Do not build every skill in one pass or expose a skill as fully supported simply because it appears in an existing catalogue. Each skill must be checked end-to-end before starting the next.
+The **Running Orders** extension allows recurring production goals across turns and is configured from Menu 3, while a separate manager controls priorities (see §3B). The implementation is **incremental, one skill at a time**. Do not build every skill in one pass or expose a skill as fully supported simply because it appears in an existing catalogue. Each skill must be checked end-to-end before starting the next.
 
 ### Agreed principles
 
@@ -226,6 +226,153 @@ These wireframes are the common layout. During each incremental skill implementa
 
 ---
 
+## 3B. Running Orders — persistent goals, automatic turn planning and priorities
+
+**Status:** Proposed extension to the Activities design. Running Orders are a **separate persistent instruction layer**, not an alternative format for completed Orders workbooks. The familiar **Menu 1: Skills → Menu 2: Activities/Recipes → Menu 3: Allocation** flow remains intact. A new **Running Orders** management screen handles priorities, suspension and cross-turn progress. This concept is inspired by RimWorld's *Do until you have X*, *Do forever* and bill-ordering patterns, adapted to TribeNet's discrete turns: <https://rimworldwiki.com/wiki/Bill>.
+
+### 3B.1 Core interaction: straightforward defaults, advanced control when needed
+
+From **Menu 3 — Allocation**, offer a prominent choice:
+
+| Choice | User experience | Persistence |
+|---|---|---|
+| **One Turn** | Existing specific worker allocation for the selected activity. Simple numeric input/slider. | Saved to the **current turn only**. |
+| **Running Order** | Select a clear goal mode, optional cap, and see a preview of what is feasible **this turn**. | Persistent goal plus separately evaluated **per-turn draft allocations**. |
+
+On first opening Menu 3, default to **One Turn** to avoid accidentally creating permanent instructions. When the user chooses Running Order, reveal only fields relevant to its selected mode. Hide complexity until needed: **Advanced** may expose optional worker cap, target-count stock source, resume threshold, etc. The existing per-skill Compendium remains the reference for recipe rules; this editor should concentrate on **what the player wants done**.
+
+![Third-menu Running Order setup extension: One Turn or Running Order, Maintain Stock goal, explicit target stock owner, per-turn cap and current-turn preview.](assets/activities-running-order-setup-wireframe.svg)
+
+**Recommended goal modes:**
+
+| Goal mode | Plain-language label | Rule | When to stop or restart |
+|---|---|---|---|
+| **One Turn** | “Assign workers this turn” | Fixed people for this turn, subject to validation. | Never repeats. |
+| **Maintain Stock** | “Keep at least X in stock” | Allocate enough feasible work to close the gap between **confirmed stock** and X. Recalculate next turn. | Idle when target is reached; **resume if stock later falls**. |
+| **Maximise** | “Produce as much as possible each turn” | Use all feasible **remaining** workers, valid tools/facilities, and eligible goods after higher-priority reservations, subject to any optional user cap. | Continues until manually paused, removed, or unable to produce. |
+| **Produce X Total** | “Produce X in total, then finish” | Track **confirmed cumulative output attributed to this order** across turns, not just stock currently held. Allocate feasible work toward the remaining quantity. | Mark **Completed** when the confirmed quantity is produced; do **not** reactivate merely because goods are consumed later. |
+
+**Recommended minimum viable modes:** One Turn, Maintain Stock, Maximise. Produce X Total is valuable but depends on **reliable actual-output attribution** in Results; implement it only once progress can be reconciled confidently. If Results do not identify production attributable to an order, keep it **Needs review** rather than guessing from planned output or total stock change.
+
+**Example only:** Unit 0485 creates **Maintain 100 Planks**. At the start of the current turn its chosen counted inventory has 62; 38 are missing. If its rules and available workers/materials support only 25 more, this turn's draft uses that feasible amount. If the next turn's **confirmed stock is 87**, only 13 more are needed. The app must not simply assume the previous +25 occurred when it only appeared in an exported plan.
+
+### 3B.2 What the quantity actually counts
+
+For **Maintain Stock**, explicitly show three different facts: **Target product**, **Target quantity**, **Count stock in**.
+
+- **Count stock in** is the actual unit/inventory scope whose **output** is being maintained. It is distinct from **goods tribe**, which identifies where the **input ingredients** come from. Having Unit B supply ingredients does not automatically mean output belongs to Unit B.
+- Default the counted stock location to the acting/output-holding unit **when the verified game rule supports that**. If ownership of output or the inventory-counting scope is uncertain, ask for the correct unit or display **Needs review**; do not silently count the whole clan or a goods tribe.
+- Show **Confirmed: 62 / Target: 100**, **38 remaining** and **Planned this turn: +25 (estimated)** as separate values. Do not count current-turn estimated output as confirmed stock.
+- When several orders can produce the same output into the same stock pool, take already reserved **current-turn output** into account to avoid double-planning the same target. The distinction between guaranteed and uncertain yields remains visible.
+- When recipes produce indivisible batches or multiple output types, choose the **counted target item** and apply the verified batch size. If exact fulfilment is impossible, indicate likely overshoot or uncertain completion rather than promise an exact quantity.
+- Optional **Resume below Y** can reduce frequent on/off behaviour for Maintain Stock. Keep it under Advanced; a sensible first version simply resumes whenever confirmed stock falls below X.
+- Temporary absence of a fresh Results/baseline inventory means target progress is **not confirmed**. Show the last known stock with its turn and a warning, rather than treating projections as fact.
+
+### 3B.3 How Maximise decides what “maximum” means
+
+**Maximise** must be a deterministic **best feasible allocation**, not a fixed workforce count carried into every turn:
+
+1. Calculate available workers **of the correct workforce class** for the performing unit, after manual commitments and higher-priority generated orders.
+2. Apply the skill-specific workforce limit, shared-per-skill cap, unit type, effective skill/level (including explicit level-zero exceptions), facility/building capacity, start-of-turn geography, research, season and any other verified rule.
+3. Resolve required consumable inputs from the **assigned goods tribe** or own inventory, subtracting prior reservations by **every unit sharing that source**.
+4. Respect any **optional per-turn maximum workers** set by the user. This cap restricts a Maximise order, but does not replace the skill's own rules.
+5. Select the greatest **valid** allocation under all constraints. For non-linear/batched recipes, evaluate valid integer worker/batch counts rather than multiplying naive fractional ratios.
+6. An order with no valid allocation remains **Active / Waiting** with **0 workers this turn** and a reason. The running instruction stays enabled for future turns.
+7. Never assume outputs created earlier in the **same turn** are immediately available as ingredients to another order, unless the game rules explicitly support that ordering. Avoid inventing a production chain.
+
+A Maximise order can consume all spare capacity and **starve lower-priority orders**. Say so in the preview and encourage putting essential stock targets earlier in the list.
+
+### 3B.4 The Running Orders management screen
+
+Add a clearly named **Running Orders** button near the Activities / Orders overview controls. This opens a **dedicated screen**, separate from the three-menu selection sequence. Also offer a direct “Manage Running Orders” link in Menu 3 after creating one.
+
+![Proposed Running Orders management screen: a list ordered from highest to lowest priority with drag handles and up/down controls, target progress, current turn allocation preview and state.](assets/activities-running-orders-manager-wireframe.svg)
+
+**One persistent order per row**, with the following information kept visible without opening its editor:
+
+| Column | Description |
+|---|---|
+| **Priority** | Top = first claim on eligible workers and shared input goods. **Drag handle** plus **▲ / ▼** actions for mouse/touch/keyboard. |
+| **Skill / activity** | Shared icon, name, performing unit and optional output item. |
+| **Goal** | “Maintain 100”, “Maximise” or “Produce 40 total”, including optional per-turn worker cap. |
+| **Progress / stock** | For maintain: confirmed stock / target. For total: confirmed cumulative production / target. For maximise: not applicable. |
+| **This turn** | Allocated workers and expected output (when calculable), based on the **current draft preview**, never claimed as actual completed production. |
+| **State / why** | **Active**, **Target met**, **Waiting: no inputs**, **Waiting: missing building**, **Paused**, **Needs review**, **Completed**, etc. |
+| **Actions** | Edit goal, Pause/Resume, Duplicate (optional), Delete with confirmation; selecting the row opens the settings. |
+
+**Top controls:** Filter by unit, skill, state or goods source; clear filtering; show counts for active/waiting/paused/target met; **Recalculate preview** and **Review this turn's generated draft**. The list is normally a **priority queue**, intentionally **not** another recipe icon grid. It is the place to assess running commitments across units.
+
+**Prioritisation proposal:** One **canonical ordering within the clan** for all enabled Running Orders, with per-unit filters that *do not change the underlying ranking*. This provides an unambiguous result when multiple units use the same goods tribe. Items above take first claim on eligible scarce capacity; items below receive the balance. **Manual fixed orders are reserved first** as explicit user commitments, but if one conflicts with running work, mark the issue and show how the preview changes. Reordering must be previewable and **reversible**.
+
+**Intuitive controls:** Drag to reorder, but also offer **Move up**, **Move down**, and accessible keyboard alternatives. Show the change to this turn's workforce and goods allocations before committing any replacement of existing draft rows. Allow Pause without deleting a long-term target; Delete requires confirmation. Make “target met” distinct from “paused by user” and “blocked by lack of resources.”
+
+### 3B.5 Example running-order workflow
+
+1. Open a unit → **Activities → select skill → select activity**.
+2. In **Menu 3**, switch from **One Turn** to **Running Order**, select **Maintain Stock**, enter **100**, choose the appropriate **Count stock in** inventory, and optionally limit per-turn workers.
+3. Review the example preview: **62 confirmed / 100 target**, with **25 feasible workers/product quantity** for this turn (actual yield depends on verified rules). Save Running Order.
+4. The running instruction appears in **Running Orders** with its priority, target, current status and a link to edit.
+5. When the next blank Orders workbook activates the new turn, the app recalculates the **new turn's draft allocation** using that turn's verified baseline and all prior saved commitments.
+6. Review the draft and export the normal workbook when ready. The app **never automatically sends orders to Ravenpost** and never treats an exported workbook as proof of actual production.
+7. Import Results when available to reconcile what actually happened. Later turns use **confirmed** quantities; missing or ambiguous Results cause a warning, not fabricated progress.
+
+A **Maximise** order follows the same flow but omits stock target fields and continually tries to use as much remaining feasible capacity as priority permits.
+
+### 3B.6 New-turn and recalculation lifecycle
+
+Persistent Running Orders and individual turn orders are **different database entities**:
+
+| Record | Lifetime | Authority |
+|---|---|---|
+| Running Order definition | **Across turns** until paused/completed/deleted | User's long-term goal, skill/recipe, performing unit, mode, target/scope, worker cap and priority |
+| Per-turn generated allocation | **One canonical turn** | A derived, editable Mapper draft row with source running-order ID and turn; can be exported like an ordinary activity |
+| Actual production / stock | **Turn-specific results/baseline** | Imported Results and validated inventory data, **not** estimated output or exported files |
+| User override | **One turn by default** | Explicitly edited/locked draft quantity; does not rewrite the persistent Running Order unless separately requested |
+
+**Recommended automatic planning behaviour:**
+
+- On activation of turn N (receipt of N's blank Orders workbook), **evaluate enabled Running Orders for N** and populate their feasible allocations in the saved **Mapper draft plan**, visibly tagged **Running / Auto-planned**. No email is sent and no workbook is exported until the user chooses Export Orders.
+- Calculate from **confirmed inventory, turn-start unit positions, buildings, unit/tribe skills, available workers and goods-tribe assignments**. If any required fact is stale or unknown, flag the affected order **Needs review**, retain the goal, and do not silently promise production.
+- Subtract the already saved **manual fixed orders and specialist-derived commitments** (e.g., scouting); allocate enabled Running Orders from **highest to lowest priority**. For shared stock targets, account for already projected output in the same turn, preventing redundant planned production.
+- Record a stable **(running-order ID, turn, performing unit, recipe)** origin so recalculation **updates/replaces its own generated draft**, never appends duplicates. Re-running a preview without changes is **idempotent**.
+- Manual edits to an auto-generated turn allocation become **This-turn override / Locked**. Recalculating may show suggested adjustments but must **not silently overwrite** a locked row. Provide **Reset to Running Order** and separate **Edit Running Order** actions.
+- A higher-priority order that becomes infeasible is skipped for that turn with an explanatory reason. The scheduler then considers the next eligible order instead of blocking the whole queue.
+- Changes to priorities, available stock, transfers, scouting, buildings or goods-tribe assignments can trigger a **new preview**. Apply only safe non-locked changes to current-turn drafts; surface conflicts explicitly before replacing user changes.
+- When a user changes the running goal, future turns follow the new definition. Already completed turns and their exports remain historical; no retroactive alterations.
+- If a user moves or splits the performing unit, revalidate the running instruction's owner and context. Never silently transfer it to a new unit or evaluate at its end-of-turn position.
+- **Export is read-only** with respect to Running Orders and Mapper plans. It renders a consistent saved turn snapshot onto the turn's blank Orders template and replaces that turn's existing export in its configured path.
+
+The current code has manual/derived activity assembly and Orders export, but it does **not** establish this persistent, deterministic recurring-order engine. This section is a new feature design, not an implemented capability.
+
+### 3B.7 Usability safeguards and acceptance tests
+
+- **Show what will happen now:** Every Running Order displays **this turn's workers, expected output and bottleneck reason**, plus its long-term objective. Users should not have to open every allocation to know what it is doing.
+- **Avoid false completion:** “Target met” is based on **confirmed stock**; “Completed” for Produce X Total is based on **verified attributable output**; “Projected this turn” is always labelled as a forecast.
+- **Keep goals understandable:** “Maintain 100 planks (count in Unit 0485)” is clearer than “Repeat: 100”; “Maximise” must visibly indicate that it takes **remaining** capacity, not every worker regardless of prior orders.
+- **Explain priority conflicts:** When Order #1 uses the last 20 available ore from a shared goods tribe, lower-priority orders show **Waiting — ore reserved by #1** rather than a generic red error.
+- **Reorder without lost work:** Changing priorities recalculates a **preview**, not past completed turns. Manual locked changes and all saved orders remain protected.
+- **Remain usable with many units:** Filters, compact queue rows, status counters, sticky table header, optional search, and full-name tooltips prevent the management screen from becoming overwhelming.
+- **Make controls accessible:** Drag-and-drop is optional; keyboard/touch up/down moves, Pause/Resume and explicit status text all work independently of hover or colour.
+- **Fail safely:** Invalid goods source, insufficient skill, missing facility or uncertain Results never delete a Running Order. Mark it waiting/needs review and calculate a feasible 0 rather than fabricate input or output.
+- **Export once:** Generated activity orders appear in `Tribes_Activities` **once**; recurring metadata itself is **not** written as extra workbook rows. Scouting orders remain derived from the scouting planner.
+- **Turn roll-forward test:** With a 100-stock target and 62 confirmed, preview only feasible work in N. If N+1 confirms 87, plan only the remaining 13; if it confirms 100, assign 0; if stock later drops to 40, resume work. Never accumulate predicted output as confirmed.
+- **Shared goods test:** Multiple units using one goods tribe must never reserve more inputs than the source has. Priority reorder changes which order receives scarce goods and updates the draft deterministically.
+- **Maximise test:** An order exhausts only the **allowed remaining** workers/resources under its limits, and a blocked high-priority order does not stop lower-priority eligible work.
+- **Recalculation test:** Re-running the same turn with unchanged inputs produces identical proposed rows, never duplicates or clears manual allocations; a locked override remains unchanged.
+- **Results test:** Missing, late or insufficiently attributable Results leave progress unconfirmed, with a visible next-step message rather than an invented total.
+
+### 3B.8 Decisions left open for confirmation
+
+1. **Priority scope:** Recommended **one clan-wide queue** with filters by unit, because shared goods-tribe stock can be allocated across units. Alternative is separate unit queues plus an extra inter-unit priority rule.
+2. **Stock target scope:** Which inventory may be selected for “Count stock in”? Recommended explicit acting/output-owning unit, adding goods-tribe or aggregated scope **only if** the actual rules and saved inventory support it.
+3. **Automatic roll-forward:** Recommended generate **editable current-turn drafts automatically** on new-turn activation but **never export/send automatically**. If preferred, turn this into an “Apply Running Orders” review step.
+4. **Make X total:** Require attributable confirmed production. Defer the mode if Results cannot reliably identify work performed by a specific running order.
+5. **Priority/manual conflicts:** Recommended manual fixed commitments reserve first, and Running Orders use remaining capacity. Expose conflicting or overridden allocations prominently.
+6. **Same-turn production chains:** Allow using planned output as another activity's input only if the Mandate expressly permits it and timing can be verified.
+7. **Target hysteresis:** Optional “Resume below Y” / “Pause when satisfied” for later enhancement, without complicating the initial setup screen.
+
+---
+
 ## 4. Rules and eligibility model
 
 ### 4.1 No one-size-fits-all skill rule
@@ -365,13 +512,13 @@ For **every** newly added skill, demonstrate:
 
 ## 9. Implementation order and definition of done
 
-Begin with the reusable **three-menu navigation framework (skills → activities/recipes → allocation), shared icon registry, Compendium deep link, validation interface and persistence adapter**. Complete the inventory-source abstraction and start-of-turn context abstraction early, even if first skills do not yet exercise every option. They must not be retrofitted separately into every subsequent recipe.
+Begin with the reusable **three-menu navigation framework (skills → activities/recipes → allocation), shared icon registry, Compendium deep link, validation interface and persistence adapter**. Then add a **persistent Running Orders definition store, repeat-mode editor, priority manager, deterministic turn allocator, result-based reconciliation and idempotent generated-order adapter** before enabling recurring production per skill. Complete the inventory-source abstraction and start-of-turn context abstraction early, even if first skills do not yet exercise every option. They must not be retrofitted separately into every subsequent recipe.
 
 Then choose **one skill per implementation batch** (the precise sequence is a later decision). For each batch: agree its rules and icons, update its Compendium article, implement activities/recipes, wire DB and workbook export, test all boundaries, and verify existing activity functionality. The user can then test that specific skill before the next one.
 
 ## 10. Open design decisions
 
-These are **not yet assumed rules**; resolve them while defining the affected workflow or skill:
+These are **not yet assumed rules**; resolve them while defining the affected workflow or skill. The proposed recurring-order defaults and their exceptions are detailed in **§3B.8**:
 
 - Which skill is first, and how many skills should appear as not-yet-supported tiles?
 - Exact empty states in Menu 1/2 and whether multi-skill recipes appear under secondary skills.
@@ -402,6 +549,8 @@ These are **not yet assumed rules**; resolve them while defining the affected wo
 - Cross-planner workforce/stock/facility reservation and conflict handling require end-to-end tests.
 - Saved edit/cancel/reload and workbook export must be regression-tested for every added skill, including re-export safety and preservation of legacy orders.
 - Existing skill dossier and activity-catalog rules may require reconciliation against the latest Mandate/research before being treated as authoritative.
+- **Running Orders are not implemented:** build persistent goal/mode/priority storage, cross-unit resource-aware allocation, current-turn regeneration, stock/Results reconciliation, per-turn manual override protection, and a dedicated prioritisation screen. Verify no standing-order state is lost or spuriously treated as workbook output.
+- Implement/test clear statuses for target met, insufficient inputs, priority starvation, paused, completed and Results-needs-review; add an audit trail explaining each turn's worker and input allocation.
 
 ---
 
