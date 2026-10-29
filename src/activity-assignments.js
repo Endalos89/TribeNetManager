@@ -33,6 +33,7 @@ function normalizeManualActivity(row) {
     distinction: String(row.distinction || '').trim(),
     miningDirection: String(row.miningDirection || '').trim(),
     notes: String(row.notes || '').trim(),
+    implements: Array.isArray(row.implements) ? row.implements.map(t=>({name:String(t.name||t.item||'').trim(),quantity:Number(t.quantity||0)})).filter(t=>t.name&&Number.isInteger(t.quantity)&&t.quantity>0) : [],
     source: 'manual'
   };
 }
