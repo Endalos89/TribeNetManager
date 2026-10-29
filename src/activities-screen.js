@@ -387,12 +387,20 @@ function renderAllocate(){
       <div class="activities-actions"><button class="button accent" id="huntSave">${ui.editing?'Update Running Bill':running?'Save Running Bill':'Save One Turn Activity'}</button>
        <button class="button" data-go="skills">Cancel</button></div>
     </div>
-    <aside class="activities-saved"><h3>Saved Activities</h3>
+    <aside class="activities-saved">
+      <h3>Saved Activities · ${ui.activities.filter(row=>String(row.unit).toLowerCase()===ui.unit.toLowerCase()).length}</h3>
+      <p class="activities-note">Assigned ${ui.activities.filter(r=>String(r.unit).toLowerCase()===ui.unit.toLowerCase()).reduce((n,r)=>n+whole(r.people),0)} / ${display(availableWorkers(unit))} available workers</p>
+      <button class="button" data-saved-expand>${ui.showSavedAll?'Collapse Saved Activities':'View All / Expand'}</button>
       ${ui.activities.filter(row=>String(row.unit).toLowerCase()===ui.unit.toLowerCase()).map(row=>`<div class="activities-saved-row"><strong>${esc(row.activityCode)}</strong>
-        <span>${whole(row.people)} workers · ${esc(row.target||'')}${row.generatedLocked?' · Locked':''}</span>
-        <small>Turn ${esc(row.turnKey)}</small><div class="activities-bill-buttons">
-          ${row.activityCode==='HUNTING'?`<button data-edit-activity="${row.id}">Edit</button>`:''}
-          <button data-remove-activity="${row.id}">Remove</button></div></div>`).join('')||'<p>No saved activities for this unit/turn.</p>'}
+        <span>${whole(row.people)} workers · ${row.generatedBillId?'Running-generated':row.generatedLocked?'Manual override':'One Turn / manual'}</span>
+        <small>Tools: ${row.implements?.length?row.implements.map(t=>esc(t.name)+' ×'+whole(t.quantity)).join(', '):'none'}</small>
+        ${ui.showSavedAll?`<small>Turn ${esc(row.turnKey)} · target ${esc(row.target||'—')} · ${row.generatedLocked?'locked override':'draft'}</small>`:''}
+        <div class="activities-bill-buttons">
+          ${row.generatedBillId?
+            `<button data-edit="${row.generatedBillId}">Edit Running Order</button><button data-skip="${row.generatedBillId}">Skip this turn</button>`:
+            `${row.activityCode==='HUNTING'?`<button data-edit-activity="${row.id}">Edit</button>`:'<span>Legacy · read-only</span>'}
+              <button data-remove-activity="${row.id}">Remove</button>`}</div>
+      </div>`).join('')||'<p>No saved activities for this unit/turn.</p>'}
       <button class="button" id="huntViewOrders">Open Tribe Activities overview</button>
     </aside>
   </div>`;
@@ -411,6 +419,8 @@ function renderManager(){
          <button data-up="${b.id}" ${i===0?'disabled':''} title="Increase priority">↑</button>
          <button data-down="${b.id}" ${i===ui.bills.length-1?'disabled':''} title="Decrease priority">↓</button>
          <button data-edit="${b.id}">Edit</button>
+         <button data-skip="${b.id}">Skip turn</button>
+         <button data-reset="${b.id}">Reset turn</button>
          <button data-pause="${b.id}">${b.paused?'Resume':'Pause'}</button>
          <button data-remove="${b.id}">Delete</button>
         </div></div>`;
@@ -498,6 +508,16 @@ async function handleClick(event){
     }
     if(b.id==='huntSave'){await save();return;}
     if(b.id==='huntApply'){ui.otherStatuses=await applyBills();ui.status='Generated Hunting allocations refreshed in the saved Mapper draft.';await refreshAll();return;}
+    if(b.hasAttribute('data-saved-expand')){ui.showSavedAll=!ui.showSavedAll;render();return;}
+    if(b.dataset.skip){
+      if(!window.confirm('Skip this Running Order for the current turn? This removes only its generated draft and any linked retention Transfer. The persistent Bill remains.'))return;
+      await window.tribenet.skipActivityBill(Number(b.dataset.skip),sourceTurn());
+      ui.otherStatuses=await applyBills();ui.status='Bill skipped for this turn; it will resume on future turns.';await refreshAll();return;
+    }
+    if(b.dataset.reset){
+      await window.tribenet.resetActivityBill(Number(b.dataset.reset),sourceTurn());
+      ui.otherStatuses=await applyBills();ui.status='Current-turn Bill restored.';await refreshAll();return;
+    }
     if(b.dataset.editActivity){const row=ui.activities.find(x=>x.id===Number(b.dataset.editActivity));
       if(!row||row.activityCode!=='HUNTING')return;
       ui.editing=null;ui.editingActivity=row.id;ui.unit=row.unit;ui.page='allocate';ui.mode='once';
