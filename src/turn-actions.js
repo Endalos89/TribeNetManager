@@ -1229,6 +1229,8 @@ window.addEventListener('keydown', event => {
   if (event.key === 'Escape' && turnActionState.active) { event.preventDefault(); turnActionsCancel(); return; }
   const key = String(event.key || '').toUpperCase();
   if (key === 'F' && turnActionState.active === 'scout' && !event.repeat) { event.preventDefault(); turnActionsArmFollowOcean(); return; }
+  // Preserve native Copy/Paste/Select All and text editing in Activities and other dialogs.
+  if (event.ctrlKey || event.metaKey || event.altKey || document.getElementById('activitiesDialog')?.open) return;
   if (event.repeat || turnActionState.active || !state.selectedUnit || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
   if (key === 'M' && savedMovementCanMoveUnit(turnActionsUnit())) { event.preventDefault(); turnActionsStart('unit'); }
   if (key === 'X') { event.preventDefault(); turnActionsOpenSplit(); }
