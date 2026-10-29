@@ -14,7 +14,14 @@ const num = v => v==null||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const whole = v => Math.max(0,Math.floor(Number(v)||0));
 const display = v => Number.isFinite(Number(v))?Math.round(Number(v)).toLocaleString():'—';
 const sourceTurn = () => state?.planImport?.turnKey || (typeof savedMovementCurrentTurnKey==='function' ? savedMovementCurrentTurnKey() : null);
-const allUnits = () => typeof savedMovementUnits==='function' ? savedMovementUnits() : (window.resultsTimeline?.turn?.units||[]);
+const allUnits = () => {
+  const combined=new Map();
+  const add=unit=>{const key=unitCode(unit).toLowerCase();if(key)combined.set(key,{...(combined.get(key)||{}),...unit});};
+  for(const unit of state?.planImport?.plan?.units||[])add(unit);
+  for(const unit of window.resultsTimeline?.turn?.units||[])add(unit);
+  if(typeof savedMovementUnits==='function')for(const unit of savedMovementUnits())add(unit);
+  return [...combined.values()];
+};
 const selectedCode = () => String(state?.selectedUnit||(typeof savedMovementPlansState==='object'?savedMovementPlansState?.selectedUnitCode:'')||'').trim();
 const resultUnit = code => allUnits().find(u=>unitCode(u).toLowerCase()===String(code||'').toLowerCase());
 const baseStats = code => (state?.planImport?.plan?.unitStats||[]).find(u=>String(u.unit||'').toLowerCase()===String(code||'').toLowerCase())||null;
@@ -128,38 +135,71 @@ function currentUnit(){return resultUnit(ui.unit);}
 function selectedBill(){return ui.editing==null?null:ui.bills.find(b=>b.id===ui.editing);}
 async function load(){
   ui.bills=await window.tribenet.listActivityBills();
-  ui.activities=await window.tribenet.listPlannedActivities(sourceTurn());
+  ui.activities=sourceTurn()?await window.tribenet.listPlannedActivities(sourceTurn()):[];
+}
+function showDialog(){
+  ensure();
+  const dialog=$('activitiesDialog');
+  if(!dialog.open)dialog.showModal();
 }
 async function open(unit=selectedCode()){
-  ensure();
-  if(!sourceTurn())return;
+  showDialog();
   const resolved=resultUnit(unit);
-  if(!resolved)return;
-  ui.unit=unitCode(resolved);ui.page='skills';ui.editing=null;ui.editingActivity=null;
+  ui.unit=unitCode(resolved)||String(unit||'');
+  ui.page='skills';ui.editing=null;ui.editingActivity=null;
   ui.workers=Math.min(availableWorkers(resolved)||0,10);
   ui.selectedTools=[];ui.status='';
-  try{await load();render();$('activitiesDialog').showModal();}
-  catch(error){ui.status=String(error.message||error);render();}
+  if(!sourceTurn())ui.status='No planning turn selected. Import the Results baseline or select the planning turn first.';
+  else if(!resolved)ui.status='Select a unit in the Mapper first, then use its Activities Turn Action.';
+  $('activitiesBody').textContent='Loading unit activities…';
+  try{await load();render();}
+  catch(error){ui.status='Could not load Activities: '+String(error.message||error);render();}
+}
+async function openOverview(){
+  showDialog();
+  ui.page='overview';ui.status='';
+  $('activitiesBody').textContent='Loading saved Activities overview…';
+  try{await load();render();}
+  catch(error){ui.status='Could not load Activities overview: '+String(error.message||error);render();}
 }
 function pathHeader(){
   const bits=[['skills','Skills'],['recipes',ui.skill],['allocate','Allocation']];
   if(ui.page==='manager')return '<span>Running Orders / Priorities</span>';
+  if(ui.page==='overview')return '<span>Activities Overview · All Units</span>';
   return bits.map(([page,label],idx)=>`<button data-go="${page}" ${ui.page===page?'class="active"':''}>${idx+1}. ${esc(label)}</button>`).join('<span class="chevron">›</span>');
 }
 function render(){
   if(!$('activitiesDialog'))return;
-  $('activitiesTitle').textContent=ui.page==='manager'?'Running Orders':'Activities';
-  $('activitiesSubtitle').textContent=`Unit ${ui.unit} · Turn ${sourceTurn()||'—'} · ${ui.page==='manager'?'Clan-wide priority queue':'Three-menu activity editor'}`;
+  $('activitiesTitle').textContent=ui.page==='manager'?'Running Orders':ui.page==='overview'?'Activities Overview':'Activities';
+  $('activitiesSubtitle').textContent=ui.page==='overview'
+    ? `Turn ${sourceTurn()||'—'} · All units · Current saved plan`
+    : `Unit ${ui.unit||'—'} · Turn ${sourceTurn()||'—'} · ${ui.page==='manager'?'Clan-wide priority queue':'Three-menu activity editor'}`;
   $('activitiesPath').innerHTML=pathHeader();
   $('activitiesManage').hidden=ui.page==='manager';
   const body=$('activitiesBody');
-  if(ui.page==='skills')body.innerHTML=renderSkills();
+  if(ui.page==='overview')body.innerHTML=renderOverview();
+  else if(ui.page==='skills')body.innerHTML=renderSkills();
   else if(ui.page==='recipes')body.innerHTML=renderRecipes();
   else if(ui.page==='allocate')body.innerHTML=renderAllocate();
   else body.innerHTML=renderManager();
   $('activitiesStatus').textContent=ui.status;
 }
+function renderOverview(){
+  const rows=ui.activities||[];
+  return `<div class="activities-toolbar"><strong>Saved activities · all units</strong>
+    <button class="button accent" data-overview-running>Manage Running Orders</button></div>
+    ${!sourceTurn()?'<p class="activities-warning">No planning turn selected. Import Results and select the current turn.</p>':''}
+    ${!rows.length?'<p class="activities-note">No saved activities in this turn. Select a unit on the map and use its Activities Turn Action to create one.</p>':''}
+    <div class="activities-overview-list">${rows.map(row=>`<div class="activities-overview-row">
+      <strong>${esc(row.unit)}</strong><span>${esc(row.activityCode)} · ${whole(row.people)} workers</span>
+      <small>${esc(row.target||'')}${row.generatedLocked?' · Locked override':''}</small>
+      <button class="button" data-overview-unit="${esc(row.unit)}">Open unit</button>
+    </div>`).join('')}</div>
+    <p class="activities-note">This overview is turn-wide. Use the unit Turn Action for the three-menu editor; the Running Orders screen manages recurring Bills across units.</p>`;
+}
 function renderSkills(){
+  if(!currentUnit())return '<p class="activities-warning">Select a unit on the Mapper to open its Activities Turn Action. You can use Activities Overview without a selected unit.</p>';
+  if(!sourceTurn())return '<p class="activities-warning">No planning turn selected. Import Results or select a planning turn before allocating activities.</p>';
   const unit=currentUnit();
   return `<div class="activities-toolbar"><strong>1. Select skill</strong><span>Number = unit / inherited Tribe skill level</span></div>
     <div class="activities-grid">${skillList().map(name=>{
@@ -316,6 +356,8 @@ async function applyBills(){
 async function handleClick(event){
   const b=event.target.closest('button');if(!b)return;
   try{
+    if(b.dataset.overviewUnit){return open(b.dataset.overviewUnit);}
+    if(b.hasAttribute('data-overview-running')){ui.page='manager';render();return;}
     if(b.dataset.go){ui.page=b.dataset.go;render();return;}
     if(b.dataset.skill){ui.skill=b.dataset.skill;if(ui.skill!=='Hunting'){ui.status=ui.skill+' will be implemented as its own skill specification.';render();return;}ui.page='recipes';render();return;}
     if(b.dataset.recipe){ui.page='allocate';ui.editing=null;ui.editingActivity=null;ui.mode='running';ui.selectedTools=[];render();return;}
@@ -400,7 +442,9 @@ async function refreshWeight(code){
   }catch(error){host.textContent='Projected weight unavailable: '+(error.message||error);}
 }
 document.addEventListener('click',event=>{
-  if(event.target.closest('#openActivitiesButton, #unitOpenActivities'))open().catch(console.error);
+  if(event.target.closest('#openActivitiesButton'))openOverview().catch(error=>{
+    showDialog();ui.page='overview';ui.status=String(error.message||error);render();
+  });
 });
 window.addEventListener('tribenet-import-complete',()=>{if($('activitiesDialog')?.open)load().then(render).catch(console.error);});
 window.addEventListener('tribenet-planning-turn-activated',async event=>{
@@ -423,5 +467,5 @@ window.addEventListener('tribenet-planning-turn-activated',async event=>{
     if(notice)notice.textContent+=' Hunting Bill recalculation needs review: '+(error.message||error);
   }
 });
-window.TribeNetActivities={open,applyCurrentTurn:applyBills,refreshWeight,contextFor};
+window.TribeNetActivities={open,openOverview,applyCurrentTurn:applyBills,refreshWeight,contextFor};
 })();
