@@ -54,3 +54,29 @@
 .unit-projected-weight strong{color:#e1eff3}
 .unit-projected-weight small{display:block;color:#8ea5af;margin-top:3px}
 @media(max-width:760px){.activities-editor-grid{grid-template-columns:1fr}.activities-bill{grid-template-columns:1fr}.activities-header{flex-wrap:wrap}.activities-grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr))}}
+
+/* Activities text is readable/copyable. Map hotkeys are disabled while open. */
+.activities-dialog,.activities-dialog :is(p,span,strong,small,label,h2,h3,section,div){
+  -webkit-user-select:text;user-select:text;
+}
+.activities-dialog :is(input,textarea,select){-webkit-user-select:text;user-select:text;}
+.activities-dialog button{-webkit-user-select:none;user-select:none;}
+.activities-skill-wrap{position:relative;min-width:0}
+.activities-skill-wrap>.activities-tile{width:100%;height:100%}
+.activities-skill-icon{display:block;width:54px;height:54px;object-fit:contain;image-rendering:auto}
+.activities-compendium-link{position:absolute;top:7px;right:7px;display:grid;place-items:center;
+  width:27px;height:27px;border:1px solid #7aafad;border-radius:50%;background:#103441;color:#e0f1ed;
+  font-size:17px;line-height:1;cursor:pointer;z-index:1}
+.activities-compendium-link:hover,.activities-compendium-link:focus-visible{background:#245c69;border-color:#b7e4db}
+.activities-outputs{margin-top:18px;border-top:1px solid #334f5b;padding-top:14px;font-size:12px}
+.activities-output-item{position:relative;display:flex;align-items:center;gap:11px;margin-top:9px;min-height:68px;
+  border:1px solid #416353;background:#12271f;border-radius:9px;padding:10px 45px 10px 10px}
+.activities-output-item img{width:47px;height:47px;object-fit:contain;flex:none}
+.activities-output-item span{display:flex;flex-direction:column;gap:5px}
+.activities-output-item small{color:#9ab7a7;font-size:11px}
+.activities-goal-hint{color:#aecbb0;background:#10291f;padding:8px 10px;border-radius:6px;font-size:11px;line-height:1.5;margin:8px 0}
+.activities-goal-hint:empty{display:none}
+.activities-overview-list{display:grid;gap:8px}
+.activities-overview-row{display:flex;align-items:center;gap:14px;justify-content:space-between;
+  padding:10px;background:#142732;border:1px solid #35505d;border-radius:7px;font-size:12px}
+.skill-dossier-icon{width:68px;height:68px;object-fit:contain;flex:none;border-radius:12px}
