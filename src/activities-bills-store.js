@@ -39,7 +39,7 @@ class ActivityBillStore {
   }
   save(value) {
     const unit=code(value?.unit),id=value?.id==null?null:Number(value.id);
-    if(!/^\\d{4}(?:[efgc]\\d+)?$/.test(unit))throw Error('Select a valid unit for this Hunting Bill.');
+    if(!/^\d{4}(?:[efgc]\d+)?$/.test(unit))throw Error('Select a valid unit for this Hunting Bill.');
     const mode=String(value?.mode||'months');
     if(!['months','maximise'].includes(mode))throw Error('Hunting Bills support months or maximise.');
     const months=Number(value?.months??1);
