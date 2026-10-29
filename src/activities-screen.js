@@ -103,16 +103,20 @@ function contextFor(unit){
 }
 const contextList = () => allUnits().map(contextFor);
 function skillList(){
-  const catalogue=window.TribeNetOrdersReferenceRaw?.skills||[];
-  const byName=new Map();
-  for(const item of catalogue){
-    if(!item.name || !['A','B','C'].includes(String(item.group||'').toUpperCase()))continue;
-    const key=item.name.toLowerCase();
-    if(!byName.has(key))byName.set(key,item.name);
-  }
-  if(!byName.has('hunting'))byName.set('hunting','Hunting');
-  return [...byName.values()].sort((a,b)=>a.localeCompare(b));
+  // Only display implemented/testable skills. More will be added in their
+  // respective per-skill rollout, not as inert icons.
+  return ['Hunting'];
 }
+function compendiumLink(entry,key,label){
+  return `<button type="button" class="activities-compendium-link" data-compendium-entry="${esc(entry)}" data-compendium-key="${esc(key)}"
+    aria-label="Open ${esc(label)} in Compendium" title="Open ${esc(label)} in Compendium">ⓘ</button>`;
+}
+function openCompendium(entry,key){
+  if(typeof window.tribenet?.openCompendium!=='function')
+    throw Error('Compendium navigation is unavailable in this app version.');
+  return window.tribenet.openCompendium(entry,key);
+}
+
 function ensure(){
   if($('activitiesDialog'))return;
   const dialog=document.createElement('dialog');
@@ -201,21 +205,37 @@ function renderSkills(){
   if(!currentUnit())return '<p class="activities-warning">Select a unit on the Mapper to open its Activities Turn Action. You can use Activities Overview without a selected unit.</p>';
   if(!sourceTurn())return '<p class="activities-warning">No planning turn selected. Import Results or select a planning turn before allocating activities.</p>';
   const unit=currentUnit();
-  return `<div class="activities-toolbar"><strong>1. Select skill</strong><span>Number = unit / inherited Tribe skill level</span></div>
+  return `<div class="activities-toolbar"><strong>1. Select skill</strong><span>Implemented skills only · Level badge = effective skill level</span></div>
     <div class="activities-grid">${skillList().map(name=>{
-    const level=skillLevel(unit,name);
-    const hunting=name.toLowerCase()==='hunting';
-    return `<button class="activities-tile ${hunting?'':'unavailable'}" data-skill="${esc(name)}"
-      title="${esc(name)} level ${level}${hunting?'':' · Skill implementation pending'}">
-      <span class="activities-glyph">${hunting?'🏹':'◇'}</span><span class="activities-name">${esc(name)}</span>
-      <span class="activities-level">${level}</span></button>`;
-  }).join('')}</div>`;
+      const level=skillLevel(unit,name);
+      return `<div class="activities-skill-wrap">
+        <button class="activities-tile" data-skill="${esc(name)}" title="Select ${esc(name)} · Level ${level}">
+          <img class="activities-skill-icon" src="skill-icons/hunting.svg" alt="" />
+          <span class="activities-name">${esc(name)}</span><span class="activities-level">${level}</span>
+        </button>${compendiumLink('skill',name,name)}
+      </div>`;
+    }).join('')}</div>`;
 }
 function renderRecipes(){
-  return `<div class="activities-toolbar"><strong>2. ${esc(ui.skill)} — available activities</strong><button class="button" data-go="skills">Back to skills</button></div>
-    <div class="activities-grid"><button class="activities-tile activity-recipe" data-recipe="HUNTING">
-    <span class="activities-glyph">🏹</span><span class="activities-name">Hunting</span><small>Produces Provs · variable yield</small></button></div>`;
+  return `<div class="activities-toolbar"><strong>2. ${esc(ui.skill)} — available activities</strong>
+    <button class="button" data-go="skills">Back to skills</button></div>
+    <div class="activities-grid">
+      <div class="activities-skill-wrap">
+        <button class="activities-tile activity-recipe" data-recipe="HUNTING">
+          <img class="activities-skill-icon" src="skill-icons/hunting.svg" alt="" />
+          <span class="activities-name">Hunting</span><small>Produces Provisions · variable yield</small>
+        </button>${compendiumLink('skill','Hunting','Hunting')}
+      </div>
+    </div>
+    <section class="activities-outputs" aria-label="Hunting output">
+      <strong>Produced item</strong>
+      <div class="activities-output-item"><img src="item-icons/provisions.svg" alt="" />
+        <span><strong>Provisions</strong><small>Workbook item: PROVS · available for end-of-turn consumption</small></span>
+        ${compendiumLink('item','PROVS','Provisions')}
+      </div>
+    </section>`;
 }
+
 function sourceStock(){
   const unit=currentUnit();return dataStock(resultUnit(ownerCode(unit))||unit);
 }
@@ -257,7 +277,7 @@ function renderAllocate(){
       <p class="activities-note">Running Bills automatically allocate available implements each turn, with shared Goods Tribe stock assigned by priority.</p>
       <div class="activities-tool-list">${p.tools.length?p.tools.map(t=>`<span>${esc(t.name)}</span><strong>× ${whole(t.quantity)}</strong>`).join(''):'No eligible tools allocated'}</div>
       <section class="activities-yield"><small>EXPECTED PROVISIONS (WEATHER RANGE)</small>
-        <strong>${p.range?`${display(p.range.min)} – ${display(p.range.max)} Provs`:'Unknown terrain / calculator rate'}</strong>
+        <strong>${p.range?`${display(p.range.min)} – ${display(p.range.max)} Provisions`:'Unknown terrain / calculator rate'}</strong>
         <span>${p.range?`Fine weather: ${display(p.range.fine)} · Scenario average: ${display(p.range.average)}`:'Verify the unit’s start-of-turn terrain before saving a forecast.'}</span>
       </section>
       <div class="activities-actions"><button class="button accent" id="huntSave">${ui.editing?'Update Running Bill':running?'Save Running Bill':'Save One Turn Activity'}</button>
@@ -358,8 +378,9 @@ async function handleClick(event){
   try{
     if(b.dataset.overviewUnit){return open(b.dataset.overviewUnit);}
     if(b.hasAttribute('data-overview-running')){ui.page='manager';render();return;}
+    if(b.dataset.compendiumEntry){await openCompendium(b.dataset.compendiumEntry,b.dataset.compendiumKey);return;}
     if(b.dataset.go){ui.page=b.dataset.go;render();return;}
-    if(b.dataset.skill){ui.skill=b.dataset.skill;if(ui.skill!=='Hunting'){ui.status=ui.skill+' will be implemented as its own skill specification.';render();return;}ui.page='recipes';render();return;}
+    if(b.dataset.skill){ui.skill=b.dataset.skill;ui.page='recipes';render();return;}
     if(b.dataset.recipe){ui.page='allocate';ui.editing=null;ui.editingActivity=null;ui.mode='running';ui.selectedTools=[];render();return;}
     if(b.id==='huntAutoTools'){
       ui.selectedTools=engine.optimizeTools(ui.workers,sourceStock()).implements;ui.status='Best eligible tools suggested for the selected workforce.';render();return;
