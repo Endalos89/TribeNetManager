@@ -1,6 +1,6 @@
 # TribeNet Manager — Activities Window & Skill-by-Skill Rollout
 
-**Design version:** 0.9 — selected-unit Turn Action, turn-wide Activities Overview, Hunting pilot  
+**Design version:** 1.0 — Hunting usability fixes, implemented-skills-only catalogue, Compendium-linked icons  
 **Updated:** 29 October 2026  
 **Status:** Proposed design, not an implementation-complete claim  
 **Related designs:** [Orders Workbook Lifecycle & Export Safety](orders-workbook-lifecycle-design.md), [Compendium](compendium.md), [Compendium Skill Dossier Baselines](skill-dossier-baselines.md).
@@ -81,6 +81,8 @@ Back from Menu 3 → Menu 2; Back from Menu 2 → Menu 1
 **Primary entry point: select a unit on the Mapper and choose `Activities` in that unit's `TURN ACTIONS` toolbar**, beside Move, Split, Transfer and Scout. This passes the exact initiating unit code and opens **Menu 1**. The unit's Orders tab can forward to the same Turn Action. Carry the same unit, canonical planning turn, existing saved orders and calculated reservations through all three menus. **Do not silently return** if the selected unit or turn cannot be resolved: open the interface and show a clear actionable reason.
 
 **Secondary entry point: `Activities Overview` in the map-corner overview toolbar** (alongside Transfers, Scout and Units) opens a **turn-wide overview**, even when no unit is selected. It shows the saved `Tribes_Activities` rows for all units and provides actions to open a unit's Activities editor or navigate to the separate Running Orders priority screen. If no planning turn or saved activities exist, display explicit empty-state guidance. The overview is not Menu 1, does not silently depend on unit selection, and does not replace Menu 3's Saved Activities panel.
+
+**Implementation gate:** Menu 1 shows **only skills with completed, testable Activities support**. Do not display the whole Compendium skill list as inert or grey placeholder tiles. During the first Hunting pilot this means **Hunting only**; append other skills individually when their own per-skill rollout is ready. Grey/red are for eligibility of an **implemented skill**, not a placeholder for unsupported skills.
 
 **Common icon-grid design for Menus 1 and 2:**
 
@@ -508,7 +510,17 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 
 **Implement Hunting first, skill by skill.** The rule sources are Mandate N02.2 §§7.2, 8.3.1 and 13.1.15; existing Compendium Hunting dossier; existing assumption-based calculator in `src/mapper-food-gathering.js`. Hunting works at **level 0** with no skill-specific worker cap. Its variable provision yield depends on workforce, Hunting level, season/weather, terrain/water and eligible tools.
 
-#### Provision estimate and target
+#### Pilot UI correctness requirements
+
+- **Hunting-only Menu 1** until the next skill is actually implemented.
+- **Matching Hunting artwork** must appear in the Compendium and Activities tiles, with a functional exact-skill Compendium shortcut. Menus 2/3 display an output **item for Provisions**, with its own item artwork and item Compendium link; the player-facing name is **Provisions**, while the workbook/DB identifier remains `PROVS`.
+- **Smooth numeric and slider editing:** never recreate the slider/number DOM controls during `input` events. Update the forecast and tool quantities in place, preserving pointer capture, focus and selection; recalculate after goal/yield/quantity changes.
+- **Automatic hunter assignment** when a Running Bill goal is selected or changed: use confirmed workforce, goal months measured after eating, selected yield basis, Goods Tribe stock/demand and available tools. Show the computed hunters immediately; if required context is unavailable show a visible explanation rather than an arbitrary estimate.
+- **Running Bill edit/save:** edits persist the changed goal/months/yield/weight options, then recalculate the current turn. If reallocation cannot run because the baseline is incomplete, **retain the saved Bill**, clearly warn that allocation still needs review and keep the editor usable.
+- **Copyable text:** all Activity dialog text, warnings and projections can be selected and copied. Global map hotkeys must not intercept `Ctrl+C`, `Ctrl+A`, `Ctrl+V` or other normal shortcuts while an Activities dialog/input has focus.
+- **Desktop API contract:** the exposed `listPlannedActivities` renderer method and matching `turn-manager:list-activities` IPC must exist, including in the released installer; both Activities Overview and Menu 1 need regression coverage for loading saved activities.
+
+### Provision estimate and target
 
 - **Menu 3 displays the Hunting calculator's expected Provs range** for the allocated workers and **actually selected implements** (not hypothetical equipment). Label min/max and any fine-weather value as **estimates**, not guaranteed outcomes.
 - Each Hunting Bill lets the player select **Optimistic** (highest calculator weather scenario), **Average** (arithmetic mean of the calculator's weather scenarios), or **Conservative** (lowest scenario). The chosen basis determines **how many hunters to allocate** toward the goal; always show the whole estimated range. Average is a simple scenario mean, not an asserted probability forecast.
@@ -594,7 +606,7 @@ Scouting remains a special source-derived case: its activity is **PATROL** with 
 
 ## 7. Compendium integration and assets
 
-Each Compendium skill needs its own icon. Reuse that exact icon in the Activities Window, with the full name available as visible text and a hover tooltip. The eye action takes the player to the **matching skill article**, not just the Compendium home page.
+Each Compendium skill needs its own icon. Reuse that exact icon in the Activities Window, with the full name available as visible text and a hover tooltip. **Hunting uses its own illustrated icon in both the Compendium dossier and Menu 1/Menu 2**, never a generic emoji placeholder. A separate clickable info/eye control on the tile opens **Hunting's exact Compendium skill dossier**, without selecting the tile. The eye action takes the player to the **matching skill article**, not just the Compendium home page.
 
 As each skill is implemented, update its Compendium article to include:
 
@@ -627,6 +639,7 @@ For **every** newly added skill, demonstrate:
 12. Save, cancel, edit, remove, navigation and restart preserve correct plans without phantom/duplicate activity rows.
 13. Orders export produces exact activity mappings, re-export replaces the same turn's file, and nothing about export changes the database plan.
 14. Existing completed skills and specialist planners pass regression tests.
+18. Hunting-only skills menu, corresponding Compendium icon/link, Provisions item artwork/full display name, smooth slider, automatic goal workers, Running Bill edit and native text selection are verified in interactive/IPC tests.
 15. Current/projected weight is visible in Cargo & Equipment, including all activities and BM Transfers **before eating**, and numeric skill-level badges appear bottom-left in Menu 1.
 16. Hunting Bills automatically allocate tools each turn by **clan-wide priority** for shared Goods Tribe stocks, and the optional weight cap creates the correct derived BM keep-only Provs Transfer when the unit is not Goods Tribe-linked.
 17. The selected unit's **Turn Actions** offers Activities, opening Menu 1 for that unit. **Activities Overview** opens independently of unit selection, lists the planning turn's saved activities, and provides meaningful empty/error states plus a route to the Running Orders manager.
