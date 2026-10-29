@@ -1,6 +1,6 @@
 # TribeNet Manager — Activities Window & Skill-by-Skill Rollout
 
-**Design version:** 0.5 — persistent Running Orders and priority queue  
+**Design version:** 0.6 — Goods Tribe output routing and next-turn stock balances  
 **Updated:** 29 October 2026  
 **Status:** Proposed design, not an implementation-complete claim  
 **Related designs:** [Orders Workbook Lifecycle & Export Safety](orders-workbook-lifecycle-design.md), [Compendium](compendium.md), [Compendium Skill Dossier Baselines](skill-dossier-baselines.md).
@@ -18,8 +18,9 @@ The **Running Orders** extension allows recurring production goals across turns 
 3. **Per-skill rules:** Level-zero availability, maximum workers, unit eligibility, resources, recipes and other conditions differ between skills. Hunting is an example of an activity available with level-zero Hunting.
 4. **Multiple assignments:** A unit can perform several activities in the same turn, drawing from shared pools of workers and available goods, while observing individual skill/activity limits.
 5. **Start-of-turn context:** Some skills depend on the unit's **location at the start of the turn** and the buildings/facilities in that area; use the required time snapshot, not automatically the unit's planned end position.
-6. **Goods tribe:** A unit may use another unit's inventory when a goods tribe has been assigned by a **separate workflow**. Activity planning must honour that mapping for inventory lookup and reservations without introducing a second goods-tribe assignment UI here.
-7. **Saved plan is authoritative:** The Mapper database owns the orders; export reads them but never clears them. A fresh blank Orders workbook is always used for each export.
+6. **Goods Tribe:** A linked unit **consumes all required goods from its Goods Tribe and adds all produced goods to that same Goods Tribe's inventory**. Goods Tribe assignment remains a separate workflow; Activities must use the resulting shared pool for both input and output.
+7. **Turn-boundary inventory:** Production in turn N **cannot be used in turn N**; it can enter the available inventory at N+1 only after confirmation. Maintaining stock must take account of **feasible consumption across all tasks in the same turn**.
+8. **Saved plan is authoritative:** The Mapper database owns the orders; export reads them but never clears them. A fresh blank Orders workbook is always used for each export.
 
 ## 2. Skill rollout contract — required for every new skill
 
@@ -32,7 +33,7 @@ A skill is considered ready only when all relevant items below are complete. Som
 | Eligibility | Establish whether level 0 is allowed, which skill level applies (unit, tribe or mixed), prerequisite levels, research, unit type and other restrictions |
 | Workforce | Maximum workers, cap grouping across recipes, workforce class, special exceptions, and actual available headcount |
 | Geography and facilities | Whether the rule uses start-of-turn hex/terrain, buildings in the area, their capacity, season and other location restrictions |
-| Inventory source | Which input inventory is authoritative: unit's own, assigned goods tribe's, or another explicitly verified skill-specific rule |
+| Goods Tribe inventory and turn timing | Input goods come from the acting unit or its Goods Tribe, **and outputs go to that same inventory owner**. Current-turn production is not current-turn available stock. Stock maintenance includes all current-turn consumption |
 | Activity/recipes | Each supported variant, correct requirements, conversion/output rules, and workbook activity/item/distinction mappings |
 | UI | **Three separate menus:** compact icon grid of skills (name below icon, Compendium eye), compact icon grid of selected skill's activities/recipes (name below icon), final detailed allocation editor; grey/red statuses and hide toggles; separate saved allocations overview |
 | Compendium | Update the skill's article with the same eligibility, worker limits, recipes, inputs/outputs, modifiers and source links |
@@ -83,7 +84,7 @@ Open Activities from the selected Mapper unit at **Menu 1**. Carry the same unit
 - If **both** skill and input are missing for one option, classify it as **lacking skill (grey)** first; once the skill condition is met, show **missing input (red)** if it remains relevant. This prevents an unattainable recipe appearing merely as a stock shortage.
 - A tile with **at least one currently usable activity** remains normal even if some of its other activities/recipes are blocked. In Menu 1, grey a skill only when no implemented activity is skill-eligible; red it only when at least one is skill-eligible but all otherwise-permitted activities require unavailable inputs. Do not turn an entire skill red solely because one of several recipes lacks goods.
 - Other blockers (e.g. start-hex buildings, terrain, special worker limits, research or an unimplemented skill) are **not mislabelled** as a missing skill or missing goods. Use a discreet separate unavailable/planned indicator if required, with exact rules explained by the Compendium and save validation. Never allow an invalid assignment to be saved.
-- For resources, determine missing inputs using the **actual effective inventory source** — the acting unit or its assigned goods tribe — with shared reservations accounted for. Do not infer a shortage from the acting unit's inventory when a goods tribe supplies that activity.
+- For inputs, check **confirmed turn-start inventory** of the effective Goods Tribe (or acting unit if unlinked), less all same-turn reservations. Planned production is **not** available for same-turn consumption. Goods produced are credited to the same Goods Tribe in the **next-turn** forecast.
 - **Level-zero exceptions are rule-driven**: e.g. Hunting at level 0 must not be greyed out merely because its skill level is zero.
 - Changing a filter affects **display only**, never deletes, alters or unallocates saved orders. If filtering leaves no tiles, explain the empty state and allow filters to be cleared.
 
@@ -115,7 +116,7 @@ Open Activities from the selected Mapper unit at **Menu 1**. Carry the same unit
 
 **Purpose:** Configure **one** chosen activity/recipe, then save an order.
 
-Keep the detailed popup/table design. This is the place for **worker slider + precise numeric input**, required consumables, implements, stock available/reserved, expected outputs, effective goods tribe, and relevant start-of-turn hex/buildings. All detailed quantities and allocation calculations stay here rather than cluttering Menus 1 and 2.
+Keep the detailed popup/table design. This is the place for **worker slider + precise numeric input**, required consumables, implements, **turn-start stock** available/reserved, outputs **projected for next turn**, the effective Goods Tribe for **both ingredients and finished goods**, and relevant start-of-turn hex/buildings. All detailed quantities and allocation calculations stay here rather than cluttering Menus 1 and 2.
 
 - Header/breadcrumb: **Skills → [Skill] → [Activity/Recipe]**, with Back to the selected skill's Menu 2.
 - Show performing unit, turn, relevant skill levels/ownership and source of goods. For applicable skills, check start-of-turn location and area facilities independently of the planned end location.
@@ -173,8 +174,8 @@ These **rendered wireframes** are proposals rather than screenshots of app funct
 | Column | Meaning |
 |---|---|
 | Item | Existing canonical item icon and name. Distinguish consumable goods and reusable implements. |
-| Goods source | Acting unit or separately assigned **goods tribe**; assignment is managed in another workflow. |
-| Stock | Effective inventory available at the source for this turn/timing. |
+| Goods inventory owner | Acting unit or assigned **Goods Tribe**, as the source of inputs **and** destination of outputs; assignment is managed separately. |
+| Stock | Confirmed inventory available **this turn**, excluding everything planned to be produced during this turn. |
 | Reserved | Quantity committed by every saved order using the same stock source. |
 | This order | Required quantity for the current proposed allocation, recalculated with worker count. |
 | Remaining / rule | Remaining consumables, or applicable reusable-equipment/capacity constraint; identify shortages. |
@@ -184,10 +185,10 @@ These **rendered wireframes** are proposals rather than screenshots of app funct
 | Column | Meaning |
 |---|---|
 | Output | Canonical item icon and name, including multiple outputs when applicable. |
-| Estimated quantity | Calculated from verified recipe/skill formula, workforce and applicable modifiers. |
+| Estimated quantity | Forecast production **for next turn's inventory**, not currently spendable goods. |
 | Rule / certainty | Guaranteed, estimated/variable or not calculable; state limitations clearly. |
 
-The worker slider and precise input share a value and enforce skill-specific limits, total unit workers, facility capacity and other relevant rules. Show the **performing unit** separately from the **goods tribe** and the skill's **start-of-turn area/building** requirements.
+The worker slider and precise input share a value and enforce skill-specific limits, total unit workers, facility capacity and other relevant rules. Show the **performing unit** separately from the **Goods Tribe inventory owner for both inputs and outputs**, plus skill-specific start-of-turn area/building requirements.
 
 ### 3A.4 Saved activities overview — separate management table
 
@@ -200,7 +201,7 @@ Unlike the two browsing menus, the saved-activities overview is a **management v
 | Skill / activity | Name and icon with manual/derived distinction. |
 | Performing unit | Acting unit, not automatically the goods tribe. |
 | Workers | Saved allocation, counted once per source. |
-| Goods source | Own unit, assigned goods tribe or N/A. |
+| Inventory owner | Own unit or assigned Goods Tribe receiving outputs and supplying inputs; N/A where not applicable. |
 | Reserved inputs | Summary of planned material commitment. |
 | Expected output | Supported estimate or a clear uncertainty label. |
 | State | Valid, blocked, needs review or linked/derived, with reason available. |
@@ -248,25 +249,57 @@ On first opening Menu 3, default to **One Turn** to avoid accidentally creating 
 | Goal mode | Plain-language label | Rule | When to stop or restart |
 |---|---|---|---|
 | **One Turn** | “Assign workers this turn” | Fixed people for this turn, subject to validation. | Never repeats. |
-| **Maintain Stock** | “Keep at least X in stock” | Allocate enough feasible work to close the gap between **confirmed stock** and X. Recalculate next turn. | Idle when target is reached; **resume if stock later falls**. |
+| **Maintain Stock** | “Start next turn with at least X” | Account for **all feasible same-turn consumption** from the output-receiving Goods Tribe inventory (or own inventory), then allocate enough feasible production to meet the next-turn target. | Idle when **projected next-turn stock after consumption** meets X; resume when further use creates a shortfall. |
 | **Maximise** | “Produce as much as possible each turn” | Use all feasible **remaining** workers, valid tools/facilities, and eligible goods after higher-priority reservations, subject to any optional user cap. | Continues until manually paused, removed, or unable to produce. |
 | **Produce X Total** | “Produce X in total, then finish” | Track **confirmed cumulative output attributed to this order** across turns, not just stock currently held. Allocate feasible work toward the remaining quantity. | Mark **Completed** when the confirmed quantity is produced; do **not** reactivate merely because goods are consumed later. |
 
 **Recommended minimum viable modes:** One Turn, Maintain Stock, Maximise. Produce X Total is valuable but depends on **reliable actual-output attribution** in Results; implement it only once progress can be reconciled confidently. If Results do not identify production attributable to an order, keep it **Needs review** rather than guessing from planned output or total stock change.
 
-**Example only:** Unit 0485 creates **Maintain 100 Planks**. At the start of the current turn its chosen counted inventory has 62; 38 are missing. If its rules and available workers/materials support only 25 more, this turn's draft uses that feasible amount. If the next turn's **confirmed stock is 87**, only 13 more are needed. The app must not simply assume the previous +25 occurred when it only appeared in an exported plan.
+**Example only:** Unit 0485's Goods Tribe starts with 62 Planks, and all other linked tasks use 10 this turn. **Maintain 100** requests **48** Planks of production; if only 25 is feasible, the forecast is **77** for next turn (62 − 10 + 25). This forecast is not confirmed output and cannot be used this turn.
 
-### 3B.2 What the quantity actually counts
+### 3B.2 Maintain Stock — production must replace all same-turn usage
 
-For **Maintain Stock**, explicitly show three different facts: **Target product**, **Target quantity**, **Count stock in**.
+**Confirmed mechanics:** Anything produced during a turn is unavailable to use during that same turn. A unit assigned to a **Goods Tribe consumes all goods from that Goods Tribe and adds all production to it**. The stock being maintained is the **inventory pool that receives the output** — normally the Goods Tribe's pool, otherwise the acting unit's own pool.
 
-- **Count stock in** is the actual unit/inventory scope whose **output** is being maintained. It is distinct from **goods tribe**, which identifies where the **input ingredients** come from. Having Unit B supply ingredients does not automatically mean output belongs to Unit B.
-- Default the counted stock location to the acting/output-holding unit **when the verified game rule supports that**. If ownership of output or the inventory-counting scope is uncertain, ask for the correct unit or display **Needs review**; do not silently count the whole clan or a goods tribe.
-- Show **Confirmed: 62 / Target: 100**, **38 remaining** and **Planned this turn: +25 (estimated)** as separate values. Do not count current-turn estimated output as confirmed stock.
-- When several orders can produce the same output into the same stock pool, take already reserved **current-turn output** into account to avoid double-planning the same target. The distinction between guaranteed and uncertain yields remains visible.
-- When recipes produce indivisible batches or multiple output types, choose the **counted target item** and apply the verified batch size. If exact fulfilment is impossible, indicate likely overshoot or uncertain completion rather than promise an exact quantity.
-- Optional **Resume below Y** can reduce frequent on/off behaviour for Maintain Stock. Keep it under Advanced; a sensible first version simply resumes whenever confirmed stock falls below X.
-- Temporary absence of a fresh Results/baseline inventory means target progress is **not confirmed**. Show the last known stock with its turn and a warning, rather than treating projections as fact.
+**Meaning:** **“Try to begin the next turn with at least X of this item after everything being used this turn has been deducted.”**
+
+```text
+Next-turn forecast
+  = confirmed turn-start stock
+    − feasible consumption from ALL tasks this turn
+    + projected production this turn (available N+1 ONLY)
+    + verified net stock changes effective by next turn
+
+Production needed by this Maintain Stock order
+  = max(0, next-turn target
+          − (turn-start stock − all feasible same-turn use
+             + other planned output of this item
+             + validated net stock changes))
+```
+
+| Example: maintain 100 | Quantity |
+|---|---:|
+| Start-of-turn inventory | 50 |
+| Feasible use by all other tasks this turn | −50 |
+| Remaining before this turn's production | 0 |
+| **Production required this turn** | **100** |
+| Forecast start of next turn, if production succeeds | **100** |
+
+**Arithmetic clarification:** Start 50 − use 50 + produce **100** = next-turn stock **100**. Producing **150** would leave **150**, unless another 50 goods leave the pool. This does not change the principle: the planner **must count all other current-turn usage** when determining the required production.
+
+**Suggested compact summary:** **Goods Tribe 0485 · Start 50 · Reserved for other tasks 50 · After use 0 · Target next turn 100 · Production needed 100 · Feasible this turn 70 · Next-turn forecast 70 (unconfirmed)**.
+
+- Sum the **feasible** turn-N consumption of all saved manual orders, specialist planners and all running orders across **every performing unit sharing the same Goods Tribe**. Include lower-priority tasks if they remain feasible after resolving stock/resource conflicts.
+- Do **not** count new turn-N production when checking any turn-N activity's input availability; only confirmed turn-start stock (plus stock that is legally available at the required moment) may be consumed. **Production chains cannot use goods just manufactured in the same turn.**
+- Count other planned production of the target item only when estimating **next-turn stock**, so two orders do not overproduce the same maintenance target. Do not double-count goods produced by multiple linked units.
+- If start stock is 100, target 100 and 40 are planned for use, request 40 production; the target is **not met** just because the starting quantity is 100.
+- Resolve competition for scarce *starting* goods in priority order; do not count infeasible consumption as completed. Recalculate maintenance targets if changed priorities or constraints alter the feasible consumption plan. Revalidate until consistent, or explicitly flag an unresolved conflict.
+- Keep planned output and actual output separate. Only Results/a validated next-turn baseline confirm whether production really occurred; never use workbook export as proof.
+- Display stock **in the actual Goods Tribe output destination**, not a user-selected inventory that will not receive the output. Changing the Goods Tribe assignment invalidates the old stock forecast until recalculated.
+- Transfers or other changes count only where their effective-turn timing is established, and cannot be used to circumvent the no-same-turn-production rule.
+- For uncertain yields, skill limits, building capacity and indivisible batches, report the **feasible allocation, estimated output and possible shortfall/overshoot**, not guaranteed completion.
+
+**Produce X Total** remains based on verified cumulative production, while **Maximise** is bound by current-turn stock and worker limits rather than consuming new goods produced in the same turn.
 
 ### 3B.3 How Maximise decides what “maximum” means
 
@@ -309,8 +342,8 @@ Add a clearly named **Running Orders** button near the Activities / Orders overv
 ### 3B.5 Example running-order workflow
 
 1. Open a unit → **Activities → select skill → select activity**.
-2. In **Menu 3**, switch from **One Turn** to **Running Order**, select **Maintain Stock**, enter **100**, choose the appropriate **Count stock in** inventory, and optionally limit per-turn workers.
-3. Review the example preview: **62 confirmed / 100 target**, with **25 feasible workers/product quantity** for this turn (actual yield depends on verified rules). Save Running Order.
+2. In **Menu 3**, switch from **One Turn** to **Running Order**, choose **Maintain Stock 100**, verify the automatically resolved Goods Tribe **input/output inventory owner**, and optionally limit workers.
+3. Review the example: **62 confirmed starting stock − 10 reserved consumption = 52**, so **48 output is required**; if feasible output is only 25, forecast **77 next turn**. Save Running Order.
 4. The running instruction appears in **Running Orders** with its priority, target, current status and a link to edit.
 5. When the next blank Orders workbook activates the new turn, the app recalculates the **new turn's draft allocation** using that turn's verified baseline and all prior saved commitments.
 6. Review the draft and export the normal workbook when ready. The app **never automatically sends orders to Ravenpost** and never treats an exported workbook as proof of actual production.
@@ -333,7 +366,7 @@ Persistent Running Orders and individual turn orders are **different database en
 
 - On activation of turn N (receipt of N's blank Orders workbook), **evaluate enabled Running Orders for N** and populate their feasible allocations in the saved **Mapper draft plan**, visibly tagged **Running / Auto-planned**. No email is sent and no workbook is exported until the user chooses Export Orders.
 - Calculate from **confirmed inventory, turn-start unit positions, buildings, unit/tribe skills, available workers and goods-tribe assignments**. If any required fact is stale or unknown, flag the affected order **Needs review**, retain the goal, and do not silently promise production.
-- Subtract the already saved **manual fixed orders and specialist-derived commitments** (e.g., scouting); allocate enabled Running Orders from **highest to lowest priority**. For shared stock targets, account for already projected output in the same turn, preventing redundant planned production.
+- Reserve manual fixed orders and specialist-derived commitments; resolve **all feasible consumption** across the Goods Tribe pool in priority order. Then calculate each Maintain Stock target from the **post-consumption stock** plus other production in the **next-turn forecast only**. Lower-priority consumption still affects targets if feasible. Recalculate if conflicts change planned consumption; never treat predicted output as turn-N inputs.
 - Record a stable **(running-order ID, turn, performing unit, recipe)** origin so recalculation **updates/replaces its own generated draft**, never appends duplicates. Re-running a preview without changes is **idempotent**.
 - Manual edits to an auto-generated turn allocation become **This-turn override / Locked**. Recalculating may show suggested adjustments but must **not silently overwrite** a locked row. Provide **Reset to Running Order** and separate **Edit Running Order** actions.
 - A higher-priority order that becomes infeasible is skipped for that turn with an explanatory reason. The scheduler then considers the next eligible order instead of blocking the whole queue.
@@ -355,8 +388,8 @@ The current code has manual/derived activity assembly and Orders export, but it 
 - **Make controls accessible:** Drag-and-drop is optional; keyboard/touch up/down moves, Pause/Resume and explicit status text all work independently of hover or colour.
 - **Fail safely:** Invalid goods source, insufficient skill, missing facility or uncertain Results never delete a Running Order. Mark it waiting/needs review and calculate a feasible 0 rather than fabricate input or output.
 - **Export once:** Generated activity orders appear in `Tribes_Activities` **once**; recurring metadata itself is **not** written as extra workbook rows. Scouting orders remain derived from the scouting planner.
-- **Turn roll-forward test:** With a 100-stock target and 62 confirmed, preview only feasible work in N. If N+1 confirms 87, plan only the remaining 13; if it confirms 100, assign 0; if stock later drops to 40, resume work. Never accumulate predicted output as confirmed.
-- **Shared goods test:** Multiple units using one goods tribe must never reserve more inputs than the source has. Priority reorder changes which order receives scarce goods and updates the draft deterministically.
+- **Turn roll-forward test:** With target 100, confirmed start stock 62, and 10 planned use, request 48; if only 25 output is feasible, forecast 77 next turn (unconfirmed). When N+1 becomes active, use **its confirmed** stock and **its current-turn consumption**, not the old estimate. Starting with 100 and planning use of 40 must trigger replacement production of 40.
+- **Shared Goods Tribe test:** Several performing units linked to B reserve against B's **start-of-turn stock**, with all produced goods routed into **B's next-turn forecast**. Priority reordering changes feasible consumption and recalculates stock-maintenance needs without double-counting.
 - **Maximise test:** An order exhausts only the **allowed remaining** workers/resources under its limits, and a blocked high-priority order does not stop lower-priority eligible work.
 - **Recalculation test:** Re-running the same turn with unchanged inputs produces identical proposed rows, never duplicates or clears manual allocations; a locked override remains unchanged.
 - **Results test:** Missing, late or insufficiently attributable Results leave progress unconfirmed, with a visible next-step message rather than an invented total.
@@ -364,11 +397,11 @@ The current code has manual/derived activity assembly and Orders export, but it 
 ### 3B.8 Decisions left open for confirmation
 
 1. **Priority scope:** Recommended **one clan-wide queue** with filters by unit, because shared goods-tribe stock can be allocated across units. Alternative is separate unit queues plus an extra inter-unit priority rule.
-2. **Stock target scope:** Which inventory may be selected for “Count stock in”? Recommended explicit acting/output-owning unit, adding goods-tribe or aggregated scope **only if** the actual rules and saved inventory support it.
+2. **Stock target scope:** **No longer ambiguous:** target the effective output-receiving inventory — **Goods Tribe if linked, otherwise acting unit**. The separate relationship's effective-turn timing still needs definition.
 3. **Automatic roll-forward:** Recommended generate **editable current-turn drafts automatically** on new-turn activation but **never export/send automatically**. If preferred, turn this into an “Apply Running Orders” review step.
 4. **Make X total:** Require attributable confirmed production. Defer the mode if Results cannot reliably identify work performed by a specific running order.
 5. **Priority/manual conflicts:** Recommended manual fixed commitments reserve first, and Running Orders use remaining capacity. Expose conflicting or overridden allocations prominently.
-6. **Same-turn production chains:** Allow using planned output as another activity's input only if the Mandate expressly permits it and timing can be verified.
+6. **Same-turn production chains:** **Not allowed.** Turn-N produced goods are never available as turn-N inputs.
 7. **Target hysteresis:** Optional “Resume below Y” / “Pause when satisfied” for later enhancement, without complicating the initial setup screen.
 
 ---
@@ -409,35 +442,32 @@ Some skills use the **unit's location at the start of the turn**, and the buildi
 
 Not every skill needs this check. Its inclusion is controlled per skill.
 
-### 4.3 Goods tribe and inventory-source resolution
+### 4.3 Goods Tribe — shared source AND destination
 
-**Goods tribe** means a separately assigned source unit whose inventory another unit may use for activity requirements. **Assigning/managing that relationship is outside the Activities Window and will be designed separately**, but Activities must be compatible with it from the outset.
+**Agreed rule:** A performing unit A with Goods Tribe B takes **all goods it uses from B**, and **all goods it produces are added to B**, not A. The relationship defines the **one inventory owner** for input and output. Its assignment UI is a separate workflow; this Activities design must consume that relationship correctly.
 
-Required design:
+1. Resolve the **effective Goods Tribe / inventory owner for each performing unit and turn**, using A itself only if no Goods Tribe relationship exists.
+2. For every activity, reserve **turn-start available goods** in that owner's pool. All units using B share the same inventory reservations. A cannot fall back to its own inventory if B lacks inputs.
+3. Attribute **all produced outputs and by-products to B's projected next-turn inventory**, not A's inventory. This is a forecast until confirmed by Results.
+4. **No goods produced in turn N may be spent in turn N**, even if B receives production from several units that turn.
+5. Running **Maintain Stock** checks **B's inventory** if B receives the output. Sum all other feasible turn-N consumption by every unit drawing from B, and all other turn-N production credited to B in the next-turn forecast.
+6. Keep **workers, skill eligibility and applicable start-of-turn buildings/location attached to the performing unit A**, rather than transferring those attributes to B.
+7. Distinguish consumed inputs, reusable tools and building capacity per verified skill rules. Goods Tribe membership by itself does not move units or create Transfers rows.
+8. If B changes for A, revalidate **both** inputs and outputs plus all affected Maintain Stock calculations and Running Order drafts. Protect manual overrides and saved records; do not silently change previous turns.
+9. Preserve canonical acting unit ID, Goods Tribe inventory-owner ID, item, turn and allocation/forecast provenance. Invalid, ambiguous or circular Goods Tribe assignments should be flagged before save/export.
+10. Workbook export uses the proper activity/unit mappings already validated for the Orders template; do not invent new columns to represent inventory routing.
 
-1. Resolve the **effective goods tribe for the acting unit and turn** via the shared assignment data. In the absence of an assignment, use the acting unit's own inventory **unless that skill's verified rules say otherwise**. The default/fallback is a proposal to verify when the goods-tribe workflow is specified.
-2. Display the resolved goods source in recipe details and saved allocation overview. Distinguish the **performing unit** (workers, skill and start location) from the **goods-source unit** (inventory).
-3. Check inputs and required goods against the **goods source's effective inventory** for that turn and relevant order timing, subtracting any prior reservations/commitments by all units drawing from the same source.
-4. Do not double count stock when multiple units use one goods tribe. Record reservations by canonical source unit, item, turn and timing; shared stock cannot be committed twice.
-5. Treat consumables differently from required reusable implements, equipment and facility capacity. Item quantities, allocation and reuse must obey actual game rules.
-6. A goods-tribe mapping grants a source for checks; it does **not by itself create a transfer**, move people, or change where an activity occurs. If the Mandate requires co-location/transfer/permission, enforce it as a separately verified condition.
-7. Changes to goods-tribe assignment must cause affected activities to be rechecked; do not automatically delete planned orders or switch their source silently without showing the effect.
-8. Keep the source mapping separate from the saved activity order, but save sufficient source identity/resolution metadata or revision references so the order can be audited and revalidated.
-9. When mappings are invalid, missing, ambiguous or incompatible with the skill, explain the issue clearly and prevent invalid export. Preserve the user's saved draft for repair rather than erasing it.
-
-**Illustrative case:** Unit A assigns workers to a recipe, but its assigned goods tribe is Unit B. The available ingredient stock comes from B, while skill level, eligible workforce, and relevant starting location come from the actual performing unit and/or its tribe as that skill prescribes. If Unit C also draws from B, A and C compete for B's remaining stock.
-
-The future **goods-tribe assignment step** should provide a stable API and effective-turn semantics; this design must not invent a UI for it now.
+**Example:** A and C both use B. B starts with 50 Planks; A uses 20 and C uses 30. A produces 60 and C produces 40, both credited **to B**. Neither A nor C can use the 100 newly made Planks during this turn. The projected next-turn stock for **B** is **50 − 20 − 30 + 60 + 40 = 100**. The result remains unconfirmed until the actual turn outcome is known.
 
 ## 5. Shared resources and validation
 
 A single turn-level reservation/validation model covers all relevant activity allocations, including allocations originating outside this window.
 
 - Track workers by unit, relevant workforce class and turn; account for existing saved activities and scouting/other planner reservations.
-- Track consumable goods by actual inventory **source unit** (including assigned goods tribe), item and relevant timing.
+- Track consumables by **effective Goods Tribe inventory owner** (or own unit), item and turn, counting all linked-unit reservations against the same start-of-turn stock. Keep predicted turn-N output in a **separate N+1 forecast**, not N's spendable stock.
 - Track reusable tools/implements and capacity constraints separately rather than subtracting them like consumed goods.
 - Track skill-specific worker limits, building capacity and any recipe-specific limits as separate restrictions.
-- Account for planned same-turn transfers, splitting and unit creation according to their effective timing; do not allow stock/workers to be spent before becoming available.
+- Account for transfers, splits and unit creation only at their verified effective times. **Never treat goods made this turn as spendable this turn**, regardless of transfers or Goods Tribe membership.
 - Every edit triggers revalidation of affected activities. Saving a different order must not erase a previously saved order that now conflicts; show a conflict and require resolution.
 - Validate at presentation, save and export. Export cannot invent workers, goods or facility capacity to make an order fit.
 - Use one canonical reservation source for a saved order to avoid double-counting any allocation that appears in several overviews.
@@ -503,8 +533,8 @@ For **every** newly added skill, demonstrate:
 6. The skill's maximum-worker rule is enforced, including across multiple recipes of the same skill where appropriate.
 7. Multiple skills can be allocated together without exceeding the performing unit's shared workforce.
 8. For location-dependent skills, availability and facility limits use the **unit's start-of-turn hex and area buildings**, not its planned end position.
-9. For inventory-dependent skills, checks use the **assigned goods tribe's inventory** where applicable, and multiple units cannot reserve the same goods twice.
-10. Required implements and consumable goods are handled according to their different rules.
+9. For inventory-dependent skills, **all inputs come from and all outputs are credited to the assigned Goods Tribe inventory**, if linked, and multiple units cannot reserve the same turn-N goods twice. Turn-N output is not usable until N+1.
+10. Required implements and consumable goods are handled according to their different rules. **Maintain Stock considers all other feasible same-turn consumption before computing next-turn target production.**
 11. Configuration calculations, saved records and Compendium description agree with the verified source.
 12. Save, cancel, edit, remove, navigation and restart preserve correct plans without phantom/duplicate activity rows.
 13. Orders export produces exact activity mappings, re-export replaces the same turn's file, and nothing about export changes the database plan.
@@ -524,7 +554,7 @@ These are **not yet assumed rules**; resolve them while defining the affected wo
 - Exact empty states in Menu 1/2 and whether multi-skill recipes appear under secondary skills.
 - How a unit is assigned one or more goods tribes, effective-turn rules, authorization/ownership and what happens if the source changes. The assignment UI is a separate design.
 - Whether a missing goods-tribe assignment always falls back to own inventory, or whether certain skills require an explicit goods-source setting.
-- Which timing snapshot to use for resource quantities after transfers, newly made goods and other planned orders.
+- Exact timing of transfers and other non-production stock changes still needs verification; **newly made goods are definitively unavailable for same-turn use**.
 - For buildings: ownership/usage permissions, sharing of facility capacity and effect of planned building changes.
 - What specific warnings should be non-blocking when the game outcome is intrinsically uncertain, versus hard validation failures.
 - Per-skill handling for unit creation/splits, location-dependent activities and skill-ownership exceptions.
@@ -545,10 +575,11 @@ These are **not yet assumed rules**; resolve them while defining the affected wo
 - Full per-skill recipe coverage and consistent input/output icons need phased implementation.
 - Skill-specific **level-zero**, worker-cap and mixed tribe/unit-level validation must be checked for each new skill.
 - Start-of-turn hex and area-building constraints need a reusable source, eligibility evaluator and tests.
-- **Goods-tribe assignment** is a separate future step; source-resolution and **shared-stock reservation** in Activities must be implemented and verified against it.
+- **Goods Tribe assignment** remains a separate future step; Activities must resolve the **same inventory owner for inputs and outputs**, reserve against turn-start stock across linked units, and forecast produced goods for the **following turn only**.
 - Cross-planner workforce/stock/facility reservation and conflict handling require end-to-end tests.
 - Saved edit/cancel/reload and workbook export must be regression-tested for every added skill, including re-export safety and preservation of legacy orders.
 - Existing skill dossier and activity-catalog rules may require reconciliation against the latest Mandate/research before being treated as authoritative.
+- **Inventory timing and Goods Tribe routing still need implementation:** block consumption of current-turn production; credit every output to the effective Goods Tribe; aggregate all linked-unit feasible consumption when forecasting next-turn stock, with acceptance tests covering input shortages, current-turn use and priority changes.
 - **Running Orders are not implemented:** build persistent goal/mode/priority storage, cross-unit resource-aware allocation, current-turn regeneration, stock/Results reconciliation, per-turn manual override protection, and a dedicated prioritisation screen. Verify no standing-order state is lost or spuriously treated as workbook output.
 - Implement/test clear statuses for target met, insufficient inputs, priority starvation, paused, completed and Results-needs-review; add an audit trail explaining each turn's worker and input allocation.
 
