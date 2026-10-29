@@ -115,7 +115,7 @@ class ActivityBillStore {
         && !this.db.prepare('SELECT 1 FROM generated_activity_links WHERE turn_key=? AND activity_id=?').get(key,row.id))
         .reduce((sum,row)=>sum+whole(row.people),0);
       const locked=manual.filter(row=>code(row.unit)===unitCode&&row.generatedLocked).reduce((n,row)=>n+whole(row.people),0);
-      availableWorkers.set(unitCode,Math.max(0,whole(unit.workersAvailable)-committed-locked));
+      availableWorkers.set(unitCode,Math.max(0,whole(unit.workersAvailable)-committed-locked-whole(unit.externalReservedWorkers)));
     }
     const pools=new Map(),claims=new Map(),projectedOutputs=new Map(),summaries=[];
     const sourceFor=unit=>code(unit.goodsTribe||unit.code||unit.unit||unit.unitCode);
@@ -124,6 +124,21 @@ class ActivityBillStore {
       if(!pools.has(pool))pools.set(pool,{eaters:0});
       pools.get(pool).eaters+=whole(unit.eaters);
     }
+    // Manually committed tool selections reserve first. Prior generated rows
+    // are superseded by this pass; locked generated rows are not.
+    for(const row of manual){
+      const linked=this.db.prepare('SELECT 1 FROM generated_activity_links WHERE turn_key=? AND activity_id=?').get(key,row.id);
+      if(linked&&!row.generatedLocked)continue;
+      const performer=unitMap.get(code(row.unit));
+      if(!performer)continue;
+      const pool=sourceFor(performer),already=claims.get(pool)||{};
+      for(const tool of row.implements||[]){
+        const name=canon(tool.name);
+        already[name]=(already[name]||0)+whole(tool.quantity);
+      }
+      claims.set(pool,already);
+    }
+
     // Use existing saved BM Transfers for any movement-time provisions changes.
     // A same-unit retention row is output protection, NOT a stock transfer.
     const bm=transfers.filter(t=>t.timing==='BM'&&code(t.from)!==code(t.to));
