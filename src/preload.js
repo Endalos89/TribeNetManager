@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld('tribenet', {
   moveActivityBill: (id, direction) => ipcRenderer.invoke('activities:move-bill', id, direction),
   pauseActivityBill: (id, paused) => ipcRenderer.invoke('activities:pause-bill', id, paused),
   applyActivityBills: (turnKey, units) => ipcRenderer.invoke('activities:apply-bills', turnKey, units),
+  listPlannedActivities: turnKey => ipcRenderer.invoke('turn-manager:list-activities', turnKey),
   addPlannedActivity: (turnKey, activity) => ipcRenderer.invoke('turn-manager:add-activity', turnKey, activity),
   updatePlannedActivity: (id, activity) => ipcRenderer.invoke('turn-manager:update-activity', id, activity),
   deletePlannedActivity: id => ipcRenderer.invoke('turn-manager:delete-activity', id),
