@@ -8,7 +8,7 @@ const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 const engine = window.TribeNetHuntingEngine;
 if(!engine)return;
 const ui={page:'skills',unit:'',skill:'Hunting',mode:'running',bills:[],activities:[],
-  editing:null,workers:0,selectedTools:[],list:[],status:'',preview:null,otherStatuses:[]};
+  editing:null,editingActivity:null,workers:0,selectedTools:[],list:[],status:'',preview:null,otherStatuses:[]};
 const unitCode = unit => String(unit?.unitCode||unit?.unit||'').trim();
 const num = v => v==null||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const whole = v => Math.max(0,Math.floor(Number(v)||0));
@@ -135,7 +135,7 @@ async function open(unit=selectedCode()){
   if(!sourceTurn())return;
   const resolved=resultUnit(unit);
   if(!resolved)return;
-  ui.unit=unitCode(resolved);ui.page='skills';ui.editing=null;
+  ui.unit=unitCode(resolved);ui.page='skills';ui.editing=null;ui.editingActivity=null;
   ui.workers=Math.min(availableWorkers(resolved)||0,10);
   ui.selectedTools=[];ui.status='';
   try{await load();render();$('activitiesDialog').showModal();}
@@ -226,7 +226,9 @@ function renderAllocate(){
     <aside class="activities-saved"><h3>Saved Activities</h3>
       ${ui.activities.filter(row=>String(row.unit).toLowerCase()===ui.unit.toLowerCase()).map(row=>`<div class="activities-saved-row"><strong>${esc(row.activityCode)}</strong>
         <span>${whole(row.people)} workers · ${esc(row.target||'')}${row.generatedLocked?' · Locked':''}</span>
-        <small>Turn ${esc(row.turnKey)}</small></div>`).join('')||'<p>No saved activities for this unit/turn.</p>'}
+        <small>Turn ${esc(row.turnKey)}</small><div class="activities-bill-buttons">
+          ${row.activityCode==='HUNTING'?`<button data-edit-activity="${row.id}">Edit</button>`:''}
+          <button data-remove-activity="${row.id}">Remove</button></div></div>`).join('')||'<p>No saved activities for this unit/turn.</p>'}
       <button class="button" id="huntViewOrders">Open Tribe Activities overview</button>
     </aside>
   </div>`;
@@ -260,8 +262,11 @@ async function save(){
   if(ui.mode==='once'&&workers>(availableWorkers(unit)||0))throw Error('Too many workers assigned.');
   if(ui.mode==='once'){
     if(!workers)throw Error('Select at least one hunter.');
-    await window.tribenet.addPlannedActivity(sourceTurn(),{unit:ui.unit,activityCode:'HUNTING',people:workers,
-      target:'NONE',distinction:'NONE',implements:preview().tools});
+    const order={unit:ui.unit,activityCode:'HUNTING',people:workers,
+      target:'NONE',distinction:'NONE',implements:preview().tools};
+    if(ui.editingActivity!==null)await window.tribenet.updatePlannedActivity(ui.editingActivity,order);
+    else await window.tribenet.addPlannedActivity(sourceTurn(),order);
+    ui.editingActivity=null;
   }else{
     const goods=ownerCode(unit)!==unitCode(unit);
     const loadOn=$('huntLimitToggle')?.checked&&!goods;
@@ -313,14 +318,21 @@ async function handleClick(event){
   try{
     if(b.dataset.go){ui.page=b.dataset.go;render();return;}
     if(b.dataset.skill){ui.skill=b.dataset.skill;if(ui.skill!=='Hunting'){ui.status=ui.skill+' will be implemented as its own skill specification.';render();return;}ui.page='recipes';render();return;}
-    if(b.dataset.recipe){ui.page='allocate';ui.editing=null;ui.mode='running';ui.selectedTools=[];render();return;}
+    if(b.dataset.recipe){ui.page='allocate';ui.editing=null;ui.editingActivity=null;ui.mode='running';ui.selectedTools=[];render();return;}
     if(b.id==='huntAutoTools'){
       ui.selectedTools=engine.optimizeTools(ui.workers,sourceStock()).implements;ui.status='Best eligible tools suggested for the selected workforce.';render();return;
     }
     if(b.id==='huntSave'){await save();return;}
     if(b.id==='huntApply'){ui.otherStatuses=await applyBills();ui.status='Generated Hunting allocations refreshed in the saved Mapper draft.';await refreshAll();return;}
+    if(b.dataset.editActivity){const row=ui.activities.find(x=>x.id===Number(b.dataset.editActivity));
+      if(!row||row.activityCode!=='HUNTING')return;
+      ui.editing=null;ui.editingActivity=row.id;ui.unit=row.unit;ui.page='allocate';ui.mode='once';
+      ui.workers=whole(row.people);ui.selectedTools=Array.isArray(row.implements)?row.implements:[];render();return;}
+    if(b.dataset.removeActivity){
+      if(!window.confirm('Remove this saved activity for the turn? Running Bills may regenerate their own drafts when applied again.'))return;
+      await window.tribenet.deletePlannedActivity(Number(b.dataset.removeActivity));ui.status='Saved activity removed.';await refreshAll();return;}
     if(b.id==='huntViewOrders'){const button=document.querySelector('#orderSheetMenu [data-order-sheet="activities"]');$('activitiesDialog').close();button?.click();return;}
-    if(b.dataset.edit){const bill=ui.bills.find(x=>x.id===Number(b.dataset.edit));ui.unit=bill.unit;ui.editing=bill.id;ui.mode='running';ui.page='allocate';ui.selectedTools=[];ui.workers=Math.min(10,availableWorkers(currentUnit())||0);render();return;}
+    if(b.dataset.edit){const bill=ui.bills.find(x=>x.id===Number(b.dataset.edit));ui.unit=bill.unit;ui.editing=bill.id;ui.editingActivity=null;ui.mode='running';ui.page='allocate';ui.selectedTools=[];ui.workers=Math.min(10,availableWorkers(currentUnit())||0);render();return;}
     if(b.dataset.up||b.dataset.down){
       ui.bills=await window.tribenet.moveActivityBill(Number(b.dataset.up||b.dataset.down),b.dataset.up?-1:1);
       ui.otherStatuses=await applyBills();render();return;
