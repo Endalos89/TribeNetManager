@@ -103,7 +103,7 @@ function contextFor(unit){
     terrain:hexAt(hex)?.terrain||null,waterBorders:waterBorders(hex),month:match?Number(match[1]):null,
     workersAvailable:availableWorkers(unit),eaters:eaters(unit),stock,
     provs:knownStock?provs:null,currentWeight,capacity,provsWeight:10,
-    otherMaxWeight:currentWeight!==null&&knownStock?Math.max(0,currentWeight-provs):null};
+    otherMaxWeight:currentWeight!==null&&knownStock?Math.max(0,currentWeight-provs*10):null};
 }
 const contextList = () => allUnits().map(contextFor);
 function skillList(){
@@ -638,8 +638,10 @@ async function refreshWeight(code){
       window.tribenet.listPlannedTransfers(sourceTurn())
     ]);
     let minimum=ctx.currentWeight,maximum=ctx.currentWeight,unknown=minimum===null;
+    let minProvisions=ctx.provs,maxProvisions=ctx.provs;
+    if(ctx.provs===null)unknown=true;
     const wt=name=>{
-      if(/^(provs|provisions)$/i.test(String(name)))return 1;
+      if(/^(provs|provisions)$/i.test(String(name)))return 10;
       const item=(window.TribeNetOrdersReferenceRaw?.goods||[]).find(x=>String(x.name||x.rawName).toLowerCase()===String(name).toLowerCase());
       return num(item?.weight??item?.weightLb);
     };
@@ -655,7 +657,10 @@ async function refreshWeight(code){
         const range=workContext.skill===null?null:engine.forecast({workers:activity.people,
           effectiveAM:am,skill:workContext.skill,terrain:workContext.terrain,month:workContext.month,
           waterBorders:workContext.waterBorders});
-        if(range){minimum+=range.min;maximum+=range.max;}else unknown=true;
+        if(range){minimum+=range.min*10;maximum+=range.max*10;
+          if(minProvisions!==null)minProvisions+=range.min;
+          if(maxProvisions!==null)maxProvisions+=range.max;
+        }else unknown=true;
       }else if(whole(activity.people)>0)unknown=true;
     }
     const retention=transfers.find(t=>t.timing==='BM'&&String(t.from).toLowerCase()===ctx.code.toLowerCase()
@@ -665,13 +670,20 @@ async function refreshWeight(code){
         String(tr.to).toLowerCase()===ctx.code.toLowerCase()?whole(tr.quantity):0;
       if(!delta)continue;
       const w=wt(tr.item);
-      if(w===null)unknown=true;else{minimum+=delta*w;maximum+=delta*w;}
+      if(w===null)unknown=true;else{minimum+=delta*w;maximum+=delta*w;
+        if(/^(provs|provisions)$/i.test(tr.item)){
+          if(minProvisions!==null)minProvisions+=delta;
+          if(maxProvisions!==null)maxProvisions+=delta;
+        }
+      }
     }
     if(retention){
-      const currentProvs=ctx.provs??0;
       const cap=whole(retention.quantity);
-      minimum-=Math.max(0,currentProvs+Math.max(0,minimum-ctx.currentWeight)-cap);
-      maximum-=Math.max(0,currentProvs+Math.max(0,maximum-ctx.currentWeight)-cap);
+      if(minProvisions===null||maxProvisions===null)unknown=true;
+      else{
+        minimum-=Math.max(0,minProvisions-cap)*10;
+        maximum-=Math.max(0,maxProvisions-cap)*10;
+      }
     }
     const pct=v=>ctx.capacity>0?`${(100*v/ctx.capacity).toFixed(1)}%`:'unknown';
     host.innerHTML=`<strong>Current weight:</strong> ${display(ctx.currentWeight)} lb / ${display(ctx.capacity)} lb<br>
