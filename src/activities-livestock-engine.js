@@ -91,6 +91,9 @@
     const parts=COMBINATIONS[activityKey(activity)]||[];
     return parts.includes('SKINNING')?'SKINS':parts.includes('GUTTING')?'GUT':parts.includes('BONING')?'BONES':null;
   }
+  function livestockYield(item,activity,animal){
+    return Number(produce(activity,animal,1)?.outputs[String(item).toUpperCase()]||0);
+  }
   function allocateProcessing({activity,animal,workerLimit,knivesAvailable=0,animalsAvailable=0,need=Infinity,goalItem=null}) {
     const per=baseRate(activity,animal),desired=String(goalItem||primaryOutput(activity)||'').toUpperCase();
     if (!per) return {workers:0,knives:0,animals:0,outputs:{},reason:'Unsupported animal/activity combination'};
@@ -98,7 +101,11 @@
     let spent=0,workers=0,usedKnives=0,result=produce(activity,animal,0);
     for (let i=0;i<allowed && spent<available;i++) {
       if (Number.isFinite(need) && (result.outputs[desired]||0)>=need) break;
-      const useKnife=i<knives,qty=Math.min(available-spent,per*(useKnife?2:1));
+      const useKnife=i<knives;
+      const outputPerAnimal=livestockYield(desired,activity,animal);
+      const remainingForGoal=Number.isFinite(need)&&outputPerAnimal>0
+        ?Math.max(0,Math.ceil((need-(result.outputs[desired]||0))/outputPerAnimal)):Infinity;
+      const qty=Math.min(available-spent,per*(useKnife?2:1),remainingForGoal);
       if (!qty) break;
       spent+=qty;workers++;if(useKnife)usedKnives++;
       result=produce(activity,animal,spent);
