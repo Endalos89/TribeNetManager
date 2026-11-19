@@ -59,12 +59,14 @@ try{
   assert.equal(bill.activityCode,'SKIN_GUT_BONE');
   assert.equal(bill.skill,'GUTTING');
   const planned=store.apply('906-08',units);
+  assert.equal(db.listActivities('906-08').filter(x=>x.activityCode==='HERDING').length,0,
+    'A herd that is fully slaughtered by a Running Bill requires no Herding workers');
   const row=db.listActivities('906-08').find(x=>x.generatedBillId===bill.id);
   assert.ok(row,'Processing Bill must generate a saved activity');
   assert.equal(row.activityCode,'SKIN_GUT_BONE');
   assert.equal(row.target,'GOAT');
   assert.equal(row.distinction,'NONE');
-  assert.ok(row.people<=10,'Herding reserves two of the twelve available workers');
+  assert.ok(row.people<=12,'Processing workers stay within the available workforce');
   assert.ok(row.implements.every(x=>x.name==='KNIFE'));
   assert.ok(planned.find(x=>x.id===bill.id).outputs.PROVS>0,'Combined processing also produces Provisions');
   const assembled=assembleActivityAssignments({activities:db.listActivities('906-08')});
@@ -84,6 +86,11 @@ try{
   store.apply('906-08',units);
   assert.ok(db.listActivities('906-08').find(x=>x.generatedBillId===bill.id)?.people<=2,
     'Maintain Stock should use the minimum staff required after stock and higher-priority output');
+  assert.equal(db.listActivities('906-08').find(x=>x.activityCode==='HERDING')?.people,1,
+    'After the small processing Bill, the remaining live Goats still need one herder');
+  assert.equal(livestock.allocateProcessing({activity:'GUTTING',animal:'GOAT',workerLimit:6,
+    knivesAvailable:2,animalsAvailable:40,need:50,goalItem:'GUT'}).animals,25,
+    'Maintain Stock must slaughter only the animals needed to produce the target output');
 
   const manual=db.addActivity('906-08',{unit:'0485e1',activityCode:'SKIN_GUT',people:1,
     target:'GOAT',distinction:'NONE',implements:[{name:'KNIFE',quantity:1}]});
