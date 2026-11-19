@@ -561,10 +561,10 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 
 - Herding is available at level zero; increasing the Herding skill changes growth rather than the number of people required.
 - Staff at 1 person per 20 Goats, per 10 Cattle/Horses/Dogs, or per 5 Elephants, rounded up separately by species and summed. Extra assigned workers do not increase breeding.
-- Herding workers are reserved **before** allocating processing and Hunting Running Orders. Duplicate manual Herding activity rows for a unit suppress an automatic duplicate.
+- Automatically assigned Herding covers the surviving animals **after all manual and Running Order processing allocations** have reserved their slaughtered animals. A combined processing order deducts each animal only once. Herding consumes workers remaining after previously allocated activities; if too few remain, the allocation is flagged for review instead of inventing workers. Duplicate manual Herding rows suppress an automatic duplicate.
 - Herds aboard fleets at sea are exempt. Known slaughter-processing orders reduce the herd before an automatic order is calculated.
 - If inventory or worker counts are insufficiently verified, or worker availability is inadequate, report a needs-review status rather than silently inventing workers, animals or livestock growth.
-- Herding activity output is an order, not an invented numeric breeding forecast; growth is resolved by the GM after the turn.
+- Herding activity output is an order, not an invented numeric breeding forecast; growth is resolved by the GM after the turn. The Herding menu preview must use the same post-slaughter survivor count as the saved order.
 
 ### 4A.3 Gutting
 
@@ -590,7 +590,7 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 
 ### 4A.6 Combined processing and turnover safety
 
-Combined orders are **one worksheet activity row per selected combination**, not one row per component. The planner chooses a species and uses the slowest component throughput for the combination; its worker count counts against **every applicable component's** shared skill cap. The animal stock is reserved once and all component outputs are forecast. No production from turn N can be consumed as a turn-N input. Goods Tribe inventory is the processing resource source; manpower remains with the acting unit. Knife quantities are reserved from the applicable Goods Tribe inventory.
+Combined orders are **one worksheet activity row per selected combination**, not one row per component. The planner chooses a species and uses the slowest component throughput for the combination; its worker count counts against **every applicable component's** shared skill cap. Maintain Stock never slaughters more animals than required for the actual remaining target, even if the final worker could process additional animals. The animal stock is reserved once and all component outputs are forecast. No production from turn N can be consumed as a turn-N input. Goods Tribe inventory is the processing resource source; manpower remains with the acting unit. Knife quantities are reserved from the applicable Goods Tribe inventory.
 
 The new processing bills participate in the same priority queue as Hunting. Persistent goals support Maximise and Maintain Stock, with deterministic generated draft replacement and pause/skip/edit. The workbook export retains canonical combined activity labels, selected animal as ITEM, and NONE as DISTINCTION, without changing the blank workbook template or clearing saved Mapper orders.
 
