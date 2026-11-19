@@ -65,7 +65,7 @@ const document={
 const api={
   listActivityBills:async()=>[],
   listPlannedActivities:async key=>key==='906-05'
-    ?[{id:23,unit:'0485',activityCode:'HUNTING',people:8,target:'NONE',turnKey:key}]:[],
+    ?[{id:23,unit:'0485',activityCode:'HUNTING',people:8,target:'NONE',generatedBillId:null,turnKey:key}]:[],
   listPlannedTransfers:async()=>[]
 };
 const window={tribenet:api,TribeNetHuntingEngine:engine,TribeNetLivestockEngine:livestock,
@@ -82,7 +82,7 @@ const sandbox={
 };
 const instrumented=screen.replace(
   'window.TribeNetActivities={open,openOverview,applyCurrentTurn:applyBills,refreshWeight,contextFor};',
-  'window.__ActivitiesTest={ui,goalAllocation,autofillHunters,handleInput,handleChange,handleClick};window.TribeNetActivities={open,openOverview,applyCurrentTurn:applyBills,refreshWeight,contextFor};'
+  'window.__ActivitiesTest={ui,goalAllocation,autofillHunters,handleInput,handleChange,handleClick,processingFreeWorkers};window.TribeNetActivities={open,openOverview,applyCurrentTurn:applyBills,refreshWeight,contextFor};'
 );
 assert.notEqual(instrumented,screen,'The test must attach to the actual Hunting editor internals.');
 vm.runInNewContext(instrumented,vm.createContext(sandbox),{filename:'activities-screen.js'});
@@ -147,6 +147,7 @@ vm.runInNewContext(instrumented,vm.createContext(sandbox),{filename:'activities-
   assert.equal(internals.ui.workersBySkill.SKINNING,2);
   assert.equal(internals.ui.workersBySkill.GUTTING,1);
   assert.equal(internals.ui.workersBySkill.BONING,1);
+  assert.equal(internals.processingFreeWorkers(units[0]),22,'Manual planned workers with null Bill link must remain reserved.');
   internals.ui.page='skills';
 
   assert.match(element('activitiesSubtitle').textContent,/Unit 0485/,
