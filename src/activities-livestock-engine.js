@@ -112,5 +112,89 @@
     }
     return {...result,workers,knives:usedKnives,capacity:per*(workers+usedKnives)};
   }
-  return {ANIMALS,COMBINATIONS,EXPORT_CODES,animalKey,activityKey,stockCount,baseRate,produce,process,staffForHerd,capForLevel,primaryOutput,allocateProcessing};
+  // A combined order has separate staff per contributing skill. Using the
+  // same worker count for every skill would overstate (or understate) output.
+  function processStages({activity,animal,workersBySkill={},knivesBySkill={},animalsAvailable=Infinity}){
+    const code=activityKey(activity),type=animalKey(animal),parts=COMBINATIONS[code]||[];
+    if(!type||!parts.length||!baseRate(code,type))return null;
+    const staffing={},tools={};
+    for(const skill of parts){
+      staffing[skill]=whole(workersBySkill[skill]);
+      tools[skill]=Math.min(staffing[skill],whole(knivesBySkill[skill]));
+    }
+    const capacity=Math.min(...parts.map(skill=>
+      ANIMALS[type].rate[skill]*(staffing[skill]+tools[skill])));
+    const animals=Math.min(capacity,Math.max(0,Number(animalsAvailable)||0));
+    return {...produce(code,type,animals),capacity,workers:Object.values(staffing).reduce((a,b)=>a+b,0),
+      knives:Object.values(tools).reduce((a,b)=>a+b,0),workersBySkill:staffing,knivesBySkill:tools};
+  }
+  function stagePlanForTarget(activity,animal,target,skillCaps={},knivesAvailable=0){
+    const code=activityKey(activity),type=animalKey(animal),parts=COMBINATIONS[code]||[];
+    if(!type||!parts.length||!baseRate(code,type))return null;
+    const workersBySkill={},knivesBySkill={},candidates=[];
+    let mandatoryKnives=0,workers=0;
+    for(const skill of parts){
+      const r=ANIMALS[type].rate[skill];
+      const base=Math.ceil(target/r),minWorkers=Math.ceil(target/(2*r));
+      const cap=Number(skillCaps[skill]);
+      const allowed=Number.isFinite(cap)?Math.max(0,Math.floor(cap)):0;
+      if(allowed<minWorkers)return null;
+      const neededKnives=Math.max(0,base-allowed);
+      if(neededKnives>base-minWorkers)return null;
+      workersBySkill[skill]=base-neededKnives;
+      knivesBySkill[skill]=neededKnives;
+      mandatoryKnives+=neededKnives;workers+=base-neededKnives;
+      candidates.push({skill,headroom:base-minWorkers-neededKnives});
+    }
+    let remaining=whole(knivesAvailable)-mandatoryKnives;
+    if(remaining<0)return null;
+    // All marginal Knives save exactly one worker. Prefer Skinning first:
+    // it is usually the throughput bottleneck for combined processing.
+    for(const {skill,headroom} of candidates){
+      const used=Math.min(remaining,headroom);
+      knivesBySkill[skill]+=used;workersBySkill[skill]-=used;workers-=used;
+      remaining-=used;
+    }
+    return {workers,knives:whole(knivesAvailable)-remaining,workersBySkill,knivesBySkill};
+  }
+  function allocateStages({activity,animal,workersAvailable=0,skillCaps={},knivesAvailable=0,
+    animalsAvailable=0,need=Infinity,goalItem=null}){
+    const type=animalKey(animal),code=activityKey(activity);
+    if(!type||!code||!baseRate(code,type))return null;
+    const stock=whole(animalsAvailable),available=whole(workersAvailable);
+    const yieldPer=livestockYield(goalItem||primaryOutput(code),code,type);
+    const limit=Number.isFinite(need)&&yieldPer>0?
+      Math.min(stock,Math.max(0,Math.ceil(need/yieldPer))):stock;
+    let low=0,high=limit,best=stagePlanForTarget(code,type,0,skillCaps,knivesAvailable);
+    while(low<high){
+      const mid=Math.floor((low+high+1)/2);
+      const candidate=stagePlanForTarget(code,type,mid,skillCaps,knivesAvailable);
+      if(candidate&&candidate.workers<=available){low=mid;best=candidate;}
+      else high=mid-1;
+    }
+    const selected=stagePlanForTarget(code,type,low,skillCaps,knivesAvailable)||best;
+    const result=processStages({activity:code,animal:type,
+      workersBySkill:selected.workersBySkill,knivesBySkill:selected.knivesBySkill,animalsAvailable:low});
+    return {...result,goalMet:!Number.isFinite(need)||(result?.outputs?.[String(goalItem||primaryOutput(code)).toUpperCase()]||0)>=need,
+      reason:low===0?(stock===0?'No animals available':'No eligible processing workers'):'Planned'};
+  }
+  const PROCESS_NOTE_PREFIX='Processing stages: ';
+  function processingNote(result){
+    const parts=Object.entries(result?.workersBySkill||{}).map(([skill,n])=>
+      skill+'='+whole(n)+(whole(result?.knivesBySkill?.[skill])?' (KNIFE '+whole(result.knivesBySkill[skill])+')':''));
+    return PROCESS_NOTE_PREFIX+parts.join(', ')+'; animals='+whole(result?.animals);
+  }
+  function parseProcessingNote(notes){
+    const str=String(notes||''),match=str.match(/Processing stages:\s*([^;]+);\s*animals=(\d+)/i);
+    if(!match)return null;
+    const workersBySkill={},knivesBySkill={};
+    for(const part of match[1].split(',')){
+      const parsed=part.trim().match(/^(SKINNING|GUTTING|BONING)=(\d+)(?:\s*\(KNIFE (\d+)\))?$/i);
+      if(!parsed)return null;
+      workersBySkill[parsed[1].toUpperCase()]=whole(parsed[2]);
+      knivesBySkill[parsed[1].toUpperCase()]=whole(parsed[3]);
+    }
+    return {workersBySkill,knivesBySkill,animals:whole(match[2])};
+  }
+  return {ANIMALS,COMBINATIONS,EXPORT_CODES,animalKey,activityKey,stockCount,baseRate,produce,process,processStages,allocateStages,stagePlanForTarget,processingNote,parseProcessingNote,staffForHerd,capForLevel,primaryOutput,allocateProcessing};
 });
