@@ -255,40 +255,6 @@ class ActivityBillStore {
     };
     this.db.exec('BEGIN IMMEDIATE');
     try{
-      // Rebuild herding from this turn's confirmed live-animal inventory.
-      // A unit gets one HERDING row covering all its eligible species, never one per animal.
-      for(const old of previousHerds){
-        this.db.prepare('DELETE FROM planned_activities WHERE id=?').run(old.activity_id);
-      }
-      this.db.prepare('DELETE FROM auto_herding_orders WHERE turn_key=?').run(key);
-      for(const unit of units){
-        const unitCode=code(unit.code||unit.unit||unit.unitCode);
-        if(!unitCode)continue;
-        const herd=livestock.staffForHerd(unit.stock||{},spentPool(unitCode),{atSea:Boolean(unit.atSea)});
-        if(!herd.workers)continue;
-        if(manual.some(row=>code(row.unit)===unitCode&&canon(row.activityCode)==='HERDING')){
-          summaries.push({unit:unitCode,skill:'HERDING',status:'Manual Herding order retained; automatic duplicate suppressed'});
-          continue;
-        }
-        if(!validNumber(unit.workersAvailable)){
-          summaries.push({unit:unitCode,skill:'HERDING',status:'Needs review: herding workforce not verified'});
-          continue;
-        }
-        const spare=availableWorkers.get(unitCode)||0;
-        if(herd.workers>spare){
-          summaries.push({unit:unitCode,skill:'HERDING',status:'Needs review: '+herd.workers+' herders required; only '+spare+' workers remain'});
-          continue;
-        }
-        const now=new Date().toISOString();
-        const inserted=this.db.prepare(`INSERT INTO planned_activities
-          (turn_key,unit,activity_code,people,target,distinction,mining_direction,notes,created_at,updated_at,implements_json)
-          VALUES (?,?,'HERDING',?,'NONE','NONE','','',?,?,'[]')`)
-          .run(key,unitCode,herd.workers,now,now);
-        this.db.prepare('INSERT INTO auto_herding_orders(turn_key,unit,activity_id) VALUES (?,?,?)')
-          .run(key,unitCode,Number(inserted.lastInsertRowid));
-        availableWorkers.set(unitCode,spare-herd.workers);
-        summaries.push({unit:unitCode,skill:'HERDING',workers:herd.workers,status:'Automatically herding '+Object.entries(herd.animals).map(([name,n])=>n+' '+name).join(', ')});
-      }
       for(const bill of bills){
         const context=unitMap.get(code(bill.unit));
         const link=this.linkFor(bill.id,key);
@@ -446,6 +412,41 @@ class ActivityBillStore {
           min:result.range.min,max:result.range.max,tools:result.tools,goal:bill.mode==='months'?goal:null,
           status:warning||(!result.achievable?'Target not fully feasible':'Planned'),
           transferId,activityId});
+      }
+      // Rebuild Herding after manual AND recurring processing have reserved
+      // slaughtered animals; each combined order consumes its animals once.
+      // A unit gets at most one HERDING row for its surviving herd.
+      for(const old of previousHerds){
+        this.db.prepare('DELETE FROM planned_activities WHERE id=?').run(old.activity_id);
+      }
+      this.db.prepare('DELETE FROM auto_herding_orders WHERE turn_key=?').run(key);
+      for(const unit of units){
+        const unitCode=code(unit.code||unit.unit||unit.unitCode);
+        if(!unitCode)continue;
+        const herd=livestock.staffForHerd(unit.stock||{},spentPool(unitCode),{atSea:Boolean(unit.atSea)});
+        if(!herd.workers)continue;
+        if(manual.some(row=>code(row.unit)===unitCode&&canon(row.activityCode)==='HERDING')){
+          summaries.push({unit:unitCode,skill:'HERDING',status:'Manual Herding order retained; automatic duplicate suppressed'});
+          continue;
+        }
+        if(!validNumber(unit.workersAvailable)){
+          summaries.push({unit:unitCode,skill:'HERDING',status:'Needs review: herding workforce not verified'});
+          continue;
+        }
+        const spare=availableWorkers.get(unitCode)||0;
+        if(herd.workers>spare){
+          summaries.push({unit:unitCode,skill:'HERDING',status:'Needs review: '+herd.workers+' herders required; only '+spare+' workers remain'});
+          continue;
+        }
+        const now=new Date().toISOString();
+        const inserted=this.db.prepare(`INSERT INTO planned_activities
+          (turn_key,unit,activity_code,people,target,distinction,mining_direction,notes,created_at,updated_at,implements_json)
+          VALUES (?,?,'HERDING',?,'NONE','NONE','','',?,?,'[]')`)
+          .run(key,unitCode,herd.workers,now,now);
+        this.db.prepare('INSERT INTO auto_herding_orders(turn_key,unit,activity_id) VALUES (?,?,?)')
+          .run(key,unitCode,Number(inserted.lastInsertRowid));
+        availableWorkers.set(unitCode,spare-herd.workers);
+        summaries.push({unit:unitCode,skill:'HERDING',workers:herd.workers,status:'Automatically herding '+Object.entries(herd.animals).map(([name,n])=>n+' '+name).join(', ')});
       }
       this.db.exec('COMMIT');
     }catch(error){this.db.exec('ROLLBACK');throw error;}
