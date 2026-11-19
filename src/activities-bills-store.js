@@ -53,7 +53,7 @@ class ActivityBillStore {
   }
   save(value) {
     const unit=code(value?.unit),id=value?.id==null?null:Number(value.id);
-    if(!/^\\d{4}(?:[efgc]\\d+)?$/.test(unit))throw Error('Select a valid unit for this Running Order.');
+    if(!/^\d{4}(?:[efgc]\d+)?$/.test(unit))throw Error('Select a valid unit for this Running Order.');
     const previous=id!==null?this.list().find(row=>row.id===id):null;
     if(id!==null&&!previous)throw Error('Running Order not found.');
     const skill=String(value?.skill||previous?.skill||'HUNTING').toUpperCase();
@@ -161,7 +161,10 @@ class ActivityBillStore {
     const bills=this.list(),active=bills.filter(x=>!x.paused);
     const missing=active.filter(x=>!unitMap.has(code(x.unit)));
     if(missing.length)throw Error('Missing confirmed context for '+missing.map(x=>x.unit).join(', ')+'. No orders were changed.');
-    const manual=this.owner.listActivities(key);
+    // Prior automatic herding drafts are regenerated, never counted as manual commitments.
+    const previousHerds=this.db.prepare('SELECT * FROM auto_herding_orders WHERE turn_key=?').all(key);
+    const automaticIds=new Set(previousHerds.map(row=>row.activity_id));
+    const manual=this.owner.listActivities(key).filter(row=>!automaticIds.has(row.id));
     const transfers=this.owner.listTransfers(key);
     const availableWorkers=new Map();
     for(const unit of units){
@@ -175,6 +178,27 @@ class ActivityBillStore {
       availableWorkers.set(unitCode,Math.max(0,whole(unit.workersAvailable)-committed-locked-whole(unit.externalReservedWorkers)));
     }
     const pools=new Map(),claims=new Map(),projectedOutputs=new Map(),summaries=[],dogClaims=new Map();
+    const processingOutputs=new Map(),animalsSpent=new Map(),skillWorkers=new Map();
+    const outputPool=pool=>{if(!processingOutputs.has(pool))processingOutputs.set(pool,{});return processingOutputs.get(pool);};
+    const spentPool=pool=>{if(!animalsSpent.has(pool))animalsSpent.set(pool,{});return animalsSpent.get(pool);};
+    const rootOf=unit=>code(unit).slice(0,4);
+    const claimSkills=(unit,activity,workers)=>{
+      const bits=livestock.COMBINATIONS[livestock.activityKey(activity)]||[];
+      for(const skill of bits){const k=rootOf(unit)+'/'+skill;skillWorkers.set(k,(skillWorkers.get(k)||0)+whole(workers));}
+    };
+    const limitFor=(unit,activity)=>{
+      const bits=livestock.COMBINATIONS[livestock.activityKey(activity)]||[];
+      return bits.reduce((min,skill)=>{
+        const level=unit.skillLevels?.[skill];
+        const cap=livestock.capForLevel(level);
+        const used=skillWorkers.get(rootOf(unit.code)+'/'+skill)||0;
+        return Math.min(min,Math.max(0,cap-used));
+      },Infinity);
+    };
+    const countOutput=(pool,outputs)=>{
+      const totals=outputPool(pool);
+      for(const [item,n] of Object.entries(outputs||{}))totals[item]=(totals[item]||0)+n;
+    };
     const sourceFor=unit=>code(unit.goodsTribe||unit.code||unit.unit||unit.unitCode);
     for(const unit of units){
       const pool=sourceFor(unit);
@@ -202,6 +226,19 @@ class ActivityBillStore {
         dogClaims.set(row.id,dogs);
       }
       claims.set(pool,already);
+      const activity=livestock.activityKey(row.activityCode);
+      if(activity){
+        const animal=livestock.animalKey(row.target);
+        if(animal&&livestock.baseRate(activity,animal)){
+          const knives=(row.implements||[]).filter(t=>canon(t.name)==='KNIFE').reduce((sum,t)=>sum+whole(t.quantity),0);
+          const prior=spentPool(pool),available=Math.max(0,livestock.stockCount(unitMap.get(pool)?.stock||{},animal)-whole(prior[animal]));
+          const result=livestock.process({activity,animal,workers:row.people,knives,animalsAvailable:available});
+          prior[animal]=(prior[animal]||0)+result.animals;
+          countOutput(pool,result.outputs);
+          claimSkills(performer,activity,row.people);
+          if(result.outputs.PROVS)projectedOutputs.set(pool,(projectedOutputs.get(pool)||0)+result.outputs.PROVS);
+        }
+      }
     }
 
     // Use existing saved BM Transfers for any movement-time provisions changes.
@@ -218,6 +255,40 @@ class ActivityBillStore {
     };
     this.db.exec('BEGIN IMMEDIATE');
     try{
+      // Rebuild herding from this turn's confirmed live-animal inventory.
+      // A unit gets one HERDING row covering all its eligible species, never one per animal.
+      for(const old of previousHerds){
+        this.db.prepare('DELETE FROM planned_activities WHERE id=?').run(old.activity_id);
+      }
+      this.db.prepare('DELETE FROM auto_herding_orders WHERE turn_key=?').run(key);
+      for(const unit of units){
+        const unitCode=code(unit.code||unit.unit||unit.unitCode);
+        if(!unitCode)continue;
+        const herd=livestock.staffForHerd(unit.stock||{},spentPool(unitCode),{atSea:Boolean(unit.atSea)});
+        if(!herd.workers)continue;
+        if(manual.some(row=>code(row.unit)===unitCode&&canon(row.activityCode)==='HERDING')){
+          summaries.push({unit:unitCode,skill:'HERDING',status:'Manual Herding order retained; automatic duplicate suppressed'});
+          continue;
+        }
+        if(!validNumber(unit.workersAvailable)){
+          summaries.push({unit:unitCode,skill:'HERDING',status:'Needs review: herding workforce not verified'});
+          continue;
+        }
+        const spare=availableWorkers.get(unitCode)||0;
+        if(herd.workers>spare){
+          summaries.push({unit:unitCode,skill:'HERDING',status:'Needs review: '+herd.workers+' herders required; only '+spare+' workers remain'});
+          continue;
+        }
+        const now=new Date().toISOString();
+        const inserted=this.db.prepare(`INSERT INTO planned_activities
+          (turn_key,unit,activity_code,people,target,distinction,mining_direction,notes,created_at,updated_at,implements_json)
+          VALUES (?,?,'HERDING',?,'NONE','NONE','','',?,?,'[]')`)
+          .run(key,unitCode,herd.workers,now,now);
+        this.db.prepare('INSERT INTO auto_herding_orders(turn_key,unit,activity_id) VALUES (?,?,?)')
+          .run(key,unitCode,Number(inserted.lastInsertRowid));
+        availableWorkers.set(unitCode,spare-herd.workers);
+        summaries.push({unit:unitCode,skill:'HERDING',workers:herd.workers,status:'Automatically herding '+Object.entries(herd.animals).map(([name,n])=>n+' '+name).join(', ')});
+      }
       for(const bill of bills){
         const context=unitMap.get(code(bill.unit));
         const link=this.linkFor(bill.id,key);
@@ -231,6 +302,58 @@ class ActivityBillStore {
           continue;
         }
         const retained=link?.activity_id?this.db.prepare('SELECT * FROM planned_activities WHERE id=?').get(link.activity_id):null;
+        if(bill.skill!=='HUNTING'){
+          const activity=livestock.activityKey(bill.activityCode||bill.skill);
+          const animal=livestock.animalKey(bill.animal);
+          const poolKey=sourceFor(context),poolUnit=unitMap.get(poolKey);
+          if(!activity||!animal||!livestock.COMBINATIONS[activity]?.includes(bill.skill)||!livestock.baseRate(activity,animal)){
+            summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: invalid processing activity/animal'});
+            continue;
+          }
+          if(retained?.generated_locked){
+            summaries.push({id:bill.id,unit:bill.unit,skill:bill.skill,status:'Locked: this-turn manual override',workers:whole(retained.people),activityId:link.activity_id});
+            continue;
+          }
+          if(!poolUnit||!poolUnit.stock){
+            summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: Goods Tribe animal stock not verified; existing draft preserved'});
+            continue;
+          }
+          const pool=spentPool(poolKey),available=Math.max(0,livestock.stockCount(poolUnit.stock,animal)-whole(pool[animal]));
+          const workerLimit=Math.min(availableWorkers.get(code(bill.unit))||0,limitFor(context,activity));
+          const knownKnives=livestock.stockCount(poolUnit.stock,'KNIFE');
+          const knivesAvailable=Math.max(0,knownKnives-whole((claims.get(poolKey)||{}).KNIFE));
+          const madeBefore=whole(outputPool(poolKey)[bill.goalItem]);
+          const needed=bill.mode==='maximise'?Infinity:
+            Math.max(0,whole(bill.quantity)-livestock.stockCount(poolUnit.stock,bill.goalItem)-madeBefore);
+          const result=livestock.allocateProcessing({activity,animal,workerLimit,knivesAvailable,
+            animalsAvailable:available,need:needed,goalItem:bill.goalItem});
+          this.clearGenerated(bill.id,key);
+          const now=new Date().toISOString();
+          let activityId=null;
+          if(result.workers>0){
+            const selected=result.knives?[{name:'KNIFE',quantity:result.knives}]:[];
+            const row=this.db.prepare(`INSERT INTO planned_activities
+              (turn_key,unit,activity_code,people,target,distinction,mining_direction,notes,created_at,updated_at,implements_json)
+              VALUES (?,?,?,?,?,'NONE','','',?,?,?)`)
+              .run(key,bill.unit,activity,result.workers,animal,now,now,JSON.stringify(selected));
+            activityId=Number(row.lastInsertRowid);
+            pool[animal]=(pool[animal]||0)+result.animals;
+            countOutput(poolKey,result.outputs);
+            claimSkills(context,activity,result.workers);
+            availableWorkers.set(code(bill.unit),(availableWorkers.get(code(bill.unit))||0)-result.workers);
+            if(result.knives){
+              const reserved=claims.get(poolKey)||{};
+              reserved.KNIFE=(reserved.KNIFE||0)+result.knives;claims.set(poolKey,reserved);
+            }
+            if(result.outputs.PROVS)projectedOutputs.set(poolKey,(projectedOutputs.get(poolKey)||0)+result.outputs.PROVS);
+          }
+          this.db.prepare('INSERT INTO generated_activity_links(bill_id,turn_key,activity_id,transfer_id) VALUES (?,?,?,NULL)')
+            .run(bill.id,key,activityId);
+          summaries.push({id:bill.id,unit:bill.unit,skill:bill.skill,workers:result.workers,
+            animals:result.animals,outputs:result.outputs,activityId,
+            status:!result.workers?(needed===0?'Stock target reached':available===0?'No animals available':'No available processing workers'):'Planned'});
+          continue;
+        }
         if(retained?.generated_locked){
           const reservedForBill=JSON.parse(retained.implements_json||'[]');
           const retainedWorkers=whole(retained.people);
