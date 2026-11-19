@@ -27,13 +27,14 @@ function normalizeManualActivity(row) {
   if (!unit || !input) throw new Error('Each activity needs a unit and an activity name.');
   const catalog = activityFromOrderLabel(input);
   const activity = catalog?.code === 'CUSTOM' ? input : (catalog?.orderAliases?.[0] || catalog?.code || input);
+  const hunting = activity === 'HUNTING';
   return {
     unit, activity, people: quantity(row.people ?? 0, unit + ' ' + input + ' workers'),
-    item: String(row.item || row.target || '').trim(),
-    distinction: String(row.distinction || '').trim(),
+    item: hunting ? 'PROVS' : String(row.item || row.target || '').trim(),
+    distinction: hunting ? 'NONE' : String(row.distinction || '').trim(),
     miningDirection: String(row.miningDirection || '').trim(),
     notes: String(row.notes || '').trim(),
-    implements: Array.isArray(row.implements) ? row.implements.map(t=>({name:String(t.name||t.item||'').trim(),quantity:Number(t.quantity||0)})).filter(t=>t.name&&Number.isInteger(t.quantity)&&t.quantity>0) : [],
+    implements: Array.isArray(row.implements) ? row.implements.map(t=>({name:String(t.name||t.item||'').trim(),quantity:Number(t.quantity||0)})).filter(t=>t.name&&Number.isInteger(t.quantity)&&t.quantity>0&&(!hunting||!/^hunting dog$/i.test(t.name))) : [],
     source: 'manual'
   };
 }
