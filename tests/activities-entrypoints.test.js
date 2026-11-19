@@ -82,7 +82,7 @@ const sandbox={
 };
 const instrumented=screen.replace(
   'window.TribeNetActivities={open,openOverview,applyCurrentTurn:applyBills,refreshWeight,contextFor};',
-  'window.__ActivitiesTest={ui,goalAllocation,autofillHunters,handleInput,handleChange};window.TribeNetActivities={open,openOverview,applyCurrentTurn:applyBills,refreshWeight,contextFor};'
+  'window.__ActivitiesTest={ui,goalAllocation,autofillHunters,handleInput,handleChange,handleClick};window.TribeNetActivities={open,openOverview,applyCurrentTurn:applyBills,refreshWeight,contextFor};'
 );
 assert.notEqual(instrumented,screen,'The test must attach to the actual Hunting editor internals.');
 vm.runInNewContext(instrumented,vm.createContext(sandbox),{filename:'activities-screen.js'});
@@ -132,6 +132,21 @@ vm.runInNewContext(instrumented,vm.createContext(sandbox),{filename:'activities-
   assert.equal(input,before,'Slider DOM node must survive input updates.');
   assert.equal(number.value,'7','Numeric input and slider must remain synchronized.');
   assert.equal(internals.ui.workers,7);
+  internals.ui.page='skills';
+  const click=dataset=>internals.handleClick({target:{closest:()=>({dataset,hasAttribute:()=>false})}});
+  await click({skill:'Processing'});
+  assert.equal((element('activitiesBody').innerHTML.match(/data-recipe="/g)||[]).length,7,
+    'The unified Skin/Gut/Bone menu must show all seven individual/combined processing choices.');
+  await click({recipe:'SKIN_GUT_BONE'});
+  assert.match(element('activitiesBody').innerHTML,/data-process-worker="SKINNING"/);
+  assert.match(element('activitiesBody').innerHTML,/data-process-worker="GUTTING"/);
+  assert.match(element('activitiesBody').innerHTML,/data-process-worker="BONING"/);
+  units[0].resources.Goods.Goat=6;
+  await click({});
+  await internals.handleClick({target:{closest:()=>({id:'processMaximise',dataset:{},hasAttribute:()=>false})}});
+  assert.equal(internals.ui.workersBySkill.SKINNING,2);
+  assert.equal(internals.ui.workersBySkill.GUTTING,1);
+  assert.equal(internals.ui.workersBySkill.BONING,1);
   internals.ui.page='skills';
 
   assert.match(element('activitiesSubtitle').textContent,/Unit 0485/,
