@@ -6,8 +6,9 @@
 const $ = id => document.getElementById(id);
 const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const engine = window.TribeNetHuntingEngine;
-if(!engine)return;
-const ui={page:'skills',unit:'',skill:'Hunting',mode:'once',bills:[],activities:[],
+const livestock = window.TribeNetLivestockEngine;
+if(!engine||!livestock)return;
+const ui={page:'skills',unit:'',skill:'Hunting',activityCode:'HUNTING',animal:'GOAT',knives:0,goalItem:'SKINS',goalQuantity:0,mode:'once',bills:[],activities:[],
   editing:null,editingActivity:null,workers:0,selectedTools:[],list:[],transfers:[],status:'',preview:null,otherStatuses:[],
   goal:'months',months:3,yieldMode:'average',loadEnabled:false,loadPercent:90,goalHint:'',toolsCustomized:false,showSavedAll:false,
   hideSkill:false,hideInputs:false,managerUnit:'all',managerState:'all'};
@@ -111,7 +112,7 @@ const contextList = () => allUnits().map(contextFor);
 function skillList(){
   // Only display implemented/testable skills. More will be added in their
   // respective per-skill rollout, not as inert icons.
-  return ['Hunting'];
+  return ['Hunting','Herding','Gutting','Skinning','Boning'];
 }
 function compendiumLink(entry,key,label){
   return `<button type="button" class="activities-compendium-link" data-compendium-entry="${esc(entry)}" data-compendium-key="${esc(key)}"
@@ -290,19 +291,41 @@ function renderSkills(){
   if(!currentUnit())return '<p class="activities-warning">Select a unit on the Mapper to open its Activities Turn Action. You can use Activities Overview without a selected unit.</p>';
   if(!sourceTurn())return '<p class="activities-warning">No planning turn selected. Import Results or select a planning turn before allocating activities.</p>';
   const unit=currentUnit();
-  return `<div class="activities-toolbar"><strong>1. Select skill</strong><span>Implemented skills only · Level badge = effective skill level</span></div>
+  return `<div class="activities-toolbar"><strong>1. Select skill</strong><span>Supported skills · Level badge = effective skill level</span></div>
     <div class="activities-filter-row"><label><input id="hideSkill" type="checkbox" ${ui.hideSkill?'checked':''}> Hide lacking skill</label><label><input id="hideInputs" type="checkbox" ${ui.hideInputs?'checked':''}> Hide lacking inputs</label></div>
-    <div class="activities-grid">${skillList().map(name=>{
+    <div class="activities-grid">${skillList().filter(name=>!ui.hideSkill||['Hunting','Herding'].includes(name)||Number(skillLevel(unit,name))>0).map(name=>{
       const level=skillLevel(unit,name);
       return `<div class="activities-skill-wrap">
         <button class="activities-tile" data-skill="${esc(name)}" title="Select ${esc(name)} · Level ${level}">
-          <img class="activities-skill-icon" src="skill-icons/hunting.svg" alt="" />
+          <img class="activities-skill-icon" src="skill-icons/${esc(name.toLowerCase())}.svg" alt="" />
           <span class="activities-name">${esc(name)}</span><span class="activities-level">${level}</span>
         </button>${compendiumLink('skill',name,name)}
       </div>`;
     }).join('')}</div>`;
 }
 function renderRecipes(){
+  if(ui.skill==='Herding'){
+    const unit=currentUnit(),herd=livestock.staffForHerd(dataStock(unit),{},{
+      atSea:/^\d{4}f\d+$/i.test(ui.unit)&&['O','L'].includes(String(contextFor(unit).terrain||'').toUpperCase())
+    });
+    return `<div class="activities-toolbar"><strong>2. Herding — automatically allocated</strong><button class="button" data-go="skills">Back to skills</button></div>
+      <p class="activities-note">Herding runs automatically for every eligible unit when a new turn is activated. It reserves the workers required to manage the animals before other Running Orders are calculated.</p>
+      <p class="activities-note">This unit: ${herd.workers} required herders · ${Object.entries(herd.animals).map(([animal,n])=>n+' '+animal).join(', ')||herd.reason||'No eligible animals'}.</p>
+      <button class="button accent" id="applyAutoHerding">Recalculate this turn</button>
+      <p class="activities-note">Only confirmed live-animal inventory is counted. Animals on ships at sea need no herders; unverified workers are flagged instead of invented.</p>`;
+  }
+  if(ui.skill!=='Hunting'){
+    const codes=Object.keys(livestock.COMBINATIONS).filter(code=>livestock.COMBINATIONS[code].includes(ui.skill.toUpperCase()));
+    return `<div class="activities-toolbar"><strong>2. ${esc(ui.skill)} — processing activities</strong>
+      <button class="button" data-go="skills">Back to skills</button></div>
+      <div class="activities-grid">${codes.map(code=>`<div class="activities-skill-wrap">
+        <button class="activities-tile activity-recipe" data-recipe="${code}">
+          <img class="activities-skill-icon" src="skill-icons/${esc(ui.skill.toLowerCase())}.svg" alt="" />
+          <span class="activities-name">${esc(livestock.EXPORT_CODES[code])}</span>
+        </button>${compendiumLink('skill',ui.skill,ui.skill)}
+      </div>`).join('')}</div>
+      <p class="activities-note">Each combined order processes an animal once and produces every applicable output. All component skill limits apply.</p>`;
+  }
   return `<div class="activities-toolbar"><strong>2. ${esc(ui.skill)} — available activities</strong>
     <button class="button" data-go="skills">Back to skills</button></div>
     <div class="activities-filter-row"><label><input id="hideSkill" type="checkbox" ${ui.hideSkill?'checked':''}> Hide lacking skill</label><label><input id="hideInputs" type="checkbox" ${ui.hideInputs?'checked':''}> Hide lacking inputs</label></div>
@@ -396,6 +419,7 @@ function preview(){
   return {workers,range,tools,context,huntingDogs};
 }
 function renderAllocate(){
+  if(ui.skill!=='Hunting')return renderProcessingAllocate();
   const unit=currentUnit(),ctx=contextFor(unit),max=availableWorkers(unit)||0;
   const running=ui.mode==='running';
   const p=preview();
