@@ -55,6 +55,7 @@ The schema adapter validates sheet names and headers against the actual blank wo
 - Save to `<installation directory>/Exported Files/Orders_<turn>.xlsx`, using the canonical turn key, for example `Orders_906-05.xlsx`.
 - Keep one current export per turn. Re-export replaces that turn's existing file; do not create numbered or timestamped alternatives.
 - Build from that turn's stored blank template and latest saved Mapper revision, never from the previous export.
+- **Strict per-turn order isolation:** Export resolves movement, scouting, unit splits and transfers from the selected planning turn only, including legacy textual aliases of *that same turn* (for example `906_07` and `906-07`). The preceding Results turn can provide the starting unit/terrain baseline but **never** orders. A unit with no current-turn route must export `Still`; with no current-turn scouting assignments it must have **no scouting row**. Re-export must not resurrect either type of previous-turn order.
 - Stage and validate the new file before replacing the current one. If validation fails or the target file is locked, keep the old file and report the error; do not save under another name.
 - Manual Excel edits do not flow back into the Mapper. A successful re-export replaces those edits with the latest saved plan.
 

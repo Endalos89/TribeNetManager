@@ -246,21 +246,15 @@ function ordersExportBaseline(turnKey) {
 }
 
 function ordersExportDraftKeys(turnKey) {
+  // A planning turn must never inherit route, scout, split or transfer orders
+  // saved for the preceding Results turn. That result is a *baseline* only.
+  // Preserve legacy spellings of this same planning turn (906_05, 906-5).
+  const canonical = canonicalTurnKey(turnKey);
+  if (!canonical) return [];
   const keys = [turnKey];
-  const recordedRouteKeys = routesDb().listTurnKeys();
-  // Older builds saved routes under different textual spellings of the same
-  // turn (906_05, 906-5) or under the preceding Results turn. Discover those
-  // actual persisted keys instead of silently exporting Still for every unit.
-  const includeTurnAndAliases = key => {
-    if (!key) return;
-    if (!keys.includes(key)) keys.push(key);
-    for (const recorded of recordedRouteKeys) {
-      if (canonicalTurnKey(recorded) === canonicalTurnKey(key) && !keys.includes(recorded)) keys.push(recorded);
-    }
-  };
-  includeTurnAndAliases(turnKey);
-  const baseline = resultForPlanTurn(turnKey);
-  if (baseline?.turnKey && String(baseline.turnKey) !== String(turnKey)) includeTurnAndAliases(baseline.turnKey);
+  for (const recorded of routesDb().listTurnKeys()) {
+    if (canonicalTurnKey(recorded) === canonical && !keys.includes(recorded)) keys.push(recorded);
+  }
   return keys;
 }
 
@@ -269,17 +263,7 @@ function ordersExportDraftRoutes(turnKey) {
 }
 
 function ordersExportDraftSplits(turnKey) {
-  const keys = ordersExportDraftKeys(turnKey);
-  return keys.map(key => {
-    const splits = turnManagerDatabase.listUnitSplits(key);
-    // An alternative spelling of the *current planning turn* is still current
-    // draft data. Only filter splits saved against the preceding Results turn:
-    // old legacy splits can otherwise resurrect when deliberately deleted.
-    if (canonicalTurnKey(key) === canonicalTurnKey(turnKey)) return splits;
-    const legacyRouteCodes = new Set(routesDb().list(key)
-      .map(route => String(route.unitCode || '').trim().toLowerCase()).filter(Boolean));
-    return splits.filter(split => legacyRouteCodes.has(String(split.unitCode || '').trim().toLowerCase()));
-  });
+  return ordersExportDraftKeys(turnKey).map(key => turnManagerDatabase.listUnitSplits(key));
 }
 
 function buildOrdersExportData(turnKey) {
