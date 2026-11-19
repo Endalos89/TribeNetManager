@@ -1,12 +1,13 @@
 'use strict';
 const { allocation, forecast, optimizeTools, predicted, provisionTarget, retentionCap, stockCount } = require('./activities-hunting-engine');
 const { canonicalTurnKey } = require('./turn-key');
+const livestock = require('./activities-livestock-engine');
 
 const canon = value => String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
 const whole = v => Math.max(0,Math.floor(Number(v)||0));
 const validNumber = v => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v));
 const code = v => String(v || '').trim().toLowerCase();
-const BILL_COLUMNS = `id, unit, skill, mode, months, yield_mode AS yieldMode,
+const BILL_COLUMNS = `id, unit, skill, activity_code AS activityCode, animal, goal_item AS goalItem, quantity, mode, months, yield_mode AS yieldMode,
   load_percent AS loadPercent, priority, paused, created_at AS createdAt, updated_at AS updatedAt`;
 
 class ActivityBillStore {
@@ -31,6 +32,15 @@ class ActivityBillStore {
         PRIMARY KEY(bill_id,turn_key)
       );
     `);
+    const billColumns = new Set(this.db.prepare('PRAGMA table_info(running_activity_bills)').all().map(x=>x.name));
+    if(!billColumns.has('activity_code'))this.db.exec("ALTER TABLE running_activity_bills ADD COLUMN activity_code TEXT NOT NULL DEFAULT 'HUNTING'");
+    if(!billColumns.has('animal'))this.db.exec("ALTER TABLE running_activity_bills ADD COLUMN animal TEXT NOT NULL DEFAULT ''");
+    if(!billColumns.has('goal_item'))this.db.exec("ALTER TABLE running_activity_bills ADD COLUMN goal_item TEXT NOT NULL DEFAULT ''");
+    if(!billColumns.has('quantity'))this.db.exec("ALTER TABLE running_activity_bills ADD COLUMN quantity INTEGER NOT NULL DEFAULT 0");
+    this.db.exec(`CREATE TABLE IF NOT EXISTS auto_herding_orders (
+      turn_key TEXT NOT NULL, unit TEXT NOT NULL, activity_id INTEGER NOT NULL,
+      PRIMARY KEY (turn_key,unit)
+    )`);
     const columns = new Set(this.db.prepare('PRAGMA table_info(planned_activities)').all().map(x=>x.name));
     if(!columns.has('implements_json'))this.db.exec("ALTER TABLE planned_activities ADD COLUMN implements_json TEXT NOT NULL DEFAULT '[]'");
     if(!columns.has('generated_locked'))this.db.exec('ALTER TABLE planned_activities ADD COLUMN generated_locked INTEGER NOT NULL DEFAULT 0');
@@ -43,25 +53,45 @@ class ActivityBillStore {
   }
   save(value) {
     const unit=code(value?.unit),id=value?.id==null?null:Number(value.id);
-    if(!/^\d{4}(?:[efgc]\d+)?$/.test(unit))throw Error('Select a valid unit for this Hunting Bill.');
-    const mode=String(value?.mode||'months');
-    if(!['months','maximise'].includes(mode))throw Error('Hunting Bills support months or maximise.');
-    const months=Number(value?.months??1);
-    if(mode==='months'&&(!Number.isFinite(months)||months<0||months>120))throw Error('Months must be between 0 and 120.');
-    const yieldMode=String(value?.yieldMode||'average');
-    if(!['optimistic','average','conservative'].includes(yieldMode))throw Error('Choose Optimistic, Average or Conservative.');
-    const load=value?.loadPercent===''||value?.loadPercent==null?null:Number(value.loadPercent);
-    if(load!==null&&(!Number.isFinite(load)||load<=0||load>100))throw Error('Capacity percentage must be between 0 and 100.');
+    if(!/^\\d{4}(?:[efgc]\\d+)?$/.test(unit))throw Error('Select a valid unit for this Running Order.');
+    const previous=id!==null?this.list().find(row=>row.id===id):null;
+    if(id!==null&&!previous)throw Error('Running Order not found.');
+    const skill=String(value?.skill||previous?.skill||'HUNTING').toUpperCase();
+    const processing=['GUTTING','SKINNING','BONING'].includes(skill);
+    if(skill!=='HUNTING'&&!processing)throw Error('Unsupported Running Order skill.');
+    const activityCode=processing?(livestock.activityKey(value?.activityCode||previous?.activityCode||skill)): 'HUNTING';
+    if(processing&&(!activityCode||!livestock.COMBINATIONS[activityCode].includes(skill)))
+      throw Error('Select a processing activity that includes '+skill+'.');
+    const animal=processing?livestock.animalKey(value?.animal||previous?.animal):'';
+    if(processing&&!livestock.baseRate(activityCode,animal))throw Error('This animal cannot be processed by the selected combination.');
+    const mode=String(value?.mode||(processing?'maximise':'months'));
+    if(!((processing?['stock','maximise']:['months','maximise']).includes(mode)))
+      throw Error(processing?'Processing Bills support Maintain Stock or Maximise.':'Hunting Bills support months or maximise.');
+    const months=processing?0:Number(value?.months??1);
+    if(!processing&&mode==='months'&&(!Number.isFinite(months)||months<0||months>120))
+      throw Error('Months must be between 0 and 120.');
+    const yieldMode=processing?'average':String(value?.yieldMode||'average');
+    if(!['optimistic','average','conservative'].includes(yieldMode))throw Error('Invalid yield basis.');
+    const load=processing?null:(value?.loadPercent===''||value?.loadPercent==null?null:Number(value.loadPercent));
+    if(load!==null&&(!Number.isFinite(load)||load<=0||load>100))
+      throw Error('Capacity percentage must be between 0 and 100.');
+    const outputChoices=processing?Object.keys(livestock.produce(activityCode,animal,1).outputs).filter(x=>x!=='PROVS'):[];
+    const goalItem=processing?String(value?.goalItem||previous?.goalItem||livestock.primaryOutput(activityCode)).toUpperCase():'';
+    if(processing&&!outputChoices.includes(goalItem))throw Error('Choose an output produced by this processing activity.');
+    const quantity=processing?Number(value?.quantity??previous?.quantity??0):0;
+    if(processing&&(!Number.isInteger(quantity)||quantity<0||quantity>100000000))
+      throw Error('Stock target must be a nonnegative whole number.');
     const now=new Date().toISOString();
     if(id!==null){
-      if(!this.db.prepare('SELECT 1 FROM running_activity_bills WHERE id=?').get(id))throw Error('Running Order not found.');
-      this.db.prepare(`UPDATE running_activity_bills SET unit=?, mode=?, months=?,yield_mode=?,
-        load_percent=?,updated_at=? WHERE id=?`).run(unit,mode,months,yieldMode,load,now,id);
+      this.db.prepare(`UPDATE running_activity_bills SET unit=?,skill=?,activity_code=?,animal=?,goal_item=?,quantity=?,
+        mode=?,months=?,yield_mode=?,load_percent=?,updated_at=? WHERE id=?`)
+        .run(unit,skill,activityCode,animal,goalItem,quantity,mode,months,yieldMode,load,now,id);
     }else{
       const highest=this.db.prepare('SELECT COALESCE(MAX(priority),0) AS n FROM running_activity_bills').get().n;
       const result=this.db.prepare(`INSERT INTO running_activity_bills
-        (unit,skill,mode,months,yield_mode,load_percent,priority,paused,created_at,updated_at)
-        VALUES (?,'HUNTING',?,?,?,?,?,0,?,?)`).run(unit,mode,months,yieldMode,load,highest+1,now,now);
+        (unit,skill,activity_code,animal,goal_item,quantity,mode,months,yield_mode,load_percent,priority,paused,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?,?)`)
+        .run(unit,skill,activityCode,animal,goalItem,quantity,mode,months,yieldMode,load,highest+1,now,now);
       return this.list().find(row=>row.id===Number(result.lastInsertRowid));
     }
     return this.list().find(row=>row.id===id);
