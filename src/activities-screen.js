@@ -324,7 +324,11 @@ function renderRecipes(){
       const knives=(row.implements||[]).filter(t=>String(t.name||'').toUpperCase()==='KNIFE')
         .reduce((n,t)=>n+whole(t.quantity),0);
       const available=Math.max(0,livestock.stockCount(stock,animal)-whole(spent[animal]));
-      const result=livestock.process({activity,animal,workers:row.people,knives,animalsAvailable:available});
+      const savedStage=livestock.parseProcessingNote(row.notes);
+      const result=savedStage
+        ?livestock.processStages({activity,animal,workersBySkill:savedStage.workersBySkill,
+          knivesBySkill:savedStage.knivesBySkill,animalsAvailable:Math.min(available,savedStage.animals)})
+        :livestock.process({activity,animal,workers:row.people,knives,animalsAvailable:available});
       if(result)spent[animal]=(spent[animal]||0)+result.animals;
     }
     const herd=livestock.staffForHerd(stock,spent,{
@@ -785,11 +789,45 @@ async function handleClick(event){
     if(b.dataset.compendiumEntry){await openCompendium(b.dataset.compendiumEntry,b.dataset.compendiumKey);return;}
     if(b.dataset.go){ui.page=b.dataset.go;render();return;}
     if(b.dataset.skill){ui.skill=b.dataset.skill;ui.page='recipes';render();return;}
-    if(b.dataset.recipe){ui.activityCode=b.dataset.recipe;ui.page='allocate';ui.editing=null;ui.editingActivity=null;ui.mode='once';resetBillSettings();ui.workers=ui.skill==='Hunting'?Math.min(10,availableWorkers(currentUnit())||0):1;ui.knives=0;ui.animal='GOAT';ui.goal='maximise';ui.goalItem=livestock.primaryOutput(ui.activityCode)||'GUT';ui.goalQuantity=0;ui.selectedTools=[];ui.toolsCustomized=false;render();return;}
+    if(b.dataset.recipe){
+      ui.activityCode=b.dataset.recipe;ui.page='allocate';ui.editing=null;ui.editingActivity=null;ui.mode='once';resetBillSettings();
+      ui.workers=ui.skill==='Hunting'?Math.min(10,availableWorkers(currentUnit())||0):0;
+      const parts=livestock.COMBINATIONS[livestock.activityKey(ui.activityCode)]||[];
+      ui.workersBySkill=Object.fromEntries(parts.map(skill=>[skill,1]));
+      ui.knivesBySkill=Object.fromEntries(parts.map(skill=>[skill,0]));
+      ui.knives=0;ui.animal='GOAT';ui.goal='maximise';ui.goalItem=livestock.primaryOutput(ui.activityCode)||'GUT';
+      ui.goalQuantity=0;ui.selectedTools=[];ui.toolsCustomized=false;render();return;
+    }
     if(b.id==='applyAutoHerding'){ui.otherStatuses=await applyBills();ui.status='Automatic Herding orders recalculated.';await refreshAll();return;}
+    if(b.id==='processMaximise'){
+      const p=processingPreview();
+      const result=livestock.allocateStages({activity:ui.activityCode,animal:ui.animal,
+        workersAvailable:p.freeWorkers??0,skillCaps:p.caps,
+        knivesAvailable:p.knifeAvailable,animalsAvailable:p.animals});
+      if(!result||!result.animals)throw Error('No eligible workers or animals available for the selected combination.');
+      ui.workersBySkill={...result.workersBySkill};ui.knivesBySkill={...result.knivesBySkill};
+      ui.status='Maximise allocated '+result.workers+' workers across '+Object.keys(result.workersBySkill).length+
+        ' skills for '+result.animals+' animals.';render();return;
+    }
     if(b.id==='processAutoKnives'){
-      const preview=processingPreview();ui.knives=Math.min(whole(ui.workers),preview.knifeAvailable);
-      ui.status='Selected available Knives; Save to update the planned order.';render();return;
+      const p=processingPreview(),parts=livestock.COMBINATIONS[livestock.activityKey(ui.activityCode)]||[];
+      const chosen=Object.fromEntries(parts.map(skill=>[skill,0]));
+      let remaining=p.knifeAvailable;
+      while(remaining>0){
+        const current=livestock.processStages({activity:ui.activityCode,animal:ui.animal,
+          workersBySkill:ui.workersBySkill,knivesBySkill:chosen,animalsAvailable:p.animals});
+        const before=current?.capacity||0;
+        const options=parts.filter(skill=>whole(chosen[skill])<whole(ui.workersBySkill[skill]))
+          .map(skill=>{
+            const trial={...chosen,[skill]:chosen[skill]+1};
+            const after=livestock.processStages({activity:ui.activityCode,animal:ui.animal,
+              workersBySkill:ui.workersBySkill,knivesBySkill:trial,animalsAvailable:p.animals})?.capacity||0;
+            return {skill,gain:after-before};
+          }).sort((a,b)=>b.gain-a.gain);
+        if(!options.length||options[0].gain<=0)break;
+        chosen[options[0].skill]++;remaining--;
+      }
+      ui.knivesBySkill=chosen;ui.status='Optimal available Knives selected for current stage workers.';render();return;
     }
     if(b.id==='processSave'){await saveProcessing();return;}
     if(b.id==='huntAutoTools'){
@@ -813,8 +851,12 @@ async function handleClick(event){
       if(!row)return;
       ui.editing=null;ui.editingActivity=row.id;ui.unit=row.unit;ui.page='allocate';ui.mode='once';
       ui.activityCode=livestock.activityKey(row.activityCode)||'HUNTING';
-      ui.skill=ui.activityCode==='HUNTING'?'Hunting':({SKINNING:'Skinning',GUTTING:'Gutting',BONING:'Boning'}[livestock.COMBINATIONS[ui.activityCode]?.[0]]||'Gutting');
+      ui.skill=ui.activityCode==='HUNTING'?'Hunting':'Processing';
       ui.animal=livestock.animalKey(row.target)||'GOAT';
+      const savedStage=livestock.parseProcessingNote(row.notes);
+      const parts=livestock.COMBINATIONS[ui.activityCode]||[];
+      ui.workersBySkill=Object.fromEntries(parts.map(skill=>[skill,savedStage?whole(savedStage.workersBySkill[skill]):whole(row.people)]));
+      ui.knivesBySkill=Object.fromEntries(parts.map(skill=>[skill,savedStage?whole(savedStage.knivesBySkill[skill]):0]));
       ui.knives=(row.implements||[]).filter(t=>String(t.name||'').toUpperCase()==='KNIFE').reduce((n,t)=>n+whole(t.quantity),0);
       ui.goalItem=livestock.primaryOutput(ui.activityCode)||'GUT';
       ui.workers=whole(row.people);ui.selectedTools=Array.isArray(row.implements)?row.implements:[];ui.toolsCustomized=true;render();return;}
@@ -834,7 +876,7 @@ async function handleClick(event){
     if(b.id==='huntViewOrders'){const button=document.querySelector('#orderSheetMenu [data-order-sheet="activities"]');$('activitiesDialog').close();button?.click();return;}
     if(b.dataset.edit){const bill=ui.bills.find(x=>x.id===Number(b.dataset.edit));if(!bill)return;
       ui.unit=bill.unit;ui.editing=bill.id;ui.editingActivity=null;ui.mode='running';ui.page='allocate';ui.selectedTools=[];resetBillSettings(bill);
-      ui.skill=({HUNTING:'Hunting',GUTTING:'Gutting',SKINNING:'Skinning',BONING:'Boning'})[bill.skill]||'Hunting';
+      ui.skill=bill.skill==='HUNTING'?'Hunting':'Processing';
       ui.activityCode=bill.activityCode||bill.skill;ui.animal=bill.animal||'GOAT';ui.goalItem=bill.goalItem||livestock.primaryOutput(ui.activityCode)||'GUT';ui.goalQuantity=whole(bill.quantity);
       ui.goal=bill.mode;ui.knives=0;if(ui.skill==='Hunting')autofillHunters();else ui.workers=1;render();return;}
     if(b.dataset.up||b.dataset.down){
@@ -849,6 +891,14 @@ async function handleClick(event){
   }catch(error){ui.status=error?.message||String(error);render();}
 }
 function handleChange(event){
+  if(event.target.hasAttribute?.('data-process-worker')){
+    const skill=event.target.dataset.processWorker;ui.workersBySkill[skill]=whole(event.target.value);
+    render();return;
+  }
+  if(event.target.hasAttribute?.('data-process-knife')){
+    const skill=event.target.dataset.processKnife;ui.knivesBySkill[skill]=whole(event.target.value);
+    render();return;
+  }
   if(event.target.id==='processOrderType'){ui.mode=event.target.value==='running'?'running':'once';render();return;}
   if(event.target.id==='processAnimal'){ui.animal=event.target.value;render();return;}
   if(event.target.id==='processGoal'){ui.goal=event.target.value;render();return;}
