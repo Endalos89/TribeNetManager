@@ -96,9 +96,14 @@ try{
   assert.ok(!db.listActivities('906-08').some(x=>x.generatedBillId===bill.id),
     'Skipping should remove the processing draft for this turn only');
   store.reset(bill.id,'906-08');
+  const reached=store.apply('906-08',units).find(x=>x.id===bill.id);
+  assert.equal(reached.status,'Stock target reached',
+    'A reset Bill should correctly do no work if manual processing already meets its goal');
+  store.save({id:bill.id,unit:'0485',skill:'GUTTING',activityCode:'SKIN_GUT_BONE',
+    animal:'GOAT',mode:'maximise',goalItem:'GUT',quantity:0});
   store.apply('906-08',units);
   assert.ok(db.listActivities('906-08').some(x=>x.generatedBillId===bill.id),
-    'Reset should regenerate processing this turn');
+    'A reset Bill should generate a draft when its goal again requires processing');
   console.log('Livestock: shared skill caps, combined yields, herd auto-orders, idempotence, running bills and export mappings passed');
 } finally {
   db?.close();
