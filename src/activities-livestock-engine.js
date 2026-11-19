@@ -137,7 +137,7 @@
       const r=ANIMALS[type].rate[skill];
       const base=Math.ceil(target/r),minWorkers=Math.ceil(target/(2*r));
       const cap=Number(skillCaps[skill]);
-      const allowed=Number.isFinite(cap)?Math.max(0,Math.floor(cap)):0;
+      const allowed=cap===Infinity?Infinity:Number.isFinite(cap)?Math.max(0,Math.floor(cap)):0;
       if(allowed<minWorkers)return null;
       const neededKnives=Math.max(0,base-allowed);
       if(neededKnives>base-minWorkers)return null;
