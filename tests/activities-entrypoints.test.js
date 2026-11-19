@@ -24,7 +24,7 @@ assert.match(css,/user-select:text/,'Text inside Activities should be selectable
 assert.match(dossier,/skill-dossier-icon/,'The Compendium skill article must use the Activities skill icon.');
 assert.match(screen,/data-compendium-entry/,'Skills need an exact Compendium link.');
 assert.match(screen,/item-icons\/provisions\.svg/,'Hunting must display Provisions as a proper output item.');
-assert.match(screen,/return \['Hunting','Herding','Gutting','Skinning','Boning'\]/,'The five supported activity skills should appear in Menu 1.');
+assert.match(screen,/return \['Hunting','Herding','Processing'\]/,'The three main activity tiles should appear in Menu 1.');
 const inputHandler=screen.split('function handleInput(event)')[1]?.split('async function refreshWeight')[0];
 assert.ok(inputHandler&&!inputHandler.includes('render();'),
   'Slider input must update in place, never rebuild the editor on every pointer movement.');
@@ -106,8 +106,10 @@ vm.runInNewContext(instrumented,vm.createContext(sandbox),{filename:'activities-
     'Unit Turn Action must open Menu 1.');
   assert.match(element('activitiesBody').innerHTML,/Hunting/,
     'Hunting must be available to select.');
-  assert.equal((element('activitiesBody').innerHTML.match(/data-skill="/g)||[]).length,5,
-    'All five supported skills should be present in Menu 1.');
+  assert.equal((element('activitiesBody').innerHTML.match(/data-skill="/g)||[]).length,3,
+    'Hunting, Herding, and Skin/Gut/Bone should be the three Menu 1 tiles.');
+  assert.match(element('activitiesBody').innerHTML,/Skin\/Gut\/Bone/, 'Consolidated processing tile is available.');
+  assert.match(element('activitiesBody').innerHTML,/skill-icons\/skin-gut-bone\.svg/,'Processing uses its own icon.');
   assert.match(element('activitiesBody').innerHTML,/data-compendium-key="Hunting"/,
     'The Hunting Compendium shortcut must appear on the skill tile.');
   assert.match(element('activitiesBody').innerHTML,/skill-icons\/hunting\.svg/,
