@@ -170,7 +170,7 @@ function goalAllocation(){
     if(row.activityCode!=='HUNTING')continue;
     const worker=resultUnit(row.unit),base=contextFor(worker);
     const am=whole(row.people)+(row.implements||[]).reduce((sum,t)=>
-      sum+whole(t.quantity)*(t.name==='Hunting Dog'?2:(engine.TOOLS.find(x=>x.name===t.name)?.bonus||0)),0);
+      sum+whole(t.quantity)*(engine.TOOLS.find(x=>x.name===t.name)?.bonus||0),0);
     const range=engine.forecast({workers:row.people,effectiveAM:am,skill:base.skill,
       terrain:base.terrain,month:base.month,waterBorders:base.waterBorders});
     if(!range)continue;
@@ -331,14 +331,19 @@ function reservedTools(){
     if(!performer||ownerCode(performer).toLowerCase()!==owner)continue;
     for(const t of row.implements||[]){
       const key=String(t.name||'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
+      if(key==='HUNTING DOG')continue;
       reserved[key]=(reserved[key]||0)+whole(t.quantity);
+    }
+    if(row.activityCode==='HUNTING'){
+      const left=Math.max(0,engine.stockCount(sourceStock(),'Hunting Dog')-whole(reserved['HUNTING DOG']));
+      reserved['HUNTING DOG']=(reserved['HUNTING DOG']||0)+Math.min(whole(row.people),left);
     }
   }
   return reserved;
 }
 function toolsAvailable(){
   const stock=sourceStock(),reserved=reservedTools();
-  const names=[...engine.TOOLS.map(t=>t.name),'Hunting Dog'];
+  const names=engine.TOOLS.map(t=>t.name);
   return names.map(name=>{
     const total=engine.stockCount(stock,name),key=name.toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
     const inUse=reserved[key]||0;
@@ -372,7 +377,7 @@ function validateOneTurn(){
     const eligible=engine.TOOLS.find(t=>t.name===tool.name);
     const cap=(eligible?.max||1)*whole(ui.workers);
     if(whole(tool.quantity)>cap)throw Error(`${tool.name} exceeds the ${cap}-item Hunting workforce limit.`);
-    if(tool.name!=='Hunting Dog')primarySlots+=Math.ceil(whole(tool.quantity)/(eligible?.max||1));
+    primarySlots+=Math.ceil(whole(tool.quantity)/(eligible?.max||1));
   }
   if(primarySlots>ui.workers)throw Error(`Hunting implements need ${primarySlots} primary equipment slots, but only ${ui.workers} hunters are allocated. Select one primary set per hunter.`);
 }
@@ -381,10 +386,11 @@ function preview(){
   const context=contextFor(unit);
   const workers=whole(ui.workers);
   const tools=ui.toolsCustomized?ui.selectedTools:engine.optimizeTools(workers,sourceStock(),reservedTools()).implements;
+  const huntingDogs=engine.supportDogs(workers,sourceStock(),reservedTools());
   const am=workers+tools.reduce((v,t)=>{const def=engine.TOOLS.find(x=>x.name===t.name);
-    return v+t.quantity*(def?.bonus|| (t.name==='Hunting Dog'?2:0));},0);
+    return v+whole(t.quantity)*(def?.bonus||0);},0)+huntingDogs*2;
   const range=context.skill===null?null:engine.forecast({workers,effectiveAM:am,skill:context.skill,terrain:context.terrain,month:context.month,waterBorders:context.waterBorders});
-  return {workers,range,tools,context};
+  return {workers,range,tools,context,huntingDogs};
 }
 function renderAllocate(){
   const unit=currentUnit(),ctx=contextFor(unit),max=availableWorkers(unit)||0;
@@ -486,7 +492,7 @@ async function save(){
     if(!workers)throw Error('Select at least one hunter.');
     if(!preview().range)throw Error('Hunting terrain and turn month are unverified; cannot save an unvalidated forecast.');
     const order={unit:ui.unit,activityCode:'HUNTING',people:workers,
-      target:'NONE',distinction:'NONE',implements:preview().tools};
+      target:'PROVS',distinction:'NONE',implements:preview().tools};
     if(ui.editingActivity!==null)await window.tribenet.updatePlannedActivity(ui.editingActivity,order);
     else await window.tribenet.addPlannedActivity(sourceTurn(),order);
     ui.editingActivity=null;
@@ -641,6 +647,7 @@ async function refreshWeight(code){
     ]);
     let minimum=ctx.currentWeight,maximum=ctx.currentWeight,unknown=minimum===null;
     let minProvisions=ctx.provs,maxProvisions=ctx.provs;
+    let availableDogs=engine.stockCount(dataStock(unit),'Hunting Dog');
     if(ctx.provs===null)unknown=true;
     const wt=name=>{
       if(/^(provs|provisions)$/i.test(String(name)))return 10;
@@ -655,7 +662,9 @@ async function refreshWeight(code){
       if(!affectsThisUnit)continue;
       if(activity.activityCode==='HUNTING'){
         const workContext=contextFor(performer),tools=activity.implements||[];
-        const am=whole(activity.people)+tools.reduce((v,t)=>v+Number(t.quantity||0)*(engine.TOOLS.find(x=>x.name===t.name)?.bonus||(t.name==='Hunting Dog'?2:0)),0);
+        const dogs=Math.min(whole(activity.people),availableDogs);
+        availableDogs-=dogs;
+        const am=whole(activity.people)+tools.reduce((v,t)=>v+Number(t.quantity||0)*(engine.TOOLS.find(x=>x.name===t.name)?.bonus||0),0)+dogs*2;
         const range=workContext.skill===null?null:engine.forecast({workers:activity.people,
           effectiveAM:am,skill:workContext.skill,terrain:workContext.terrain,month:workContext.month,
           waterBorders:workContext.waterBorders});
