@@ -307,11 +307,24 @@ function renderSkills(){
 }
 function renderRecipes(){
   if(ui.skill==='Herding'){
-    const unit=currentUnit(),herd=livestock.staffForHerd(dataStock(unit),{},{
+    const unit=currentUnit(),stock=dataStock(unit),spent={};
+    const herdOwner=unitCode(unit).toLowerCase();
+    for(const row of ui.activities){
+      const performer=resultUnit(row.unit);
+      if(!performer||ownerCode(performer).toLowerCase()!==herdOwner)continue;
+      const activity=livestock.activityKey(row.activityCode),animal=livestock.animalKey(row.target);
+      if(!activity||!animal||!livestock.baseRate(activity,animal))continue;
+      const knives=(row.implements||[]).filter(t=>String(t.name||'').toUpperCase()==='KNIFE')
+        .reduce((n,t)=>n+whole(t.quantity),0);
+      const available=Math.max(0,livestock.stockCount(stock,animal)-whole(spent[animal]));
+      const result=livestock.process({activity,animal,workers:row.people,knives,animalsAvailable:available});
+      if(result)spent[animal]=(spent[animal]||0)+result.animals;
+    }
+    const herd=livestock.staffForHerd(stock,spent,{
       atSea:/^\d{4}f\d+$/i.test(ui.unit)&&['O','L'].includes(String(contextFor(unit).terrain||'').toUpperCase())
     });
     return `<div class="activities-toolbar"><strong>2. Herding — automatically allocated</strong><button class="button" data-go="skills">Back to skills</button></div>
-      <p class="activities-note">Herding runs automatically for every eligible unit when a new turn is activated. It reserves the workers required to manage the animals before other Running Orders are calculated.</p>
+      <p class="activities-note">Herding runs automatically for eligible units when a new turn is activated. It counts animals remaining after saved Gutting, Skinning and Boning orders, including combined processing.</p>
       <p class="activities-note">This unit: ${herd.workers} required herders · ${Object.entries(herd.animals).map(([animal,n])=>n+' '+animal).join(', ')||herd.reason||'No eligible animals'}.</p>
       <button class="button accent" id="applyAutoHerding">Recalculate this turn</button>
       <p class="activities-note">Only confirmed live-animal inventory is counted. Animals on ships at sea need no herders; unverified workers are flagged instead of invented.</p>`;
