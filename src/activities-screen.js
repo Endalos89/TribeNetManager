@@ -562,7 +562,10 @@ function renderProcessingAllocate(){
           ${display(p.result?.workers||0)} total workers · ${display(p.result?.knives||0)} Knives</span>
         <strong>${Object.entries(p.result?.outputs||{}).map(([item,n])=>display(n)+' '+esc(item)).join(' · ')||'No processing output'}</strong></section>
       <p class="activities-note">A combined order counts against each contributing skill's workforce limit.
-        Its workers are distinct people and its animals are consumed only once. The detailed stage split is also recorded in the GM notes.</p>
+        Its workers are distinct people and its animals are consumed only once.</p>
+      <p class="activities-warning">Workbook compatibility needs confirmation: a combined activity has only one PEOPLE column.
+        The individual Skinning, Gutting and Boning worker counts are saved in the GM notes. Please review the exported workbook;
+        the game's interpretation of an unequal split has not been verified.</p>
       <div class="activities-actions"><button class="button accent" id="processSave">${ui.editing?'Update Running Order':running?'Save Running Order':'Save One Turn Activity'}</button>
         <button class="button" data-go="recipes">Cancel</button></div>
     </div>
