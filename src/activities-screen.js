@@ -8,7 +8,7 @@ const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 const engine = window.TribeNetHuntingEngine;
 const livestock = window.TribeNetLivestockEngine;
 if(!engine||!livestock)return;
-const ui={page:'skills',unit:'',skill:'Hunting',activityCode:'HUNTING',animal:'GOAT',knives:0,goalItem:'SKINS',goalQuantity:0,mode:'once',bills:[],activities:[],
+const ui={page:'skills',unit:'',skill:'Hunting',activityCode:'HUNTING',animal:'GOAT',knives:0,workersBySkill:{},knivesBySkill:{},goalItem:'SKINS',goalQuantity:0,mode:'once',bills:[],activities:[],
   editing:null,editingActivity:null,workers:0,selectedTools:[],list:[],transfers:[],status:'',preview:null,otherStatuses:[],
   goal:'months',months:3,yieldMode:'average',loadEnabled:false,loadPercent:90,goalHint:'',toolsCustomized:false,showSavedAll:false,
   hideSkill:false,hideInputs:false,managerUnit:'all',managerState:'all'};
@@ -114,7 +114,7 @@ const contextList = () => allUnits().map(contextFor);
 function skillList(){
   // Only display implemented/testable skills. More will be added in their
   // respective per-skill rollout, not as inert icons.
-  return ['Hunting','Herding','Gutting','Skinning','Boning'];
+  return ['Hunting','Herding','Processing'];
 }
 function compendiumLink(entry,key,label){
   return `<button type="button" class="activities-compendium-link" data-compendium-entry="${esc(entry)}" data-compendium-key="${esc(key)}"
@@ -290,18 +290,25 @@ function renderOverview(){
     <p class="activities-note">This overview is turn-wide. Use the unit Turn Action for the three-menu editor; the Running Orders screen manages recurring Bills across units.</p>`;
 }
 function renderSkills(){
-  if(!currentUnit())return '<p class="activities-warning">Select a unit on the Mapper to open its Activities Turn Action. You can use Activities Overview without a selected unit.</p>';
+  if(!currentUnit())return '<p class="activities-warning">Select a unit on the Mapper to open its Activities Turn Action.</p>';
   if(!sourceTurn())return '<p class="activities-warning">No planning turn selected. Import Results or select a planning turn before allocating activities.</p>';
-  const unit=currentUnit();
-  return `<div class="activities-toolbar"><strong>1. Select skill</strong><span>Supported skills · Level badge = effective skill level</span></div>
+  const unit=currentUnit(),owner=resultUnit(ownerCode(unit))||unit;
+  return `<div class="activities-toolbar"><strong>1. Select skill</strong><span>Each tile opens its activities</span></div>
     <div class="activities-filter-row"><label><input id="hideSkill" type="checkbox" ${ui.hideSkill?'checked':''}> Hide lacking skill</label><label><input id="hideInputs" type="checkbox" ${ui.hideInputs?'checked':''}> Hide lacking inputs</label></div>
-    <div class="activities-grid">${skillList().filter(name=>!ui.hideSkill||['Hunting','Herding'].includes(name)||Number(skillLevel(unit,name))>0).map(name=>{
-      const level=skillLevel(unit,name);
+    <div class="activities-grid">${skillList().filter(name=>
+      !ui.hideSkill||name!=='Processing'||['Skinning','Gutting','Boning'].some(skill=>Number(skillLevel(unit,skill))>0))
+      .filter(name=>!ui.hideInputs||name!=='Processing'||
+        Object.keys(livestock.ANIMALS).some(animal=>livestock.stockCount(dataStock(owner),animal)>0))
+      .map(name=>{
+      const processing=name==='Processing',levels=processing?
+        ['Skinning','Gutting','Boning'].map(skill=>skill[0]+esc(skillLevel(unit,skill))).join(' · '):esc(skillLevel(unit,name));
+      const label=processing?'Skin/Gut/Bone':name;
+      const missing=processing&&!['Skinning','Gutting','Boning'].some(skill=>Number(skillLevel(unit,skill))>0);
       return `<div class="activities-skill-wrap">
-        <button class="activities-tile" data-skill="${esc(name)}" title="Select ${esc(name)} · Level ${level}">
-          <img class="activities-skill-icon" src="skill-icons/${esc(name.toLowerCase())}.svg" alt="" />
-          <span class="activities-name">${esc(name)}</span><span class="activities-level">${level}</span>
-        </button>${compendiumLink('skill',name,name)}
+        <button class="activities-tile ${missing?'activities-tile-unavailable':''}" data-skill="${esc(name)}" title="Select ${esc(label)} · Skill levels ${levels}">
+          <img class="activities-skill-icon" src="skill-icons/${processing?'skin-gut-bone':esc(name.toLowerCase())}.svg" alt="" />
+          <span class="activities-name">${esc(label)}</span><span class="activities-level">${levels}</span>
+        </button>${processing?`<div class="activities-related-skills">${['Skinning','Gutting','Boning'].map(skill=>compendiumLink('skill',skill,skill)).join('')}</div>`:compendiumLink('skill',name,name)}
       </div>`;
     }).join('')}</div>`;
 }
@@ -329,17 +336,29 @@ function renderRecipes(){
       <button class="button accent" id="applyAutoHerding">Recalculate this turn</button>
       <p class="activities-note">Only confirmed live-animal inventory is counted. Animals on ships at sea need no herders; unverified workers are flagged instead of invented.</p>`;
   }
-  if(ui.skill!=='Hunting'){
-    const codes=Object.keys(livestock.COMBINATIONS).filter(code=>livestock.COMBINATIONS[code].includes(ui.skill.toUpperCase()));
-    return `<div class="activities-toolbar"><strong>2. ${esc(ui.skill)} — processing activities</strong>
+  if(ui.skill==='Processing'){
+    const codes=Object.keys(livestock.COMBINATIONS),stock=dataStock(resultUnit(ownerCode(currentUnit()))||currentUnit());
+    return `<div class="activities-toolbar"><strong>2. Skin/Gut/Bone — processing choices</strong>
       <button class="button" data-go="skills">Back to skills</button></div>
-      <div class="activities-grid">${codes.map(code=>`<div class="activities-skill-wrap">
-        <button class="activities-tile activity-recipe" data-recipe="${code}">
-          <img class="activities-skill-icon" src="skill-icons/${esc(ui.skill.toLowerCase())}.svg" alt="" />
-          <span class="activities-name">${esc(livestock.EXPORT_CODES[code])}</span>
-        </button>${compendiumLink('skill',ui.skill,ui.skill)}
-      </div>`).join('')}</div>
-      <p class="activities-note">Each combined order processes an animal once and produces every applicable output. All component skill limits apply.</p>`;
+      <div class="activities-filter-row">
+        <label><input id="hideSkill" type="checkbox" ${ui.hideSkill?'checked':''}> Hide lacking skill</label>
+        <label><input id="hideInputs" type="checkbox" ${ui.hideInputs?'checked':''}> Hide lacking inputs</label></div>
+      <div class="activities-grid">${codes.filter(code=>{
+        const parts=livestock.COMBINATIONS[code];
+        const eligible=parts.every(skill=>Number(skillLevel(currentUnit(),skill))>=1);
+        const stocked=Object.keys(livestock.ANIMALS).some(animal=>livestock.baseRate(code,animal)&&livestock.stockCount(stock,animal)>0);
+        return (!ui.hideSkill||eligible)&&(!ui.hideInputs||stocked);
+      }).map(code=>{
+        const parts=livestock.COMBINATIONS[code];
+        const eligible=parts.every(skill=>Number(skillLevel(currentUnit(),skill))>=1);
+        const stocked=Object.keys(livestock.ANIMALS).some(animal=>livestock.baseRate(code,animal)&&livestock.stockCount(stock,animal)>0);
+        const art=parts.length>1?'skin-gut-bone':parts[0].toLowerCase();
+        return `<div class="activities-skill-wrap"><button class="activities-tile activity-recipe ${!eligible?'activities-tile-unavailable':!stocked?'activities-tile-missing-input':''}"
+          data-recipe="${code}" title="${esc(livestock.EXPORT_CODES[code])} · ${!eligible?'Required skill missing':!stocked?'No applicable animals':'Available'}">
+          <img class="activities-skill-icon" src="skill-icons/${esc(art)}.svg" alt="" />
+          <span class="activities-name">${esc(livestock.EXPORT_CODES[code])}</span></button></div>`;
+      }).join('')}</div>
+      <p class="activities-note">Allocate each contributing skill separately. Combined processing slaughters animals once and credits all outputs.</p>`;
   }
   return `<div class="activities-toolbar"><strong>2. ${esc(ui.skill)} — available activities</strong>
     <button class="button" data-go="skills">Back to skills</button></div>
