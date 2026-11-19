@@ -169,7 +169,7 @@
 
   function titleBlock(profile, skill, bundle) {
     return `<div class="skill-dossier-title">
-      ${profile.layout === 'hunting' ? '<img class="skill-dossier-icon" src="skill-icons/hunting.svg" alt="Hunting skill icon">' : ''}
+      ${['Hunting','Herding','Gutting','Skinning','Boning'].includes(skill.name) ? `<img class="skill-dossier-icon" src="skill-icons/${e(skill.name.toLowerCase())}.svg" alt="${e(skill.name)} skill icon">` : ''}
       <div>
         <div class="comp-kicker">Group ${e(skill.skillGroup)} skill · ${e(skill.shortname || '')}</div>
         <h1>${e(skill.name)}</h1>
