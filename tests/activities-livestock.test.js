@@ -138,6 +138,7 @@ try{
   const example=store.apply('906-11',exampleUnits);
   const stageRow=db.listActivities('906-11').find(x=>x.generatedBillId===bill.id);
   const breakdown=livestock.parseProcessingNote(stageRow?.notes);
+  assert.ok(stageRow,'Expected a combined generated row: '+JSON.stringify({statuses:example,activities:db.listActivities('906-11'),bill:store.list().find(x=>x.id===bill.id)}));
   assert.equal(stageRow.people,4,'The combined row reserves four people in total');
   assert.deepEqual(breakdown.workersBySkill,{SKINNING:2,GUTTING:1,BONING:1},
     'Running Order Maximise must factor all component skills into distinct staff');
