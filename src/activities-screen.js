@@ -538,7 +538,10 @@ async function saveProcessing(){
   }
   const preview=processingPreview(),total=availableWorkers(currentUnit());
   if(total===null)throw Error('Worker inventory is not verified.');
-  const other=ui.activities.filter(row=>String(row.unit).toLowerCase()===ui.unit.toLowerCase()&&row.id!==ui.editingActivity)
+  // Existing automatic herders will be recalculated for the surviving herd
+  // once this new slaughter order has been saved.
+  const other=ui.activities.filter(row=>String(row.unit).toLowerCase()===ui.unit.toLowerCase()
+    &&row.id!==ui.editingActivity&&row.activityCode!=='HERDING')
     .reduce((n,row)=>n+whole(row.people),0);
   if(!Number.isInteger(Number(ui.workers))||ui.workers<1||ui.workers+other>total)
     throw Error('Processing workers exceed the people available after other saved activities.');
@@ -551,7 +554,15 @@ async function saveProcessing(){
   if(ui.editingActivity!==null)await window.tribenet.updatePlannedActivity(ui.editingActivity,order);
   else await window.tribenet.addPlannedActivity(sourceTurn(),order);
   ui.editingActivity=null;
-  ui.status='Processing activity saved. Re-export Orders to apply the latest Mapper plan.';
+  try{
+    ui.otherStatuses=await applyBills();
+    const issues=ui.otherStatuses.filter(x=>x.skill==='HERDING'&&String(x.status).startsWith('Needs review'));
+    ui.status=issues.length
+      ?'Processing saved. Herding needs review: '+issues.map(x=>x.unit+' — '+x.status).join('; ')
+      :'Processing saved. Automatic Herding recalculated for surviving animals. Re-export Orders when ready.';
+  }catch(error){
+    ui.status='Processing saved, but automatic Herding recalculation needs review: '+(error.message||String(error));
+  }
   await refreshAll();
 }
 
@@ -756,7 +767,17 @@ async function handleClick(event){
       ui.workers=whole(row.people);ui.selectedTools=Array.isArray(row.implements)?row.implements:[];ui.toolsCustomized=true;render();return;}
     if(b.dataset.removeActivity){
       if(!window.confirm('Remove this saved activity for the turn? Running Bills may regenerate their own drafts when applied again.'))return;
-      await window.tribenet.deletePlannedActivity(Number(b.dataset.removeActivity));ui.status='Saved activity removed.';await refreshAll();return;}
+      await window.tribenet.deletePlannedActivity(Number(b.dataset.removeActivity));
+      try{
+        ui.otherStatuses=await applyBills();
+        const issues=ui.otherStatuses.filter(x=>x.skill==='HERDING'&&String(x.status).startsWith('Needs review'));
+        ui.status=issues.length
+          ?'Activity removed. Herding needs review: '+issues.map(x=>x.unit+' — '+x.status).join('; ')
+          :'Activity removed. Automatic Herding recalculated for the remaining live animals.';
+      }catch(error){
+        ui.status='Activity removed, but automatic Herding recalculation needs review: '+(error.message||String(error));
+      }
+      await refreshAll();return;}
     if(b.id==='huntViewOrders'){const button=document.querySelector('#orderSheetMenu [data-order-sheet="activities"]');$('activitiesDialog').close();button?.click();return;}
     if(b.dataset.edit){const bill=ui.bills.find(x=>x.id===Number(b.dataset.edit));if(!bill)return;
       ui.unit=bill.unit;ui.editing=bill.id;ui.editingActivity=null;ui.mode='running';ui.page='allocate';ui.selectedTools=[];resetBillSettings(bill);
