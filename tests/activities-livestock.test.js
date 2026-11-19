@@ -112,6 +112,14 @@ try{
   store.apply('906-08',units);
   assert.ok(db.listActivities('906-08').some(x=>x.generatedBillId===bill.id),
     'A reset Bill should generate a draft when its goal again requires processing');
+  // Manual multi-skill processing is one slaughter, not one animal per skill.
+  store.pause(bill.id,true);
+  db.addActivity('906-10',{unit:'0485',activityCode:'SKIN_GUT_BONE',people:4,
+    target:'GOAT',distinction:'NONE',implements:[{name:'KNIFE',quantity:4}]});
+  const manualLivestockUnits=[{...units[0],stock:{Goat:40,Knife:4}},units[1]];
+  store.apply('906-10',manualLivestockUnits);
+  assert.equal(db.listActivities('906-10').find(row=>row.activityCode==='HERDING')?.people,1,
+    '24 Goats slaughtered once by combined manual processing leave 16 Goats needing one herder');
   console.log('Livestock: shared skill caps, combined yields, herd auto-orders, idempotence, running bills and export mappings passed');
 } finally {
   db?.close();
