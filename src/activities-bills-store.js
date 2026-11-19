@@ -282,7 +282,7 @@ class ActivityBillStore {
           const activity=livestock.activityKey(bill.activityCode||bill.skill);
           const animal=livestock.animalKey(bill.animal);
           const poolKey=sourceFor(context),poolUnit=unitMap.get(poolKey);
-          if(!activity||!animal||!livestock.COMBINATIONS[activity]?.includes(bill.skill)||!livestock.baseRate(activity,animal)){
+          if(!activity||!animal||(bill.skill!=='PROCESSING'&&!livestock.COMBINATIONS[activity]?.includes(bill.skill))||!livestock.baseRate(activity,animal)){
             summaries.push({id:bill.id,unit:bill.unit,status:'Needs review: invalid processing activity/animal'});
             continue;
           }
