@@ -45,6 +45,21 @@ try{
     stock:{}}).workers,0);
 
   db=new TurnManagerDatabase(temp);
+  // Simulate a plan saved by an older installed version, then reopen the app.
+  db.db.prepare(`INSERT INTO planned_activities
+    (turn_key,unit,activity_code,people,target,distinction,created_at,updated_at,implements_json)
+    VALUES ('906-04','0498','HUNTING',1,'NONE','NONE','old','old',?)`)
+    .run(JSON.stringify([{name:'Hunting Dog',quantity:1},{name:'Bow',quantity:1}]));
+  db.db.prepare("UPDATE planned_activities SET generated_locked=1 WHERE unit='0498'").run();
+  db.close();
+  db=new TurnManagerDatabase(temp);
+  const migrated=db.listActivities('906-04')[0];
+  assert.equal(migrated.target,'PROVS','Existing Hunting orders are migrated when the app starts');
+  assert.equal(migrated.distinction,'NONE');
+  assert.equal(migrated.generatedLocked,1,'Migration must retain locked bill overrides');
+  assert.deepEqual(migrated.implements,[{name:'Bow',quantity:1}],
+    'Legacy Hunting Dog slots are removed without deleting valid tools');
+  db.deleteActivity(migrated.id);
   const store=new ActivityBillStore(db);
   assert.throws(()=>store.save({unit:'invalid',mode:'months',months:1}),/valid unit/);
   const first=store.save({unit:'0485',mode:'months',months:1,yieldMode:'average'});
