@@ -36,7 +36,8 @@
     const key = canon(name).replace(/ /g, '_');
     if (COMBINATIONS[key]) return key;
     const pieces = canon(name).split(/[^A-Z]+/).filter(Boolean);
-    const has = token => pieces.includes(token) || pieces.includes(token.replace('NING', ''));
+    const shorthand = { SKINNING:'SKIN', GUTTING:'GUT', BONING:'BONE' };
+    const has = token => pieces.includes(token) || pieces.includes(shorthand[token]);
     const selections = ['SKINNING','GUTTING','BONING'].filter(has);
     return Object.entries(COMBINATIONS).find(([,parts]) =>
       parts.length === selections.length && parts.every(part => selections.includes(part)))?.[0] || null;
