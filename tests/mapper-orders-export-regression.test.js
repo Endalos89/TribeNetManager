@@ -45,40 +45,53 @@ function blankWorkbook(filename) {
   sheet('Skill_Attempts',['TRIBE','ORDER','TOPIC']);
   XLSX.writeFile(wb,filename);
 }
-function fromSqlite() {
+function fromSqlite(turnKey = '906-05') {
   const beginning=main.indexOf('function ordersExportDraftKeys(turnKey) {');
   const ending=main.indexOf('\nfunction saveCompletedOrders(filePath)',beginning);
   assert(beginning>=0 && ending>beginning,'Export snapshot functions must be inspectable');
   const context={
     canonicalTurnKey, mergeDraftRoutes, mergeDraftSplits,
     routesDb:()=>db,
-    resultForPlanTurn:()=>({turnKey:'906-04'}),
+    resultForPlanTurn:key=>({turnKey:key==='906-06'?'906-05':'906-04'}),
     ordersExportBaseline:()=>({units:[
       {unit:'0485',type:'Tribe',warrior:20,workers:20},
       {unit:'0485e1',type:'Element',warrior:10,workers:10}
     ]}),
     turnManagerDatabase:{
-      listUnitSplits:()=>[], listTransfers:()=>[],
+      listUnitSplits:key=>key==='906-04'
+        ? [{unitCode:'1485',unitType:'Tribe',parentUnit:'0485',startHex:'AA0101'}] : [],
+      listTransfers:key=>key==='906-04'
+        ? [{from:'0485',to:'1485',item:'PROVS',quantity:10,timing:'BM'}] : [],
       getSkillAttempts:()=>[],listActivities:()=>[]
     },
     assembleOrdersExportData:buildOrdersExportData
   };
   vm.runInNewContext(main.slice(beginning,ending)+'\nthis.buildExport=buildOrdersExportData;',context);
-  return context.buildExport('906-05');
+  return context.buildExport(turnKey);
 }
 (async()=>{
  try {
   // Save directly through the same SQLite class and values used by Mapper IPC.
   // The current planning turn may have been stored with a legacy spelling.
   db.save(route('906-04','unit','0485',['SW']));
+  db.save(route('906-04','unit','0485e1',['S']));
+  db.save(route('906-04','scout','0485e1',['SW']));
   db.save(route('906-05','unit','0485',['N','NE']));
   db.save(route('906_05','scout','0485',['S']));
   const plan=fromSqlite();
-  assert.deepEqual(Array.from(plan.savedRouteCounts.keys).slice(0,3),['906-05','906_05','906-04']);
+  assert.deepEqual(Array.from(plan.savedRouteCounts.keys),['906-05','906_05'],
+    'Only the selected planning turn and equivalent saved key spellings may be exported');
   assert.equal(plan.savedRouteCounts.movement,1);
   assert.equal(plan.savedRouteCounts.scouting,1);
   assert.deepEqual(Array.from(plan.movements.find(row=>row.unitCode==='0485').directions),['N','NE'],
-    'Saved current-turn movement must win over old Results-turn route');
+    'Saved current-turn movement must be exported');
+  assert.deepEqual(Array.from(plan.movements.find(row=>row.unitCode==='0485e1').directions),['Still'],
+    'A unit without new movement must be Still even when its previous turn had a saved route');
+  assert.equal(plan.scouts.length,1,'Only the current-turn scout may be exported');
+  assert.equal(plan.scouts[0].unitCode,'0485','Previous-turn scout must not reappear');
+  assert.equal(plan.transfers.length,0,'Previous-turn transfers must not be exported');
+  assert.equal(plan.validUnits.some(unit=>unit.unitCode==='1485'),false,
+    'Previous-turn unit splits must not create units in the new export');
   assert.deepEqual(Array.from(plan.scouts[0].directions),['S'],
     'A scout saved under a legacy planning key must be exported');
 
@@ -116,6 +129,39 @@ function fromSqlite() {
   moves=XLSX.utils.sheet_to_json(wb.Sheets.Tribe_Movement);
   assert.equal(moves.find(row=>row.TRIBE==='0485').MOVEMENT_1,'SE');
   assert.deepEqual(fs.readFileSync(stored.storedPath),original);
+
+  // New Turn 906-06: all the Turn 906-05 routes/scouts remain safely in
+  // SQLite history, but none become orders until explicitly saved again.
+  const fresh=fromSqlite('906-06');
+  assert.deepEqual(Array.from(fresh.savedRouteCounts.keys),['906-06']);
+  assert.equal(fresh.savedRouteCounts.movement,0);
+  assert.equal(fresh.savedRouteCounts.scouting,0);
+  assert.equal(fresh.scouts.length,0,'No new scouting means zero scout rows');
+  assert.ok(fresh.movements.every(row=>row.directions.length===1 && row.directions[0]==='Still'),
+    'New turn with no routes must export Still for every eligible unit');
+
+  // A newly saved order for one unit must not resurrect old movement or
+  // scouting for any other unit in the same turn.
+  db.save(route('906-06','unit','0485e1',['NE']));
+  const partial=fromSqlite('906-06');
+  assert.equal(partial.savedRouteCounts.movement,1);
+  assert.equal(partial.savedRouteCounts.scouting,0);
+  assert.deepEqual(Array.from(partial.movements.find(row=>row.unitCode==='0485').directions),['Still']);
+  assert.deepEqual(Array.from(partial.movements.find(row=>row.unitCode==='0485e1').directions),['NE']);
+  assert.equal(partial.scouts.length,0);
+
+  // Validate the actual written workbook, not just the assembled snapshot.
+  const nextBlank=await saveOrderTemplate(blank,temp,'906-06');
+  const nextOutput=path.join(temp,'Completed Orders','906_06_Orders Complete.xlsx');
+  const {savedRouteCounts:unused,...partialData}=partial;
+  await patchOrdersWorkbook({templatePath:nextBlank.storedPath,outputPath:nextOutput,...partialData});
+  const exportedNext=XLSX.readFile(nextOutput);
+  const nextMoves=XLSX.utils.sheet_to_json(exportedNext.Sheets.Tribe_Movement);
+  assert.equal(nextMoves.find(row=>row.TRIBE==='0485').MOVEMENT_1,'Still');
+  assert.equal(nextMoves.find(row=>row.TRIBE==='0485e1').MOVEMENT_1,'NE');
+  const nextScouts=XLSX.utils.sheet_to_json(exportedNext.Sheets.Scout_Movement)
+    .filter(row=>Number(row.No_of_Scouts)>0);
+  assert.equal(nextScouts.length,0,'Export must not include previous-turn scouting');
 
   // When viewing Results 906-04, the exporter must target the Mapper planning
   // turn 906-05, not accidentally export a blank 906-04 workbook.
