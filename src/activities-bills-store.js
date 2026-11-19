@@ -57,10 +57,10 @@ class ActivityBillStore {
     const previous=id!==null?this.list().find(row=>row.id===id):null;
     if(id!==null&&!previous)throw Error('Running Order not found.');
     const skill=String(value?.skill||previous?.skill||'HUNTING').toUpperCase();
-    const processing=['GUTTING','SKINNING','BONING'].includes(skill);
+    const processing=skill==='PROCESSING'||['GUTTING','SKINNING','BONING'].includes(skill);
     if(skill!=='HUNTING'&&!processing)throw Error('Unsupported Running Order skill.');
     const activityCode=processing?(livestock.activityKey(value?.activityCode||previous?.activityCode||skill)): 'HUNTING';
-    if(processing&&(!activityCode||!livestock.COMBINATIONS[activityCode].includes(skill)))
+    if(processing&&(!activityCode||(skill!=='PROCESSING'&&!livestock.COMBINATIONS[activityCode].includes(skill))))
       throw Error('Select a processing activity that includes '+skill+'.');
     const animal=processing?livestock.animalKey(value?.animal||previous?.animal):'';
     if(processing&&!livestock.baseRate(activityCode,animal))throw Error('This animal cannot be processed by the selected combination.');
@@ -182,18 +182,23 @@ class ActivityBillStore {
     const outputPool=pool=>{if(!processingOutputs.has(pool))processingOutputs.set(pool,{});return processingOutputs.get(pool);};
     const spentPool=pool=>{if(!animalsSpent.has(pool))animalsSpent.set(pool,{});return animalsSpent.get(pool);};
     const rootOf=unit=>code(typeof unit==='string'?unit:(unit?.code||unit?.unit||unit?.unitCode)).slice(0,4);
-    const claimSkills=(unit,activity,workers)=>{
+    const claimSkills=(unit,activity,workers,breakdown=null)=>{
       const bits=livestock.COMBINATIONS[livestock.activityKey(activity)]||[];
-      for(const skill of bits){const k=rootOf(unit)+'/'+skill;skillWorkers.set(k,(skillWorkers.get(k)||0)+whole(workers));}
+      for(const skill of bits){
+        const k=rootOf(unit)+'/'+skill;
+        const assigned=breakdown?.workersBySkill?.[skill]??workers;
+        skillWorkers.set(k,(skillWorkers.get(k)||0)+whole(assigned));
+      }
     };
-    const limitFor=(unit,activity)=>{
+    const limitsFor=(unit,activity)=>{
       const bits=livestock.COMBINATIONS[livestock.activityKey(activity)]||[];
-      return bits.reduce((min,skill)=>{
-        const level=unit.skillLevels?.[skill];
-        const cap=livestock.capForLevel(level);
-        const used=skillWorkers.get(rootOf(unit.code)+'/'+skill)||0;
-        return Math.min(min,Math.max(0,cap-used));
-      },Infinity);
+      const result={};
+      for(const skill of bits){
+        const level=unit.skillLevels?.[skill],cap=livestock.capForLevel(level);
+        const used=skillWorkers.get(rootOf(unit)+'/'+skill)||0;
+        result[skill]=Math.max(0,cap-used);
+      }
+      return result;
     };
     const countOutput=(pool,outputs)=>{
       const totals=outputPool(pool);
@@ -232,10 +237,15 @@ class ActivityBillStore {
         if(animal&&livestock.baseRate(activity,animal)){
           const knives=(row.implements||[]).filter(t=>canon(t.name)==='KNIFE').reduce((sum,t)=>sum+whole(t.quantity),0);
           const prior=spentPool(pool),available=Math.max(0,livestock.stockCount(unitMap.get(pool)?.stock||{},animal)-whole(prior[animal]));
-          const result=livestock.process({activity,animal,workers:row.people,knives,animalsAvailable:available});
+          const breakdown=livestock.parseProcessingNote(row.notes);
+          const result=breakdown
+            ?livestock.processStages({activity,animal,workersBySkill:breakdown.workersBySkill,
+              knivesBySkill:breakdown.knivesBySkill,animalsAvailable:Math.min(available,breakdown.animals)})
+            :livestock.process({activity,animal,workers:row.people,knives,animalsAvailable:available});
+          if(!result)continue;
           prior[animal]=(prior[animal]||0)+result.animals;
           countOutput(pool,result.outputs);
-          claimSkills(performer,activity,row.people);
+          claimSkills(performer,activity,row.people,breakdown);
           if(result.outputs.PROVS)projectedOutputs.set(pool,(projectedOutputs.get(pool)||0)+result.outputs.PROVS);
         }
       }
@@ -285,14 +295,15 @@ class ActivityBillStore {
             continue;
           }
           const pool=spentPool(poolKey),available=Math.max(0,livestock.stockCount(poolUnit.stock,animal)-whole(pool[animal]));
-          const workerLimit=Math.min(availableWorkers.get(code(bill.unit))||0,limitFor(context,activity));
+          const availableForBill=availableWorkers.get(code(bill.unit))||0;
           const knownKnives=livestock.stockCount(poolUnit.stock,'KNIFE');
           const knivesAvailable=Math.max(0,knownKnives-whole((claims.get(poolKey)||{}).KNIFE));
           const madeBefore=whole(outputPool(poolKey)[bill.goalItem]);
           const needed=bill.mode==='maximise'?Infinity:
             Math.max(0,whole(bill.quantity)-livestock.stockCount(poolUnit.stock,bill.goalItem)-madeBefore);
-          const result=livestock.allocateProcessing({activity,animal,workerLimit,knivesAvailable,
-            animalsAvailable:available,need:needed,goalItem:bill.goalItem});
+          const result=livestock.allocateStages({activity,animal,
+            workersAvailable:availableForBill,skillCaps:limitsFor(context,activity),
+            knivesAvailable,animalsAvailable:available,need:needed,goalItem:bill.goalItem});
           this.clearGenerated(bill.id,key);
           const now=new Date().toISOString();
           let activityId=null;
@@ -300,12 +311,12 @@ class ActivityBillStore {
             const selected=result.knives?[{name:'KNIFE',quantity:result.knives}]:[];
             const row=this.db.prepare(`INSERT INTO planned_activities
               (turn_key,unit,activity_code,people,target,distinction,mining_direction,notes,created_at,updated_at,implements_json)
-              VALUES (?,?,?,?,?,'NONE','','',?,?,?)`)
-              .run(key,bill.unit,activity,result.workers,animal,now,now,JSON.stringify(selected));
+              VALUES (?,?,?,?,?,'NONE','',?,?,?,?)`)
+              .run(key,bill.unit,activity,result.workers,animal,livestock.processingNote(result),now,now,JSON.stringify(selected));
             activityId=Number(row.lastInsertRowid);
             pool[animal]=(pool[animal]||0)+result.animals;
             countOutput(poolKey,result.outputs);
-            claimSkills(context,activity,result.workers);
+            claimSkills(context,activity,result.workers,result);
             availableWorkers.set(code(bill.unit),(availableWorkers.get(code(bill.unit))||0)-result.workers);
             if(result.knives){
               const reserved=claims.get(poolKey)||{};
@@ -316,6 +327,7 @@ class ActivityBillStore {
           this.db.prepare('INSERT INTO generated_activity_links(bill_id,turn_key,activity_id,transfer_id) VALUES (?,?,?,NULL)')
             .run(bill.id,key,activityId);
           summaries.push({id:bill.id,unit:bill.unit,skill:bill.skill,workers:result.workers,
+            workersBySkill:result.workersBySkill,knivesBySkill:result.knivesBySkill,
             animals:result.animals,outputs:result.outputs,activityId,
             status:!result.workers?(needed===0?'Stock target reached':available===0?'No animals available':'No available processing workers'):'Planned'});
           continue;
