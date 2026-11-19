@@ -166,7 +166,7 @@ function goalAllocation(){
   const relevant=ui.activities.filter(row=>{
     const u=resultUnit(row.unit);
     return u&&ownerCode(u).toLowerCase()===pool.toLowerCase()&&
-      row.generatedBillId!==ui.editing&&(!row.generatedBillId||higher.has(row.generatedBillId));
+      !(ui.editing!=null&&row.generatedBillId===ui.editing)&&(!row.generatedBillId||higher.has(row.generatedBillId));
   });
   let otherOutput=0;
   let dogsForOtherActivities=engine.stockCount(sourceStock(),'Hunting Dog');
@@ -193,7 +193,7 @@ function goalAllocation(){
   const demand=engine.provisionTarget(ui.months,eaters);
   const shortfall=Math.max(0,demand.beforeEating-poolContext.provs-netBm-otherOutput);
   const otherWorkers=ui.activities.filter(row=>String(row.unit).toLowerCase()===ctx.code.toLowerCase()
-    &&row.generatedBillId!==ui.editing).reduce((sum,row)=>sum+whole(row.people),0);
+    &&!(ui.editing!=null&&row.generatedBillId===ui.editing)).reduce((sum,row)=>sum+whole(row.people),0);
   const available=Math.max(0,total-otherWorkers);
   if(ui.goal==='maximise')return {workers:available,reason:'Maximise uses workers remaining after saved activities'};
   const planned=engine.allocation({workersAvailable:available,goalProvs:shortfall,mode:ui.yieldMode,
@@ -461,7 +461,7 @@ function processingSkillCaps(unit,activity){
   const tribe=rootCode(unitCode(unit)),caps={};
   for(const skill of parts){
     const level=Number(skillLevel(unit,skill));
-    const used=ui.activities.filter(row=>rootCode(row.unit)===tribe&&row.id!==ui.editingActivity&&row.generatedBillId!==ui.editing
+    const used=ui.activities.filter(row=>rootCode(row.unit)===tribe&&row.id!==ui.editingActivity&&!(ui.editing!=null&&row.generatedBillId===ui.editing)
       &&livestock.COMBINATIONS[livestock.activityKey(row.activityCode)]?.includes(skill))
       .reduce((sum,row)=>{
         const detail=livestock.parseProcessingNote(row.notes);
@@ -475,14 +475,14 @@ function processingFreeWorkers(unit){
   const n=availableWorkers(unit);
   if(n===null)return null;
   const assigned=ui.activities.filter(row=>String(row.unit).toLowerCase()===ui.unit.toLowerCase()
-    &&row.id!==ui.editingActivity&&row.generatedBillId!==ui.editing&&row.activityCode!=='HERDING')
+    &&row.id!==ui.editingActivity&&!(ui.editing!=null&&row.generatedBillId===ui.editing)&&row.activityCode!=='HERDING')
     .reduce((n,row)=>n+whole(row.people),0);
   return Math.max(0,n-assigned);
 }
 function processingPreview(){
   const unit=currentUnit(),pool=ownerCode(unit),stock=sourceStock(),code=livestock.activityKey(ui.activityCode);
   const animal=livestock.animalKey(ui.animal);
-  const used=ui.activities.filter(row=>row.id!==ui.editingActivity&&row.generatedBillId!==ui.editing
+  const used=ui.activities.filter(row=>row.id!==ui.editingActivity&&!(ui.editing!=null&&row.generatedBillId===ui.editing)
     &&livestock.animalKey(row.target)===animal
     &&livestock.activityKey(row.activityCode)
     &&ownerCode(resultUnit(row.unit)||{unitCode:row.unit}).toLowerCase()===pool.toLowerCase())
@@ -493,7 +493,7 @@ function processingPreview(){
           .reduce((a,t)=>a+whole(t.quantity),0)})?.animals||0);
       return n+count;
     },0);
-  const reservedKnives=ui.activities.filter(row=>row.id!==ui.editingActivity&&row.generatedBillId!==ui.editing
+  const reservedKnives=ui.activities.filter(row=>row.id!==ui.editingActivity&&!(ui.editing!=null&&row.generatedBillId===ui.editing)
     &&ownerCode(resultUnit(row.unit)||{unitCode:row.unit}).toLowerCase()===pool.toLowerCase())
     .reduce((n,row)=>n+(row.implements||[]).filter(t=>String(t.name||'').toUpperCase()==='KNIFE')
       .reduce((a,t)=>a+whole(t.quantity),0),0);
