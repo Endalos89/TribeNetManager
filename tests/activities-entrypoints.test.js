@@ -10,6 +10,7 @@ const actions=fs.readFileSync(path.join(root,'src/turn-actions.js'),'utf8');
 const html=fs.readFileSync(path.join(root,'src/index.html'),'utf8');
 const docs=fs.readFileSync(path.join(root,'docs/activities-window-design.md'),'utf8');
 const engine=require('../src/activities-hunting-engine');
+const livestock=require('../src/activities-livestock-engine');
 const preload=fs.readFileSync(path.join(root,'src/preload.js'),'utf8');
 const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
 const css=fs.readFileSync(path.join(root,'src/activities-screen.css'),'utf8');
@@ -20,10 +21,10 @@ assert.match(preload,/listPlannedActivities:\s*turnKey\s*=>\s*ipcRenderer\.invok
 assert.match(main,/ipcMain\.handle\('turn-manager:list-activities'/,
   'The main process must register the matching planned Activities IPC.');
 assert.match(css,/user-select:text/,'Text inside Activities should be selectable and copyable.');
-assert.match(dossier,/skill-icons\/hunting\.svg/,'The Compendium Hunting article must use the Activities icon.');
+assert.match(dossier,/skill-dossier-icon/,'The Compendium skill article must use the Activities skill icon.');
 assert.match(screen,/data-compendium-entry/,'Skills need an exact Compendium link.');
 assert.match(screen,/item-icons\/provisions\.svg/,'Hunting must display Provisions as a proper output item.');
-assert.match(screen,/return \['Hunting'\]/,'Only the implemented Hunting skill should appear in Menu 1.');
+assert.match(screen,/return \['Hunting','Herding','Gutting','Skinning','Boning'\]/,'The five supported activity skills should appear in Menu 1.');
 const inputHandler=screen.split('function handleInput(event)')[1]?.split('async function refreshWeight')[0];
 assert.ok(inputHandler&&!inputHandler.includes('render();'),
   'Slider input must update in place, never rebuild the editor on every pointer movement.');
@@ -67,7 +68,7 @@ const api={
     ?[{id:23,unit:'0485',activityCode:'HUNTING',people:8,target:'NONE',turnKey:key}]:[],
   listPlannedTransfers:async()=>[]
 };
-const window={tribenet:api,TribeNetHuntingEngine:engine,
+const window={tribenet:api,TribeNetHuntingEngine:engine,TribeNetLivestockEngine:livestock,
   SelectedUnitPanelUtils:{levelForSkill:()=>2},
   addEventListener(){}};
 const state={selectedUnit:selected,planImport:{turnKey:turn,plan:{units}},hexCache:new Map([['PK1614',{terrain:'PR',notes:''}]])};
@@ -105,8 +106,8 @@ vm.runInNewContext(instrumented,vm.createContext(sandbox),{filename:'activities-
     'Unit Turn Action must open Menu 1.');
   assert.match(element('activitiesBody').innerHTML,/Hunting/,
     'Hunting must be available to select.');
-  assert.equal((element('activitiesBody').innerHTML.match(/data-skill="/g)||[]).length,1,
-    'Only the Hunting skill is visible in Menu 1.');
+  assert.equal((element('activitiesBody').innerHTML.match(/data-skill="/g)||[]).length,5,
+    'All five supported skills should be present in Menu 1.');
   assert.match(element('activitiesBody').innerHTML,/data-compendium-key="Hunting"/,
     'The Hunting Compendium shortcut must appear on the skill tile.');
   assert.match(element('activitiesBody').innerHTML,/skill-icons\/hunting\.svg/,
