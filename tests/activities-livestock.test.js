@@ -17,6 +17,17 @@ assert.equal(livestock.baseRate('SKIN_GUT_BONE','GOAT'),3);
 assert.equal(livestock.baseRate('SKIN_GUT_BONE','CATTLE'),1);
 assert.equal(livestock.baseRate('GUTTING','ELEPHANT'),1);
 assert.equal(livestock.baseRate('SKINNING','ELEPHANT'),0);
+const staged=livestock.allocateStages({activity:'SKIN_GUT_BONE',animal:'GOAT',workersAvailable:4,
+  skillCaps:{SKINNING:10,GUTTING:10,BONING:10},knivesAvailable:0,animalsAvailable:6});
+assert.deepEqual(staged.workersBySkill,{SKINNING:2,GUTTING:1,BONING:1},
+  'Six Goats need two skinners, one gutter and one boner (four distinct workers)');
+assert.equal(staged.workers,4);
+assert.deepEqual(staged.outputs,{SKINS:6,GUT:12,BONES:12,PROVS:24});
+assert.deepEqual(livestock.parseProcessingNote(livestock.processingNote(staged)).workersBySkill,
+  staged.workersBySkill,'Workers per skill survive save/reload from the stage note');
+assert.equal(livestock.allocateStages({activity:'SKIN_GUT_BONE',animal:'GOAT',workersAvailable:4,
+  skillCaps:{SKINNING:1,GUTTING:10,BONING:10},knivesAvailable:0,animalsAvailable:6}).animals,3,
+  'A shared Skinning cap must limit processing even when other skills have free workers');
 const combined=livestock.process({activity:'SKIN_GUT_BONE',animal:'GOAT',workers:1,animalsAvailable:3});
 assert.deepEqual(combined.outputs,{SKINS:3,GUT:6,BONES:6,PROVS:12});
 assert.equal(livestock.process({activity:'GUTTING',animal:'GOAT',workers:1,knives:1,animalsAvailable:30}).animals,12);
@@ -59,8 +70,8 @@ try{
   assert.equal(bill.activityCode,'SKIN_GUT_BONE');
   assert.equal(bill.skill,'GUTTING');
   const planned=store.apply('906-08',units);
-  assert.equal(db.listActivities('906-08').filter(x=>x.activityCode==='HERDING').length,0,
-    'A herd that is fully slaughtered by a Running Bill requires no Herding workers');
+  assert.equal(db.listActivities('906-08').find(x=>x.activityCode==='HERDING')?.people,1,
+    'A combined Running Bill should herd only the surviving animals');
   const row=db.listActivities('906-08').find(x=>x.generatedBillId===bill.id);
   assert.ok(row,'Processing Bill must generate a saved activity');
   assert.equal(row.activityCode,'SKIN_GUT_BONE');
@@ -75,8 +86,8 @@ try{
   assert.ok(sgb,'Combined workbook activity must use the established order name');
   assert.equal(sgb.item,'GOAT');
   assert.equal(sgb.distinction,'NONE');
-  assert.equal(exported.filter(x=>x.activity==='HERDING').length,0,
-    'Fully processed livestock must not produce a Herding export row');
+  assert.equal(exported.filter(x=>x.activity==='HERDING').length,1,
+    'Animals remaining after combined processing still need a Herding export row');
   store.apply('906-08',units);
   assert.equal(db.listActivities('906-08').filter(x=>x.generatedBillId===bill.id).length,1,
     'Processing Bill recomputation must be idempotent');
@@ -85,7 +96,7 @@ try{
     animal:'GOAT',mode:'stock',goalItem:'GUT',quantity:10});
   assert.equal(total.id,bill.id);
   store.apply('906-08',units);
-  assert.ok(db.listActivities('906-08').find(x=>x.generatedBillId===bill.id)?.people<=2,
+  assert.ok(db.listActivities('906-08').find(x=>x.generatedBillId===bill.id)?.people<=4,
     'Maintain Stock should use the minimum staff required after stock and higher-priority output');
   assert.equal(db.listActivities('906-08').find(x=>x.activityCode==='HERDING')?.people,1,
     'After the small processing Bill, the remaining live Goats still need one herder');
@@ -120,6 +131,19 @@ try{
   store.apply('906-10',manualLivestockUnits);
   assert.equal(db.listActivities('906-10').find(row=>row.activityCode==='HERDING')?.people,1,
     '24 Goats slaughtered once by combined manual processing leave 16 Goats needing one herder');
+  store.pause(bill.id,false);
+  store.save({id:bill.id,unit:'0485',skill:'PROCESSING',activityCode:'SKIN_GUT_BONE',
+    animal:'GOAT',mode:'maximise',goalItem:'GUT',quantity:0});
+  const exampleUnits=[{...units[0],stock:{Goat:6},workersAvailable:4},units[1]];
+  const example=store.apply('906-11',exampleUnits);
+  const stageRow=db.listActivities('906-11').find(x=>x.generatedBillId===bill.id);
+  const breakdown=livestock.parseProcessingNote(stageRow?.notes);
+  assert.equal(stageRow.people,4,'The combined row reserves four people in total');
+  assert.deepEqual(breakdown.workersBySkill,{SKINNING:2,GUTTING:1,BONING:1},
+    'Running Order Maximise must factor all component skills into distinct staff');
+  assert.equal(example.find(x=>x.id===bill.id).animals,6);
+  assert.equal(db.listActivities('906-11').filter(x=>x.activityCode==='HERDING').length,0,
+    'All six processed animals must be removed from the next automatic herd allocation');
   console.log('Livestock: shared skill caps, combined yields, herd auto-orders, idempotence, running bills and export mappings passed');
 } finally {
   db?.close();
