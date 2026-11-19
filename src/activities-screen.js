@@ -166,11 +166,14 @@ function goalAllocation(){
       row.generatedBillId!==ui.editing&&(!row.generatedBillId||higher.has(row.generatedBillId));
   });
   let otherOutput=0;
+  let dogsForOtherActivities=engine.stockCount(sourceStock(),'Hunting Dog');
   for(const row of relevant){
     if(row.activityCode!=='HUNTING')continue;
     const worker=resultUnit(row.unit),base=contextFor(worker);
+    const assistingDogs=Math.min(whole(row.people),dogsForOtherActivities);
+    dogsForOtherActivities-=assistingDogs;
     const am=whole(row.people)+(row.implements||[]).reduce((sum,t)=>
-      sum+whole(t.quantity)*(engine.TOOLS.find(x=>x.name===t.name)?.bonus||0),0);
+      sum+whole(t.quantity)*(engine.TOOLS.find(x=>x.name===t.name)?.bonus||0),0)+assistingDogs*2;
     const range=engine.forecast({workers:row.people,effectiveAM:am,skill:base.skill,
       terrain:base.terrain,month:base.month,waterBorders:base.waterBorders});
     if(!range)continue;
