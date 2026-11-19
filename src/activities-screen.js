@@ -101,6 +101,8 @@ function contextFor(unit){
   const capacity=num(stats?.carryingCapacity??unit.walkingCapacity);
   const knownStock=Boolean(Object.keys(stock).length || stats?.inventory || unit?.resources);
   return {code,goodsTribe:owner!==code?owner:null,skill:huntingLevel(unit),
+    skillLevels:Object.fromEntries(['GUTTING','SKINNING','BONING','HERDING'].map(name=>[name,skillLevel(unit,name)])),
+    atSea:/^\d{4}f\d+$/i.test(code)&&['O','L'].includes(String(hexAt(hex)?.terrain||'').toUpperCase()),
     terrain:hexAt(hex)?.terrain||null,waterBorders:waterBorders(hex),month:match?Number(match[1]):null,
     workersAvailable:availableWorkers(unit),eaters:eaters(unit),stock,
     provs:knownStock?provs:null,currentWeight,capacity,provsWeight:10,
@@ -418,6 +420,128 @@ function preview(){
   const range=context.skill===null?null:engine.forecast({workers,effectiveAM:am,skill:context.skill,terrain:context.terrain,month:context.month,waterBorders:context.waterBorders});
   return {workers,range,tools,context,huntingDogs};
 }
+function processingLevelCap(unit,activity){
+  const parts=livestock.COMBINATIONS[livestock.activityKey(activity)]||[];
+  const tribe=rootCode(unitCode(unit));
+  return parts.reduce((limit,part)=>{
+    const level=Number(skillLevel(unit,part));
+    if(!Number.isFinite(level))return 0;
+    const used=ui.activities.filter(row=>rootCode(row.unit)===tribe&&row.id!==ui.editingActivity
+      &&livestock.COMBINATIONS[livestock.activityKey(row.activityCode)]?.includes(part))
+      .reduce((sum,row)=>sum+whole(row.people),0);
+    return Math.min(limit,Math.max(0,livestock.capForLevel(level)-used));
+  },Infinity);
+}
+function processingPreview(){
+  const unit=currentUnit(),pool=ownerCode(unit),stock=sourceStock(),code=livestock.activityKey(ui.activityCode);
+  const animal=livestock.animalKey(ui.animal);
+  const used=ui.activities.filter(row=>row.id!==ui.editingActivity
+    &&livestock.animalKey(row.target)===animal
+    &&livestock.activityKey(row.activityCode)
+    &&ownerCode(resultUnit(row.unit)||{unitCode:row.unit})===pool)
+    .reduce((n,row)=>n+(livestock.process({activity:row.activityCode,animal,
+      workers:row.people,knives:(row.implements||[]).filter(t=>String(t.name||'').toUpperCase()==='KNIFE')
+        .reduce((a,t)=>a+whole(t.quantity),0)})?.animals||0),0);
+  const reservedKnives=ui.activities.filter(row=>row.id!==ui.editingActivity
+    &&ownerCode(resultUnit(row.unit)||{unitCode:row.unit})===pool)
+    .reduce((n,row)=>n+(row.implements||[]).filter(t=>String(t.name||'').toUpperCase()==='KNIFE')
+      .reduce((a,t)=>a+whole(t.quantity),0),0);
+  const animals=Math.max(0,livestock.stockCount(stock,animal)-used);
+  const knifeAvailable=Math.max(0,livestock.stockCount(stock,'KNIFE')-reservedKnives);
+  const workers=whole(ui.workers),knives=Math.min(workers,whole(ui.knives),knifeAvailable);
+  const result=livestock.process({activity:code,animal,workers,knives,animalsAvailable:animals});
+  return {stock,animals,knifeAvailable,workers,knives,result,
+    skillCap:processingLevelCap(unit,code)};
+}
+function renderProcessingAllocate(){
+  const unit=currentUnit();
+  if(!unit)return '<p class="activities-warning">Select a unit to allocate processing.</p>';
+  const code=livestock.activityKey(ui.activityCode);
+  const possible=Object.keys(livestock.ANIMALS).filter(animal=>livestock.baseRate(code,animal)>0);
+  if(!possible.includes(ui.animal))ui.animal=possible[0]||'GOAT';
+  const preview=processingPreview();
+  const outputs=Object.keys(preview.result?.outputs||{}).filter(item=>item!=='PROVS');
+  if(!outputs.includes(ui.goalItem))ui.goalItem=outputs[0]||'GUT';
+  const running=ui.mode==='running',max=availableWorkers(unit)||0;
+  const assigned=ui.activities.filter(row=>String(row.unit).toLowerCase()===ui.unit.toLowerCase());
+  return `<div class="activities-editor-grid">
+    <div class="activities-editor">
+      <div class="activities-toolbar"><strong>3. Allocate ${esc(livestock.EXPORT_CODES[code]||code)}</strong>
+        <button class="button" data-go="recipes">Back</button></div>
+      <p class="activities-note">Unit ${esc(ui.unit)} · Goods Tribe ${esc(ownerCode(unit))} · ${esc(ui.skill)} level ${esc(skillLevel(unit,ui.skill))} · Shared skill capacity remaining: ${Number.isFinite(preview.skillCap)?display(preview.skillCap):'Unlimited'}</p>
+      <div class="activities-fields">
+        <label>Order type<select id="processOrderType">
+          <option value="once" ${!running?'selected':''}>One Turn</option>
+          <option value="running" ${running?'selected':''}>Running Bill</option></select></label>
+        <label>Animal<select id="processAnimal">${possible.map(animal=>`<option value="${animal}" ${ui.animal===animal?'selected':''}>${esc(animal)}</option>`).join('')}</select></label>
+      </div>
+      ${running?`<div class="activities-fields">
+        <label>Goal<select id="processGoal">
+          <option value="maximise" ${ui.goal==='maximise'?'selected':''}>Maximise</option>
+          <option value="stock" ${ui.goal==='stock'?'selected':''}>Maintain stock</option></select></label>
+        ${ui.goal==='stock'?`<label>Output to maintain<select id="processGoalItem">
+          ${outputs.map(item=>`<option value="${item}" ${ui.goalItem===item?'selected':''}>${esc(item)}</option>`).join('')}
+          </select></label><label>Quantity<input id="processQuantity" type="number" min="0" step="1" value="${whole(ui.goalQuantity)}"></label>`:''}
+      </div>
+      <p class="activities-note">The Running Bill reserves workers, animals and available Knives anew every turn according to its priority. Production becomes usable next turn, not for another activity this turn.</p>`:
+      `<div class="activities-fields"><label>Workers assigned<input id="processWorkers" type="number" min="1" max="${max}" step="1" value="${whole(ui.workers)}"></label>
+        <label>Knives assigned<input id="processKnives" type="number" min="0" max="${preview.knifeAvailable}" step="1" value="${whole(ui.knives)}"></label></div>
+        <button class="button" id="processAutoKnives">Auto Allocate Tools</button>
+        <p class="activities-note">One Knife per worker doubles processing throughput. ${display(preview.knifeAvailable)} available Knives after other activity reservations.</p>`}
+      <section class="activities-yield"><small>${esc(ui.animal)} AVAILABLE AT START OF TURN</small>
+        <strong>${display(preview.animals)} animals remaining</strong>
+        <span>Selected workers can process ${display(preview.result?.animals||0)} animals ${!running?'using '+display(preview.knives)+' Knives':'(one-turn illustration)'}</span>
+        <strong>${Object.entries(preview.result?.outputs||{}).map(([item,n])=>display(n)+' '+esc(item)).join(' · ')||'No processing output'}</strong></section>
+      <p class="activities-note">The animal is consumed once by ${esc(livestock.EXPORT_CODES[code])}; all component skill limits apply and Provisions are counted once.</p>
+      <div class="activities-actions"><button class="button accent" id="processSave">${ui.editing?'Update Running Bill':running?'Save Running Bill':'Save One Turn Activity'}</button>
+        <button class="button" data-go="recipes">Cancel</button></div>
+    </div>
+    <aside class="activities-saved">
+      <h3>Saved Activities · ${assigned.length}</h3>
+      <p class="activities-note">Assigned ${assigned.reduce((n,row)=>n+whole(row.people),0)} / ${display(max)} workers</p>
+      ${assigned.map(row=>`<div class="activities-saved-row"><strong>${esc(row.activityCode)}</strong>
+        <span>${display(row.people)} workers · ${esc(row.target||'')}</span>
+        <small>${row.generatedBillId?'Running-generated':row.activityCode==='HERDING'?'Automatic or manual Herding':'One Turn'}</small>
+        <div class="activities-bill-buttons">
+          ${row.generatedBillId?`<button data-edit="${row.generatedBillId}">Edit Running Order</button><button data-skip="${row.generatedBillId}">Skip turn</button>`:
+          livestock.activityKey(row.activityCode)?`<button data-edit-activity="${row.id}">Edit</button><button data-remove-activity="${row.id}">Remove</button>`:
+          '<span>Managed elsewhere</span>'}
+        </div></div>`).join('')||'<p>No saved activities for this turn.</p>'}
+    </aside>
+  </div>`;
+}
+async function saveProcessing(){
+  if(!currentUnit())throw Error('No selected unit.');
+  const code=livestock.activityKey(ui.activityCode),animal=livestock.animalKey(ui.animal);
+  if(!code||!livestock.baseRate(code,animal))throw Error('Choose a valid animal processing combination.');
+  if(ui.mode==='running'){
+    const saved=await window.tribenet.saveActivityBill({id:ui.editing,unit:ui.unit,
+      skill:ui.skill.toUpperCase(),activityCode:code,animal,mode:ui.goal==='stock'?'stock':'maximise',
+      goalItem:ui.goalItem,quantity:whole(ui.goalQuantity)});
+    ui.editing=saved.id;
+    ui.otherStatuses=await applyBills();
+    ui.status='Processing Running Bill saved; its current-turn allocation has been recalculated.';
+    await refreshAll();return;
+  }
+  const preview=processingPreview(),total=availableWorkers(currentUnit());
+  if(total===null)throw Error('Worker inventory is not verified.');
+  const other=ui.activities.filter(row=>String(row.unit).toLowerCase()===ui.unit.toLowerCase()&&row.id!==ui.editingActivity)
+    .reduce((n,row)=>n+whole(row.people),0);
+  if(!Number.isInteger(Number(ui.workers))||ui.workers<1||ui.workers+other>total)
+    throw Error('Processing workers exceed the people available after other saved activities.');
+  if(ui.workers>preview.skillCap)throw Error('Processing exceeds a shared Tribe/Element skill worker cap.');
+  if(preview.result?.animals<=0)throw Error('No unallocated animals available for this processing activity.');
+  if(ui.knives>preview.knifeAvailable||ui.knives>ui.workers)
+    throw Error('Knives exceed available implements or assigned workers.');
+  const order={unit:ui.unit,activityCode:code,people:whole(ui.workers),target:animal,distinction:'NONE',
+    implements:ui.knives?[{name:'KNIFE',quantity:whole(ui.knives)}]:[]};
+  if(ui.editingActivity!==null)await window.tribenet.updatePlannedActivity(ui.editingActivity,order);
+  else await window.tribenet.addPlannedActivity(sourceTurn(),order);
+  ui.editingActivity=null;
+  ui.status='Processing activity saved. Re-export Orders to apply the latest Mapper plan.';
+  await refreshAll();
+}
+
 function renderAllocate(){
   if(ui.skill!=='Hunting')return renderProcessingAllocate();
   const unit=currentUnit(),ctx=contextFor(unit),max=availableWorkers(unit)||0;
