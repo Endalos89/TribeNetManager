@@ -619,8 +619,8 @@ function renderManager(){
     <div class="activities-bills">${selected.length?selected.map((b,i)=>{
       const preview=ui.otherStatuses.find(x=>x.id===b.id);
       return `<div class="activities-bill">
-        <strong>#${ui.bills.findIndex(x=>x.id===b.id)+1} · ${esc(b.unit)} · Hunting</strong>
-        <span>${b.mode==='maximise'?'Maximise':`Keep ${b.months} months after eating`} · ${esc(b.yieldMode)}</span>
+        <strong>#${ui.bills.findIndex(x=>x.id===b.id)+1} · ${esc(b.unit)} · ${esc(b.skill||'HUNTING')} ${b.skill==='HUNTING'?'':esc(livestock.EXPORT_CODES[b.activityCode]||b.activityCode||'')}</strong>
+        <span>${b.mode==='maximise'?'Maximise':b.mode==='stock'?`Maintain ${display(b.quantity)} ${esc(b.goalItem)}`:`Keep ${b.months} months after eating`} ${b.skill==='HUNTING'?' · '+esc(b.yieldMode):' · '+esc(b.animal)}</span>
         <small>${b.loadPercent==null?'No weight limit':`Max ${b.loadPercent}% capacity`} · ${b.paused?'Paused':esc(preview?.status||'Active / awaiting recalculation')}</small>
         <div class="activities-bill-buttons">
          <button data-up="${b.id}" ${ui.bills.findIndex(x=>x.id===b.id)===0?'disabled':''} title="Increase priority">↑</button>
@@ -638,6 +638,7 @@ async function refreshAll(){
   if(state?.selectedUnit&&typeof window.renderSelectedUnitPanel==='function')window.renderSelectedUnitPanel(state.selectedUnit);
 }
 async function save(){
+  if(ui.skill!=='Hunting')return saveProcessing();
   const unit=currentUnit();if(!unit)throw Error('No unit is selected.');
   const workers=whole(ui.workers);
   if(ui.mode==='once')validateOneTurn();
@@ -707,14 +708,20 @@ async function handleClick(event){
     if(b.dataset.compendiumEntry){await openCompendium(b.dataset.compendiumEntry,b.dataset.compendiumKey);return;}
     if(b.dataset.go){ui.page=b.dataset.go;render();return;}
     if(b.dataset.skill){ui.skill=b.dataset.skill;ui.page='recipes';render();return;}
-    if(b.dataset.recipe){ui.page='allocate';ui.editing=null;ui.editingActivity=null;ui.mode='once';resetBillSettings();ui.workers=Math.min(10,availableWorkers(currentUnit())||0);ui.selectedTools=[];ui.toolsCustomized=false;render();return;}
+    if(b.dataset.recipe){ui.activityCode=b.dataset.recipe;ui.page='allocate';ui.editing=null;ui.editingActivity=null;ui.mode='once';resetBillSettings();ui.workers=ui.skill==='Hunting'?Math.min(10,availableWorkers(currentUnit())||0):1;ui.knives=0;ui.animal='GOAT';ui.goal='maximise';ui.goalItem=livestock.primaryOutput(ui.activityCode)||'GUT';ui.goalQuantity=0;ui.selectedTools=[];ui.toolsCustomized=false;render();return;}
+    if(b.id==='applyAutoHerding'){ui.otherStatuses=await applyBills();ui.status='Automatic Herding orders recalculated.';await refreshAll();return;}
+    if(b.id==='processAutoKnives'){
+      const preview=processingPreview();ui.knives=Math.min(whole(ui.workers),preview.knifeAvailable);
+      ui.status='Selected available Knives; Save to update the planned order.';render();return;
+    }
+    if(b.id==='processSave'){await saveProcessing();return;}
     if(b.id==='huntAutoTools'){
       if(ui.toolsCustomized&&!window.confirm('Replace your unsaved tool selection with the available recommended implements?'))return;
       ui.selectedTools=engine.optimizeTools(ui.workers,sourceStock(),reservedTools()).implements;
       ui.toolsCustomized=true;ui.status='Tool suggestion prepared for your review. Nothing is saved until you select Save.';render();return;
     }
     if(b.id==='huntSave'){await save();return;}
-    if(b.id==='huntApply'){ui.otherStatuses=await applyBills();ui.status='Generated Hunting allocations refreshed in the saved Mapper draft.';await refreshAll();return;}
+    if(b.id==='huntApply'){ui.otherStatuses=await applyBills();ui.status='Generated Running Order and Herding allocations refreshed in the Mapper draft.';await refreshAll();return;}
     if(b.hasAttribute('data-saved-expand')){ui.showSavedAll=!ui.showSavedAll;render();return;}
     if(b.dataset.skip){
       if(!window.confirm('Skip this Running Order for the current turn? This removes only its generated draft and any linked retention Transfer. The persistent Bill remains.'))return;
@@ -726,14 +733,23 @@ async function handleClick(event){
       ui.otherStatuses=await applyBills();ui.status='Current-turn Bill restored.';await refreshAll();return;
     }
     if(b.dataset.editActivity){const row=ui.activities.find(x=>x.id===Number(b.dataset.editActivity));
-      if(!row||row.activityCode!=='HUNTING')return;
+      if(!row)return;
       ui.editing=null;ui.editingActivity=row.id;ui.unit=row.unit;ui.page='allocate';ui.mode='once';
+      ui.activityCode=livestock.activityKey(row.activityCode)||'HUNTING';
+      ui.skill=ui.activityCode==='HUNTING'?'Hunting':({SKINNING:'Skinning',GUTTING:'Gutting',BONING:'Boning'}[livestock.COMBINATIONS[ui.activityCode]?.[0]]||'Gutting');
+      ui.animal=livestock.animalKey(row.target)||'GOAT';
+      ui.knives=(row.implements||[]).filter(t=>String(t.name||'').toUpperCase()==='KNIFE').reduce((n,t)=>n+whole(t.quantity),0);
+      ui.goalItem=livestock.primaryOutput(ui.activityCode)||'GUT';
       ui.workers=whole(row.people);ui.selectedTools=Array.isArray(row.implements)?row.implements:[];ui.toolsCustomized=true;render();return;}
     if(b.dataset.removeActivity){
       if(!window.confirm('Remove this saved activity for the turn? Running Bills may regenerate their own drafts when applied again.'))return;
       await window.tribenet.deletePlannedActivity(Number(b.dataset.removeActivity));ui.status='Saved activity removed.';await refreshAll();return;}
     if(b.id==='huntViewOrders'){const button=document.querySelector('#orderSheetMenu [data-order-sheet="activities"]');$('activitiesDialog').close();button?.click();return;}
-    if(b.dataset.edit){const bill=ui.bills.find(x=>x.id===Number(b.dataset.edit));ui.unit=bill.unit;ui.editing=bill.id;ui.editingActivity=null;ui.mode='running';ui.page='allocate';ui.selectedTools=[];resetBillSettings(bill);autofillHunters();render();return;}
+    if(b.dataset.edit){const bill=ui.bills.find(x=>x.id===Number(b.dataset.edit));if(!bill)return;
+      ui.unit=bill.unit;ui.editing=bill.id;ui.editingActivity=null;ui.mode='running';ui.page='allocate';ui.selectedTools=[];resetBillSettings(bill);
+      ui.skill=({HUNTING:'Hunting',GUTTING:'Gutting',SKINNING:'Skinning',BONING:'Boning'})[bill.skill]||'Hunting';
+      ui.activityCode=bill.activityCode||bill.skill;ui.animal=bill.animal||'GOAT';ui.goalItem=bill.goalItem||livestock.primaryOutput(ui.activityCode)||'GUT';ui.goalQuantity=whole(bill.quantity);
+      ui.goal=bill.mode;ui.knives=0;if(ui.skill==='Hunting')autofillHunters();else ui.workers=1;render();return;}
     if(b.dataset.up||b.dataset.down){
       ui.bills=await window.tribenet.moveActivityBill(Number(b.dataset.up||b.dataset.down),b.dataset.up?-1:1);
       ui.otherStatuses=await applyBills();render();return;
@@ -746,6 +762,10 @@ async function handleClick(event){
   }catch(error){ui.status=error?.message||String(error);render();}
 }
 function handleChange(event){
+  if(event.target.id==='processOrderType'){ui.mode=event.target.value==='running'?'running':'once';render();return;}
+  if(event.target.id==='processAnimal'){ui.animal=event.target.value;render();return;}
+  if(event.target.id==='processGoal'){ui.goal=event.target.value;render();return;}
+  if(event.target.id==='processGoalItem'){ui.goalItem=event.target.value;render();return;}
   if(event.target.id==='hideSkill'){ui.hideSkill=event.target.checked;render();return;}
   if(event.target.id==='hideInputs'){ui.hideInputs=event.target.checked;render();return;}
   if(event.target.id==='managerUnit'){ui.managerUnit=event.target.value;render();return;}
@@ -772,6 +792,9 @@ function handleChange(event){
 }
 function handleInput(event){
   const id=event.target.id;
+  if(id==='processQuantity'){ui.goalQuantity=whole(event.target.value);return;}
+  if(id==='processWorkers'){ui.workers=whole(event.target.value);return;}
+  if(id==='processKnives'){ui.knives=whole(event.target.value);return;}
   if(id==='huntMonths'){ui.months=Number(event.target.value);autofillHunters();updateAllocationPreview();return;}
   if(event.target.hasAttribute?.('data-tool-item')){
     const name=event.target.dataset.toolItem,quantity=whole(event.target.value);
@@ -867,19 +890,18 @@ window.addEventListener('tribenet-planning-turn-activated',async event=>{
   if(!turn||String(sourceTurn())!==turn)return;
   try{
     const bills=await window.tribenet.listActivityBills();
-    if(!bills.some(b=>!b.paused))return;
     const verified=String(state?.planImport?.plan?.turnKey||'')===turn
       || String(window.resultsTimeline?.turn?.turnKey||'')===turn;
     if(!verified){
       const notice=$('launcherOrdersStatus');
-      if(notice)notice.textContent+=' Running Hunting Bills need a verified start-of-turn unit/stock baseline before allocation.';
+      if(notice)notice.textContent+=' Automatic Herding and Running Orders need a verified start-of-turn unit/stock baseline.';
       return;
     }
     ui.otherStatuses=await applyBills();
     if($('activitiesDialog')?.open)await refreshAll();
   }catch(error){
     const notice=$('launcherOrdersStatus');
-    if(notice)notice.textContent+=' Hunting Bill recalculation needs review: '+(error.message||error);
+    if(notice)notice.textContent+=' Herding and Running Order recalculation needs review: '+(error.message||error);
   }
 });
 window.TribeNetActivities={open,openOverview,applyCurrentTurn:applyBills,refreshWeight,contextFor};
