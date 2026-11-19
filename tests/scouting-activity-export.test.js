@@ -18,7 +18,7 @@ const routes = [
   { id:3, routeType:'scout', unitCode:'0485g1', scoutNumber:3, mission:'PATROL', noOfScouts:1, noOfHorses:0 }
 ];
 const regular = [
-  { unit:'0485', activityCode:'HUNTING', people:4, target:'DEER' },
+  { unit:'0485', activityCode:'HUNTING', people:4, target:'PROVS', distinction:'NONE' },
   { unit:'0485g1', activityCode:'FORESTRY', people:2 },
   { unit:'0485', activityCode:'FORAGING', people:3 }
 ];
@@ -56,7 +56,7 @@ assert.throws(() => assembleActivityAssignments({
   routes:[routes[0]],activities:[{unit:'0485',activityCode:'SCOUTING',people:2}]
 }),/manual SCOUTING/);
 assert.deepEqual(normalizeActivityRows([{ unit:'0485g1', activity:'SCOUTING', people:1 },
-  { unit:'0485', activity:'HUNTING', people:4 }, { unit:'0485', activity:'SCOUTING', people:5 }],10)
+  { unit:'0485', activity:'HUNTING', people:4, item:'PROVS', distinction:'NONE' }, { unit:'0485', activity:'SCOUTING', people:5 }],10)
   .map(row=>row.unit),['0485','0485','0485g1']);
 
 function fakeSheet(headers, capacity = 12) {
@@ -103,6 +103,8 @@ const output = path.join(temp,'exported.xlsx');
     assert.deepEqual(activities.filter(row=>row.ACTIVITY).map(row=>[row.TRIBE,row.ACTIVITY,row.PEOPLE]),
       [['0485','HUNTING',4],['0485','FORAGING',3],['0485','SCOUTING',5],
        ['0485g1','FORESTRY',2],['0485g1','SCOUTING',1]]);
+    assert.deepEqual(activities.filter(row=>row.ACTIVITY==='HUNTING').map(row=>[row.ITEM,row.DISTINCTION]),
+      [['PROVS','NONE']], 'Hunting workbook identity must be exact');
     assert.deepEqual(activities.filter(row=>row.ACTIVITY === 'SCOUTING')
       .map(row=>[row.TRIBE,row.ITEM,row.DISTINCTION]), [
         ['0485','SCOUTING','NONE'],
