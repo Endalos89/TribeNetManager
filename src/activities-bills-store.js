@@ -181,7 +181,7 @@ class ActivityBillStore {
     const processingOutputs=new Map(),animalsSpent=new Map(),skillWorkers=new Map();
     const outputPool=pool=>{if(!processingOutputs.has(pool))processingOutputs.set(pool,{});return processingOutputs.get(pool);};
     const spentPool=pool=>{if(!animalsSpent.has(pool))animalsSpent.set(pool,{});return animalsSpent.get(pool);};
-    const rootOf=unit=>code(unit).slice(0,4);
+    const rootOf=unit=>code(typeof unit==='string'?unit:(unit?.code||unit?.unit||unit?.unitCode)).slice(0,4);
     const claimSkills=(unit,activity,workers)=>{
       const bits=livestock.COMBINATIONS[livestock.activityKey(activity)]||[];
       for(const skill of bits){const k=rootOf(unit)+'/'+skill;skillWorkers.set(k,(skillWorkers.get(k)||0)+whole(workers));}
