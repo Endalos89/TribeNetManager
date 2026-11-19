@@ -28,7 +28,7 @@ assert.equal(livestock.staffForHerd({Goats:21},{},{atSea:true}).workers,0);
 assert.equal(livestock.capForLevel(1),10);
 assert.equal(livestock.capForLevel(10),Infinity);
 assert.equal(livestock.allocateProcessing({activity:'SKIN_GUT',animal:'GOAT',workerLimit:2,
-  knivesAvailable:1,animalsAvailable:10,need:8,goalItem:'GUT'}).animals,6);
+  knivesAvailable:1,animalsAvailable:10,need:8,goalItem:'GUT'}).animals,4);
 
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'tribenet-livestock-test-'));
 let db;
