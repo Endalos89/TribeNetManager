@@ -423,6 +423,8 @@ function renderAllocate(){
       <div id="huntToolsEditor">${toolsTable()}</div>
       <div class="activities-tool-list" id="huntToolsList">${p.tools.length?p.tools.map(t=>`<span>${esc(t.name)}</span><strong>× ${whole(t.quantity)}</strong>`).join(''):'No eligible tools allocated'}</div>
       <section class="activities-outputs"><div class="activities-output-item"><img src="item-icons/provisions.svg" alt="" /><span><strong>Provisions</strong><small>Output destination: ${esc(ownerCode(unit))} · forecast only</small></span>${compendiumLink('item','PROVS','Provisions')}</div></section>
+      <p class="activities-note">Hunting Dogs are counted as animal support where available, but are never exported in implement slots.</p>
+      <p class="activities-note">Crossbow, Horse Bow, Longbow and Spear Steel can be ordered; their unknown yield bonuses are not included in forecasts.</p>
       <section class="activities-yield"><small>EXPECTED PROVISIONS (WEATHER RANGE)</small>
         <strong id="huntYieldRange">${p.range?`${display(p.range.min)} – ${display(p.range.max)} Provisions`:'Unknown terrain / calculator rate'}</strong>
         <span id="huntYieldDetail">${p.range?`Fine weather: ${display(p.range.fine)} · Scenario average: ${display(p.range.average)}`:'Verify the unit’s start-of-turn terrain before saving a forecast.'}</span>
