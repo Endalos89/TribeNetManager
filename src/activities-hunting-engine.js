@@ -28,6 +28,12 @@
     { name:'Snare', bonus:.05, max:5 },
     { name:'Arbalest', bonus:.2, max:1 },
     { name:'Bow', bonus:.15, max:1 },
+    // These four are workbook-valid; their numerical yield bonuses are not verified.
+    // They can be selected manually, but never optimised using a guessed benefit.
+    { name:'Crossbow', bonus:null, max:1 },
+    { name:'Horse Bow', bonus:null, max:1 },
+    { name:'Longbow', bonus:null, max:1 },
+    { name:'Spear Steel', bonus:null, max:1 },
     { name:'Sling', bonus:.1, max:1 },
     { name:'Net', bonus:.1, max:1 },
     { name:'Spear', bonus:.05, max:1 },
@@ -47,13 +53,17 @@
   function stockCount(stock, name) {
     const singular = canon(name);
     for(const [key,value] of Object.entries(stock||{})){
-      if(canon(key)===singular||canon(key)===singular+'S') return whole(value);
+      if(canon(key)===singular||canon(key)===singular+'S'||(singular==='HORSE BOW'&&canon(key)==='H BOW')) return whole(value);
     }
     return 0;
+  }
+  function supportDogs(workers,stock,reservations={}){
+    return Math.min(whole(workers),Math.max(0,stockCount(stock,'Hunting Dog')-whole(reservations['HUNTING DOG'])));
   }
   function optimizeTools(workers, stock, reservations={}) {
     const n=whole(workers), offers=[];
     for(const tool of TOOLS){
+      if(tool.bonus===null)continue; // Do not assume a yield multiplier for unverified implements.
       let available=Math.max(0,stockCount(stock,tool.name)-whole(reservations[canon(tool.name)]));
       while(available>0 && offers.length<n+50){
         const copies=Math.min(tool.max,available);
@@ -64,10 +74,11 @@
     offers.sort((a,b)=>b.benefit-a.benefit||a.name.localeCompare(b.name));
     const chosen=offers.slice(0,n), quantities={};
     for(const o of chosen)quantities[o.name]=(quantities[o.name]||0)+o.copies;
-    const dogs=Math.min(n,Math.max(0,stockCount(stock,'Hunting Dog')-whole(reservations['HUNTING DOG'])));
-    if(dogs)quantities['Hunting Dog']=dogs;
+    const dogs=supportDogs(n,stock,reservations);
     const effectiveAM=n+chosen.reduce((v,o)=>v+o.benefit,0)+dogs*2;
-    return {effectiveAM,implements:Object.entries(quantities).map(([name,quantity])=>({name,quantity})),hunters:n};
+    // Hunting Dogs remain animals; they must not be exported as implements.
+    return {effectiveAM,huntingDogs:dogs,
+      implements:Object.entries(quantities).map(([name,quantity])=>({name,quantity})),hunters:n};
   }
   function forecast({workers=0,skill=0,terrain,month=1,waterBorders=0,effectiveAM=null}={}) {
     const code=canonicalTerrain(terrain), months=whole(month);
@@ -100,7 +111,7 @@
       else low=mid+1;
     }
     const result=calculate(Math.max(0,answer));
-    return {workers:answer,tools:result.implements,range:result.range,expected:result.expected,
+    return {workers:answer,tools:result.implements,huntingDogs:result.huntingDogs,range:result.range,expected:result.expected,
       achievable:result.expected>=goalProvs,effectiveAM:result.effectiveAM};
   }
   function provisionTarget(months,eaters) {
@@ -116,5 +127,5 @@
     return {quantity:Math.max(0,Math.floor(space/values[3])),
       warning:space<0?'Non-Provs cargo already exceeds the selected weight limit':''};
   }
-  return {TERRAIN,WEATHER,TOOLS,canonicalTerrain,stockCount,forecast,predicted,optimizeTools,allocation,provisionTarget,retentionCap};
+  return {TERRAIN,WEATHER,TOOLS,canonicalTerrain,stockCount,supportDogs,forecast,predicted,optimizeTools,allocation,provisionTarget,retentionCap};
 });

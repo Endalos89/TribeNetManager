@@ -1,5 +1,5 @@
 'use strict';
-const { allocation, forecast, optimizeTools, predicted, provisionTarget, retentionCap } = require('./activities-hunting-engine');
+const { allocation, forecast, optimizeTools, predicted, provisionTarget, retentionCap, stockCount } = require('./activities-hunting-engine');
 const { canonicalTurnKey } = require('./turn-key');
 
 const canon = value => String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
@@ -144,7 +144,7 @@ class ActivityBillStore {
       const locked=manual.filter(row=>code(row.unit)===unitCode&&row.generatedLocked).reduce((n,row)=>n+whole(row.people),0);
       availableWorkers.set(unitCode,Math.max(0,whole(unit.workersAvailable)-committed-locked-whole(unit.externalReservedWorkers)));
     }
-    const pools=new Map(),claims=new Map(),projectedOutputs=new Map(),summaries=[];
+    const pools=new Map(),claims=new Map(),projectedOutputs=new Map(),summaries=[],dogClaims=new Map();
     const sourceFor=unit=>code(unit.goodsTribe||unit.code||unit.unit||unit.unitCode);
     for(const unit of units){
       const pool=sourceFor(unit);
@@ -161,7 +161,15 @@ class ActivityBillStore {
       const pool=sourceFor(performer),already=claims.get(pool)||{};
       for(const tool of row.implements||[]){
         const name=canon(tool.name);
+        if(name==='HUNTING DOG')continue; // Animals are not legal implement slots.
         already[name]=(already[name]||0)+whole(tool.quantity);
+      }
+      if(canon(row.activityCode)==='HUNTING'){
+        const stock=unitMap.get(pool)?.stock||{};
+        const left=Math.max(0,stockCount(stock,'Hunting Dog')-whole(already['HUNTING DOG']));
+        const dogs=Math.min(whole(row.people),left);
+        already['HUNTING DOG']=(already['HUNTING DOG']||0)+dogs;
+        dogClaims.set(row.id,dogs);
       }
       claims.set(pool,already);
     }
@@ -201,7 +209,8 @@ class ActivityBillStore {
           const ownerContext=unitMap.get(owner)||context;
           const f=forecast({workers:retainedWorkers,skill:context.skill,terrain:context.terrain,month:context.month,
             waterBorders:context.waterBorders,effectiveAM:retainedWorkers+reservedForBill.reduce((sum,t)=>
-              sum+whole(t.quantity)*(t.name==='Hunting Dog'?2:({ 'Advanced Trap':1,'Improved Trap':.15,'Trap':.1,'Snare':.05,'Arbalest':.2,'Bow':.15,'Sling':.1,'Net':.1,'Spear':.05,'Bone Spear':.05,'Stone Spear':.05,'Spetum':.05}[t.name]||0)),0)});
+              sum+whole(t.quantity)*({ 'Advanced Trap':1,'Improved Trap':.15,'Trap':.1,'Snare':.05,'Arbalest':.2,'Bow':.15,'Sling':.1,'Net':.1,'Spear':.05,'Bone Spear':.05,'Stone Spear':.05,'Spetum':.05}[t.name]||0),0)
+             +(dogClaims.get(link.activity_id)||0)*2});
           const amount=predicted(f,bill.yieldMode);
           if(amount!=null)projectedOutputs.set(owner,(projectedOutputs.get(owner)||0)+amount);
           summaries.push({id:bill.id,unit:bill.unit,status:'Locked: this-turn manual override',workers:retainedWorkers,
@@ -233,7 +242,7 @@ class ActivityBillStore {
           ?(function(){const tools=optimizeTools(workersMax,goods,reserved);
             const range=forecast({workers:workersMax,effectiveAM:tools.effectiveAM,
               skill:context.skill,terrain:context.terrain,month:context.month,waterBorders:context.waterBorders});
-            return {workers:workersMax,tools:tools.implements,range,expected:predicted(range,bill.yieldMode),achievable:true};})()
+            return {workers:workersMax,tools:tools.implements,huntingDogs:tools.huntingDogs,range,expected:predicted(range,bill.yieldMode),achievable:true};})()
           :allocation({workersAvailable:workersMax,goalProvs:goal,mode:bill.yieldMode,
             skill:context.skill,terrain:context.terrain,month:context.month,waterBorders:context.waterBorders,
             stock:goods,reservations:reserved});
@@ -247,13 +256,14 @@ class ActivityBillStore {
         if(result.workers>0){
           const added=this.db.prepare(`INSERT INTO planned_activities
             (turn_key,unit,activity_code,people,target,distinction,mining_direction,notes,created_at,updated_at,implements_json)
-            VALUES (?,?,'HUNTING',?,'NONE','NONE','','',?,?,?)`)
+            VALUES (?,?,'HUNTING',?,'PROVS','NONE','','',?,?,?)`)
             .run(key,bill.unit,result.workers,now,now,JSON.stringify(result.tools));
           activityId=Number(added.lastInsertRowid);
           availableWorkers.set(code(bill.unit),workersMax-result.workers);
           const next={...reserved};
           for(const item of result.tools)next[canon(item.name)]=(next[canon(item.name)]||0)+item.quantity;
-          claims.set(poolKey,next);
+          if(result.huntingDogs)next['HUNTING DOG']=(next['HUNTING DOG']||0)+result.huntingDogs;
+           claims.set(poolKey,next);
           projectedOutputs.set(poolKey,expectedPreviously+(result.expected||0));
         }
         let warning='';

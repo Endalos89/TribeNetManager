@@ -29,7 +29,14 @@ try{
     'Unknown weight must never silently become zero');
 
   const allocated=engine.optimizeTools(2,{Bow:1,Trap:12,'Hunting Dog':2});
-  assert.ok(allocated.implements.some(x=>x.name==='Hunting Dog'&&x.quantity===2));
+  assert.equal(allocated.huntingDogs,2);
+  assert.ok(!allocated.implements.some(x=>x.name==='Hunting Dog'),'Hunting Dogs must not be workbook implements');
+  assert.equal(engine.TOOLS.length,16,'The completed workbook allows sixteen Hunting implements');
+  assert.deepEqual(engine.TOOLS.filter(t=>t.bonus===null).map(t=>t.name),
+    ['Crossbow','Horse Bow','Longbow','Spear Steel']);
+  assert.equal(engine.stockCount({'H/Bow':3},'Horse Bow'),3);
+  assert.equal(engine.optimizeTools(2,{Longbow:2}).implements.length,0,
+    'Automatic optimisation must not invent bonuses for valid but unverified tools');
   assert.ok(allocated.implements.some(x=>x.name==='Trap'&&x.quantity<=10));
   assert.ok(allocated.effectiveAM>2);
   assert.ok(engine.allocation({workersAvailable:200,goalProvs:50,mode:'conservative',skill:0,terrain:'PR',month:1,
@@ -38,6 +45,21 @@ try{
     stock:{}}).workers,0);
 
   db=new TurnManagerDatabase(temp);
+  // Simulate a plan saved by an older installed version, then reopen the app.
+  db.db.prepare(`INSERT INTO planned_activities
+    (turn_key,unit,activity_code,people,target,distinction,created_at,updated_at,implements_json)
+    VALUES ('906-04','0498','HUNTING',1,'NONE','NONE','old','old',?)`)
+    .run(JSON.stringify([{name:'Hunting Dog',quantity:1},{name:'Bow',quantity:1}]));
+  db.db.prepare("UPDATE planned_activities SET generated_locked=1 WHERE unit='0498'").run();
+  db.close();
+  db=new TurnManagerDatabase(temp);
+  const migrated=db.listActivities('906-04')[0];
+  assert.equal(migrated.target,'PROVS','Existing Hunting orders are migrated when the app starts');
+  assert.equal(migrated.distinction,'NONE');
+  assert.equal(migrated.generatedLocked,1,'Migration must retain locked bill overrides');
+  assert.deepEqual(migrated.implements,[{name:'Bow',quantity:1}],
+    'Legacy Hunting Dog slots are removed without deleting valid tools');
+  db.deleteActivity(migrated.id);
   const store=new ActivityBillStore(db);
   assert.throws(()=>store.save({unit:'invalid',mode:'months',months:1}),/valid unit/);
   const first=store.save({unit:'0485',mode:'months',months:1,yieldMode:'average'});
@@ -62,6 +84,7 @@ try{
   const one=store.apply('906-05',context);
   assert.equal(one.length,2);
   assert.equal(db.listActivities('906-05').length,2);
+  assert.ok(db.listActivities('906-05').every(x=>x.target==='PROVS'&&x.distinction==='NONE'));
   assert.ok(one.every(x=>x.workers>=0 && x.workers<=15));
   const totalBows=one.flatMap(x=>x.tools||[]).filter(t=>t.name==='Bow').reduce((n,t)=>n+t.quantity,0);
   assert.ok(totalBows<=5,'Shared equipment cannot be claimed more than once');
@@ -74,6 +97,7 @@ try{
   db.updateActivity(linked.id,{unit:'0485e1',activityCode:'HUNTING',people:3,target:'NONE',
     distinction:'NONE',implements:[{name:'Bow',quantity:1}]});
   assert.equal(db.listActivities('906-05').find(x=>x.id===linked.id).generatedLocked,1);
+  assert.equal(db.listActivities('906-05').find(x=>x.id===linked.id).target,'PROVS');
   const lockedRun=store.apply('906-05',context).find(x=>x.id===second.id);
   assert.match(lockedRun.status,/Locked:/);
   assert.equal(db.listActivities('906-05').filter(x=>x.unit==='0485e1').length,1,
@@ -114,7 +138,14 @@ try{
   assert.equal(db.listActivities('906-05').find(row=>row.id===manual.id).implements[0].quantity,2);
   const assembled=assembleActivityAssignments({activities:db.listActivities('906-05')});
   assert.equal(assembled.activities.find(x=>x.unit==='0499').implements[0].quantity,2);
-  assert.equal(normalizeActivityRows(assembled.activities,100).find(x=>x.unit==='0499').implements[0].name,'Bow');
+  assert.equal(normalizeActivityRows(assembled.activities,100).find(x=>x.unit==='0499').implements[0].name,'BOW');
+  assert.equal(normalizeActivityRows(assembled.activities,100).find(x=>x.unit==='0499').item,'PROVS');
+  assert.equal(normalizeActivityRows([{unit:'0499',activity:'HUNTING',people:1,item:'PROVS',
+    distinction:'NONE',implements:[{name:'H/Bow',quantity:1}]}],10)[0].implements[0].name,'HORSE BOW');
+  assert.throws(()=>normalizeActivityRows([{unit:'0499',activity:'HUNTING',people:1,
+    item:'NONE',distinction:'NONE'}],10),/ITEM=PROVS/);
+  assert.throws(()=>normalizeActivityRows([{unit:'0499',activity:'HUNTING',people:1,
+    item:'PROVS',distinction:'NONE',implements:[{name:'Hunting Dog',quantity:1}]}],10),/Valid_Implements/);
 
   store.move(second.id,-1);
   assert.equal(store.list()[0].id,second.id);

@@ -2,6 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { canonicalTurnKey, previousTurnKey } = require('./turn-key');
+const isHuntingActivity = value => String(value || '').trim().toUpperCase()==='HUNTING';
+const legalSavedImplements = (activityCode, implementsList) => Array.isArray(implementsList)
+  ? implementsList.filter(t=>!isHuntingActivity(activityCode)||!/^hunting dog$/i.test(String(t.name||t.item||'').trim()))
+  : implementsList;
 
 function normalizeUnitCode(value) {
   return String(value || '').trim().toLowerCase();
@@ -174,6 +178,20 @@ class TurnManagerDatabase {
     if (!activityColumns.has('mining_direction')) this.db.exec("ALTER TABLE planned_activities ADD COLUMN mining_direction TEXT NOT NULL DEFAULT ''");
     if (!activityColumns.has('implements_json')) this.db.exec("ALTER TABLE planned_activities ADD COLUMN implements_json TEXT NOT NULL DEFAULT '[]'");
     if (!activityColumns.has('generated_locked')) this.db.exec('ALTER TABLE planned_activities ADD COLUMN generated_locked INTEGER NOT NULL DEFAULT 0');
+    // Repair Hunting plans saved before the 906-07 workbook comparison.
+    // Preserve existing rows, order links and generated_locked overrides.
+    this.db.prepare(`UPDATE planned_activities SET target='PROVS', distinction='NONE'
+      WHERE UPPER(TRIM(activity_code))='HUNTING'
+      AND (target!='PROVS' OR distinction!='NONE')`).run();
+    for(const row of this.db.prepare(`SELECT id, implements_json FROM planned_activities
+      WHERE UPPER(TRIM(activity_code))='HUNTING'`).all()){
+      let tools;
+      try { tools=JSON.parse(row.implements_json||'[]'); } catch { continue; }
+      if(!Array.isArray(tools))continue;
+      const clean=legalSavedImplements('HUNTING',tools);
+      if(clean.length!==tools.length)this.db.prepare(
+        'UPDATE planned_activities SET implements_json=? WHERE id=?').run(JSON.stringify(clean),row.id);
+    }
     const transferColumns = new Set(this.db.prepare('PRAGMA table_info(planned_transfers)').all().map(row => row.name));
     if (!transferColumns.has('derived_bill_id')) this.db.exec('ALTER TABLE planned_transfers ADD COLUMN derived_bill_id INTEGER');
     this.db.exec(`CREATE TABLE IF NOT EXISTS generated_activity_links (
@@ -325,8 +343,11 @@ class TurnManagerDatabase {
     const result = this.db.prepare(`
       INSERT INTO planned_activities(turn_key, unit, activity_code, people, target, distinction, mining_direction, notes, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(turnKey, activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)), activity.target || '', activity.distinction || '', activity.miningDirection || '', activity.notes || '', now, now);
-    if (Array.isArray(activity.implements)) this.db.prepare('UPDATE planned_activities SET implements_json=? WHERE id=?').run(JSON.stringify(activity.implements),Number(result.lastInsertRowid));
+    `).run(turnKey, activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)),
+      isHuntingActivity(activity.activityCode)?'PROVS':(activity.target||''),
+      isHuntingActivity(activity.activityCode)?'NONE':(activity.distinction||''),
+      activity.miningDirection||'', activity.notes||'', now, now);
+    if (Array.isArray(activity.implements)) this.db.prepare('UPDATE planned_activities SET implements_json=? WHERE id=?').run(JSON.stringify(legalSavedImplements(activity.activityCode,activity.implements)),Number(result.lastInsertRowid));
     return this.listActivities(turnKey).find(row=>row.id===Number(result.lastInsertRowid)) || null;
   }
 
@@ -334,10 +355,13 @@ class TurnManagerDatabase {
     const now = new Date().toISOString();
     const existing=this.db.prepare('SELECT turn_key AS turnKey, implements_json AS implementsJson FROM planned_activities WHERE id=?').get(id);
     if(!existing)return null;
-    const tools=Array.isArray(activity.implements) ? JSON.stringify(activity.implements) : existing.implementsJson;
+    const tools=Array.isArray(activity.implements) ? JSON.stringify(legalSavedImplements(activity.activityCode,activity.implements)) : existing.implementsJson;
     this.db.prepare(`
       UPDATE planned_activities SET unit=?, activity_code=?, people=?, target=?, distinction=?, mining_direction=?, notes=?, updated_at=?, implements_json=?, generated_locked=CASE WHEN EXISTS (SELECT 1 FROM generated_activity_links WHERE activity_id=?) THEN 1 ELSE generated_locked END WHERE id=?
-    `).run(activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)), activity.target || '', activity.distinction || '', activity.miningDirection || '', activity.notes || '', now, tools,id,id);
+    `).run(activity.unit, activity.activityCode, Math.max(0, Number(activity.people || 0)),
+      isHuntingActivity(activity.activityCode)?'PROVS':(activity.target||''),
+      isHuntingActivity(activity.activityCode)?'NONE':(activity.distinction||''),
+      activity.miningDirection||'', activity.notes||'', now, tools,id,id);
     return this.listActivities(existing.turnKey).find(row=>row.id===Number(id))||null;
   }
 

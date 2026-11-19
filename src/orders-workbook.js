@@ -3,6 +3,12 @@ const path = require('path');
 const XLSX = require('xlsx');
 const JSZip = require('jszip');
 const { workbookValueForSkill } = require('./skill-workbook-values');
+const { TOOLS: HUNTING_TOOLS } = require('./activities-hunting-engine');
+const HUNTING_IMPLEMENT_NAMES = new Set(HUNTING_TOOLS.map(tool => tool.name.toUpperCase()));
+const huntingImplementName = value => {
+  const code = String(value || '').trim().toUpperCase();
+  return code === 'H/BOW' ? 'HORSE BOW' : code;
+};
 
 const MOVEMENT_COLUMNS = Array.from({ length: 40 }, (_, index) => `MOVEMENT_${index + 1}`);
 const SCOUT_COLUMNS = Array.from({ length: 9 }, (_, index) => `Movement${index + 1}`);
@@ -420,21 +426,34 @@ function activityImplementColumns(workbook) {
   return columns;
 }
 function normalizeActivityRows(rows, maxRows) {
-  const normalized = (rows || []).map(row => ({
-    unit: String(row.unit || row.unitCode || '').trim(),
-    activity: String(row.activity || row.activityCode || '').trim(),
-    people: Number(row.people ?? 0),
-    item: String(row.item || '').trim(),
-    distinction: String(row.distinction || '').trim(),
-    miningDirection: String(row.miningDirection || '').trim(),
-    implements: Array.isArray(row.implements) ? row.implements.map(t=>({name:String(t.name||t.item||'').trim(),quantity:Number(t.quantity)})) : []
-  }));
+  const normalized = (rows || []).map(row => {
+    const activity=String(row.activity || row.activityCode || '').trim();
+    const hunting=activity.toUpperCase()==='HUNTING';
+    return {
+      unit:String(row.unit || row.unitCode || '').trim(),
+      activity:hunting?'HUNTING':activity,
+      people:Number(row.people ?? 0),
+      item:String(row.item || '').trim(),
+      distinction:String(row.distinction || '').trim(),
+      miningDirection:String(row.miningDirection || '').trim(),
+      implements:Array.isArray(row.implements) ? row.implements.map(t=>{
+        const name=String(t.name||t.item||'').trim();
+        return {name:hunting?huntingImplementName(name):name,quantity:Number(t.quantity)};
+      }) : []
+    };
+  });
   if (normalized.length > maxRows) throw new Error('Too many activities: the blank workbook has ' + maxRows + ' input rows.');
   for (const row of normalized) {
     if (!row.unit || !row.activity || !Number.isInteger(row.people) || row.people < 0)
       throw new Error('An activity needs a unit, activity name and nonnegative whole-number workers.');
     if(row.implements.length>20||row.implements.some(t=>!t.name||!Number.isInteger(t.quantity)||t.quantity<=0))
       throw new Error('An activity supports up to 20 implements with positive whole-number quantities.');
+    if(row.activity==='HUNTING'){
+      if(row.item!=='PROVS'||row.distinction!=='NONE')
+        throw new Error('HUNTING requires ITEM=PROVS and DISTINCTION=NONE.');
+      for(const tool of row.implements)if(!HUNTING_IMPLEMENT_NAMES.has(tool.name))
+        throw new Error('HUNTING cannot use implement “'+tool.name+'” in Valid_Implements.');
+    }
   }
   // The game processes an entire unit block at once; a later disconnected
   // block for the same unit can overwrite that unit's earlier activities.
@@ -605,6 +624,27 @@ async function patchOrdersWorkbook({ templatePath, outputPath, movements = [], s
   if (template.workbook.Sheets.Research_Attempts && (!researchColumns.tribe || !researchColumns.topic)) throw new Error('Research_Attempts needs TRIBE and TOPIC columns.');
   const normalizedResearchAttempts = normalizeResearchAttemptRows(researchAttempts, template.researchAttemptRows);
   const normalizedActivities = normalizeActivityRows(activities, template.activityRows);
+  // Verify the exact rules supplied in this turn's blank GM Orders workbook.
+  const huntingActivities=normalizedActivities.filter(row=>row.activity==='HUNTING');
+  if(huntingActivities.length){
+    const activitySheet=template.workbook.Sheets['Valid Activity'];
+    if(activitySheet){
+      const rows=XLSX.utils.sheet_to_json(activitySheet,{defval:''});
+      if(!rows.some(row=>String(row.ACTIVITY).trim()==='HUNTING'
+        &&String(row.ITEM).trim()==='PROVS'&&String(row.TYPE).trim()==='NONE'))
+        throw new Error('Valid Activity does not permit HUNTING / PROVS / NONE.');
+    }
+    const implementSheet=template.workbook.Sheets.Valid_Implements;
+    if(implementSheet){
+      const valid=new Set(XLSX.utils.sheet_to_json(implementSheet,{defval:''})
+        .filter(row=>String(row.ACTIVITY).trim()==='HUNTING'&&String(row.ITEM).trim()==='PROVS')
+        .map(row=>String(row.IMPLEMENT).trim()));
+      for(const row of huntingActivities)for(const tool of row.implements){
+        if(!valid.has(tool.name))
+          throw new Error('Valid_Implements does not permit HUNTING / PROVS / '+tool.name+'.');
+      }
+    }
+  }
   const activityMap = activityColumns(template.workbook);
   const implementMap = activityImplementColumns(template.workbook);
   if(normalizedActivities.some(row=>row.implements.length)){
