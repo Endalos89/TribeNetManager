@@ -555,9 +555,44 @@ Not every skill needs this check. Its inclusion is controlled per skill.
 
 ---
 
-### 4A.2 Next skill (reserved)
+### 4A.2 Herding — automatic each new turn
 
-Add the next skill here after Mandate review and user confirmation. Do not assume Hunting's production uncertainty, implement rules or movement-weight controls apply to unrelated skills. The shared three-menu framework is reused, while each skill receives its own eligibility, recipes, formulae, equipment, bills, workbook mapping and tests.
+**Confirmed:** Herding orders are created automatically for **every eligible unit** on activation of a new planning turn. The user does not maintain recurring Herding Bills. Each eligible unit gets **at most one** generated `HERDING` activity row, covering all live livestock in its physical inventory. Recalculating the same turn replaces generated rows, preserving unrelated manual activities and completed turns.
+
+- Herding is available at level zero; increasing the Herding skill changes growth rather than the number of people required.
+- Staff at 1 person per 20 Goats, per 10 Cattle/Horses/Dogs, or per 5 Elephants, rounded up separately by species and summed. Extra assigned workers do not increase breeding.
+- Herding workers are reserved **before** allocating processing and Hunting Running Orders. Duplicate manual Herding activity rows for a unit suppress an automatic duplicate.
+- Herds aboard fleets at sea are exempt. Known slaughter-processing orders reduce the herd before an automatic order is calculated.
+- If inventory or worker counts are insufficiently verified, or worker availability is inadequate, report a needs-review status rather than silently inventing workers, animals or livestock growth.
+- Herding activity output is an order, not an invented numeric breeding forecast; growth is resolved by the GM after the turn.
+
+### 4A.3 Gutting
+
+- Supported individual `GUTTING` and combined `SKIN&GUT`, `GUT&BONE`, `SKIN&GUT&BONE` activities.
+- At least Gutting 1 is required; shared Tribe/Element cap = 10 workers per skill level (unlimited at 10).
+- Per worker: 6 Goats, 3 Cattle, 2 Horses, 1 Elephant or 8 Dogs. A Knife doubles that person's animal throughput.
+- Raw Gut and Provisions yields depend on animal species. An animal is removed once even where multiple components are selected.
+- Menu 3 permits One Turn assignment or a processing Running Bill (Maximise or Maintain Stock).
+
+### 4A.4 Skinning
+
+- Supported `SKINNING`, `SKIN&GUT`, `SKIN&BONE`, `SKIN&GUT&BONE`.
+- Skinning 1+ and shared skill cap; the per-worker throughput is 3 Goats, 1 Cattle or 1 Horse, doubled with an eligible Knife.
+- Outputs are Skins plus the slaughtered animals' Provisions.
+- Running Bills may maintain selected output stock or maximise use of available animals and people.
+
+### 4A.5 Boning
+
+- Supported `BONING`, `SKIN&BONE`, `GUT&BONE`, `SKIN&GUT&BONE`.
+- Boning 1+ and shared skill cap; per worker 6 Goats, 3 Cattle or 2 Horses, doubled with a Knife.
+- Outputs are Bones and Provisions, plus Skins/Gut when combined with the corresponding skills.
+- Running Bills may maintain selected output stock or maximise processing.
+
+### 4A.6 Combined processing and turnover safety
+
+Combined orders are **one worksheet activity row per selected combination**, not one row per component. The planner chooses a species and uses the slowest component throughput for the combination; its worker count counts against **every applicable component's** shared skill cap. The animal stock is reserved once and all component outputs are forecast. No production from turn N can be consumed as a turn-N input. Goods Tribe inventory is the processing resource source; manpower remains with the acting unit. Knife quantities are reserved from the applicable Goods Tribe inventory.
+
+The new processing bills participate in the same priority queue as Hunting. Persistent goals support Maximise and Maintain Stock, with deterministic generated draft replacement and pause/skip/edit. The workbook export retains canonical combined activity labels, selected animal as ITEM, and NONE as DISTINCTION, without changing the blank workbook template or clearing saved Mapper orders.
 
 ---
 
