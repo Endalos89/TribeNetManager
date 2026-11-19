@@ -75,7 +75,8 @@ try{
   assert.ok(sgb,'Combined workbook activity must use the established order name');
   assert.equal(sgb.item,'GOAT');
   assert.equal(sgb.distinction,'NONE');
-  assert.equal(exported.filter(x=>x.activity==='HERDING').length,1);
+  assert.equal(exported.filter(x=>x.activity==='HERDING').length,0,
+    'Fully processed livestock must not produce a Herding export row');
   store.apply('906-08',units);
   assert.equal(db.listActivities('906-08').filter(x=>x.generatedBillId===bill.id).length,1,
     'Processing Bill recomputation must be idempotent');
