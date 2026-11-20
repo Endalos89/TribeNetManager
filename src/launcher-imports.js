@@ -295,7 +295,10 @@
         : `Blank Orders workbook loaded for Turn ${turnKey}.`;
     } finally {
       setBusy(false);
-      await refreshOrdersStatus();
+      // Preserve the success/error message showing the actual turn taken from
+      // the uploaded workbook. The old refresh replaced it with a generic
+      // line, concealing a filename mismatch or failed import.
+      await refreshOrdersStatus({ preserveMessage: true });
     }
   }
 
