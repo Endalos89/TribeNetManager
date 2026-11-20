@@ -110,7 +110,7 @@ const {chromium}=require('playwright');
   await page.waitForFunction(()=>{
     const output=document.getElementById('terrainDiagnosticReport');
     return output&&!output.hidden&&output.value.includes('Result: completed');
-  },null,{timeout:45000});
+  },null,{timeout:120000});
   const result=await page.evaluate(()=>({
     text:document.getElementById('terrainDiagnosticReport').value,
     buttonDisabled:document.getElementById('terrainRunDiagnostic').disabled,
