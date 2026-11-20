@@ -328,10 +328,12 @@ function parseActivityLine(line) {
     }
     match = core.match(/^([\d,]+)\s+people\s+(caught|hunted|stripped|cut)\s+([\d,]+)\s+(.+)$/i);
     if (match) {
+      const isHunting = match[2].toLowerCase() === 'hunted';
       actions.push({
         type: match[2].toLowerCase(), label: match[2], workers: parseNumber(match[1]),
-        items: [{ item: match[4].trim(), quantity: parseNumber(match[3]) }], inputs,
-        ...(match[2].toLowerCase() === 'hunted' ? { tools: inputs } : {})
+        items: [{ item: match[4].trim(), quantity: parseNumber(match[3]) }],
+        inputs: isHunting ? [] : inputs,
+        ...(isHunting ? { tools: inputs } : {})
       });
       continue;
     }
@@ -722,7 +724,8 @@ function parseUnitSection(lines, startIndex, reportTurn, knowledgeMap) {
     if (turnMatch) { unit.turnKey = turnMatch[1]; i += 1; continue; }
     const goodsTribeMatch = line.match(/^Goods Tribe:\s*(.*)$/i);
     if (goodsTribeMatch) {
-      unit.goodsTribe = goodsTribeMatch[1].trim() || null;
+      const goodsCode = goodsTribeMatch[1].trim();
+      unit.goodsTribe = !goodsCode || /^No GT$/i.test(goodsCode) ? null : goodsCode;
       i += 1;
       continue;
     }
