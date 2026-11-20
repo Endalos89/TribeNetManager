@@ -480,7 +480,16 @@ function drawHistoricalUnits() {
   // A patrol may encounter a unit from a different tribe without that unit
   // receiving a full report snapshot (e.g. 1468e1 seen by scout 0485e1).
   // Display a last-seen map marker, not an editable unit or known inventory.
-  for (const sighting of historicalForeignSightings(state.hexCache.values(), resultsTimeline.turn.units)) {
+  const sightingRows = [...state.hexCache.values()];
+  const playback = window.resultsPlayback;
+  if (playback?.active) {
+    // Do not show a unit before its scout reveals that location in playback.
+    for (const coordinate of playback.revealed || []) {
+      const observation = playback.targetHexes?.get(coordinate);
+      if (observation?.observedUnits?.length) sightingRows.push(observation);
+    }
+  }
+  for (const sighting of historicalForeignSightings(sightingRows, resultsTimeline.turn.units)) {
     const point = parseCoordinate(sighting.coordinate);
     if (!point || seen.has(sighting.unitCode)) continue;
     seen.add(sighting.unitCode);
