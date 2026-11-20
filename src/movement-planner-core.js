@@ -46,6 +46,15 @@
   });
 
   const IMPASSABLE_TERRAIN = new Set(['UNKNOWN', 'O', 'L', 'HSM', 'ALPS']);
+  const LOW_MOUNTAINS = new Set(['LAM', 'LCM', 'LJM', 'LSM', 'LVM']);
+  const PASS_OPPOSITES = Object.freeze({ N: 'S', NE: 'SW', SE: 'NW', S: 'N', SW: 'NE', NW: 'SE' });
+  function hasMountainPass(from, to, direction) {
+    const d = String(direction || '').toUpperCase();
+    return Boolean(PASS_OPPOSITES[d] && (
+      (from?.passes || []).includes(d) ||
+      (to?.passes || []).includes(PASS_OPPOSITES[d])
+    ));
+  }
   // The planner deliberately keeps the normal route as the authoritative route.
   // This one-MP-per-entered-hex value is a conservative warning total for bad
   // weather, so weather never changes the route the player selected.
@@ -97,18 +106,22 @@
     return DIRECTIONS.map(direction => step(point, direction)).filter(Boolean);
   }
 
-  function terrainMovementCost(terrain, weatherPenalty = 0) {
+  function terrainMovementCost(terrain, weatherPenalty = 0, viaPass = false) {
     const code = String(terrain || 'UNKNOWN').toUpperCase();
+    const penalty = Math.max(0, Number(weatherPenalty || 0));
+    if (viaPass && (code === 'HSM' || code === 'ALPS')) return 8 + penalty;
+    if (viaPass && LOW_MOUNTAINS.has(code)) return 7 + penalty;
     if (IMPASSABLE_TERRAIN.has(code)) return null;
     const base = TERRAIN_MOVEMENT_COST[code];
     if (!Number.isFinite(base)) return null;
-    return base + Math.max(0, Number(weatherPenalty || 0));
+    return base + penalty;
   }
 
   function isRevealedLand(hex) {
     if (!hex) return false;
     const terrain = String(hex.terrain || 'UNKNOWN').toUpperCase();
-    return terrainMovementCost(terrain, 0) != null;
+    return terrainMovementCost(terrain, 0) != null ||
+      ((terrain === 'HSM' || terrain === 'ALPS') && (hex.passes || []).length > 0);
   }
 
   function movementAllowanceSummary(totalMp) {
@@ -223,7 +236,9 @@
     let cumulativeMp = 0;
     const path = coordinates.map((coordinate, index) => {
       const row = known.get(coordinate) || { coordinate, terrain: 'UNKNOWN', ...parseCoordinate(coordinate) };
-      const baseCost = index === 0 ? 0 : TERRAIN_MOVEMENT_COST[row.terrain] || 0;
+      const from = index > 0 ? known.get(coordinates[index - 1]) : null;
+      const viaPass = index > 0 && hasMountainPass(from, row, directions[index - 1]);
+      const baseCost = index === 0 ? 0 : (terrainMovementCost(row.terrain, 0, viaPass) ?? 0);
       const weather = index === 0 ? 0 : Math.max(0, Number(weatherPenalty || 0));
       const cost = index === 0 ? 0 : baseCost + weather;
       cumulativeMp += cost;
@@ -234,6 +249,7 @@
         terrain: row.terrain,
         entryMp: cost,
         baseEntryMp: baseCost,
+        viaPass: Boolean(viaPass && (LOW_MOUNTAINS.has(row.terrain) || ['HSM', 'ALPS'].includes(row.terrain))),
         weatherPenalty: weather,
         cumulativeMp
       };
@@ -328,7 +344,8 @@
       for (const next of adjacentHexes(point)) {
         const row = known.get(next.coordinate);
         if (!isRevealedLand(row)) continue;
-        const entryCost = terrainMovementCost(row.terrain, weatherPenalty);
+        const viaPass = hasMountainPass(known.get(current.coordinate), row, next.direction);
+        const entryCost = terrainMovementCost(row.terrain, weatherPenalty, viaPass);
         if (entryCost == null) continue;
         const nextCost = currentCost + entryCost;
         const nextSteps = currentSteps + 1;
@@ -376,6 +393,7 @@
     step,
     adjacentHexes,
     terrainMovementCost,
+    hasMountainPass,
     isRevealedLand,
     movementAllowanceSummary,
     unitMovementProfile,

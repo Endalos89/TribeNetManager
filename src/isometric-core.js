@@ -172,6 +172,32 @@
     const canonical=canon([pair.a,pair.b]);
     return {beach,path,pathChance,routeWidth,lateral,routeSide:fraction('landing-route-side:'+pair.key)<.5?-1:1,position,waterFirst:ownerKey(pair.a)===ownerKey(canonical[0]),beta:pairFraction(canonical),rocky:fraction('landing-material:'+pair.key)<.48,key:pair.key};
   }
+  // A pass is an edge feature, not a new biome. Cut a rounded saddle
+  // through the mountain side of its connector using world-space samples.
+  function mountainPassStrength(x,y,owners) {
+    let strength=0;
+    for(const owner of owners){
+      if(!(isLowMountain(owner.data?.terrain)||isHighMountain(owner.data?.terrain)))continue;
+      const passes=owner.data?.passes;
+      if(!Array.isArray(passes)||!passes.length)continue;
+      const origin=center(owner.col,owner.row);
+      for(const direction of passes){
+        const index=directions.indexOf(String(direction).toUpperCase());
+        if(index<0)continue;
+        const p=neighbour(owner.col,owner.row,index);
+        const destination=center(p.col,p.row);
+        const length=Math.hypot(destination.x-origin.x,destination.y-origin.y);
+        const dx=(destination.x-origin.x)/length,dy=(destination.y-origin.y)/length;
+        const vx=x-origin.x,vy=y-origin.y;
+        const along=vx*dx+vy*dy,lateral=Math.abs(vx*(-dy)+vy*dx);
+        const width=smooth((.34-lateral)/.15);
+        const lengthMask=smooth((along+.30)/.53)*(1-smooth((along-1.73)/.20));
+        const ownership=smooth(owner.weight/.34);
+        strength=Math.max(strength,width*lengthMask*ownership);
+      }
+    }
+    return strength;
+  }
   function cornerInfluences(position,owners,junction) {
     const sorted=canon(owners);
     const vertices=sorted.map(o=>{const c=center(o.col,o.row);return {x:c.x+(junction.x-c.x)*coreRadius,y:c.y+(junction.y-c.y)*coreRadius};});
@@ -477,8 +503,14 @@
       const i=isHighMountain(o.data.terrain)?3:isLowMountain(o.data.terrain)?2:isHill(o.data.terrain)?1:0;
       residual+=Math.pow(o.weight,8)*(layeredHeight(pureHeights[i],pureLayers[i])-pureHeights[i]);
     }
-    const z=region.kind==='core'?layeredHeight(raw,layer):
+    let z=region.kind==='core'?layeredHeight(raw,layer):
       coastalRaw+residual*Math.pow(coastalSlope,8);
+    // Lower only the natural ridge in a smooth corridor towards the pass.
+    const passStrength=mountainPassStrength(x,y,owners);
+    if(passStrength){
+      const saddle=base+.19*mountainScale+.045*(broad-.5);
+      z=z*(1-passStrength)+Math.min(z,saddle)*passStrength;
+    }
     let land=total?rgb.map(n=>n/total):[37,54,64];
     // Add world-coherent grassy patches without sculpting artificial hills.
     const colourNoise=(noise(x*1.38+83,y*1.38-27,177)-.5)*.7+
@@ -493,11 +525,16 @@
     let rock=Math.min(.92,weights.hill*patch*riser*setting('rockExposure',.72)+
       weights.low*(.12+.68*patch)*(.4+.6*riser)+
       weights.high*(.38+.48*patch)*(.65+.35*riser));
+    rock*=1-passStrength*.58;
     // Keep grassy coastal shoulders; actual steep faces receive stone from
     // their triangle normals in both renderer paths. Core materials stay fixed.
     if(region.kind!=='core'&&coastWater>0)rock*=1-(1-mountain)*.65*(1-smooth(inland));
     const stone=[132,136,119];
     land=land.map((v,i)=>v*(1-rock)+stone[i]*rock);
+    if(passStrength){
+      const trail=[156,147,120];
+      land=land.map((v,i)=>v*(1-passStrength*.24)+trail[i]*passStrength*.24);
+    }
     const snowCover=weights.snow*smooth((z-(.14+(2/3)*((weights.high>weights.low?1.64:.86)-.14)))/(.38*2/3));
     land=land.map((v,i)=>v*(1-snowCover)+[224,233,230][i]*snowCover);
     // Low ground becomes beach then grass/stone, independent of hex edges.
@@ -527,6 +564,6 @@
   function sceneryVisible(x,y,neighbours) {
     return neighbours.every((known,i)=>known || x*Math.cos((i+.5)*Math.PI/3)+y*Math.sin((i+.5)*Math.PI/3)<Math.sqrt(3)/2*coreRadius-.04);
   }
-  const api={conformMeshBoundary,WORLD_SEED,coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,subdivisions,sharedSquare,sharedTriangle,pairFraction,pairSplit,cornerInfluences,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,coastalLanding,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
+  const api={conformMeshBoundary,WORLD_SEED,coreRadius,regionAt,regionOwners,regionMesh,groundSubdivisions,subdivisions,sharedSquare,sharedTriangle,pairFraction,pairSplit,cornerInfluences,reliefSeed,treeSite,isLowMountain,isHighMountain,scenerySeed,sceneryRandom,sceneryDetails,sceneryVisible,surface,coastalLanding,mountainPassStrength,isHill,isForest,directions,corners,seed,random,project,unproject,rivers,riverNotes,mix};
   if(typeof module!=='undefined' && module.exports) module.exports=api; else root.IsoGeometry=api;
 })(typeof window!=='undefined'?window:globalThis);

@@ -46,7 +46,9 @@ class TerrainKnowledgeMap extends Map {
     const had=this.has(ref),old=had?this.get(ref):null;
     const previous=old?.terrain||'UNKNOWN',next=data?.terrain||'UNKNOWN';
     const oldRivers=String(old?.notes||''),newRivers=String(data?.notes||'');
-    if(!had || previous!==next)this.terrainRevision++;
+    const oldPasses=Array.isArray(old?.passes)?[...old.passes].sort().join(','):'';
+    const newPasses=Array.isArray(data?.passes)?[...data.passes].sort().join(','):'';
+    if(!had || previous!==next || oldPasses!==newPasses)this.terrainRevision++;
     if(!had || oldRivers!==newRivers)this.decorationRevision++;
     return super.set(ref,data);
   }

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
-const CURRENT_SCHEMA = 3;
+const CURRENT_SCHEMA = 4;
 
 function deepDelta(current, previous) {
   const delta = {};
@@ -161,6 +161,12 @@ class ResultsDatabase {
         INSERT INTO schema_migrations(version, applied_at) VALUES (3, datetime('now'));
       `);
     }
+    if (current < 4) {
+      this.db.exec(`
+        ALTER TABLE result_hex_knowledge ADD COLUMN passes_json TEXT NOT NULL DEFAULT '[]';
+        INSERT INTO schema_migrations(version, applied_at) VALUES (4, datetime('now'));
+      `);
+    }
   }
 
   archiveSource(turnKey, filePath, originalFileName = null) {
@@ -234,8 +240,8 @@ class ResultsDatabase {
 
       const hexInsert = this.db.prepare(`
         INSERT INTO result_hex_knowledge(
-          turn_key, coordinate, terrain, knowledge_level, reason, source_unit, scout_id, observed_units_json, evidence_json, resources_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          turn_key, coordinate, terrain, knowledge_level, reason, source_unit, scout_id, observed_units_json, evidence_json, resources_json, passes_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const hex of report.hexKnowledge || []) {
         hexInsert.run(
@@ -248,7 +254,8 @@ class ResultsDatabase {
           hex.scoutId ?? null,
           JSON.stringify(hex.observedUnits || []),
           JSON.stringify(hex.evidence || []),
-          JSON.stringify(hex.resources || [])
+          JSON.stringify(hex.resources || []),
+          JSON.stringify(hex.passes || [])
         );
       }
 
@@ -333,6 +340,19 @@ class ResultsDatabase {
     const turn = this.db.prepare('SELECT turn_sort AS turnSort FROM result_turns WHERE turn_key = ?').get(turnKey);
     if (!turn) return [];
     const { minCol, maxCol, minRow, maxRow } = bounds;
+    // A pass is permanent, even if a newer report updates terrain or resources
+    // on the same hex without mentioning the old discovery again.
+    const passesByCoordinate = new Map();
+    for (const row of this.db.prepare(`
+      SELECT hk.coordinate, hk.passes_json AS passesJson
+      FROM result_hex_knowledge hk
+      JOIN result_turns rt ON rt.turn_key = hk.turn_key
+      WHERE rt.turn_sort <= ? AND hk.passes_json != '[]'
+    `).all(Number(turn.turnSort))) {
+      const found = passesByCoordinate.get(row.coordinate) || new Set();
+      for (const direction of JSON.parse(row.passesJson || '[]')) found.add(direction);
+      passesByCoordinate.set(row.coordinate, found);
+    }
     return this.db.prepare(`
       WITH ranked AS (
         SELECT hk.*, rt.turn_sort,
@@ -357,6 +377,7 @@ class ResultsDatabase {
         observedUnits: JSON.parse(row.observedUnitsJson || '[]'),
         evidence: JSON.parse(row.evidenceJson || '[]'),
         resources: JSON.parse(row.resourcesJson || '[]'),
+        passes: [...(passesByCoordinate.get(row.coordinate) || [])],
         discoveredTurn: row.discoveredTurn,
         ...parsed
       };
@@ -367,7 +388,7 @@ class ResultsDatabase {
     return this.db.prepare(`
       SELECT hk.turn_key AS turnKey, rt.turn_sort AS turnSort, hk.terrain, hk.knowledge_level AS knowledgeLevel,
              hk.reason, hk.source_unit AS sourceUnit, hk.scout_id AS scoutId,
-             hk.observed_units_json AS observedUnitsJson, hk.evidence_json AS evidenceJson, hk.resources_json AS resourcesJson
+             hk.observed_units_json AS observedUnitsJson, hk.evidence_json AS evidenceJson, hk.resources_json AS resourcesJson, hk.passes_json AS passesJson
       FROM result_hex_knowledge hk
       JOIN result_turns rt ON rt.turn_key = hk.turn_key
       WHERE hk.coordinate = ?
@@ -382,7 +403,8 @@ class ResultsDatabase {
       scoutId: row.scoutId,
       observedUnits: JSON.parse(row.observedUnitsJson || '[]'),
       evidence: JSON.parse(row.evidenceJson || '[]'),
-      resources: JSON.parse(row.resourcesJson || '[]')
+      resources: JSON.parse(row.resourcesJson || '[]'),
+      passes: JSON.parse(row.passesJson || '[]')
     }));
   }
 

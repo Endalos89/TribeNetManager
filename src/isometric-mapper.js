@@ -11,7 +11,7 @@ const IsoMapper = (() => {
   let unitSignature='', decorationSignature='', groundLayer=null, frameRect=null, hitFaces=[], hitOffset={x:0,y:0}, renderCtx=ctx, landscape=null;
   // Track individual terrain changes rather than hashing every known cell and
   // invalidating the whole world whenever one newly discovered hex arrives.
-  const terrainSnapshot=new Map(),notesSnapshot=new Map();
+  const terrainSnapshot=new Map(),passSnapshot=new Map(),notesSnapshot=new Map();
   let lastTerrainRevision=-1,lastDecorationRevision=-1,lastPlaybackRevision=-1;
   function mapData(ref) {
     const target=state.hexCache.get(ref);
@@ -48,12 +48,15 @@ const IsoMapper = (() => {
     lastTerrainRevision=terrainRevision;
     lastDecorationRevision=decorationRevision;
     lastPlaybackRevision=playbackRevision;
-    const next=new Map(),nextNotes=new Map(),changed=new Set();
+    const next=new Map(),nextPasses=new Map(),nextNotes=new Map(),changed=new Set();
     let decorationsChanged=false;
     for(const [ref,data] of state.hexCache){
-      const terrain=mapData(ref)?.terrain||'UNKNOWN';
+      const visible=mapData(ref);
+      const terrain=visible?.terrain||'UNKNOWN';
+      const passes=Array.isArray(visible?.passes)?[...visible.passes].sort().join(','):'';
       next.set(ref,terrain);
-      if(terrainSnapshot.get(ref)!==terrain)changed.add(ref);
+      nextPasses.set(ref,passes);
+      if(terrainSnapshot.get(ref)!==terrain||passSnapshot.get(ref)!==passes)changed.add(ref);
       const notes=String(data?.notes||'');
       const prior=notesSnapshot.get(ref);
       const rivers=prior&&prior.notes===notes
@@ -64,8 +67,9 @@ const IsoMapper = (() => {
     for(const ref of terrainSnapshot.keys())if(!next.has(ref))changed.add(ref);
     for(const [ref,prior] of notesSnapshot)if(!nextNotes.has(ref)&&prior.rivers)decorationsChanged=true;
     const hadMesh=Boolean(window.TribeNetGPU?.chunkCache?.size);
-    terrainSnapshot.clear();notesSnapshot.clear();
+    terrainSnapshot.clear();passSnapshot.clear();notesSnapshot.clear();
     for(const [ref,terrain] of next)terrainSnapshot.set(ref,terrain);
+    for(const [ref,passes] of nextPasses)passSnapshot.set(ref,passes);
     for(const [ref,notes] of nextNotes)notesSnapshot.set(ref,notes);
     terrainTileCache.clear(); // terrain and neighbour records only change on knowledge revision
     // Known-world geometry is prepared from stable terrain knowledge. It
@@ -74,7 +78,7 @@ const IsoMapper = (() => {
     // Never restart the background mesh worker or invalidate its completed
     // world when only non-terrain metadata changes.
     if(changed.size>0)
-      window.TribeNetGPU?.setWorldKnowledge?.(terrainSnapshot,parseCoordinate);
+      window.TribeNetGPU?.setWorldKnowledge?.(terrainSnapshot,parseCoordinate,passSnapshot);
     if(decorationsChanged)landscape=null;
     if(changed.size===0)return;
     // Analytic height at the centre of an already-known core does not
@@ -382,6 +386,29 @@ const IsoMapper = (() => {
     const local=G.rivers(t.data);
     for(let i=0;i<6;i++) {
       const a=G.corners[i],b=G.corners[(i+1)%6],neighbour=t.n[i];
+      const direction=G.directions[i],reverse=G.directions[(i+3)%6];
+      const pass=Boolean((t.data?.passes||[]).includes(direction)||
+        (neighbour?.passes||[]).includes(reverse));
+      // The paired records describe one physical hexside. Draw a short
+      // ochre track once, centred in the lowered 3D saddle.
+      if(pass&&known(neighbour)&&state.scale>22){
+        const pair=G.regionOwners(t.col,t.row,'edge',i),other=pair[1];
+        const canonical=t.col<other.col||(t.col===other.col&&t.row<other.row);
+        if(canonical){
+          const square=G.sharedSquare(pair[0],pair[1]);
+          if(square){
+            const route=Array.from({length:9},(_,k)=>{
+              const along=(k-4)*.06;
+              return sample(square.center.x+square.normal.x*along,
+                square.center.y+square.normal.y*along);
+            });
+            if(route.every(p=>!p.fog&&!p.water)){
+              line(route,'#4e4939',Math.max(2,state.scale*.055));
+              line(route,'#e2c991',Math.max(1.2,state.scale*.027));
+            }
+          }
+        }
+      }
       const edgePoint=(u,r=1)=>sample(t.c.x+(a.x*(1-u)+b.x*u)*r,t.c.y+(a.y*(1-u)+b.y*u)*r);
       if(known(neighbour) && (local.has(G.directions[i]) || G.rivers(neighbour).has(G.directions[(i+3)%6]))) {
         if(t.water||isWater(neighbour.terrain))continue;

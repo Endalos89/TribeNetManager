@@ -282,6 +282,7 @@ function historicalHexNotes(data) {
   if (data.sourceUnit) lines.push(`Source unit: ${data.sourceUnit}${data.scoutId ? ` · Scout ${data.scoutId}` : ''}`);
   if (data.observedUnits?.length) lines.push(`Units observed: ${data.observedUnits.join(', ')}`);
   if (data.resources?.length) lines.push(`Resources found: ${data.resources.join(', ')}`);
+  if (data.passes?.length) lines.push(`Mountain passes on hexsides: ${data.passes.join(', ')}`);
   if (data.evidence?.length) lines.push(`Report evidence: ${data.evidence.join(' · ')}`);
   return lines.join('\n');
 }
@@ -576,6 +577,7 @@ loadHexHistory = async function loadHistoricalHexHistory(coordinate) {
     if (row.reason) details.push(row.reason);
     if (row.sourceUnit) details.push(`Source: ${row.sourceUnit}${row.scoutId ? ` · Scout ${row.scoutId}` : ''}`);
     if (row.observedUnits?.length) details.push(`Units: ${row.observedUnits.join(', ')}`);
+    if (row.passes?.length) details.push(`Mountain pass: ${row.passes.join(', ')}`);
     if (row.evidence?.length) details.push(row.evidence.join(' · '));
     item.innerHTML = `
       <div class="history-meta"><strong>Turn ${escapeHtml(row.turnKey)}</strong><span>${escapeHtml(row.knowledgeLevel)}</span></div>
