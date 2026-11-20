@@ -75,8 +75,8 @@
   }
 
   function activityClauses(message) {
-    const comma = String(message || '').indexOf(',');
-    const body = comma >= 0 ? String(message).slice(comma + 1).trim() : String(message || '').trim();
+    const body = String(message || '').replace(/^Tribe Activities\s*[:,]?\s*/i, '')
+      .replace(/skinned,\s*gutted\s+and\s+boned/gi, 'skinned/gutted/boned');
     return splitTopLevel(body);
   }
 
@@ -134,12 +134,18 @@
     // e.g. "using 100 Leather, 40 Bark". Keep every pair instead of only the
     // first one, without mistaking the next activity after the parenthesis for
     // another consumed resource.
-    for (const section of text.matchAll(/using\s+([^)]*)/gi)) {
+    // Hunting equipment is used, not consumed. Traps/slings remain in stock.
+    if (!/\bhunted\b/i.test(text)) for (const section of text.matchAll(/using\s+([^)]*)/gi)) {
       for (const match of section[1].matchAll(/([\d,]+)\s+([A-Za-z][\w/-]*)/g)) add(match[2], -number(match[1].replace(/,/g, '')));
     }
-    for (const match of text.matchAll(/(?:made|produced|crafted)\s+([\d,]+)\s+([A-Za-z][\w/-]*)/gi)) add(match[2], number(match[1].replace(/,/g, '')));
+    for (const match of text.matchAll(/(?:made|produced|crafted|cured|tanned|cut|hunted)\s+([\d,]+)\s+([A-Za-z][\w/-]*)/gi)) add(match[2], number(match[1].replace(/,/g, '')));
     const bred = text.match(/\bbred\s*\(([^)]+)\)/i);
-    if (bred) for (const match of bred[1].matchAll(/([A-Za-z][\w/-]*)\s+([\d,]+)/g)) add(match[1], number(match[2].replace(/,/g, '')));
+    if (bred) for (const part of splitTopLevel(bred[1])) {
+      const quantityFirst = part.trim().match(/^([\d,]+)\s+([A-Za-z][\w/-]*)$/);
+      const nameFirst = part.trim().match(/^([A-Za-z][\w/-]*)\s+([\d,]+)$/);
+      if (quantityFirst) add(quantityFirst[2], number(quantityFirst[1].replace(/,/g, '')));
+      else if (nameFirst) add(nameFirst[1], number(nameFirst[2].replace(/,/g, '')));
+    }
     for (const match of text.matchAll(/\b([A-Za-z][\w/-]*)\s+(?:cured|tanned|skinned|gutted|boned)\s+([\d,]+)/gi)) add(match[1], number(match[2].replace(/,/g, '')));
     // A slaughter/harvest clause commonly ends with “N Goat/Cattle/...”.
     if (/skin|gut|bone|slaughter|hunted/i.test(text)) {
