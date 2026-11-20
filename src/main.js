@@ -22,7 +22,7 @@ const { assembleActivityAssignments } = require('./activity-assignments');
 const { normalizeView } = require('./update-view-state');
 const DESIGN_DOCUMENTS = require('./design-document-catalog');
 const { routesDb, removeRoutesForUnit } = require('./planned-routes-ipc');
-const { canonicalTurnKey, inferTurnKeyFromFilename } = require('./turn-key');
+const { canonicalTurnKey, inferTurnKeyFromFilename, inferOrdersTemplateTurnKey } = require('./turn-key');
 const { patchOrdersWorkbook, saveOrderTemplate, findOrderTemplate } = require('./orders-workbook');
 const { buildOrdersExportData: assembleOrdersExportData, mergeDraftRoutes, mergeDraftSplits } = require('./orders-export-data');
 const { resolveOrdersExportPath } = require('./orders-export-path');
@@ -484,10 +484,17 @@ ipcMain.handle('orders:template-import', async (_event, expectedTurnKey) => {
   if (result.canceled || !result.filePaths.length) return { canceled: true };
   try {
     const filePath = result.filePaths[0];
-    const inferred = canonicalTurnKey(inferTurnKeyFromFilename(filePath));
-    const requested = canonicalTurnKey(expectedTurnKey);
-    const turnKey = requested || inferred;
-    if (!turnKey) throw new Error('The workbook filename does not identify a turn, and no planning turn is selected.');
+    // The selected file is the authority. Using expectedTurnKey first silently
+    // associated a new blank 906-08 template with the old 906-07 Mapper turn.
+    // If a filename cannot identify its turn, never overwrite the old turn's
+    // template or change its lifecycle status.
+    const turnKey = inferOrdersTemplateTurnKey(filePath);
+    if (!turnKey) {
+      throw new Error(
+        `Cannot identify one valid turn in "${path.basename(filePath)}". ` +
+        'Please rename the blank Orders workbook to include its turn (for example 0485_906_08_Orders.xlsx), then upload it again. No turn has been changed.'
+      );
+    }
     const saved = await saveOrderTemplate(filePath, app.getPath('userData'), turnKey);
     const lifecycle = turnManagerDatabase.recordBlankTemplateReceived(turnKey, path.basename(filePath));
     return { canceled: false, ...saved, lifecycle };
