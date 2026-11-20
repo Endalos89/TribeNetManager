@@ -533,6 +533,7 @@ function addKnowledge(knowledgeMap, entry) {
     scoutId: entry.scoutId || null,
     observedUnits: Array.from(new Set(entry.observedUnits || [])),
     resources: Array.from(new Set(entry.resources || [])),
+    passes: Array.from(new Set((entry.passes || []).map(value => String(value).toUpperCase()))),
     evidence: entry.evidence ? [entry.evidence] : []
   };
   if (!existing) {
@@ -541,14 +542,16 @@ function addKnowledge(knowledgeMap, entry) {
   }
   const mergedUnits = new Set([...(existing.observedUnits || []), ...(incoming.observedUnits || [])]);
   const mergedResources = new Set([...(existing.resources || []), ...(incoming.resources || [])]);
+  const mergedPasses = new Set([...(existing.passes || []), ...(incoming.passes || [])]);
   const mergedEvidence = [...(existing.evidence || []), ...(incoming.evidence || [])];
   const oldRank = KNOWLEDGE_RANK[existing.knowledgeLevel] || 0;
   const newRank = KNOWLEDGE_RANK[incoming.knowledgeLevel] || 0;
   if (newRank > oldRank) {
-    knowledgeMap.set(entry.coordinate, { ...incoming, observedUnits: [...mergedUnits], resources: [...mergedResources], evidence: mergedEvidence });
+    knowledgeMap.set(entry.coordinate, { ...incoming, observedUnits: [...mergedUnits], resources: [...mergedResources], passes: [...mergedPasses], evidence: mergedEvidence });
   } else {
     existing.observedUnits = [...mergedUnits];
     existing.resources = [...mergedResources];
+    existing.passes = [...mergedPasses];
     existing.evidence = mergedEvidence;
     if ((!existing.terrain || existing.terrain === 'UNKNOWN') && incoming.terrain !== 'UNKNOWN') existing.terrain = incoming.terrain;
     if (!existing.reason && incoming.reason) existing.reason = incoming.reason;
@@ -623,6 +626,26 @@ function parseRouteKnowledge(rawLine, startCoordinate, knowledgeMap, options = {
         scoutId,
         reason: 'Observed from an adjacent hex',
         evidence: `${observationTerrain} ${match[1].toUpperCase()}`
+      });
+      continue;
+    }
+    // Passes are directional HEXSIDE features, never a standalone terrain
+    // code. Mirror the edge on its neighbour so either owner can render the
+    // same physical saddle once the adjacent mountain becomes known.
+    match = token.match(/^Pass\s+(N|NE|SE|S|SW|NW)$/i);
+    if (match) {
+      const direction = match[1].toUpperCase();
+      const reverse = { N: 'S', NE: 'SW', SE: 'NW', S: 'N', SW: 'NE', NW: 'SE' }[direction];
+      addKnowledge(knowledgeMap, {
+        coordinate: current, terrain: 'UNKNOWN', knowledgeLevel: movementLevel,
+        sourceUnit, scoutId, passes: [direction],
+        reason: 'Mountain pass on ' + direction + ' hexside', evidence: token
+      });
+      const adjacent = stepCoordinate(current, direction);
+      if (adjacent) addKnowledge(knowledgeMap, {
+        coordinate: adjacent, terrain: 'UNKNOWN', knowledgeLevel: 'observed',
+        sourceUnit, scoutId, passes: [reverse],
+        reason: 'Mountain pass on ' + reverse + ' hexside', evidence: token
       });
       continue;
     }
