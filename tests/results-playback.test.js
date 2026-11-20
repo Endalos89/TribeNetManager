@@ -68,6 +68,18 @@ const events = context.resultsPlayback.buildEvents({
   events: [{ unitCode: 'T1', eventType: 'activities', message: 'Tribe Activities, Skin\\gut\\bone 60 Goat, 100 people made 100 Sling (using 100 Leather), 275 herders allocated, Bred ( Cattle 32, Goat 284, Horse 21 )' }]
 });
 
+const modernEvents = context.resultsPlayback.buildEvents({
+  units: [{ unitCode: 'T1', previousHex: 'AA0101', currentHex: 'AA0202', deltas: { resources: {} } }],
+  events: [{ unitCode: 'T1', eventType: 'activities',
+    message: 'Tribe Activities: 40 people skinned, gutted and boned 60 Goat (60 Skin, 120 Gut, 120 Bones, 240 Provs), 19 people hunted 30 provs (using 19 sling), 11 herders allocated, 10 actual herders required bred (1 Horse)' }]
+});
+const modernActivities = modernEvents.filter(event => event.phase === 'activities');
+assert(modernActivities[0].text.startsWith('40 people skinned/gutted/boned'), 'The first modern activity must not be dropped at the first comma');
+const modernHunt = modernActivities.find(event => /hunted 30 provs/.test(event.text));
+assert(modernHunt && modernHunt.changes.some(change => change.name.toLowerCase() === 'provs' && change.amount === 30));
+assert(!modernHunt.changes.some(change => change.name.toLowerCase() === 'sling' && change.amount < 0),
+  'Used hunting equipment must not be interpreted as consumed materials');
+
 assert.strictEqual(context.resultsPlayback.modelCount(1), 1);
 assert.strictEqual(context.resultsPlayback.modelCount(99), 2);
 assert.strictEqual(context.resultsPlayback.modelCount(1000), 4);

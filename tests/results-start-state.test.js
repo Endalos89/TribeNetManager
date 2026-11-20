@@ -91,7 +91,7 @@ const context = {
   }
 };
 context.window = context;
-vm.runInNewContext(`${source}\n;globalThis.__test={applyResultTurn,advanceToNextStartState,resultIsPartial};`, context, { filename: 'results-map.js' });
+vm.runInNewContext(`${source}\n;globalThis.__test={applyResultTurn,advanceToNextStartState,resultIsPartial,historicalForeignSightings,drawHistoricalUnits};`, context, { filename: 'results-map.js' });
 
 (async () => {
   assert.strictEqual(context.__test.resultIsPartial({ terrain: 'O', knowledgeLevel: 'attempted' }), false, 'Ocean attempts should not receive question-mark treatment');
@@ -113,6 +113,33 @@ vm.runInNewContext(`${source}\n;globalThis.__test={applyResultTurn,advanceToNext
   assert.strictEqual(context.resultsTimeline.turn.knowledgeTurnKey, '906-02');
   assert.strictEqual(context.resultsTimeline.turn.units[0].currentHex, 'PK1614');
   assert.strictEqual(context.resultsTimeline.turn.units.find(unit => unit.unitCode === '0485e1').currentHex, 'PK1614');
+
+  // A report's patrol observation must become a visible last-seen marker,
+  // rather than being silently omitted or added to our controllable units.
+  const observedForeign = {
+    coordinate: 'PK1405', discoveredTurn: '906-07', terrain: 'CH',
+    knowledgeLevel: 'scouted', observedUnits: ['1468e1', '0485e1']
+  };
+  const earlierSighting = {
+    coordinate: 'PK1406', discoveredTurn: '906-06', terrain: 'PR',
+    knowledgeLevel: 'scouted', observedUnits: ['1468e1']
+  };
+  const sightings = context.__test.historicalForeignSightings(
+    [observedForeign, earlierSighting], context.resultsTimeline.turn.units
+  );
+  assert.strictEqual(sightings.length, 1);
+  assert.strictEqual(sightings[0].unitCode, '1468e1');
+  assert.strictEqual(sightings[0].coordinate, 'PK1405', 'Only the latest known location should be displayed');
+  const labels = [];
+  context.drawUnitLabel = (...args) => labels.push(args);
+  context.state.hexCache.set('PK1405', observedForeign);
+  context.__test.drawHistoricalUnits();
+  const marker = labels.find(label => label[1] === '1468e1');
+  assert(marker, 'Foreign unit 1468e1 must appear on the map');
+  assert.strictEqual(marker[2], 'OtherTribe');
+  assert.strictEqual(marker[4], 'last seen');
+  assert(!context.resultsTimeline.turn.units.some(unit => unit.unitCode === '1468e1'),
+    'A sighted foreign unit must not become a player-controlled unit');
 
   console.log('Results start-state and multi-turn handoff regression tests passed');
 })();

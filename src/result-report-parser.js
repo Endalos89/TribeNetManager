@@ -235,8 +235,10 @@ function parseItemAmounts(value) {
 function parseNamedItemAmounts(value) {
   const amounts = [];
   for (const part of splitActivityParts(value)) {
-    const match = part.match(/^(.+?)\s+([\d,]+)$/);
-    if (match) amounts.push({ item: match[1].trim(), quantity: parseNumber(match[2]) });
+    const nameFirst = part.match(/^(.+?)\s+([\d,]+)$/);
+    const quantityFirst = part.match(/^([\d,]+)\s+(.+)$/);
+    if (quantityFirst) amounts.push({ item: quantityFirst[2].trim(), quantity: parseNumber(quantityFirst[1]) });
+    else if (nameFirst) amounts.push({ item: nameFirst[1].trim(), quantity: parseNumber(nameFirst[2]) });
   }
   return amounts;
 }
@@ -248,47 +250,122 @@ function parseActivityLine(line) {
     category: 'final',
     actions: [{ type: 'consumption', label: 'Provisions eaten', items: parseItemAmounts(finalMatch[1]) }]
   };
-  const body = text.replace(/^Tribe Activities,?\s*/i, '')
+  // Modern reports use a colon and several worker/production-specific verbs.
+  // Keep commas within "skinned, gutted and boned" together as one activity.
+  const body = text.replace(/^Tribe Activities\s*[:,]?\s*/i, '')
+    .replace(/skinned,\s*gutted\s+and\s+boned/gi, 'skinned/gutted/boned')
     .replace(/([\d,]+\s+[A-Za-z/]+)\s+(?=\d+\s+people\b)/g, '$1, ');
   const actions = [];
+  const addBreeding = contents => {
+    actions.push({ type: 'breeding', label: 'Bred', items: parseNamedItemAmounts(contents || '') });
+  };
   for (const part of splitActivityParts(body)) {
-    let match = part.match(/^(\d+)\s+people\s+(caught|hunted|stripped)\s+([\d,]+)\s+(.+)$/i);
+    let match = part.match(/^([\d,]+)\s+herders\s+allocated(?::\s*not herded\s*-\s*(.+))?$/i);
     if (match) {
-      actions.push({ type: match[2].toLowerCase(), label: match[2], workers: parseNumber(match[1]), items: [{ item: match[4].trim(), quantity: parseNumber(match[3]) }] });
+      const reason = match[2] || null;
+      actions.push({
+        type: 'herding', label: 'Herders allocated', quantity: parseNumber(match[1]),
+        status: reason ? 'not-herded' : 'allocated',
+        reason, herdedBy: reason?.match(/\bherded by\s+([A-Za-z0-9]+)/i)?.[1] || null
+      });
       continue;
     }
-    match = part.match(/^(\d+)\s+people\s+furried\s*\((.*)\)$/i);
+    match = part.match(/^([\d,]+)\s+actual\s+herders\s+required(?:\s+bred\s*\(([^()]*)\))?(?:\s*\((No breeding(?: performed)?)\))?$/i);
+    if (match) {
+      actions.push({ type: 'herding', label: 'Actual herders required', quantity: parseNumber(match[1]) });
+      if (match[2] != null) addBreeding(match[2]);
+      if (match[3]) actions.push({ type: 'breeding', label: 'No breeding performed', items: [] });
+      continue;
+    }
+    match = part.match(/^([\d,]+)\s+(.+?)\s+strayed(?:\s+bred\s*\(([^()]*)\))?$/i);
+    if (match) {
+      actions.push({ type: 'straying', label: 'Animals strayed', items: [{ item: match[2].trim(), quantity: parseNumber(match[1]) }] });
+      if (match[3] != null) addBreeding(match[3]);
+      continue;
+    }
+    match = part.match(/^Bred\s*\(([^()]*)\)$/i);
+    if (match) { addBreeding(match[1]); continue; }
+    if (/^\(?No breeding(?: performed)?\)?$/i.test(part)) {
+      actions.push({ type: 'breeding', label: 'No breeding performed', items: [] });
+      continue;
+    }
+
+    // Peel off optional suffixes before matching the core activity, so a
+    // production limitation or "using" list never becomes part of the item name.
+    let core = part;
+    let limit = null;
+    const limited = core.match(/\s+\(limited by\s+([^()]*)\)\s*$/i);
+    if (limited) {
+      core = core.slice(0, limited.index).trim();
+      const detail = limited[1].match(/^(.+?):\s*([\d,]+)\s+of\s+([\d,]+)\s+assigned$/i);
+      limit = detail
+        ? { item: detail[1].trim(), actualWorkers: parseNumber(detail[2]), assignedWorkers: parseNumber(detail[3]) }
+        : { raw: limited[1].trim() };
+    }
+    let inputs = [];
+    const using = core.match(/\s+\(using\s+([^()]*)\)\s*$/i);
+    if (using) {
+      core = core.slice(0, using.index).trim();
+      inputs = parseItemAmounts(using[1]);
+    }
+
+    match = core.match(/^([\d,]+)\s+people\s+(?:Skin\\gut\\bone|skinned\/gutted\/boned)\s+([\d,]+)\s+(.+?)\s*\(([^()]*)\)$/i);
+    if (match) {
+      actions.push({
+        type: 'animal-processing', label: 'Skin/Gut/Bone', workers: parseNumber(match[1]),
+        items: [{ item: match[3].trim(), quantity: parseNumber(match[2]) }],
+        outputs: parseItemAmounts(match[4])
+      });
+      continue;
+    }
+    match = core.match(/^([\d,]+)\s+people\s+(?:Skin\\gut\\bone|skinned\/gutted\/boned)\s+([\d,]+)\s+(.+)$/i);
+    if (match) {
+      actions.push({
+        type: 'animal-processing', label: 'Skin/Gut/Bone', workers: parseNumber(match[1]),
+        items: [{ item: match[3].trim(), quantity: parseNumber(match[2]) }], outputs: []
+      });
+      continue;
+    }
+    match = core.match(/^([\d,]+)\s+people\s+(caught|hunted|stripped|cut)\s+([\d,]+)\s+(.+)$/i);
+    if (match) {
+      const isHunting = match[2].toLowerCase() === 'hunted';
+      actions.push({
+        type: match[2].toLowerCase(), label: match[2], workers: parseNumber(match[1]),
+        items: [{ item: match[4].trim(), quantity: parseNumber(match[3]) }],
+        inputs: isHunting ? [] : inputs,
+        ...(isHunting ? { tools: inputs } : {})
+      });
+      continue;
+    }
+    match = core.match(/^([\d,]+)\s+people\s+furried\s*\((.*)\)$/i);
     if (match) {
       actions.push({ type: 'furriering', label: 'Furriering', workers: parseNumber(match[1]), items: parseItemAmounts(match[2]) });
       continue;
     }
-    match = part.match(/^(\d+)\s+people\s+made\s+([\d,]+)\s+(.+?)(?:\s*\(using\s+(.*)\))?$/i);
+    match = core.match(/^([\d,]+)\s+(.+?)\s+(made|crafted|cured|tanned)\s+([\d,]+)\s+(.+)$/i);
     if (match) {
-      actions.push({ type: 'crafting', label: 'Crafting', workers: parseNumber(match[1]), items: [{ item: match[3].trim(), quantity: parseNumber(match[2]) }], inputs: parseItemAmounts(match[4] || '') });
+      const verb = match[3].toLowerCase();
+      actions.push({
+        type: verb === 'cured' ? 'curing' : verb === 'tanned' ? 'tanning' : 'crafting',
+        label: verb, workers: parseNumber(match[1]), workerRole: match[2].trim(),
+        items: [{ item: match[5].trim(), quantity: parseNumber(match[4]) }],
+        inputs, ...(limit ? { limit } : {})
+      });
       continue;
     }
-    match = part.match(/^(\d+)\s+people\s+(Skin\\gut\\bone)\s+([\d,]+)\s+(.+)$/i);
+    match = core.match(/^Skins\s+(Cured|Tanned)\s+([\d,]+)$/i);
     if (match) {
-      actions.push({ type: 'animal-processing', label: match[2], workers: parseNumber(match[1]), items: [{ item: match[4].trim(), quantity: parseNumber(match[3]) }] });
+      actions.push({
+        type: match[1].toLowerCase(), label: 'Skins ' + match[1],
+        items: [{ item: 'Skin', quantity: parseNumber(match[2]) }], inputs
+      });
       continue;
     }
-    match = part.match(/^Skins\s+(Cured|Tanned)\s+([\d,]+)(?:\s*\(using\s+(.*)\))?$/i);
-    if (match) {
-      actions.push({ type: match[1].toLowerCase(), label: `Skins ${match[1]}`, items: [{ item: 'Skin', quantity: parseNumber(match[2]) }], inputs: parseItemAmounts(match[3] || '') });
-      continue;
-    }
-    match = part.match(/^B\/axe\s+([\d,]+)$/i);
+    match = core.match(/^B\/axe\s+([\d,]+)$/i);
     if (match) {
       actions.push({ type: 'production', label: 'B/axe made', items: [{ item: 'B/axe', quantity: parseNumber(match[1]) }] });
       continue;
     }
-    match = part.match(/^([\d,]+)\s+herders\s+allocated$/i);
-    if (match) { actions.push({ type: 'herding', label: 'Herders allocated', quantity: parseNumber(match[1]) }); continue; }
-    match = part.match(/^([\d,]+)\s+actual herders required$/i);
-    if (match) { actions.push({ type: 'herding', label: 'Actual herders required', quantity: parseNumber(match[1]) }); continue; }
-    match = part.match(/^Bred\s*\((.*)\)$/i);
-    if (match) { actions.push({ type: 'breeding', label: 'Bred', items: parseNamedItemAmounts(match[1]) }); continue; }
-    if (/^No Breeding Performed$/i.test(part)) { actions.push({ type: 'breeding', label: 'No breeding performed' }); continue; }
     if (part) actions.push({ type: 'other', label: part });
   }
   return { category: 'activities', actions };
@@ -337,6 +414,34 @@ function parseTransferTable(tables = []) {
   })).filter(row => row.from || row.to || row.item);
 }
 
+function parseUnitTransferSummaries(lines) {
+  // Transfer/Receive paragraphs identify the pair of units and the amount
+  // reported in the narrative. They are not evidence that the table's
+  // otherwise-empty Actual column is a confirmed successful transfer.
+  const summaries = [];
+  let unitCode = null;
+  for (const line of lines) {
+    const header = line.match(UNIT_HEADER_RE);
+    if (header) unitCode = header[2];
+    if (!unitCode) continue;
+    const match = line.match(/^(Transfer goods to|Receive goods from)\s+([A-Za-z0-9]+):\s*(.*)$/i);
+    if (!match) continue;
+    const outgoing = /^Transfer goods to/i.test(match[1]);
+    let peer = match[2];
+    for (let part of splitActivityParts(match[3])) {
+      const redirect = part.match(/^(?:To|from)\s+([A-Za-z0-9]+):\s*(.*)$/i);
+      if (redirect) { peer = redirect[1]; part = redirect[2]; }
+      const item = part.match(/^([\d,]+)\s+(.+?)\s*$/);
+      if (!item) continue;
+      summaries.push({
+        from: outgoing ? unitCode : peer, to: outgoing ? peer : unitCode,
+        item: item[2].trim(), quantity: parseNumber(item[1]), reportedBy: unitCode
+      });
+    }
+  }
+  return summaries;
+}
+
 function parseAuctionSummary(lines, transfers, homeUnitCode) {
   const auctions = [];
   for (const line of lines) {
@@ -376,6 +481,7 @@ function parseHeaderMetadata(lines, turnMatch, turnLine, tables) {
   const homeHeader = lines.find(line => /^Tribe\s+[^,]+,/.test(line));
   const homeCode = homeHeader?.match(/^Tribe\s+([^,\s]+)/)?.[1] || null;
   const transfers = parseTransferTable(tables);
+  const transferSummaries = parseUnitTransferSummaries(lines);
   const auctions = parseAuctionSummary(lines, transfers, homeCode);
   const settlementsTable = tables.find(table => table[0]?.map(value => value.toLowerCase()).join('|').includes('hex code|name|note|type|subtype')) || [];
   const settlements = settlementsTable.slice(1).map(cells => ({
@@ -395,11 +501,21 @@ function parseHeaderMetadata(lines, turnMatch, turnLine, tables) {
     goodsTribe: goodsLine.replace(/^Goods Tribe:\s*/i, '').trim() || null,
     desiredCommodities,
     auctions,
-    transfers: transfers.map((row, index) => ({
-      from: row.from, to: row.to, item: row.item, requested: row.requested, actual: row.actual,
-      status: transferStatus(row.requested, row.actual), message: row.message,
-      type: auctions[row.auctionSummaryIndex] ? 'auction' : 'unit-transfer'
-    })),
+    transfers: transfers.map(row => {
+      const reported = transferSummaries.filter(summary =>
+        summary.from.toUpperCase() === row.from.toUpperCase() &&
+        summary.to.toUpperCase() === row.to.toUpperCase() &&
+        summary.item.toUpperCase() === row.item.toUpperCase());
+      return {
+        from: row.from, to: row.to, item: row.item, requested: row.requested, actual: row.actual,
+        status: transferStatus(row.requested, row.actual), message: row.message,
+        type: auctions[row.auctionSummaryIndex] ? 'auction' : 'unit-transfer',
+        summaryReported: reported.length > 0,
+        summaryAmounts: [...new Set(reported.map(summary => summary.quantity))],
+        summaryReportedBy: [...new Set(reported.map(summary => summary.reportedBy))]
+      };
+    }),
+    transferSummaries,
     notices,
     settlements
   };
@@ -594,7 +710,9 @@ function parseUnitSection(lines, startIndex, reportTurn, knowledgeMap) {
     movementWalkingCapacity: null,
     movementMountedCapacity: null,
     movement: null,
-    scouts: []
+    scouts: [],
+    goodsTribe: null,
+    scoutGroupStatus: null
   };
   const events = [];
   let i = startIndex + 1;
@@ -604,6 +722,19 @@ function parseUnitSection(lines, startIndex, reportTurn, knowledgeMap) {
     const line = lines[i];
     const turnMatch = line.match(/^Current Turn\s+([^\s,]+)/i);
     if (turnMatch) { unit.turnKey = turnMatch[1]; i += 1; continue; }
+    const goodsTribeMatch = line.match(/^Goods Tribe:\s*(.*)$/i);
+    if (goodsTribeMatch) {
+      const goodsCode = goodsTribeMatch[1].trim();
+      unit.goodsTribe = !goodsCode || /^No GT$/i.test(goodsCode) ? null : goodsCode;
+      i += 1;
+      continue;
+    }
+    if (/^Scout Group did not return\b/i.test(line)) {
+      unit.scoutGroupStatus = 'did-not-return';
+      events.push({ unitCode, eventType: 'scout-group', message: line, details: { status: 'did-not-return' } });
+      i += 1;
+      continue;
+    }
     if (/Activities/i.test(line)) {
       events.push({ unitCode, eventType: /^Final Activities/i.test(line) ? 'final activities' : 'activities', message: line, details: parseActivityLine(line) });
       i += 1;
@@ -691,6 +822,16 @@ function parseUnitSection(lines, startIndex, reportTurn, knowledgeMap) {
       evidence: `${unitCode} Status: ${unit.statusTerrain}`
     });
     const statusResources = resourcesFromText(unit.statusNotes);
+    for (const note of unit.statusNotes.split(/,\s*/).map(value => value.trim())) {
+      const ocean = note.match(/^O\s+(N|NE|SE|S|SW|NW)$/i);
+      if (ocean) {
+        const adjacent = stepCoordinate(currentHex, ocean[1].toUpperCase());
+        if (adjacent) addKnowledge(knowledgeMap, { coordinate: adjacent, terrain: 'O', knowledgeLevel: 'observed', sourceUnit: unitCode, reason: 'Ocean seen from occupied hex', evidence: note });
+      }
+      if (/^\d{4}(?:[A-Za-z]\d+)?$/.test(note) && note !== unitCode) {
+        addKnowledge(knowledgeMap, { coordinate: currentHex, terrain: unit.statusTerrain, knowledgeLevel: 'observed', sourceUnit: unitCode, observedUnits: [note], reason: 'Unit observed in occupied hex', evidence: note });
+      }
+    }
     if (statusResources.length) addKnowledge(knowledgeMap, {
       coordinate: currentHex,
       terrain: unit.statusTerrain,
@@ -740,6 +881,9 @@ function parseResultText(rawText, sourceFile = 'Results.docx', tables = []) {
     }
   }
   if (!report.units.length) throw new Error('No Tribe, Element, Fleet or Garrison sections were found in this results report.');
+  report.metadata.parseWarnings = report.events.flatMap(event =>
+    (event.details?.actions || []).filter(action => action.type === 'other')
+      .map(action => ({ unitCode: event.unitCode, message: action.label })));
   report.hexKnowledge = [...knowledgeMap.values()];
   return report;
 }

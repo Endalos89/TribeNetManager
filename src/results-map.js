@@ -427,8 +427,32 @@ function drawResultPartialMarker(point, radius, data) {
   ctx.restore();
 }
 
+function historicalForeignSightings(knowledgeRows, ownUnits) {
+  // Other tribes are observations, not player-controlled units. Only show
+  // their most recent known sighting and never put them in the unit roster.
+  const ownCodes = new Set((ownUnits || []).map(unit => String(unit.unitCode).toUpperCase()));
+  const latest = new Map();
+  const sortKey = key => {
+    const match = String(key || '').match(/^(\d+)[-_](\d+)$/);
+    return match ? Number(match[1]) * 1000 + Number(match[2]) : -1;
+  };
+  for (const row of knowledgeRows || []) {
+    if (!row?.coordinate || !Array.isArray(row.observedUnits)) continue;
+    if (row.knowledgeLevel === 'attempted') continue;
+    for (const value of row.observedUnits) {
+      const code = String(value || '').trim();
+      if (!/^\d{4}(?:[A-Za-z]\d+)?$/.test(code) || ownCodes.has(code.toUpperCase())) continue;
+      const seenTurn = row.discoveredTurn || null;
+      const candidate = { unitCode: code, coordinate: row.coordinate, seenTurn };
+      const existing = latest.get(code.toUpperCase());
+      if (!existing || sortKey(seenTurn) >= sortKey(existing.seenTurn)) latest.set(code.toUpperCase(), candidate);
+    }
+  }
+  return [...latest.values()];
+}
+
 function drawHistoricalUnits() {
-  if (!resultsTimeline.turn?.units?.length) return;
+  if (!resultsTimeline.turn) return;
   const planning = Boolean(resultsTimeline.turn.isPlanningTurn);
   const plannedCodes = planning
     ? new Set((state.routeCache?.movements || state.planImport?.plan?.movements || [])
@@ -452,6 +476,26 @@ function drawHistoricalUnits() {
     const slot = slots.get(key) || 0;
     drawUnitLabel(point, unitCode, unit.unitType, slot, '', unit);
     slots.set(key, slot + 1);
+  }
+  // A patrol may encounter a unit from a different tribe without that unit
+  // receiving a full report snapshot (e.g. 1468e1 seen by scout 0485e1).
+  // Display a last-seen map marker, not an editable unit or known inventory.
+  const sightingRows = [...state.hexCache.values()];
+  const playback = window.resultsPlayback;
+  if (playback?.active) {
+    // Do not show a unit before its scout reveals that location in playback.
+    for (const coordinate of playback.revealed || []) {
+      const observation = playback.targetHexes?.get(coordinate);
+      if (observation?.observedUnits?.length) sightingRows.push(observation);
+    }
+  }
+  for (const sighting of historicalForeignSightings(sightingRows, resultsTimeline.turn.units)) {
+    const point = parseCoordinate(sighting.coordinate);
+    if (!point || seen.has(sighting.unitCode)) continue;
+    seen.add(sighting.unitCode);
+    const slot = slots.get(point.coordinate) || 0;
+    drawUnitLabel(point, sighting.unitCode, 'OtherTribe', slot, 'last seen');
+    slots.set(point.coordinate, slot + 1);
   }
 }
 
