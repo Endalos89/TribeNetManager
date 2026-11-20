@@ -172,7 +172,7 @@
       const x=position.x+shift.x+m.x*spread,y=position.y+shift.y+m.y*spread;
       return {...m,x,y,z:IsoMapper.surface(x,y).z,heading};
     }).sort((a,b)=>a.y-b.y));
-    const labelPrefix=type==='Element'?'E':type==='Tribe'?'T':type==='Fleet'?'F':'U';
+    const labelPrefix=type==='OtherTribe'?'Other':type==='Element'?'E':type==='Tribe'?'T':type==='Fleet'?'F':'U';
     const text=labelPrefix+' '+code+(extra?' '+extra:'');
     const anchor=IsoMapper.project({x:position.x+shift.x,y:position.y+shift.y+.56});
     // Keep labels readable without shifting the underlying physical unit anchors.
