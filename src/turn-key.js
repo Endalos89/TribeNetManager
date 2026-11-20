@@ -18,6 +18,19 @@ function inferTurnKeyFromFilename(filename) {
   return canonicalTurnKey(base);
 }
 
+// Manual blank Orders uploads are authoritative for the turn being opened.
+// A filename such as 0485_906_08_Orders.xlsx must not be assigned to the
+// previously selected Mapper turn (e.g. 906-07). Do not guess on ambiguity.
+function inferOrdersTemplateTurnKey(filename) {
+  const base = String(filename || '').replace(/^.*[\\\\/]/, '').replace(/\.[^.]+$/, '');
+  const candidates = new Set();
+  for (const match of base.matchAll(/(?:^|[^0-9])(\d{3})[-_\s]+(\d{1,2})(?=[^0-9]|$)/g)) {
+    const month = Number(match[2]);
+    if (month >= 1 && month <= 12) candidates.add(canonicalTurnKey(`${match[1]}-${month}`));
+  }
+  return candidates.size === 1 ? [...candidates][0] : null;
+}
+
 function sameTurnKey(a, b) {
   const left = canonicalTurnKey(a);
   const right = canonicalTurnKey(b);
@@ -36,4 +49,4 @@ function previousTurnKey(value) {
     : `${match[1]}-${String(month - 1).padStart(2, '0')}`;
 }
 
-module.exports = { canonicalTurnKey, inferTurnKeyFromFilename, sameTurnKey, previousTurnKey };
+module.exports = { canonicalTurnKey, inferTurnKeyFromFilename, inferOrdersTemplateTurnKey, sameTurnKey, previousTurnKey };
