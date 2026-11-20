@@ -386,6 +386,29 @@ const IsoMapper = (() => {
     const local=G.rivers(t.data);
     for(let i=0;i<6;i++) {
       const a=G.corners[i],b=G.corners[(i+1)%6],neighbour=t.n[i];
+      const direction=G.directions[i],reverse=G.directions[(i+3)%6];
+      const pass=Boolean((t.data?.passes||[]).includes(direction)||
+        (neighbour?.passes||[]).includes(reverse));
+      // The paired records describe one physical hexside. Draw a short
+      // ochre track once, centred in the lowered 3D saddle.
+      if(pass&&known(neighbour)&&state.scale>22){
+        const pair=G.regionOwners(t.col,t.row,'edge',i),other=pair[1];
+        const canonical=t.col<other.col||(t.col===other.col&&t.row<other.row);
+        if(canonical){
+          const square=G.sharedSquare(pair[0],pair[1]);
+          if(square){
+            const route=Array.from({length:9},(_,k)=>{
+              const along=(k-4)*.06;
+              return sample(square.center.x+square.normal.x*along,
+                square.center.y+square.normal.y*along);
+            });
+            if(route.every(p=>!p.fog&&!p.water)){
+              line(route,'#4e4939',Math.max(2,state.scale*.055));
+              line(route,'#e2c991',Math.max(1.2,state.scale*.027));
+            }
+          }
+        }
+      }
       const edgePoint=(u,r=1)=>sample(t.c.x+(a.x*(1-u)+b.x*u)*r,t.c.y+(a.y*(1-u)+b.y*u)*r);
       if(known(neighbour) && (local.has(G.directions[i]) || G.rivers(neighbour).has(G.directions[(i+3)%6]))) {
         if(t.water||isWater(neighbour.terrain))continue;
