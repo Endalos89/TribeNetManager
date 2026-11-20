@@ -94,6 +94,7 @@ assert.deepStrictEqual(processing.outputs.map(a => a.quantity), [60, 120, 120, 2
 const hunting = mainActions.find(a => a.type === 'hunted');
 assert.strictEqual(hunting.items[0].item.toLowerCase(), 'provs');
 assert.deepStrictEqual(hunting.tools.map(t => t.quantity), [300, 400]);
+assert.deepStrictEqual(hunting.inputs, [], 'Used hunting equipment is not consumed');
 const crafted = mainActions.filter(a => a.type === 'crafting');
 assert.strictEqual(crafted[0].workerRole, 'bone experts');
 assert.deepStrictEqual(crafted[0].limit, { item: 'Leather', actualWorkers: 80, assignedWorkers: 100 });
@@ -108,6 +109,7 @@ assert.strictEqual(actions90607('1485').find(a => a.type === 'breeding').items[0
 assert.strictEqual(actions90607('3485').find(a => a.type === 'breeding').items[0].item, 'Cattle');
 assert.strictEqual(actions90607('2485').find(a => a.type === 'cut').items[0].quantity, 160);
 assert.strictEqual(actions90607('2485').find(a => a.type === 'herding').herdedBy, '0485');
+assert.strictEqual(unit90607('0485').goodsTribe, null);
 assert.strictEqual(unit90607('2485').goodsTribe, '0485');
 assert.strictEqual(unit90607('4485').goodsTribe, '0485');
 assert.strictEqual(unit90607('0485e1').scoutGroupStatus, 'did-not-return');
