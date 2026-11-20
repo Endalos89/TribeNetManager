@@ -774,21 +774,24 @@ class GPUMap {
     this.stats.focusTarget=ids.size;
     return ids;
   }
-  setWorldKnowledge(terrain,parseCoordinate){
+  setWorldKnowledge(terrain,parseCoordinate,passMap=new Map()){
     this.worldGeometryComplete=false;
     this.terrainCodeSnapshot.clear();
     this.meshFingerprints.clear();
     for(const [coordinate,type] of terrain){
       if(!type||type==='UNKNOWN')continue;
       const p=parseCoordinate(coordinate);
+      const passes=String(passMap.get(coordinate)||'');
+      const signature=passes?type+'|PASS:'+passes:type;
       if(Number.isFinite(p?.globalCol)&&Number.isFinite(p?.globalRow))
-        this.terrainCodeSnapshot.set(p.globalCol+':'+p.globalRow,type);
+        this.terrainCodeSnapshot.set(p.globalCol+':'+p.globalRow,signature);
     }
     this.snapshotInitialized=true;
     this.worldRows=[...terrain].filter(([,type])=>type&&type!=='UNKNOWN')
       .map(([coordinate,type])=>{
         const p=parseCoordinate(coordinate);
-        return {coordinate,globalCol:p.globalCol,globalRow:p.globalRow,terrain:type};
+        const passes=String(passMap.get(coordinate)||'').split(',').filter(Boolean);
+        return {coordinate,globalCol:p.globalCol,globalRow:p.globalRow,terrain:type,passes};
       }).filter(row=>Number.isFinite(row.globalCol)&&Number.isFinite(row.globalRow));
     this.worldPalette=typeof terrainStyle!=='undefined'
       ?Object.fromEntries(Object.entries(terrainStyle).map(([key,value])=>[key,value[0]])):{};
