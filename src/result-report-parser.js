@@ -235,8 +235,10 @@ function parseItemAmounts(value) {
 function parseNamedItemAmounts(value) {
   const amounts = [];
   for (const part of splitActivityParts(value)) {
-    const match = part.match(/^(.+?)\s+([\d,]+)$/);
-    if (match) amounts.push({ item: match[1].trim(), quantity: parseNumber(match[2]) });
+    const nameFirst = part.match(/^(.+?)\s+([\d,]+)$/);
+    const quantityFirst = part.match(/^([\d,]+)\s+(.+)$/);
+    if (quantityFirst) amounts.push({ item: quantityFirst[2].trim(), quantity: parseNumber(quantityFirst[1]) });
+    else if (nameFirst) amounts.push({ item: nameFirst[1].trim(), quantity: parseNumber(nameFirst[2]) });
   }
   return amounts;
 }
@@ -410,6 +412,34 @@ function parseTransferTable(tables = []) {
   })).filter(row => row.from || row.to || row.item);
 }
 
+function parseUnitTransferSummaries(lines) {
+  // Transfer/Receive paragraphs identify the pair of units and the amount
+  // reported in the narrative. They are not evidence that the table's
+  // otherwise-empty Actual column is a confirmed successful transfer.
+  const summaries = [];
+  let unitCode = null;
+  for (const line of lines) {
+    const header = line.match(UNIT_HEADER_RE);
+    if (header) unitCode = header[2];
+    if (!unitCode) continue;
+    const match = line.match(/^(Transfer goods to|Receive goods from)\s+([A-Za-z0-9]+):\s*(.*)$/i);
+    if (!match) continue;
+    const outgoing = /^Transfer goods to/i.test(match[1]);
+    let peer = match[2];
+    for (let part of splitActivityParts(match[3])) {
+      const redirect = part.match(/^(?:To|from)\s+([A-Za-z0-9]+):\s*(.*)$/i);
+      if (redirect) { peer = redirect[1]; part = redirect[2]; }
+      const item = part.match(/^([\d,]+)\s+(.+?)\s*$/);
+      if (!item) continue;
+      summaries.push({
+        from: outgoing ? unitCode : peer, to: outgoing ? peer : unitCode,
+        item: item[2].trim(), quantity: parseNumber(item[1]), reportedBy: unitCode
+      });
+    }
+  }
+  return summaries;
+}
+
 function parseAuctionSummary(lines, transfers, homeUnitCode) {
   const auctions = [];
   for (const line of lines) {
@@ -449,6 +479,7 @@ function parseHeaderMetadata(lines, turnMatch, turnLine, tables) {
   const homeHeader = lines.find(line => /^Tribe\s+[^,]+,/.test(line));
   const homeCode = homeHeader?.match(/^Tribe\s+([^,\s]+)/)?.[1] || null;
   const transfers = parseTransferTable(tables);
+  const transferSummaries = parseUnitTransferSummaries(lines);
   const auctions = parseAuctionSummary(lines, transfers, homeCode);
   const settlementsTable = tables.find(table => table[0]?.map(value => value.toLowerCase()).join('|').includes('hex code|name|note|type|subtype')) || [];
   const settlements = settlementsTable.slice(1).map(cells => ({
@@ -468,11 +499,21 @@ function parseHeaderMetadata(lines, turnMatch, turnLine, tables) {
     goodsTribe: goodsLine.replace(/^Goods Tribe:\s*/i, '').trim() || null,
     desiredCommodities,
     auctions,
-    transfers: transfers.map((row, index) => ({
-      from: row.from, to: row.to, item: row.item, requested: row.requested, actual: row.actual,
-      status: transferStatus(row.requested, row.actual), message: row.message,
-      type: auctions[row.auctionSummaryIndex] ? 'auction' : 'unit-transfer'
-    })),
+    transfers: transfers.map(row => {
+      const reported = transferSummaries.filter(summary =>
+        summary.from.toUpperCase() === row.from.toUpperCase() &&
+        summary.to.toUpperCase() === row.to.toUpperCase() &&
+        summary.item.toUpperCase() === row.item.toUpperCase());
+      return {
+        from: row.from, to: row.to, item: row.item, requested: row.requested, actual: row.actual,
+        status: transferStatus(row.requested, row.actual), message: row.message,
+        type: auctions[row.auctionSummaryIndex] ? 'auction' : 'unit-transfer',
+        summaryReported: reported.length > 0,
+        summaryAmounts: [...new Set(reported.map(summary => summary.quantity))],
+        summaryReportedBy: [...new Set(reported.map(summary => summary.reportedBy))]
+      };
+    }),
+    transferSummaries,
     notices,
     settlements
   };
